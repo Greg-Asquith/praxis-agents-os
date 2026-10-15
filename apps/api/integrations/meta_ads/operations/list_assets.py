@@ -30,7 +30,7 @@ from ..references import (
 from ..throttle import ensure_account_available
 from ..tools.schemas.assets import MetaAdsAssetKind, MetaAdsAssetsData
 from .paging import read_pages
-from .values import bounded_string, invalid_response
+from .values import bounded_string, excerpt, invalid_response, squashed_text
 
 _OPERATION = "list_assets"
 _MEDIA_LIMIT = 50
@@ -527,20 +527,11 @@ def _post_values(
         "label": f"{noun} from {when}" if when else noun,
         "description": noun,
         "scope_label": scope_label,
-        "excerpt": _excerpt(text),
+        "excerpt": excerpt(text, MAX_POST_EXCERPT),
         "created_time": created_time,
         "thumbnail_url": media_url(thumbnail),
-        "permalink_url": _post_url(permalink),
+        "permalink_url": _https_url(permalink, _POST_HOSTS),
     }
-
-
-def _excerpt(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    text = " ".join(value.split())
-    if len(text) <= MAX_POST_EXCERPT:
-        return text or None
-    return text[: MAX_POST_EXCERPT - 1].rstrip() + "…"
 
 
 def _timestamp(value: Any) -> datetime | None:
@@ -550,11 +541,6 @@ def _timestamp(value: Any) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
-
-
-def _post_url(value: Any) -> str | None:
-    """Keeps only HTTPS links to the post on facebook.com or instagram.com."""
-    return _https_url(value, _POST_HOSTS)
 
 
 async def read_pixel_references(
@@ -656,7 +642,7 @@ async def read_dsa_suggestions(
     for row in rows:
         values = row.get("recommendations")
         for value in values if isinstance(values, list) else ():
-            name = " ".join(value.split())[:200] if isinstance(value, str) else ""
+            name = squashed_text(value, 200)
             if name and name not in names:
                 names.append(name)
     return names[:_MAX_DSA_SUGGESTIONS], len(names) > _MAX_DSA_SUGGESTIONS

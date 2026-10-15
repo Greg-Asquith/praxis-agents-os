@@ -9,8 +9,10 @@ import { AdsList } from "@/integrations/meta_ads/components/ads-list"
 import { AutomaticChanges } from "@/integrations/meta_ads/components/automatic-changes"
 import { MediaAccountContext } from "@/integrations/meta_ads/lib/meta-pictures"
 import { MediaUploadOutcome } from "@/integrations/meta_ads/components/media-upload"
-import { MetaAdsOutcomeTable } from "@/integrations/meta_ads/components/outcome-table"
-import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
+import {
+  AdOutcomeLinks,
+  MetaAdsOutcomeTable,
+} from "@/integrations/meta_ads/components/outcome-table"
 import { FORMAT_LABELS, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
 import {
   adRows,
@@ -18,11 +20,8 @@ import {
   statusLines,
   type AdRow,
 } from "@/integrations/meta_ads/lib/create-ads-checks"
-import {
-  nextStep,
-  REVIEW_LABELS,
-  type CreateAdsResult,
-} from "@/integrations/meta_ads/lib/create-ads-result"
+import { REVIEW_LABELS } from "@/integrations/meta_ads/lib/ad-outcome"
+import { nextStep, type CreateAdsResult } from "@/integrations/meta_ads/lib/create-ads-result"
 import { cn } from "@/lib/utils"
 
 export function CreateAdsApproval({
@@ -148,19 +147,11 @@ export function CreateAdsOutcome({ result }: { result: CreateAdsResult }) {
           { key: "links", kind: "text", label: "Links" },
         ]}
         exportFilename="meta-ads-created-ads.csv"
-        renderCell={(column, row) => {
-          const ad = column.key === "links" ? result.ads[Number(row["index"])] : undefined
-          if (!ad?.adId) return null
-          const manager = adsManagerObjectUrl("ad", result.accountId, ad.adId)
-          return (
-            <span className="flex flex-col gap-0.5">
-              {ad.previewUrl ? (
-                <OutcomeLink href={ad.previewUrl}>Preview on Meta</OutcomeLink>
-              ) : null}
-              {manager ? <OutcomeLink href={manager}>Open in Ads Manager</OutcomeLink> : null}
-            </span>
-          )
-        }}
+        renderCell={(column, row) =>
+          column.key === "links" ? (
+            <AdOutcomeLinks accountId={result.accountId} ad={result.ads[Number(row["index"])]} />
+          ) : null
+        }
         rows={rows}
       />
       {result.uploads.length > 0 ? (
@@ -171,18 +162,5 @@ export function CreateAdsOutcome({ result }: { result: CreateAdsResult }) {
       ) : null}
       {step ? <p className="text-sm">{step}</p> : null}
     </div>
-  )
-}
-
-export function OutcomeLink({ href, children }: { href: string; children: string }) {
-  return (
-    <a
-      className="text-primary w-fit text-xs underline-offset-2 hover:underline"
-      href={href}
-      rel="noreferrer"
-      target="_blank"
-    >
-      {children}
-    </a>
   )
 }

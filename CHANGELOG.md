@@ -124,8 +124,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Meta Ads status and budget changes with approval: turn campaigns, ad sets,
   and ads on or off, and change campaign and ad set budget amounts, with
   read-back evidence.
-- Meta Ads asset listing: the Pages, Instagram accounts, images, and videos
-  each ad account can advertise with, as references ad creation can use.
+- Meta Ads asset listing: the Pages, Instagram accounts, images, videos,
+  recent posts, pixels, apps, and custom and lookalike audiences each ad
+  account can advertise with, as references the creation tools can use, and
+  Meta's suggested EU advertiser names for the operator to confirm. Post
+  text reaches the agent as untrusted content.
 - Meta Ads media upload: up to 20 workspace images or videos per approval,
   pinned to the reviewed File versions, with chunked video upload, lost
   replies settled by finding the upload rather than resending it, and a
@@ -142,47 +145,24 @@ minor release. Patch releases contain backward-compatible fixes only.
   links, buttons, status, and carousel card order. Option pickers now show
   provider values such as `LEARN_MORE` as "Learn More". Ad listings include Meta's
   review reasons.
+- Meta Ads ads from existing posts: ad creation can run a published
+  Facebook or Instagram post unchanged in existing ad sets. The card shows
+  the post as Meta returns it and refuses an Instagram post Meta won't
+  boost. The setup asks for `instagram_basic`.
 - Meta Ads ad copies: copy up to 50 existing ads into other ad sets of the
   same account in one approval, each paused or active and optionally
-  renamed. The card shows each source ad's picture, a text excerpt, and the
-  automatic changes it carries. Lost replies are settled by finding the copy
-  by name, never by copying again.
-- Meta Ads ads from existing posts: asset listing can return the 25 most
-  recent posts of each Page and Instagram account, and ad creation can run a
-  published Facebook or Instagram post unchanged in existing ad sets. Post
-  text reaches the agent as untrusted content. The card shows each post's
-  text, picture, and a link to it from Meta's own read, and refuses an
-  Instagram post Meta won't boost. The setup now asks for `instagram_basic`.
-- Meta Ads asset listing can return an ad account's pixels, apps with their
-  App Store and Google Play pages, custom and lookalike audiences with
-  Meta's approximate sizes, and Meta's suggested advertiser names for ads
-  shown in the EU, which the agent proposes for the operator to confirm.
-- Meta Ads targeting: `meta_ads_search_targeting` finds countries, regions,
-  cities, postcodes, interests, behaviours, demographics, and languages by
-  name and returns the keys a targeting draft needs, with Meta's audience
-  sizes. `meta_ads_estimate_audience` returns Meta's estimated audience for a
-  typed targeting draft in each selected ad account, after checking
-  Advantage+ audience age rules locally.
-- Meta Ads campaign creation: `meta_ads_create_campaign` creates one paused
-  campaign in the selected ad account from a plain objective such as
-  `sales`, with a daily, lifetime, or per-ad-set budget, a bid strategy, any
-  declared special ad category, a schedule in the account's time zone, and
-  an optional spending limit. Political campaigns, return on ad spend goals
-  without a sales campaign budget, and amounts under the account's minimums
-  are refused before anything is sent. Meta checks the campaign in a dry
-  run, a lost reply is settled by name, and the read-back reference is ready
-  for ad set creation. The card states the objective, budget, bidding,
-  category, and schedule as sentences.
-- Meta Ads ad set creation: `meta_ads_create_ad_set` creates one paused ad
-  set in an existing campaign from a plain goal such as `website_conversions`
-  or `reach`, with typed targeting, automatic or manual placements, a budget
-  or the campaign's, bids that follow the campaign's strategy, a schedule in
-  the account's time zone, and EU payer and beneficiary names or the
-  account's defaults. Goals outside the campaign's objective, budgets under
-  campaign budgets, and missing bids are refused before approval. Meta
-  checks the ad set in a dry run, a lost reply is settled by name, and the
-  read-back reference is ready for ad creation. The card states the goal,
-  budget, schedule, who, where, and EU names as sentences.
+  renamed. A lost reply is settled by finding the copy by name, never by
+  copying again.
+- Meta Ads targeting: `meta_ads_search_targeting` finds places, interests,
+  behaviours, demographics, and languages by name, and
+  `meta_ads_estimate_audience` returns Meta's estimated audience for a
+  targeting draft.
+- Meta Ads campaign and ad set creation with approval:
+  `meta_ads_create_campaign` and `meta_ads_create_ad_set` create one paused
+  campaign or ad set from a plain objective or goal, with budget, bidding,
+  schedule, special ad categories, targeting, placements, and EU payer and
+  beneficiary names. Rules Meta would refuse are checked before approval,
+  Meta checks each object in a dry run, and a lost reply is settled by name.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

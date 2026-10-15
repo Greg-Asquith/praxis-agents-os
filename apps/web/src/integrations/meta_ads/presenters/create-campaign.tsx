@@ -1,18 +1,18 @@
 // apps/web/src/integrations/meta_ads/presenters/create-campaign.tsx
 
-import {
-  CreateCampaignApproval,
-  CreateCampaignOutcome,
-} from "@/integrations/meta_ads/components/campaign-summary"
+import { CreateCampaignApproval } from "@/integrations/meta_ads/components/campaign-summary"
+import { CreatedObjectOutcome } from "@/integrations/meta_ads/components/create-summary"
 import { MetaAdsFailureTargets } from "@/integrations/meta_ads/components/outcome-table"
 import {
   campaignPrompt,
   createCampaignProblem,
   parseCreateCampaignArgs,
-  parseCreateCampaignResult,
   type CreateCampaignArgs,
-  type CreateCampaignResult,
 } from "@/integrations/meta_ads/lib/create-campaign"
+import {
+  parseCreatedObject,
+  type CreatedObjectResult,
+} from "@/integrations/meta_ads/lib/create-summary"
 import { metaAdsProvider } from "@/integrations/meta_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -23,7 +23,7 @@ export const metaAdsCreateCampaignPresenter = createIntegrationWritePresenter({
   variants: {
     meta_ads_create_campaign: defineIntegrationWriteVariant<
       CreateCampaignArgs,
-      CreateCampaignResult
+      CreatedObjectResult
     >(metaAdsProvider, {
       copy: {
         verb: "Create",
@@ -45,21 +45,21 @@ export const metaAdsCreateCampaignPresenter = createIntegrationWritePresenter({
         ),
       },
       details: (args) => (args ? [{ label: "Campaign", value: args.name }] : []),
-      parseResult: parseCreateCampaignResult,
-      settledUnverified: (result) => result.campaign.outcome === "unverified",
+      parseResult: (value) => parseCreatedObject(value, "campaign", "campaign_id"),
+      settledUnverified: (result) => result.outcome === "unverified",
       settledFailure: (result) =>
-        result.campaign.outcome === "failed" ? "Meta Ads didn't create this campaign." : null,
+        result.outcome === "failed" ? "Meta Ads didn't create this campaign." : null,
       renderFailure: (args, description, result) =>
         result ? (
           <div className="grid gap-3">
             <p className="text-destructive text-sm">{description}</p>
-            <CreateCampaignOutcome result={result} />
+            <CreatedObjectOutcome result={result} type="campaign" />
           </div>
         ) : (
           <MetaAdsFailureTargets description={description} targets={args ? [args.name] : []} />
         ),
-      renderOutcome: (result) => <CreateCampaignOutcome result={result} />,
-      renderUnverifiedOutcome: (result) => <CreateCampaignOutcome result={result} />,
+      renderOutcome: (result) => <CreatedObjectOutcome result={result} type="campaign" />,
+      renderUnverifiedOutcome: (result) => <CreatedObjectOutcome result={result} type="campaign" />,
     }),
   },
 })

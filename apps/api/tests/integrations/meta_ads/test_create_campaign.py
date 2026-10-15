@@ -3,16 +3,12 @@
 """Creating Meta campaigns: rules before approval, a dry run, one paused send, and proof after."""
 
 from dataclasses import replace
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 from urllib.parse import parse_qsl
-from uuid import uuid4
 
 import httpx2
 import pytest
 from pydantic_ai import ModelRetry
 
-from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.tools import create_campaign as tool_module
 from integrations.meta_ads.tools.create_campaign import meta_ads_create_campaign
 from integrations.meta_ads.tools.schemas.campaigns import (
@@ -20,8 +16,13 @@ from integrations.meta_ads.tools.schemas.campaigns import (
     MetaAdsCreateCampaignRequest,
 )
 from services.audit_events import AuditStatus
-from services.integrations.context.domain import ResolvedActiveContext
-from tests.integrations.meta_ads.support import FakeGraph, context_entry, obj, static_token
+from tests.integrations.meta_ads.support import (
+    FakeGraph,
+    context_entry,
+    obj,
+    runtime_ctx,
+    write_tool_context,
+)
 
 
 def args(**overrides) -> dict:
@@ -76,40 +77,15 @@ class CampaignGraph(FakeGraph):
         return httpx2.Response(200, json={"id": campaign_id}, request=request)
 
 
-def runtime_ctx(*entries):
-    return SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=entries),
-            db=None,
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4(), name="Ads agent"),
-            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
-        ),
-        tool_call_approved=True,
-        tool_name="meta_ads_create_campaign",
-        tool_call_id="call-meta-create-campaign",
-    )
-
-
 async def run_tool(monkeypatch, graph: CampaignGraph, values: dict):
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event", audit
-    )
     http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
-
-    async def client(_ctx, _entry):
-        return MetaAdsClient(static_token, client=http)
-
-    entry = replace(context_entry("123"), write_allowed=True)
-    pin = {"account_id": "123", "resource_id": str(entry.integration_resource_id)}
-    monkeypatch.setattr(tool_module, "meta_ads_client", client)
-    monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: {"_account": pin})
-    monkeypatch.setattr(tool_module, "proposed_args", lambda _ctx: values)
+    ctx, audit = write_tool_context(
+        monkeypatch, http, tool_name="meta_ads_create_campaign", proposed=values
+    )
     request = MetaAdsCreateCampaignRequest.model_validate(values)
     async with http:
         result = await meta_ads_create_campaign(
-            runtime_ctx(entry), **{key: getattr(request, key) for key in values}
+            ctx, **{key: getattr(request, key) for key in values}
         )
     MetaAdsCreateCampaignOutput.model_validate(result)
     return result["results"][0], audit

@@ -67,6 +67,42 @@ def money_value(value: Any, currency: str, *, operation: str) -> str | None:
         ) from None
 
 
+def minimum_budget_problem(
+    *,
+    kind: str,
+    amount: str,
+    minimum: str | None,
+    days: int | None,
+    currency: str,
+    subject: str,
+) -> str | None:
+    """Checks a daily or lifetime budget against Meta's daily minimum for `subject`."""
+    if minimum is None:
+        return None
+    floor = Decimal(minimum)
+    if kind == "daily" and Decimal(amount) < floor:
+        return f"The minimum daily budget for {subject} is {minimum} {currency}."
+    if kind == "lifetime" and days and Decimal(amount) < floor * days:
+        return (
+            f"Over {days} days, the minimum lifetime budget for {subject} is "
+            f"{format(floor * days, 'f')} {currency}."
+        )
+    return None
+
+
+def squashed_text(value: Any, maximum: int) -> str | None:
+    """Collapses whitespace and bounds provider text; None for anything but non-empty text."""
+    return " ".join(value.split())[:maximum] or None if isinstance(value, str) else None
+
+
+def excerpt(value: Any, maximum: int) -> str | None:
+    """Collapses whitespace and shortens provider text to `maximum` characters with an ellipsis."""
+    text = " ".join(value.split()) if isinstance(value, str) else ""
+    if len(text) <= maximum:
+        return text or None
+    return text[: maximum - 1].rstrip() + "…"
+
+
 def bounded_string(value: Any, *, operation: str, maximum: int = 512) -> str | None:
     if value is None:
         return None

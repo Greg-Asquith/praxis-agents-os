@@ -1,6 +1,7 @@
 // apps/web/src/integrations/meta_ads/lib/create-ad-set.ts
 
 import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
+import { scheduleSentence, type SummaryLine } from "@/integrations/meta_ads/lib/create-summary"
 import {
   CONVERSION_EVENT_LABELS,
   GOAL_KEYS,
@@ -37,15 +38,8 @@ const POSITION_LABELS: Record<string, string> = {
   "messenger:messenger_home": "Messenger inbox",
   "threads:threads_stream": "Threads",
 }
-const DAY = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-})
 const LIST = new Intl.ListFormat("en", { type: "conjunction" })
 const ADVANTAGE_PLUS_NOTE = "Manual placements stop the campaign qualifying as Advantage+."
-export const PAUSED_NOTE = "This is created paused. Nothing runs or spends until you turn it on."
 const EU_PUBLIC = "Meta shows these names publicly in its ad library."
 
 type Budget = { kind: "daily" | "lifetime"; amount: string }
@@ -165,19 +159,15 @@ function parseBudget(value: unknown): Budget | null {
   return kind === "daily" || kind === "lifetime" ? { kind, amount: value["amount"] } : null
 }
 
-function day(value: string): string {
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return Number.isNaN(parsed.getTime()) ? value : DAY.format(parsed)
-}
-
-export type SummaryLine = { label: string; sentences: string[] }
-
 /** The ad set in sentences: goal, budget, schedule, who, where, and EU transparency. */
 export function adSetSummary(args: CreateAdSetArgs): SummaryLine[] {
   const lines: SummaryLine[] = [
     { label: "Goal", sentences: [goalSentence(args.goal, args.asset, args.event)] },
     { label: "Budget", sentences: budgetSentences(args) },
-    { label: "Schedule", sentences: [scheduleSentence(args)] },
+    {
+      label: "Schedule",
+      sentences: [scheduleSentence(args.startDate, args.endDate, args.timezone)],
+    },
     {
       label: "Who",
       sentences: targetingSentences(args.targeting, { specialCategory: args.specialCategory }),
@@ -206,13 +196,6 @@ function budgetSentences(args: CreateAdSetArgs): string[] {
     sentences.push(`Bids up to ${budgetMoney(args.bidAmount, args.currency)} per result.`)
   if (args.minRoas) sentences.push(`Aims for at least ${args.minRoas} times the ad spend back.`)
   return sentences
-}
-
-function scheduleSentence(args: CreateAdSetArgs): string {
-  const start = args.startDate ? `Starts ${day(args.startDate)}` : "Starts when you turn it on"
-  const end = args.endDate ? `ends ${day(args.endDate)}` : "runs until you turn it off"
-  const zone = args.timezone ? ` (${args.timezone})` : ""
-  return `${start} and ${end}${zone}.`
 }
 
 function placementSentences(positions: string[]): string[] {
@@ -257,39 +240,4 @@ export function createAdSetProblem(args: CreateAdSetArgs | null): string | null 
 
 export function adSetPrompt(args: CreateAdSetArgs): string {
   return `Create the ad set ${args.name} in ${args.campaignName}${args.accountName ? `, in ${args.accountName}` : ""}.`
-}
-
-type AdSetOutcome = "created" | "failed" | "unverified"
-const OUTCOMES: ReadonlySet<AdSetOutcome> = new Set(["created", "failed", "unverified"])
-
-export type CreateAdSetResult = {
-  accountId: string
-  adSet: {
-    name: string
-    outcome: AdSetOutcome
-    recovered: boolean
-    verified: boolean
-    adSetId: string | null
-    message: string | null
-    errorCode: string | null
-  }
-}
-
-export function parseCreateAdSetResult(value: unknown): CreateAdSetResult | null {
-  if (!isRecord(value) || !isNonEmptyString(value["account_id"]) || !isRecord(value["ad_set"]))
-    return null
-  const adSet = value["ad_set"]
-  if (!isNonEmptyString(adSet["name"]) || !isOneOf(OUTCOMES, adSet["outcome"])) return null
-  return {
-    accountId: value["account_id"],
-    adSet: {
-      name: adSet["name"],
-      outcome: adSet["outcome"],
-      recovered: adSet["recovered"] === true,
-      verified: adSet["verified"] === true,
-      adSetId: stringValue(adSet["adset_id"]),
-      message: stringValue(adSet["message"]),
-      errorCode: stringValue(adSet["error_code"]),
-    },
-  }
 }

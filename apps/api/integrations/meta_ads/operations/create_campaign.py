@@ -2,14 +2,12 @@
 
 """Create one paused campaign: account checks, the request body, one send, then a read-back."""
 
-import asyncio
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import ClassVar, Literal
 
-from core.exceptions.integration import IntegrationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import MetaAdsClient, ad_account_path
@@ -18,12 +16,15 @@ from ..money import amount_to_minor
 from ..throttle import ensure_account_available
 from ..tools.schemas.budgets import BID_STRATEGIES
 from ..tools.schemas.campaigns import OBJECTIVES, MetaAdsCreateCampaignRequest
-from ..tools.schemas.objects import MetaAdsObject
-from .ad_rows import ad_effect
-from .create_objects import MetaCreateLookup, MetaCreateResult, create_object
-from .list_objects import read_objects_by_id
-from .mutations import MetaAdsMutationLedger, MetaAdsMutationParent
-from .values import bounded_string, money_value, numeric_value, require_currency
+from .create_objects import MetaAdsCreateEdge, MetaCreateLookup
+from .object_run import ObjectRun, create_and_read_back
+from .values import (
+    bounded_string,
+    minimum_budget_problem,
+    money_value,
+    numeric_value,
+    require_currency,
+)
 
 OPERATION = "create_campaign"
 CAMPAIGN_GROUP = "campaigns:create"
@@ -33,7 +34,6 @@ _ACCOUNT_FIELDS = (
 )
 # Disabled, pending closure, and closed accounts can't take new campaigns.
 _CLOSED_ACCOUNT_STATUSES = frozenset({2, 100, 101})
-_READBACK_FAILED = "Meta Ads created this campaign, but it couldn't be read back."
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,18 +79,18 @@ def account_problems(
         return ["This ad account is disabled or closed, so Meta can't create campaigns in it."]
     problems: list[str] = []
     budget = request.budget
-    if budget.amount is not None and account.minimum is not None:
-        minimum = Decimal(account.minimum)
-        if budget.mode == "campaign_daily" and Decimal(budget.amount) < minimum:
-            problems.append(
-                f"The minimum daily budget for this ad account is {account.minimum} "
-                f"{account.currency}."
-            )
-        if budget.mode == "campaign_lifetime" and days and Decimal(budget.amount) < minimum * days:
-            problems.append(
-                f"Over {days} days, the minimum lifetime budget for this ad account is "
-                f"{format(minimum * days, 'f')} {account.currency}."
-            )
+    if budget.amount is not None:
+        kind = "daily" if budget.mode == "campaign_daily" else "lifetime"
+        problem = minimum_budget_problem(
+            kind=kind,
+            amount=budget.amount,
+            minimum=account.minimum,
+            days=days,
+            currency=account.currency,
+            subject="this ad account",
+        )
+        if problem:
+            problems.append(problem)
     if (
         request.spend_limit is not None
         and account.minimum_spend_limit is not None
@@ -200,31 +200,14 @@ def plan_campaign(
 
 
 @dataclass
-class CampaignRun:
+class CampaignRun(ObjectRun):
     """What the one create proved."""
 
-    fields: dict[str, str]
-    outcome: MetaCreateResult | None = None
-    # Set once the create has been handed to Meta, so an interruption is unverified.
-    sending: bool = False
-    skip_code: str | None = None
-    skip_message: str | None = None
-    read: dict[str, Any] | None = None
-    created: MetaAdsObject | None = None
-
-    @property
-    def enabled(self) -> frozenset[str]:
-        return frozenset()
-
-    def ledger(self) -> MetaAdsMutationLedger:
-        return MetaAdsMutationLedger(
-            action="create_campaign",
-            parents=(
-                MetaAdsMutationParent(
-                    identity=(("key", CAMPAIGN_KEY),), decision="submit", effects=(ad_effect(self),)
-                ),
-            ),
-        )
+    action: ClassVar[str] = "create_campaign"
+    edge: ClassVar[MetaAdsCreateEdge] = "campaigns"
+    object_type: ClassVar[Literal["campaign", "adset"]] = "campaign"
+    noun: ClassVar[str] = "campaign"
+    key: ClassVar[str] = CAMPAIGN_KEY
 
 
 async def create_campaign(
@@ -235,46 +218,12 @@ async def create_campaign(
     Raises:
         asyncio.CancelledError: With a `ledger` attribute: unverified once the create was sent.
     """
-    run = CampaignRun(dict(plan.intent_fields))
-    try:
-        lookup = MetaCreateLookup(name=plan.body["name"], since=datetime.now(UTC))
-        run.sending = True
-        run.outcome = await create_object(
-            client,
-            account_id=account_id,
-            edge="campaigns",
-            data=plan.body,
-            operation=OPERATION,
-            lookup=lookup,
-        )
-        if (created_id := run.outcome.object_id) and run.outcome.status == "applied":
-            await _read_back(client, account_id, currency, created_id, run)
-    except (asyncio.CancelledError, Exception) as exc:
-        exc.ledger = run.ledger()
-        raise
-    return run
-
-
-async def _read_back(
-    client: MetaAdsClient, account_id: str, currency: str, campaign_id: str, run: CampaignRun
-) -> None:
-    try:
-        found = await read_objects_by_id(
-            client,
-            account_id=account_id,
-            object_type="campaign",
-            object_ids=[campaign_id],
-            currency=currency,
-        )
-    except IntegrationError:
-        return
-    if item := found.get(campaign_id):
-        run.created = item
-        run.read = {"effective_status": item.effective_status}
-
-
-def readback_message(run: CampaignRun) -> str | None:
-    effect = ad_effect(run)
-    if effect.outcome == "applied" and run.read is None:
-        return _READBACK_FAILED
-    return effect.message
+    return await create_and_read_back(
+        client,
+        CampaignRun(dict(plan.intent_fields)),
+        account_id=account_id,
+        currency=currency,
+        body=plan.body,
+        operation=OPERATION,
+        lookup=MetaCreateLookup(name=plan.body["name"], since=datetime.now(UTC)),
+    )

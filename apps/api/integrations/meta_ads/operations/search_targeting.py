@@ -18,7 +18,7 @@ from ..tools.schemas.targeting import (
     MetaAdsTargetingSearchData,
 )
 from .targeting import DEMOGRAPHIC_CATEGORIES
-from .values import invalid_response
+from .values import invalid_response, squashed_text
 
 _OPERATION = "search_targeting"
 _GEO_TYPES = {"country": "country", "region": "region", "city": "city", "postcode": "zip"}
@@ -102,7 +102,7 @@ def _option(kind: MetaAdsTargetingKind, row: Any) -> MetaAdsTargetingOption | No
         return MetaAdsTargetingOption(
             kind=kind,
             key=key,
-            name=_text(row.get("name")) or key,
+            name=squashed_text(row.get("name"), 512) or key,
             description=_description(kind, row),
             audience_size_range=_size(row),
             country_code=row.get("country_code") if kind in _GEO_TYPES else None,
@@ -123,11 +123,7 @@ def _description(kind: MetaAdsTargetingKind, row: dict[str, Any]) -> str | None:
         value = " > ".join(str(part) for part in row["path"][:-1])
     else:
         value = row.get("description")
-    return _text(value)
-
-
-def _text(value: Any) -> str | None:
-    return " ".join(value.split())[:512] or None if isinstance(value, str) else None
+    return squashed_text(value, 512)
 
 
 def _size(row: dict[str, Any]) -> MetaAdsAudienceSize | None:

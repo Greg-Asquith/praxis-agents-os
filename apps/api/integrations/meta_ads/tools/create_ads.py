@@ -2,11 +2,10 @@
 
 """Approval-only tool that creates new ads, or ads from existing posts, in existing ad sets."""
 
-import asyncio
 from collections.abc import Mapping
 from typing import Annotated, Any
 
-from pydantic import Field, ValidationError
+from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError
@@ -21,21 +20,13 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
 from services.integrations.approved_display_args import approved_display_args, proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import serialize_fan_out_results
-from services.integrations.context.targeted import run_context_scope
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
-from ..client import MetaAdsClient
 from ..creative_features import offered_catalogue
 from ..operations.ad_rows import ad_row
 from ..operations.create_ads import create_ads, upload_intent_group
@@ -47,7 +38,6 @@ from ..references import (
     MetaAdsPageReference,
     MetaAdsPostReference,
 )
-from ..throttle import ensure_account_available
 from .schemas.ads import (
     ALL_BUTTONS,
     APP_BUTTONS,
@@ -75,18 +65,14 @@ from .utils.ad_preparation import (
     resolve_sources,
 )
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client
+from .utils.client import meta_ads_available
+from .utils.create_operation import run_create_tool, selected_account, validated
 from .utils.mutation_evidence import (
     account_pin,
-    attach_interrupted_evidence,
-    audit_status,
     meta_ads_account_target,
-    terminal_operation_detail,
 )
-from .utils.validation import validation_retry
 
 _OPERATION = "create_ads"
-_ACCOUNT_CHANGED = "The approved ad account is no longer selected. Ask for approval again."
 _AD_SETS_CHANGED = "The ads' ad sets changed after approval. Ask the agent to prepare them again."
 
 type AdDesigns = Annotated[
@@ -129,95 +115,43 @@ async def meta_ads_create_ads(
         "status": status,
         "automatic_changes": automatic_changes,
     }
-    request = _request({**values, "ads": _ads_as_reviewed(ctx, ads)})
-    entry = _account_entry(ctx.deps, request.account_id)
-    reviewed = approved_display_args(ctx)
+    request = validated(MetaAdsCreateAdsRequest, {**values, "ads": _ads_as_reviewed(ctx, ads)})
+    ad_sets = [sorted(ref.adset_id for ref in design.ad_sets) for design in request.ads]
     # References nested in `ads` aren't re-resolved when an approval is edited, so preparation
     # re-reads every one through this account and the workspace.
-
-    async def operation(selected: ResolvedContextEntry) -> Any:
-        client: MetaAdsClient | None = None
-        prepared: Prepared | None = None
-        pending_detail: PendingIntegrationOperationDetail | None = None
-
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, prepared, pending_detail
-            if reviewed.get("_account") != account_pin(selected):
-                raise ModelRetry(_ACCOUNT_CHANGED)
-            # The card can't change ad sets; media is re-read in preparation instead.
-            ad_sets = [sorted(ref.adset_id for ref in design.ad_sets) for design in request.ads]
-            if _proposed_ad_sets(proposed_args(ctx)) != ad_sets:
-                raise ModelRetry(_AD_SETS_CHANGED)
-            ensure_account_available(selected.external_id, operation=_OPERATION)
-            client = await meta_ads_client(ctx, selected)
-            prepared = await prepare(ctx.deps, client, selected, request, reviewed)
-            pending_detail = _pending_operation_detail(selected, request, prepared)
-            return pending_detail
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or prepared is None or pending_detail is None:
-                raise RuntimeError("Meta Ads ad creation preparation did not complete")
-            try:
-                run = await create_ads(
-                    client,
-                    account_id=selected.external_id,
-                    scope_label=selected.display_name,
-                    planned=prepared.planned,
-                    intent_fields=prepared.intent_fields,
-                    sources=prepared.sources,
-                    media=prepared.media,
-                    page_id=request.page.page_id,
-                    instagram_user_id=request.instagram_user_id,
-                    promoted_objects=prepared.promoted_objects,
-                    checked=prepared.checked,
-                )
-            except (asyncio.CancelledError, Exception) as exc:
-                attach_interrupted_evidence(
-                    exc, pending_detail, identity_key="key", refs_mean_changed=True
-                )
-                raise
-            ledger = run.ledger()
-            detail = terminal_operation_detail(pending_detail, ledger, identity_key="key")
-            result = {
-                "account_id": selected.external_id,
-                "ads": [ad_row(ad_run) for ad_run in run.ads],
-                "uploads": [media_upload_row(upload) for upload in run.uploads],
-                "automatic_changes": list(request.automatic_changes or ()),
-                "created_off_for_ai": prepared.created_off_for_ai,
-            }
-            outcome_status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                result,
-                status=outcome_status,
-                external_ref=",".join(ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=result if outcome_status is AuditStatus.UNVERIFIED else None,
-            )
-
-        return await run_audited_integration_operation(
-            ctx,
-            selected,
-            tool_name="meta_ads_create_ads",
-            operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
-        )
-
-    results = await run_context_scope(
+    return await run_create_tool(
         ctx,
-        binding=META_ADS_WRITE_BINDING,
-        provider_scope_id=entry.external_id,
-        operation=operation,
+        _account_entry(ctx.deps, request.account_id),
+        tool_name="meta_ads_create_ads",
+        operation=_OPERATION,
+        # The card can't change ad sets; media is re-read in preparation instead.
+        proposal_changed=lambda proposed: _proposed_ad_sets(proposed) != ad_sets,
+        changed_message=_AD_SETS_CHANGED,
+        prepare=lambda client, entry: prepare(
+            ctx.deps, client, entry, request, approved_display_args(ctx)
+        ),
+        pending_detail=lambda entry, prepared: _pending_operation_detail(entry, request, prepared),
+        run=lambda client, entry, prepared: create_ads(
+            client,
+            account_id=entry.external_id,
+            scope_label=entry.display_name,
+            planned=prepared.planned,
+            intent_fields=prepared.intent_fields,
+            sources=prepared.sources,
+            media=prepared.media,
+            page_id=request.page.page_id,
+            instagram_user_id=request.instagram_user_id,
+            promoted_objects=prepared.promoted_objects,
+            checked=prepared.checked,
+        ),
+        result=lambda run, entry, prepared: {
+            "account_id": entry.external_id,
+            "ads": [ad_row(ad_run) for ad_run in run.ads],
+            "uploads": [media_upload_row(upload) for upload in run.uploads],
+            "automatic_changes": list(request.automatic_changes or ()),
+            "created_off_for_ai": prepared.created_off_for_ai,
+        },
     )
-    return {"results": serialize_fan_out_results(results)}
-
-
-def _request(values: Mapping[str, Any]) -> MetaAdsCreateAdsRequest:
-    """Builds the whole request, so cross-field rules run on what the model or approver sent."""
-    try:
-        return MetaAdsCreateAdsRequest.model_validate(values)
-    except ValidationError as exc:
-        raise validation_retry(exc) from None
 
 
 def _ads_as_reviewed(ctx: RunContext[RuntimeDeps], ads: list[MetaAdsAdDesign]) -> list[Any]:
@@ -225,22 +159,19 @@ def _ads_as_reviewed(ctx: RunContext[RuntimeDeps], ads: list[MetaAdsAdDesign]) -
     # Card edits start from `follow_shared`, so only ads left as proposed still hold copies.
     proposed = proposed_args(ctx)
     try:
-        unedited = _request(proposed).ads == ads
+        unedited = validated(MetaAdsCreateAdsRequest, proposed).ads == ads
     except ModelRetry:
         return ads
     return follow_shared(proposed) if unedited else ads
 
 
 def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
-    active = deps.active_context
-    entries = active.compatible_entries(META_ADS_WRITE_BINDING) if active else ()
-    matching = [entry for entry in entries if entry.external_id == account_id]
-    if len(matching) != 1:
-        raise ModelRetry(
-            "The Page, ad sets, and media must belong to one Meta ad account selected in "
-            "Active Context. Ask the user to select it."
-        )
-    return matching[0]
+    return selected_account(
+        deps,
+        account_id,
+        "The Page, ad sets, and media must belong to one Meta ad account selected in "
+        "Active Context. Ask the user to select it.",
+    )
 
 
 def _proposed_ad_sets(values: Mapping[str, Any]) -> list[list[str]]:
@@ -259,7 +190,7 @@ def _proposed_ad_sets(values: Mapping[str, Any]) -> list[list[str]]:
 
 async def _validate_args(ctx: RunContext[RuntimeDeps], **values: Any) -> None:
     """Rejects what Meta or this tool won't accept before approval, so the agent can fix it."""
-    request = _request(values)
+    request = validated(MetaAdsCreateAdsRequest, values)
     _account_entry(ctx.deps, request.account_id)
     ad_sets = distinct_ad_sets(request)
     check_designs(request, ad_sets)

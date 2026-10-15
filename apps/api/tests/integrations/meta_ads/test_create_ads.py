@@ -4,7 +4,6 @@
 
 import asyncio
 import json
-from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qsl
@@ -16,7 +15,6 @@ from pydantic import ValidationError
 
 from core.exceptions.general import NotFoundError
 from core.exceptions.integration import IntegrationFailureDisposition
-from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.models import MetaAdsPlacements
 from integrations.meta_ads.operations.media_source import MediaSource
 from integrations.meta_ads.operations.mutations import (
@@ -41,9 +39,12 @@ from integrations.meta_ads.tools.schemas.ads import (
     MetaAdsCreateAdsRequest,
 )
 from integrations.meta_ads.tools.utils import ad_preparation as preparation_module
-from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.files import FileReference
-from tests.integrations.meta_ads.support import FakeGraph, context_entry, obj, static_token
+from tests.integrations.meta_ads.support import (
+    FakeGraph,
+    obj,
+    write_tool_context,
+)
 
 PAGE = MetaAdsPageReference(account_id="123", page_id="11", label="Acme")
 IMAGE = MetaAdsMediaReference(
@@ -166,34 +167,14 @@ def live_ad_sets(*adset_ids: str, **values):
 
 
 def tool_context(monkeypatch, http: httpx2.AsyncClient, reviewed: dict, proposed: dict):
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event", audit
-    )
-
-    async def client(_ctx, _entry):
-        return MetaAdsClient(static_token, client=http)
-
-    entry = replace(context_entry("123"), write_allowed=True)
-    monkeypatch.setattr(tool_module, "meta_ads_client", client)
-    pin = {"account_id": "123", "resource_id": str(entry.integration_resource_id)}
-    monkeypatch.setattr(
-        tool_module, "approved_display_args", lambda _ctx: {"_account": pin, **reviewed}
-    )
-    monkeypatch.setattr(tool_module, "proposed_args", lambda _ctx: proposed)
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            db=None,
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4(), name="Ads agent"),
-            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
-        ),
-        tool_call_approved=True,
+    return write_tool_context(
+        monkeypatch,
+        http,
         tool_name="meta_ads_create_ads",
-        tool_call_id="call-meta-create-ads",
+        proposed=proposed,
+        reviewed=reviewed,
+        tool_modules=(tool_module,),
     )
-    return ctx, audit
 
 
 async def run_tool(

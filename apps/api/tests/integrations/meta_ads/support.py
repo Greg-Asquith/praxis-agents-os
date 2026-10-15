@@ -3,13 +3,18 @@
 """Builds bounded Meta responses without live credentials."""
 
 import json
+from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qsl
 from uuid import uuid4
 
 import httpx2
 
-from services.integrations.context.domain import ResolvedContextEntry
+from integrations.meta_ads.client import MetaAdsClient
+from integrations.meta_ads.tools.utils import create_operation
+from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 
 TOKEN = "meta-test-access-token"
 
@@ -178,3 +183,47 @@ def obj(object_id, object_type, **fields):
         "effective_status": fields.get("status", "PAUSED"),
         **fields,
     }
+
+
+def runtime_ctx(*entries: ResolvedContextEntry, tool_name: str = "meta_ads_tool"):
+    return SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=entries),
+            db=None,
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4(), name="Ads agent"),
+            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
+        ),
+        tool_call_approved=True,
+        tool_name=tool_name,
+        tool_call_id=f"call-{tool_name}",
+    )
+
+
+def write_tool_context(
+    monkeypatch,
+    http: httpx2.AsyncClient,
+    *,
+    tool_name: str,
+    proposed: dict,
+    reviewed: dict | None = None,
+    tool_modules=(),
+):
+    """Runs an approved write tool against `http`; returns its context and the audit recorder."""
+    audit = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+
+    async def client(_ctx, _entry):
+        return MetaAdsClient(static_token, client=http)
+
+    entry = replace(context_entry("123"), write_allowed=True)
+    pin = {"account_id": "123", "resource_id": str(entry.integration_resource_id)}
+    monkeypatch.setattr(create_operation, "meta_ads_client", client)
+    for module in (create_operation, *tool_modules):
+        monkeypatch.setattr(
+            module, "approved_display_args", lambda _ctx: {"_account": pin, **(reviewed or {})}
+        )
+        monkeypatch.setattr(module, "proposed_args", lambda _ctx: proposed)
+    return runtime_ctx(entry, tool_name=tool_name), audit

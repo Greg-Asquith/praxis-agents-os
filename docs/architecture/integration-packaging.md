@@ -684,19 +684,21 @@ Insights, objects, conversions, and change history use retained results.
 Insights resolves custom conversion names within each account's report budget
 and names custom events from their action types. `meta_ads_list_assets`
 lists Pages, Instagram accounts, media, posts, pixels, apps, and audiences
-as scoped references, and Meta's suggested EU advertiser names as text.
-`meta_ads_search_targeting` and `meta_ads_estimate_audience` read targeting
-keys and audience estimates, with an audience resolver for the draft's
-audiences.
+as scoped references, and Meta's suggested EU advertiser names as text. Post
+text returns as untrusted-content nodes. `meta_ads_search_targeting` and
+`meta_ads_estimate_audience` read targeting keys and audience estimates, with
+an audience resolver for the draft's audiences.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
-`meta_ads_upload_media`, `meta_ads_create_ads`, `meta_ads_copy_ads`,
-`meta_ads_create_ad_set`, and `meta_ads_create_campaign` write through the shared write presenter and the
-provider's mutation ledger. Ad creation edits its nested ads through a
+`meta_ads_upload_media`, `meta_ads_create_campaign`, `meta_ads_create_ad_set`,
+`meta_ads_create_ads`, and `meta_ads_copy_ads` write through the shared write
+presenter and the provider's mutation ledger. Campaigns and ad sets are
+always created paused. Ad creation edits its nested ads through a
 `structured` approval field and adds Page, Instagram account, media, and post
 resolvers. Ad set creation adds pixel and app resolvers and edits its budget
 and targeting through `structured` fields. Campaign creation takes its
 account from the one writable selected account and edits its budget through
-a `structured` field. OAuth and event delivery remain
+a `structured` field. Building a campaign with its ad sets and ads in one
+approval, OAuth, and event delivery remain
 pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 

@@ -5,11 +5,13 @@ import { ArrowRightIcon } from "lucide-react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { PaginationControls, paginateItems } from "@/components/ui/pagination-controls"
-import { DeliveryNote, OutcomeLink } from "@/integrations/meta_ads/components/create-ads"
+import { DeliveryNote } from "@/integrations/meta_ads/components/create-ads"
 import { LabelledInput, LabelledSelect } from "@/integrations/meta_ads/components/editor-fields"
 import { MediaFrame } from "@/integrations/meta_ads/components/media-frame"
-import { MetaAdsOutcomeTable } from "@/integrations/meta_ads/components/outcome-table"
-import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
+import {
+  AdOutcomeLinks,
+  MetaAdsOutcomeTable,
+} from "@/integrations/meta_ads/components/outcome-table"
 import {
   copyNextStep,
   copyRows,
@@ -25,7 +27,7 @@ import {
   STATUS_OPTIONS,
 } from "@/integrations/meta_ads/lib/create-ads-args"
 import { adSetDelivery, statusLines } from "@/integrations/meta_ads/lib/create-ads-checks"
-import { REVIEW_LABELS } from "@/integrations/meta_ads/lib/create-ads-result"
+import { REVIEW_LABELS } from "@/integrations/meta_ads/lib/ad-outcome"
 import { MediaAccountContext } from "@/integrations/meta_ads/lib/meta-pictures"
 
 const PAGE_SIZE = 10
@@ -183,19 +185,11 @@ export function CopyAdsOutcome({ result }: { result: CopyAdsResult }) {
           { key: "links", kind: "text", label: "Links" },
         ]}
         exportFilename="meta-ads-copied-ads.csv"
-        renderCell={(column, row) => {
-          const copy = column.key === "links" ? result.copies[Number(row["index"])] : undefined
-          if (!copy?.adId) return null
-          const manager = adsManagerObjectUrl("ad", result.accountId, copy.adId)
-          return (
-            <span className="flex flex-col gap-0.5">
-              {copy.previewUrl ? (
-                <OutcomeLink href={copy.previewUrl}>Preview on Meta</OutcomeLink>
-              ) : null}
-              {manager ? <OutcomeLink href={manager}>Open in Ads Manager</OutcomeLink> : null}
-            </span>
-          )
-        }}
+        renderCell={(column, row) =>
+          column.key === "links" ? (
+            <AdOutcomeLinks accountId={result.accountId} ad={result.copies[Number(row["index"])]} />
+          ) : null
+        }
         rows={rows}
       />
       {step ? <p className="text-sm">{step}</p> : null}

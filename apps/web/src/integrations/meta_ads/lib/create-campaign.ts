@@ -1,9 +1,10 @@
 // apps/web/src/integrations/meta_ads/lib/create-campaign.ts
 
 import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
+import { scheduleSentence, type SummaryLine } from "@/integrations/meta_ads/lib/create-summary"
 import {
   OBJECTIVE_KEYS,
-  objectiveSentence,
+  OBJECTIVE_SENTENCES,
   type Objective,
 } from "@/integrations/meta_ads/lib/objectives"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray, stringValue } from "@/lib/guards"
@@ -37,17 +38,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   financial_products_services: "Financial products and services",
   online_gambling_and_gaming: "Online gambling and gaming",
 }
-const DAY = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-})
 const LIST = new Intl.ListFormat("en", { type: "conjunction" })
 const REGIONS = new Intl.DisplayNames(["en-GB"], { type: "region" })
 const FLEXIBLE_SPEND =
   "Meta may spend up to 75% more on some days, but no more than 7 times this amount in a week."
-export const PAUSED_NOTE = "This is created paused. Nothing runs or spends until you turn it on."
 
 type BudgetMode = "campaign_daily" | "campaign_lifetime" | "ad_set"
 type BidStrategy = "highest_volume" | "cost_per_result_goal" | "bid_cap" | "roas_goal"
@@ -110,11 +104,6 @@ function parseCategories(value: unknown): Category[] {
   )
 }
 
-function day(value: string): string {
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return Number.isNaN(parsed.getTime()) ? value : DAY.format(parsed)
-}
-
 function region(code: string): string {
   try {
     return REGIONS.of(code) ?? code
@@ -123,16 +112,17 @@ function region(code: string): string {
   }
 }
 
-export type SummaryLine = { label: string; sentences: string[] }
-
 /** The campaign in sentences: objective, budget, bidding, categories, and schedule. */
 export function campaignSummary(args: CreateCampaignArgs): SummaryLine[] {
   return [
-    { label: "Objective", sentences: [objectiveSentence(args.objective)] },
+    { label: "Objective", sentences: [OBJECTIVE_SENTENCES[args.objective]] },
     { label: "Budget", sentences: budgetSentences(args) },
     { label: "Bidding", sentences: BID_SENTENCES[args.bidStrategy] },
     { label: "Special Category", sentences: categorySentences(args.categories) },
-    { label: "Schedule", sentences: [scheduleSentence(args)] },
+    {
+      label: "Schedule",
+      sentences: [scheduleSentence(args.startDate, args.endDate, args.timezone)],
+    },
   ]
 }
 
@@ -167,13 +157,6 @@ function categorySentences(categories: Category[]): string[] {
   ]
 }
 
-function scheduleSentence(args: CreateCampaignArgs): string {
-  const start = args.startDate ? `Starts ${day(args.startDate)}` : "Starts when you turn it on"
-  const end = args.endDate ? `ends ${day(args.endDate)}` : "runs until you turn it off"
-  const zone = args.timezone ? ` (${args.timezone})` : ""
-  return `${start} and ${end}${zone}.`
-}
-
 /** Blocks approval for amounts under the ad account's minimums, which Meta would refuse. */
 export function createCampaignProblem(args: CreateCampaignArgs | null): string | null {
   if (!args) return null
@@ -198,39 +181,4 @@ export function createCampaignProblem(args: CreateCampaignArgs | null): string |
 
 export function campaignPrompt(args: CreateCampaignArgs): string {
   return `Create the campaign ${args.name}${args.accountName ? ` in ${args.accountName}` : ""}.`
-}
-
-type CampaignOutcome = "created" | "failed" | "unverified"
-const OUTCOMES: ReadonlySet<CampaignOutcome> = new Set(["created", "failed", "unverified"])
-
-export type CreateCampaignResult = {
-  accountId: string
-  campaign: {
-    name: string
-    outcome: CampaignOutcome
-    recovered: boolean
-    verified: boolean
-    campaignId: string | null
-    message: string | null
-    errorCode: string | null
-  }
-}
-
-export function parseCreateCampaignResult(value: unknown): CreateCampaignResult | null {
-  if (!isRecord(value) || !isNonEmptyString(value["account_id"]) || !isRecord(value["campaign"]))
-    return null
-  const campaign = value["campaign"]
-  if (!isNonEmptyString(campaign["name"]) || !isOneOf(OUTCOMES, campaign["outcome"])) return null
-  return {
-    accountId: value["account_id"],
-    campaign: {
-      name: campaign["name"],
-      outcome: campaign["outcome"],
-      recovered: campaign["recovered"] === true,
-      verified: campaign["verified"] === true,
-      campaignId: stringValue(campaign["campaign_id"]),
-      message: stringValue(campaign["message"]),
-      errorCode: stringValue(campaign["error_code"]),
-    },
-  }
 }

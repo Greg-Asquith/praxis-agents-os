@@ -1,32 +1,16 @@
 // apps/web/src/integrations/meta_ads/lib/create-ads-result.ts
 
 import { AD_FORMATS, type AdFormat } from "@/integrations/meta_ads/lib/automatic-changes"
-import { STATUSES, type AdStatus } from "@/integrations/meta_ads/lib/create-ads-args"
+import { parseAdOutcomeFields, type AdOutcomeFields } from "@/integrations/meta_ads/lib/ad-outcome"
 import {
   parseMediaUploadResult,
   type MediaUploadResult,
 } from "@/integrations/meta_ads/lib/media-upload"
-import { isNonEmptyString, isOneOf, isRecord, isStringArray, stringValue } from "@/lib/guards"
+import { isNonEmptyString, isOneOf, isRecord } from "@/lib/guards"
 
 type CreateOutcome = "created" | "failed" | "unverified"
-type ReviewState = "in_review" | "approved" | "rejected" | "with_issues" | "unknown"
 
-type CreatedAd = {
-  name: string
-  adSetId: string
-  adSetName: string | null
-  format: AdFormat
-  requestedStatus: AdStatus
-  outcome: CreateOutcome
-  recovered: boolean
-  adId: string | null
-  review: ReviewState
-  reviewReasons: string[]
-  unexpectedChanges: string[]
-  previewUrl: string | null
-  errorCode: string | null
-  message: string | null
-}
+type CreatedAd = AdOutcomeFields & { format: AdFormat; outcome: CreateOutcome }
 
 export type CreateAdsResult = {
   accountId: string
@@ -35,23 +19,7 @@ export type CreateAdsResult = {
   createdOffForAi: boolean
 }
 
-export const REVIEW_LABELS = {
-  in_review: "In Review",
-  approved: "Approved",
-  rejected: "Rejected",
-  with_issues: "Has Issues",
-  unknown: "Not Shown Yet",
-} as const
-
 const OUTCOMES: ReadonlySet<CreateOutcome> = new Set(["created", "failed", "unverified"])
-const REVIEW_STATES: ReadonlySet<ReviewState> = new Set([
-  "in_review",
-  "approved",
-  "rejected",
-  "with_issues",
-  "unknown",
-])
-const PREVIEW_HOSTS = new Set(["facebook.com", "www.facebook.com", "fb.me"])
 
 export function parseCreateAdsResult(value: unknown): CreateAdsResult | null {
   if (!isRecord(value) || !isNonEmptyString(value["account_id"]) || !Array.isArray(value["ads"]))
@@ -76,53 +44,11 @@ export function parseCreateAdsResult(value: unknown): CreateAdsResult | null {
 }
 
 function parseCreatedAd(value: unknown): CreatedAd | null {
-  if (
-    !isRecord(value) ||
-    !isNonEmptyString(value["name"]) ||
-    !isNonEmptyString(value["adset_id"]) ||
-    !isOneOf(AD_FORMATS, value["format"]) ||
-    !isOneOf(STATUSES, value["requested_status"]) ||
-    !isOneOf(OUTCOMES, value["outcome"]) ||
-    !isOneOf(REVIEW_STATES, value["review"]) ||
-    typeof value["recovered"] !== "boolean"
-  )
-    return null
-  return {
-    name: value["name"],
-    adSetId: value["adset_id"],
-    adSetName: stringValue(value["adset_name"]),
-    format: value["format"],
-    requestedStatus: value["requested_status"],
-    outcome: value["outcome"],
-    recovered: value["recovered"],
-    adId: stringValue(value["ad_id"]),
-    review: value["review"],
-    reviewReasons: isStringArray(value["review_reasons"])
-      ? value["review_reasons"].slice(0, 5)
-      : [],
-    unexpectedChanges: isStringArray(value["unexpected_changes"])
-      ? value["unexpected_changes"]
-      : [],
-    previewUrl: previewUrl(value["preview_url"]),
-    errorCode: stringValue(value["error_code"]),
-    message: stringValue(value["message"]),
-  }
-}
-
-// Meta's preview link opens only on Facebook's own hosts.
-export function previewUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null
-  try {
-    const url = new URL(value)
-    return url.protocol === "https:" &&
-      PREVIEW_HOSTS.has(url.hostname) &&
-      !url.username &&
-      !url.password
-      ? value
-      : null
-  } catch {
-    return null
-  }
+  if (!isRecord(value) || typeof value["recovered"] !== "boolean") return null
+  const fields = parseAdOutcomeFields(value)
+  const { format, outcome } = value
+  if (!fields || !isOneOf(AD_FORMATS, format) || !isOneOf(OUTCOMES, outcome)) return null
+  return { ...fields, format, outcome }
 }
 
 /** Names what to do next, from what the ads were created as. */

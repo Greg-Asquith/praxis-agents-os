@@ -8,7 +8,7 @@ import {
   type AdStatus,
   type PreviewMedia,
 } from "@/integrations/meta_ads/lib/create-ads-args"
-import { previewUrl } from "@/integrations/meta_ads/lib/create-ads-result"
+import { parseAdOutcomeFields, type AdOutcomeFields } from "@/integrations/meta_ads/lib/ad-outcome"
 import { pluralize } from "@/lib/format"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray, stringValue } from "@/lib/guards"
 
@@ -166,80 +166,31 @@ export function copySummary(args: CopyAdsArgs): string {
 }
 
 type CopyOutcome = "copied" | "failed" | "unverified"
-type ReviewState = "in_review" | "approved" | "rejected" | "with_issues" | "unknown"
-
-type CopiedAd = {
+type CopiedAd = AdOutcomeFields & {
   sourceName: string | null
-  name: string
-  adSetId: string
-  adSetName: string | null
-  requestedStatus: AdStatus
   pausedForAi: boolean
   outcome: CopyOutcome
-  recovered: boolean
-  adId: string | null
-  review: ReviewState
-  reviewReasons: string[]
-  unexpectedChanges: string[]
-  previewUrl: string | null
-  errorCode: string | null
-  message: string | null
 }
 
 export type CopyAdsResult = { accountId: string; copies: CopiedAd[] }
 
 const OUTCOMES: ReadonlySet<CopyOutcome> = new Set(["copied", "failed", "unverified"])
-const REVIEW_STATES: ReadonlySet<ReviewState> = new Set([
-  "in_review",
-  "approved",
-  "rejected",
-  "with_issues",
-  "unknown",
-])
 
 export function parseCopyAdsResult(value: unknown): CopyAdsResult | null {
   if (!isRecord(value) || !isNonEmptyString(value["account_id"]) || !Array.isArray(value["copies"]))
     return null
   const copies: CopiedAd[] = []
   for (const item of value["copies"]) {
-    const copy = parseCopiedAd(item)
-    if (!copy) return null
-    copies.push(copy)
+    const fields = isRecord(item) ? parseAdOutcomeFields(item) : null
+    if (!fields || !isRecord(item) || !isOneOf(OUTCOMES, item["outcome"])) return null
+    copies.push({
+      ...fields,
+      sourceName: stringValue(item["source_name"]),
+      pausedForAi: item["paused_for_ai"] === true,
+      outcome: item["outcome"],
+    })
   }
   return { accountId: value["account_id"], copies }
-}
-
-function parseCopiedAd(value: unknown): CopiedAd | null {
-  if (
-    !isRecord(value) ||
-    !isNonEmptyString(value["name"]) ||
-    !isNonEmptyString(value["adset_id"]) ||
-    !isOneOf(STATUSES, value["requested_status"]) ||
-    !isOneOf(OUTCOMES, value["outcome"]) ||
-    !isOneOf(REVIEW_STATES, value["review"])
-  )
-    return null
-  return {
-    sourceName: stringValue(value["source_name"]),
-    name: value["name"],
-    adSetId: value["adset_id"],
-    adSetName: stringValue(value["adset_name"]),
-    requestedStatus: value["requested_status"],
-    pausedForAi: value["paused_for_ai"] === true,
-    outcome: value["outcome"],
-    recovered: value["recovered"] === true,
-    adId: stringValue(value["ad_id"]),
-    review: value["review"],
-    reviewReasons: isStringArray(value["review_reasons"])
-      ? value["review_reasons"].slice(0, 5)
-      : [],
-    unexpectedChanges: isStringArray(value["unexpected_changes"])
-      ? value["unexpected_changes"]
-      : [],
-    previewUrl: previewUrl(value["preview_url"]),
-    errorCode: stringValue(value["error_code"]),
-    message: stringValue(value["message"]),
-  }
 }
 
 /** Names what to do next, from what the copies were made as. */

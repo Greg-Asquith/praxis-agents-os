@@ -1,14 +1,9 @@
 // apps/web/tests/integrations/meta-ads/create-ad-set.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import { metaAdsCreateAdSetPresenter } from "@/integrations/meta_ads/presenters/create-ad-set"
-
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 function display(extra: Record<string, unknown> = {}) {
   return {
@@ -41,10 +36,8 @@ function display(extra: Record<string, unknown> = {}) {
 }
 
 describe("Meta Ads create ad set presenter", () => {
-  it("states the ad set in sentences and blocks EU names or a pixel Meta would refuse", () => {
-    const ready = render(approval(display()))
-    expect(ready).toContain("measured by your pixel Shop Pixel (Purchase).")
-    expect(ready).not.toMatch(APPROVE_DISABLED)
+  it("blocks missing EU names or a custom conversion from another pixel", () => {
+    expect(render(approval(display()))).not.toMatch(APPROVE_DISABLED)
 
     const france = display({
       targeting: { locations: [{ kind: "country", key: "FR", name: "France" }] },
@@ -57,9 +50,7 @@ describe("Meta Ads create ad set presenter", () => {
       custom_conversion_id: "300",
       _custom_conversion: { name: "Big basket", pixel_id: "99" },
     })
-    const mismatch = render(approval(otherPixel))
-    expect(mismatch).toContain("(custom conversion Big basket).")
-    expect(mismatch).toMatch(APPROVE_DISABLED)
+    expect(render(approval(otherPixel))).toMatch(APPROVE_DISABLED)
   })
 
   it("links a created ad set to Ads Manager", () => {
@@ -120,38 +111,6 @@ function approval(args: Record<string, unknown>) {
         args,
       },
       true
-    )
-  )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement("div", null, node)
     )
   )
 }

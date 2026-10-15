@@ -28,6 +28,7 @@ from .mutations import (
     freeze_fields,
     send_change,
 )
+from .values import excerpt
 
 OPERATION = "copy_ads"
 COPY_GROUP = "ads:copy"
@@ -73,7 +74,7 @@ def source_ad(row: Mapping[str, Any]) -> SourceAd:
         name=str(row.get("name") or ""),
         adset_id=str(row["adset_id"]) if row.get("adset_id") else None,
         format=ad_format,
-        excerpt=_excerpt(text),
+        excerpt=excerpt(text, _EXCERPT),
         media_key=media,
         changes=applied_changes(creative),
     )
@@ -103,13 +104,6 @@ def _media(spec: Mapping[str, Any]) -> str | None:
     if isinstance(image_hash, str) and image_hash.isascii() and image_hash.isalnum():
         return f"image:{image_hash}"
     return None
-
-
-def _excerpt(text: Any) -> str | None:
-    if not isinstance(text, str) or not text.strip():
-        return None
-    words = " ".join(text.split())
-    return words if len(words) <= _EXCERPT else f"{words[:_EXCERPT].rstrip()}…"
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

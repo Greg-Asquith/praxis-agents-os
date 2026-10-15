@@ -2,13 +2,12 @@
 
 """Create one paused ad set: campaign rules, the request body, one send, then a read-back."""
 
-import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, ClassVar, Literal, Protocol
 from urllib.parse import urlsplit
 
 from core.exceptions.integration import IntegrationError
@@ -26,13 +25,17 @@ from ..tools.schemas.ad_sets import (
     MetaAdsEuTransparency,
 )
 from ..tools.schemas.budgets import BID_STRATEGIES
-from ..tools.schemas.objects import CLOSED_STATUSES, MetaAdsObject
-from .ad_rows import ad_effect
-from .create_objects import MetaCreateLookup, MetaCreateResult, create_object
-from .list_objects import read_objects_by_id
-from .mutations import MetaAdsMutationLedger, MetaAdsMutationParent
+from ..tools.schemas.objects import CLOSED_STATUSES
+from .create_objects import MetaAdsCreateEdge, MetaCreateLookup
+from .object_run import ObjectRun, create_and_read_back
 from .targeting import targeting_problems, targeting_spec
-from .values import bounded_string, money_value, require_currency
+from .values import (
+    bounded_string,
+    minimum_budget_problem,
+    money_value,
+    require_currency,
+    squashed_text,
+)
 
 OPERATION = "create_ad_set"
 AD_SET_GROUP = "adsets:create"
@@ -62,7 +65,6 @@ _EU_NAMES_MISSING = (
     "benefit, and this ad account has no defaults. Ask the operator for eu_payer and "
     "eu_beneficiary; Meta shows both publicly in its ad library."
 )
-_READBACK_FAILED = "Meta Ads created this ad set, but it couldn't be read back."
 
 
 class CampaignFacts(Protocol):
@@ -185,8 +187,8 @@ async def read_ad_set_account(
         currency=currency,
         timezone_name=bounded_string(raw.get("timezone_name"), operation=OPERATION),
         minimum=minimum or money_value(raw.get("min_daily_budget"), currency, operation=OPERATION),
-        dsa_payor=_dsa_name(raw.get("default_dsa_payor")),
-        dsa_beneficiary=_dsa_name(raw.get("default_dsa_beneficiary")),
+        dsa_payor=squashed_text(raw.get("default_dsa_payor"), 512),
+        dsa_beneficiary=squashed_text(raw.get("default_dsa_beneficiary"), 512),
     )
 
 
@@ -213,12 +215,6 @@ async def _goal_minimum(
         return None
 
 
-def _dsa_name(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    return " ".join(value.split())[:512] or None
-
-
 def eu_transparency(request: MetaAdsAdSetSettings, account: AdSetAccount) -> MetaAdsEuTransparency:
     """Decides how the EU names are given, or fails before the create when they can't be.
 
@@ -238,21 +234,16 @@ def minimum_problem(
     request: MetaAdsAdSetSettings, account: AdSetAccount, days: int | None
 ) -> str | None:
     """Checks the ad set's own budget against Meta's daily minimum for its goal."""
-    if request.budget is None or account.minimum is None:
+    if request.budget is None:
         return None
-    minimum = Decimal(account.minimum)
-    if request.budget.kind == "daily" and Decimal(request.budget.amount) < minimum:
-        return f"The minimum daily budget for this goal is {account.minimum} {account.currency}."
-    if (
-        request.budget.kind == "lifetime"
-        and days
-        and Decimal(request.budget.amount) < minimum * days
-    ):
-        return (
-            f"Over {days} days, the minimum lifetime budget for this goal is "
-            f"{format(minimum * days, 'f')} {account.currency}."
-        )
-    return None
+    return minimum_budget_problem(
+        kind=request.budget.kind,
+        amount=request.budget.amount,
+        minimum=account.minimum,
+        days=days,
+        currency=account.currency,
+        subject="this goal",
+    )
 
 
 def store_url(app: MetaAdsApplicationReference, store: str) -> str | None:
@@ -424,7 +415,7 @@ def _intent_fields(
         "placements": request.placements.mode,
         "eu_transparency": eu,
     }
-    for key in (
+    for field in (
         "promoted_object",
         "daily_budget",
         "lifetime_budget",
@@ -437,37 +428,20 @@ def _intent_fields(
         "start_time",
         "end_time",
     ):
-        if body.get(key):
-            fields[key] = body[key]
+        if body.get(field):
+            fields[field] = body[field]
     return fields
 
 
 @dataclass
-class AdSetRun:
+class AdSetRun(ObjectRun):
     """What the one create proved."""
 
-    fields: dict[str, str]
-    outcome: MetaCreateResult | None = None
-    # Set once the create has been handed to Meta, so an interruption is unverified.
-    sending: bool = False
-    skip_code: str | None = None
-    skip_message: str | None = None
-    read: dict[str, Any] | None = None
-    created: MetaAdsObject | None = None
-
-    @property
-    def enabled(self) -> frozenset[str]:
-        return frozenset()
-
-    def ledger(self) -> MetaAdsMutationLedger:
-        return MetaAdsMutationLedger(
-            action="create_ad_set",
-            parents=(
-                MetaAdsMutationParent(
-                    identity=(("key", AD_SET_KEY),), decision="submit", effects=(ad_effect(self),)
-                ),
-            ),
-        )
+    action: ClassVar[str] = "create_ad_set"
+    edge: ClassVar[MetaAdsCreateEdge] = "adsets"
+    object_type: ClassVar[Literal["campaign", "adset"]] = "adset"
+    noun: ClassVar[str] = "ad set"
+    key: ClassVar[str] = AD_SET_KEY
 
 
 async def create_ad_set(
@@ -478,51 +452,17 @@ async def create_ad_set(
     Raises:
         asyncio.CancelledError: With a `ledger` attribute: unverified once the create was sent.
     """
-    run = AdSetRun(dict(plan.intent_fields))
-    try:
-        lookup = MetaCreateLookup(
+    return await create_and_read_back(
+        client,
+        AdSetRun(dict(plan.intent_fields)),
+        account_id=account_id,
+        currency=currency,
+        body=plan.body,
+        operation=OPERATION,
+        lookup=MetaCreateLookup(
             name=plan.body["name"],
             parent_field="campaign.id",
             parent_id=plan.body["campaign_id"],
             since=datetime.now(UTC),
-        )
-        run.sending = True
-        run.outcome = await create_object(
-            client,
-            account_id=account_id,
-            edge="adsets",
-            data=plan.body,
-            operation=OPERATION,
-            lookup=lookup,
-        )
-        if (created_id := run.outcome.object_id) and run.outcome.status == "applied":
-            await _read_back(client, account_id, currency, created_id, run)
-    except (asyncio.CancelledError, Exception) as exc:
-        exc.ledger = run.ledger()
-        raise
-    return run
-
-
-async def _read_back(
-    client: MetaAdsClient, account_id: str, currency: str, adset_id: str, run: AdSetRun
-) -> None:
-    try:
-        found = await read_objects_by_id(
-            client,
-            account_id=account_id,
-            object_type="adset",
-            object_ids=[adset_id],
-            currency=currency,
-        )
-    except IntegrationError:
-        return
-    if item := found.get(adset_id):
-        run.created = item
-        run.read = {"effective_status": item.effective_status}
-
-
-def readback_message(run: AdSetRun) -> str | None:
-    effect = ad_effect(run)
-    if effect.outcome == "applied" and run.read is None:
-        return _READBACK_FAILED
-    return effect.message
+        ),
+    )

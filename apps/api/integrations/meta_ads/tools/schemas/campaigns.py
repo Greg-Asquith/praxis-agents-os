@@ -12,6 +12,7 @@ from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
 from ...operations.targeting import MetaAdsCountryCode
 from ...references import MetaAdsCampaignReference
 from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .text import tidy_text
 
 MAX_CAMPAIGN_NAME = 400
 
@@ -41,12 +42,6 @@ _POLITICS_REFUSED = (
 )
 
 
-def _name(value: str) -> str:
-    if not value.strip():
-        raise ValueError("Write a campaign name.")
-    return " ".join(value.split())
-
-
 class MetaAdsCampaignBudget(MetaAdsStrictModel):
     mode: MetaAdsCampaignBudgetMode = "campaign_daily"
     amount: MetaAdsBudgetAmount | None = None
@@ -74,7 +69,7 @@ class MetaAdsSpecialAdCategory(MetaAdsStrictModel):
 
 
 class MetaAdsCreateCampaignRequest(MetaAdsStrictModel):
-    name: Annotated[str, Field(max_length=MAX_CAMPAIGN_NAME), AfterValidator(_name)]
+    name: Annotated[str, Field(max_length=MAX_CAMPAIGN_NAME), AfterValidator(tidy_text)]
     objective: MetaAdsObjective
     budget: MetaAdsCampaignBudget
     bid_strategy: MetaAdsBidStrategy = "highest_volume"

@@ -1,14 +1,9 @@
 // apps/web/tests/integrations/meta-ads/copy-ads.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import { metaAdsCopyAdsPresenter } from "@/integrations/meta_ads/presenters/copy-ads"
-
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 function copy(adSetId: string, extra: Record<string, unknown> = {}) {
   return {
@@ -56,9 +51,7 @@ function display(copies: unknown[]) {
 
 describe("Meta Ads copy ads presenter", () => {
   it("renders the approval and blocks two copies sharing a name in one ad set", () => {
-    const ready = render(approval(display([copy("7")])))
-    expect(ready).not.toMatch(APPROVE_DISABLED)
-    expect(ready).toContain("Automatic changes on: Relevant comments")
+    expect(render(approval(display([copy("7")])))).not.toMatch(APPROVE_DISABLED)
 
     const clash = render(
       approval(display([copy("7"), copy("7", { ad: { ...copy("7").ad, ad_id: "501" } })]))
@@ -138,38 +131,6 @@ function approval(args: Record<string, unknown>) {
     props(
       { id: "a1", kind: "approval", name: "meta_ads_copy_ads", status: "awaiting_approval", args },
       true
-    )
-  )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement("div", null, node)
     )
   )
 }

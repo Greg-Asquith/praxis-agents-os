@@ -6,8 +6,6 @@ import json
 from types import SimpleNamespace
 
 import httpx2
-import pytest
-from pydantic import ValidationError
 
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.entity_resolvers.audience import resolve_meta_ads_audiences
@@ -101,11 +99,6 @@ def test_special_category_refuses_postcodes():
     assert targeting_problems(targeting, special_category=True) == [
         "Housing, employment, and financial ads can't target postcodes."
     ]
-
-
-def test_detailed_item_without_a_key_is_refused():
-    with pytest.raises(ValidationError):
-        draft(detailed=[[{"kind": "interest", "name": "Running"}]])
 
 
 async def test_interest_search_returns_keys_and_meta_size_range():

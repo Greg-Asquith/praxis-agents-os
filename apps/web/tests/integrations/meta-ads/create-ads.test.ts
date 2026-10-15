@@ -1,11 +1,7 @@
 // apps/web/tests/integrations/meta-ads/create-ads.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import { parseCreateAdsArgs, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
 import { unappliedFormatsNote } from "@/integrations/meta_ads/lib/automatic-changes"
 import { allowedButtons } from "@/integrations/meta_ads/lib/call-to-action"
@@ -21,6 +17,7 @@ import {
   setFollowsShared,
 } from "@/integrations/meta_ads/lib/create-ads-edits"
 import { metaAdsCreateAdsPresenter } from "@/integrations/meta_ads/presenters/create-ads"
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 const page = {
   version: 1,
@@ -45,8 +42,6 @@ const adSet = {
   adset_id: "8",
   label: "Prospecting",
 }
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
-
 function design(name: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     name,
@@ -354,38 +349,6 @@ function approval(args: Record<string, unknown>) {
         args,
       },
       true
-    )
-  )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement("div", null, node)
     )
   )
 }

@@ -1,16 +1,13 @@
 // apps/web/tests/integrations/meta-ads/upload-media.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import {
   parseMediaUploadArgs,
   parseMediaUploadResult,
 } from "@/integrations/meta_ads/lib/media-upload"
 import { metaAdsUploadMediaPresenter } from "@/integrations/meta_ads/presenters/upload-media"
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 const hero = { version: 1, entity_kind: "file", entity_id: "f-1", label: "hero.png" }
 const launch = { version: 1, entity_kind: "file", entity_id: "f-2", label: "launch.mp4" }
@@ -19,8 +16,6 @@ const pins = [
   { ...pin, file_id: "f-1", name: "hero.png", media_type: "image", size_bytes: 2048 },
   { ...pin, file_id: "f-2", name: "launch.mp4", media_type: "video", size_bytes: 4096 },
 ]
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
-
 describe("Meta Ads media upload review", () => {
   it("needs a check whenever the Files differ from the ones the server pinned", () => {
     const review = (files: unknown[]) =>
@@ -134,38 +129,6 @@ function approval(args: Record<string, unknown>) {
         args,
       },
       true
-    )
-  )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement("div", null, node)
     )
   )
 }

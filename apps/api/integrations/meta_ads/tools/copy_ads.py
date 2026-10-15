@@ -2,11 +2,10 @@
 
 """Approval-only tool that copies existing ads, creative and all, into other ad sets."""
 
-import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any
 
-from pydantic import Field, ValidationError
+from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
@@ -20,19 +19,11 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
-from services.integrations.approved_display_args import approved_display_args, proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import serialize_fan_out_results
-from services.integrations.context.targeted import run_context_scope
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import MetaAdsClient
 from ..creative_features import change_labels, has_ai_generated
@@ -50,7 +41,6 @@ from ..operations.copy_ads import (
 from ..operations.create_objects import read_created
 from ..operations.list_objects import read_objects_by_id
 from ..operations.plan_ads import ad_set_problem
-from ..throttle import ensure_account_available
 from .schemas.copies import MAX_COPIES, MetaAdsAdCopy, MetaAdsCopyAdsOutput, MetaAdsCopyAdsRequest
 from .schemas.objects import MetaAdsObject
 from .utils.ad_preparation import (
@@ -60,17 +50,13 @@ from .utils.ad_preparation import (
     required_currency,
 )
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.client import meta_ads_available, meta_ads_client_for_principal
+from .utils.create_operation import run_create_tool, selected_account, validated
 from .utils.mutation_evidence import (
     account_pin,
-    attach_interrupted_evidence,
-    audit_status,
     meta_ads_account_target,
-    terminal_operation_detail,
 )
-from .utils.validation import validation_retry
 
-_ACCOUNT_CHANGED = "The approved ad account is no longer selected. Ask for approval again."
 _COPIES_CHANGED = (
     "The ads or ad sets changed after approval. Ask the agent to prepare the copies again."
 )
@@ -86,93 +72,38 @@ type AdCopies = Annotated[
 
 
 async def meta_ads_copy_ads(ctx: RunContext[RuntimeDeps], copies: AdCopies) -> dict[str, Any]:
-    request = _request({"copies": copies})
-    entry = _account_entry(ctx.deps, request.account_id)
-    reviewed = approved_display_args(ctx)
-
-    async def operation(selected: ResolvedContextEntry) -> Any:
-        client: MetaAdsClient | None = None
-        planned: list[PlannedCopy] = []
-        pending_detail: PendingIntegrationOperationDetail | None = None
-
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, planned, pending_detail
-            if reviewed.get("_account") != account_pin(selected):
-                raise ModelRetry(_ACCOUNT_CHANGED)
-            # The card edits names and statuses only; sources and targets stay as proposed.
-            if _proposed_keys(proposed_args(ctx)) != [item.key for item in request.copies]:
-                raise ModelRetry(_COPIES_CHANGED)
-            ensure_account_available(selected.external_id, operation=OPERATION)
-            client = await meta_ads_client(ctx, selected)
-            planned = await _prepare(client, selected, request)
-            pending_detail = _pending_operation_detail(selected, planned)
-            return pending_detail
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending_detail is None:
-                raise RuntimeError("Meta Ads ad copy preparation did not complete")
-            try:
-                run = await copy_ads(
-                    client,
-                    account_id=selected.external_id,
-                    planned=planned,
-                    intent_fields={plan.index: intent_fields(plan) for plan in planned},
-                )
-            except (asyncio.CancelledError, Exception) as exc:
-                attach_interrupted_evidence(
-                    exc, pending_detail, identity_key="key", refs_mean_changed=True
-                )
-                raise
-            ledger = run.ledger()
-            detail = terminal_operation_detail(pending_detail, ledger, identity_key="key")
-            result = {
-                "account_id": selected.external_id,
-                "copies": [copy_row(copy_run) for copy_run in run.copies],
-            }
-            outcome_status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                result,
-                status=outcome_status,
-                external_ref=",".join(ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=result if outcome_status is AuditStatus.UNVERIFIED else None,
-            )
-
-        return await run_audited_integration_operation(
-            ctx,
-            selected,
-            tool_name="meta_ads_copy_ads",
-            operation=OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
-        )
-
-    results = await run_context_scope(
+    request = validated(MetaAdsCopyAdsRequest, {"copies": copies})
+    keys = [item.key for item in request.copies]
+    return await run_create_tool(
         ctx,
-        binding=META_ADS_WRITE_BINDING,
-        provider_scope_id=entry.external_id,
-        operation=operation,
+        _account_entry(ctx.deps, request.account_id),
+        tool_name="meta_ads_copy_ads",
+        operation=OPERATION,
+        # The card edits names and statuses only; sources and targets stay as proposed.
+        proposal_changed=lambda proposed: _proposed_keys(proposed) != keys,
+        changed_message=_COPIES_CHANGED,
+        prepare=lambda client, entry: _prepare(client, entry, request),
+        pending_detail=_pending_operation_detail,
+        run=lambda client, entry, planned: copy_ads(
+            client,
+            account_id=entry.external_id,
+            planned=planned,
+            intent_fields={plan.index: intent_fields(plan) for plan in planned},
+        ),
+        result=lambda run, entry, _planned: {
+            "account_id": entry.external_id,
+            "copies": [copy_row(copy_run) for copy_run in run.copies],
+        },
     )
-    return {"results": serialize_fan_out_results(results)}
-
-
-def _request(values: Mapping[str, Any]) -> MetaAdsCopyAdsRequest:
-    try:
-        return MetaAdsCopyAdsRequest.model_validate(values)
-    except ValidationError as exc:
-        raise validation_retry(exc) from None
 
 
 def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
-    active = deps.active_context
-    entries = active.compatible_entries(META_ADS_WRITE_BINDING) if active else ()
-    matching = [entry for entry in entries if entry.external_id == account_id]
-    if len(matching) != 1:
-        raise ModelRetry(
-            "The ads and ad sets must belong to one Meta ad account selected in Active "
-            "Context. Ask the user to select it."
-        )
-    return matching[0]
+    return selected_account(
+        deps,
+        account_id,
+        "The ads and ad sets must belong to one Meta ad account selected in Active "
+        "Context. Ask the user to select it.",
+    )
 
 
 def _proposed_keys(values: Mapping[str, Any]) -> list[str]:
@@ -300,7 +231,7 @@ def _pending_operation_detail(
 
 
 async def _validate_args(ctx: RunContext[RuntimeDeps], **values: Any) -> None:
-    request = _request(values)
+    request = validated(MetaAdsCopyAdsRequest, values)
     _account_entry(ctx.deps, request.account_id)
 
 

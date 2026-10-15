@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 import { OutcomeSummary } from "@/components/tool-ui/outcome-summary"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
+import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
 import {
   countByKind,
   outcomeKind,
@@ -100,5 +101,36 @@ export function MetaAdsFailureTargets({
         </div>
       ) : null}
     </div>
+  )
+}
+
+export function OutcomeLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      className="text-primary w-fit text-xs underline-offset-2 hover:underline"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {children}
+    </a>
+  )
+}
+
+/** The links cell for a created or copied ad: Meta's preview and Ads Manager. */
+export function AdOutcomeLinks({
+  accountId,
+  ad,
+}: {
+  accountId: string
+  ad: { adId: string | null; previewUrl: string | null } | undefined
+}) {
+  if (!ad?.adId) return null
+  const manager = adsManagerObjectUrl("ad", accountId, ad.adId)
+  return (
+    <span className="flex flex-col gap-0.5">
+      {ad.previewUrl ? <OutcomeLink href={ad.previewUrl}>Preview on Meta</OutcomeLink> : null}
+      {manager ? <OutcomeLink href={manager}>Open in Ads Manager</OutcomeLink> : null}
+    </span>
   )
 }

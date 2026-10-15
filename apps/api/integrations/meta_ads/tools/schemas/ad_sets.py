@@ -21,6 +21,7 @@ from ...references import (
     MetaAdsPixelReference,
 )
 from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .text import tidy_text
 
 MAX_AD_SET_NAME = 400
 MAX_EU_NAME = 512
@@ -45,12 +46,6 @@ type MetaAdsPosition = Literal[
     "messenger:messenger_home",
     "threads:threads_stream",
 ]
-
-
-def _text(value: str) -> str:
-    if not value.strip():
-        raise ValueError("Write some text.")
-    return " ".join(value.split())
 
 
 def _roas(value: str) -> str:
@@ -81,7 +76,7 @@ class MetaAdsAdSetPlacements(MetaAdsStrictModel):
 class MetaAdsAdSetSettings(MetaAdsStrictModel):
     """Everything about a new ad set but its campaign, which a launch creates first."""
 
-    name: Annotated[str, Field(max_length=MAX_AD_SET_NAME), AfterValidator(_text)]
+    name: Annotated[str, Field(max_length=MAX_AD_SET_NAME), AfterValidator(tidy_text)]
     goal: MetaAdsGoal
     targeting: MetaAdsTargeting
     page: MetaAdsPageReference | None = None
@@ -100,10 +95,10 @@ class MetaAdsAdSetSettings(MetaAdsStrictModel):
     pay_per_click: bool = False
     start_date: str | None = Field(default=None, max_length=10)
     end_date: str | None = Field(default=None, max_length=10)
-    eu_payer: Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(_text)] | None = None
-    eu_beneficiary: Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(_text)] | None = (
-        None
-    )
+    eu_payer: Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(tidy_text)] | None = None
+    eu_beneficiary: (
+        Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(tidy_text)] | None
+    ) = None
 
     @model_validator(mode="after")
     def _check_settings(self) -> Self:

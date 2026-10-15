@@ -44,6 +44,7 @@ from ..throttle import ensure_account_available
 from .schemas.media import MetaAdsMediaUploadOutput
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client
+from .utils.create_operation import ACCOUNT_CHANGED
 from .utils.mutation_evidence import (
     account_pin,
     attach_interrupted_evidence,
@@ -54,8 +55,6 @@ from .utils.mutation_evidence import (
 
 _OPERATION = "upload_media"
 _MAX_FILES = 20
-_ACCOUNT_CHANGED = "The approved ad account is no longer selected. Ask for approval again."
-
 type MediaFiles = Annotated[
     list[FileReference],
     Field(min_length=1, max_length=_MAX_FILES, description="Workspace image or video Files."),
@@ -76,7 +75,7 @@ async def meta_ads_upload_media(ctx: RunContext[RuntimeDeps], files: MediaFiles)
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
             nonlocal client, sources, pending_detail
             if reviewed is not None and reviewed.get("_account") != account_pin(entry):
-                raise ModelRetry(_ACCOUNT_CHANGED)
+                raise ModelRetry(ACCOUNT_CHANGED)
             ensure_account_available(entry.external_id, operation=_OPERATION)
             sources = await _sources(ctx.deps, files)
             if reviewed is not None:

@@ -47,7 +47,7 @@ class GoalRow:
     clicks_billing: bool = False
 
 
-# Rows confirmed in Meta's objective mapping table. Step 0 dry runs add the reported ones.
+# Rows from Meta's objective mapping table.
 GOALS: dict[MetaAdsGoal, GoalRow] = {
     "reach": GoalRow("OUTCOME_AWARENESS", "REACH", None, "page", "imp"),
     "impressions": GoalRow("OUTCOME_AWARENESS", "IMPRESSIONS", None, "page", "imp"),

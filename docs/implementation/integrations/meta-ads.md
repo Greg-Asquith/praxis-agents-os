@@ -5,13 +5,14 @@ system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
 objects, discover custom conversions and custom events, and read change
 history on selected accounts. Agents can list the Pages, Instagram accounts,
-and media an account can advertise with, find targeting options by name, and
-estimate how many people a targeting draft reaches. With approval, agents can upload
-workspace images and videos to an account's media library, create paused
-campaigns and paused ad sets, create image, video, carousel, and existing
-post ads in existing ad sets, copy ads, turn campaigns, ad sets, and ads on
-or off, and change campaign and ad set budget amounts. Facebook sign-in and
-event delivery are pending.
+media, posts, pixels, apps, and audiences an account can advertise with, find
+targeting options by name, and estimate how many people a targeting draft
+reaches. With approval, agents can upload workspace images and videos to an
+account's media library, create paused campaigns and paused ad sets, create
+image, video, carousel, and existing post ads in existing ad sets, copy ads,
+turn campaigns, ad sets, and ads on or off, and change campaign and ad set
+budget amounts. Building a campaign with its ad sets and ads in one approval,
+Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -312,8 +313,8 @@ optimisation goal, bid strategy, budgets, bids, schedules, and parent IDs when
 available. Campaigns also carry `special_ad_categories` and
 `share_between_ad_sets`. Ads also carry up to five `review_reasons` from Meta's
 `ad_review_feedback`, as `Policy: reason`, and up to five delivery `issues`
-from `issues_info`, so the agent can say whether new ads passed review. Schedule times are normalised to ISO 8601 and keep any offset Meta
-returns, for example `2026-09-01T00:00:00+01:00`. Ads have no separate budget.
+from `issues_info`, so the agent can say whether new ads passed review.
+Schedule times are normalised to ISO 8601 and keep any offset Meta returns, for example `2026-09-01T00:00:00+01:00`. Ads have no separate budget.
 
 Ad sets also carry what ad creation validates before approval:
 
@@ -346,8 +347,8 @@ they exclude provider names, amounts, name filters, and conversion metadata.
 ## Pages, Instagram accounts, media, posts, and targeting assets
 
 `meta_ads_list_assets` lists, for every selected account, what new ads and
-ad sets can use. It reads each kind separately, so a refusal on one kind doesn't hide
-the others:
+ad sets can use. It reads each kind separately, so a refusal on one kind
+doesn't hide the others:
 
 | Kind | Meta edge | Returned |
 | --- | --- | --- |
@@ -363,10 +364,10 @@ the others:
 
 The tool reads automatically, supports Code Mode, and uses retained results.
 `kinds` limits the read; without it, only `pages`, `instagram_accounts`,
-`images`, and `videos` are read, because ad creation needs only those, and
-posts take a read per Page and Instagram account. Each kind follows up to 5 pages of results, and
-deleted or internal images don't count towards the 50, so they can't hide
-active images behind them. `truncated` names kinds with more items than were
+`images`, and `videos` are read, because most ads need only those, and
+posts take a read per Page and Instagram account. Each kind follows up to 5
+pages of results. Deleted or internal images don't count towards the 50, so
+they can't hide active images. `truncated` names kinds with more items than were
 returned. A Graph permission error on a kind becomes a note naming what to
 grant, and that kind's list is empty. Other errors fail the account.
 
@@ -395,40 +396,29 @@ thumbnail on Meta's hosts, a `permalink_url` kept only when it is HTTPS on
 `boost_eligibility_info.eligible_to_boost`. The post's text is written by
 whoever posted it, so the list returns it beside the reference as an
 untrusted-content node (`text`), at most 300 characters, and leaves the
-reference's `excerpt` empty. A Graph permission error on posts becomes a note
-naming `pages_read_engagement` and `instagram_basic`. Reading Page posts with
-a system user token, and partner-shared Pages in particular, hasn't been
-checked against a live account.
-
-Ad creation registers search and resolve lookups for all four references.
-Search matches labels across the selected accounts' assets, and posts by
-their text as well. Resolve re-reads each reference through its own account:
-Pages and Instagram accounts from the same edges, images by hash, videos by
-scanning the account's 500 most recent videos, and posts by scanning the 100
-most recent posts of their Page or Instagram account, which must be one the
-account can use. The video edge has no ID filter, and reading a video or an
-Instagram post directly doesn't prove which account owns it, so an older
-video or post isn't found. Resolved posts carry `excerpt` for the approval
-card.
+reference's `excerpt` empty. A permission error on posts names
+`pages_read_engagement` and `instagram_basic`.
 
 Pixels, apps, and audiences are read 100 at a time. An app's `store_urls`
 keeps only HTTPS pages on `apps.apple.com`, `itunes.apple.com`, and
 `play.google.com` from Meta's `object_store_urls`. An audience's `subtype`
 is Meta's subtype in lower case, such as `custom`, `website`, or
-`lookalike`, and its description names it in plain words.
-`size_lower_bound` and `size_upper_bound` come from Meta's
-`approximate_count_lower_bound` and `approximate_count_upper_bound`; Meta
-reports `-1` when it has no estimate, and the reference holds null. DSA
+`lookalike`. `size_lower_bound` and `size_upper_bound` come from Meta's
+approximate counts; Meta's `-1` for no estimate becomes null. DSA
 suggestions are trimmed, deduplicated, and at most 200 characters each. The
-tool description tells the agent to propose one to the operator and use it
-only once they confirm it; nothing applies a suggestion automatically. A
-Graph permission error on any of these kinds becomes a note, like the other
-kinds. Audiences have search and resolve lookups, because
-`meta_ads_estimate_audience` takes them: resolve scans up to 500 of the
-account's own `customaudiences` for the referenced IDs, so an audience from
-another account isn't found. Pixels and apps have no lookups yet: the engine
-registers a lookup only for a reference kind some tool takes as input, so
-they arrive with ad set creation.
+tool description tells the agent to propose one and use it only once the
+operator confirms it; nothing applies a suggestion automatically.
+
+Every reference kind except DSA suggestions has search and resolve lookups.
+Search matches labels across the selected accounts' assets, and posts by
+their text as well. Resolve re-reads each reference through its own account:
+Pages, Instagram accounts, pixels, and apps from the same edges, images by
+hash, videos from the account's 500 most recent, audiences from up to 500 of
+the account's own `customaudiences`, and posts from the 100 most recent of a
+Page or Instagram account the account can use. The video edge has no ID
+filter, and reading a video or an Instagram post directly doesn't prove which
+account owns it, so an older video or post isn't found. Resolved posts carry
+`excerpt` for the approval card.
 
 ## Targeting
 
@@ -808,13 +798,12 @@ each ad set, because a lost create is found again by its name.
 | `existing_post` | `post` from `meta_ads_list_assets(kinds=["posts"])`; an Instagram post can also take `link` and `call_to_action` |
 
 Every design but `existing_post` has `primary_text` (1-2,200 characters, at
-most 30 hashtags) and an optional `disclaimer` (terms and conditions, offer details, or
-disclaimer). Image and video designs also take an optional `description`;
-a carousel takes its headline and description on each card. `page`,
-`instagram_account`,
-`link`, `call_to_action`, `url_tags`, and `status` apply to every ad unless
-a design sets its own; the Page and Instagram account apply to the whole
-call. Links are `https` without credentials, at most 1,000 characters. URL
+most 30 hashtags) and an optional `disclaimer` (terms and conditions, offer
+details, or disclaimer). Image and video designs also take an optional
+`description`; a carousel takes its headline and description on each card.
+`page`, `instagram_account`, `link`, `call_to_action`, `url_tags`, and
+`status` apply to every ad unless a design sets its own; the Page and
+Instagram account apply to the whole call. Links are `https` without credentials, at most 1,000 characters. URL
 tags are ASCII `key=value` pairs joined by `&`, at most 512 characters.
 
 An existing post runs unchanged: the post is the creative, so primary text,
@@ -905,44 +894,41 @@ Approval display hydrates the Page, Instagram account, every ad set (status,
 delivery status, goal, budget, and placements), library media, and posts
 through their resolvers, and pins each workspace File's revision. Posts are
 keyed `{source}:{post_id}` under `_posts`, so the card shows Meta's own text,
-picture, and link rather than the agent's copy of the reference. It also records the
-offered automatic changes and the button lists.
+picture, and link rather than the agent's copy. It also records the offered
+automatic changes and the button lists.
 
 The card shows the shared settings (Page, Instagram account, link, CTA
 button, and status) as ordinary approval fields. A highlighted note appears
-only when ads would start spending once Meta approves them, naming the budget,
-and names ad sets only when they differ. With more than one ad, the card lists
-each ad with its media, format, ad sets, and check, and lets the operator
-filter to the ads that need attention. The operator edits one ad at a time,
-starting with one that has a problem: its name, text with character counts,
-and a Praxis preview for Feed and for Stories and Reels drawn from typed
-values as plain text with the Page's picture. Each check shows beside the
-field it's about. An ad can follow the shared link, URL tags, CTA button, and
-status, or hold its own copy. Per-ad values in the proposal that only repeat
-the shared ones are treated as following them: the server removes them from
-the card's display arguments, and again at run time for ads the operator
-didn't edit, so a later shared edit reaches those ads.
-An image or video ad can change its media and add, change, or remove its
-vertical version. Carousel cards edit their media, text, link, and button, and
-can be reordered, removed down to 2, or added up to 10. A media chooser lists
-the ad account's library through the `meta_ads_media` resolver and, for
-images, JPEG and PNG workspace Files through the `file` resolver, with an
-upload from the computer that goes through the ordinary Files upload. Video
-ads take library videos only; videos Meta is still processing can't be chosen.
-Ad sets change only by asking the agent. A File the agent proposed is pinned
-to the revision shown; one chosen on the card is uploaded as it is when the
-operator approves. Errors that Meta would reject block approval, as do
-repeated card media, fewer than 2 or more than 10 cards, and an unready video;
-recommended lengths, narrow images, a vertical version that isn't 9:16, and
-more than 5 cards are warnings. An existing post shows as it runs: its text as plain text, its
-picture, a link to the post on Facebook or Instagram, and, for an Instagram
-post with a link, the button. It has no text or media fields, and offers only
-the shared settings a post takes: status, and for an Instagram post the link
-and button. A post the server couldn't find for the account, or an Instagram
-post Meta won't boost, blocks approval. Meta's automatic changes sit in a collapsed
-advanced section with a switch each. Library media and the Page picture show
-through the media preview below; workspace Files show their pinned revision,
-or their current one when chosen on the card.
+only when ads would start spending once Meta approves them, naming the
+budget. With more than one ad, the card lists each ad with its media, format,
+ad sets, and check, and can filter to the ads that need attention.
+
+The operator edits one ad at a time: its name, text with character counts,
+and a plain-text Praxis preview for Feed and for Stories and Reels with the
+Page's picture. Each check shows beside its field. An ad can follow the
+shared link, URL tags, CTA button, and status, or hold its own copy. Per-ad
+values that only repeat the shared ones are removed from the display
+arguments, and again at run time for ads the operator didn't edit, so a later
+shared edit reaches those ads.
+
+An image or video ad can change its media and its vertical version. Carousel
+cards edit their media, text, link, and button, and can be reordered,
+removed down to 2, or added up to 10. The media chooser lists the account's
+library through the `meta_ads_media` resolver and, for images, JPEG and PNG
+workspace Files through the `file` resolver, including a new upload. Video
+ads take ready library videos only. Ad sets change only by asking the agent.
+A File the agent proposed is pinned to the revision shown; one chosen on the
+card is uploaded as it is at approval.
+
+Errors Meta would reject block approval, as do repeated card media, fewer
+than 2 or more than 10 cards, and an unready video. Recommended lengths,
+narrow images, a vertical version that isn't 9:16, and more than 5 cards are
+warnings. An existing post shows as it runs: its text as plain text, its
+picture, a link to the post, and, for an Instagram post with a link, the
+button. It offers only status and, for an Instagram post, the link and
+button. A post the server couldn't find for the account, or an Instagram post
+Meta won't boost, blocks approval. Meta's automatic changes sit in a
+collapsed advanced section with a switch each.
 
 `ads` and `automatic_changes` are `structured` approval fields: the card
 sends the whole edited value, and the server checks it against
@@ -954,8 +940,8 @@ card look them up.
 #### Media previews
 
 The `meta_ads_media` preview kind shows a library image or video picture, or
-a Page's or a post's picture, in the browser, which the content security policy otherwise blocks. The web
-client asks the conversation preview route
+a Page's or a post's picture, in the browser, which the content security
+policy otherwise blocks. The web client asks the conversation preview route
 (`/integrations/conversations/{id}/previews/meta_ads_media`) with the ad
 account ID as `scope_id` and a `ref` of `image_<hash>`, `video_<id>`, `page_<id>`,
 `post_<page_id>_<post_id>`, or `igpost_<instagram_user_id>_<media_id>`; the
@@ -988,8 +974,8 @@ After approval, the tool:
    account, confirms library images exist in this account and videos are
    among its recent videos and ready, re-reads each post through its Page or
    Instagram account and refuses an Instagram post Meta won't boost, reads
-   video thumbnails, and checks each File is in the workspace. A File the agent proposed must still match
-   its pin.
+   video thumbnails, and checks each File is in the workspace. A File the
+   agent proposed must still match its pin.
 3. Keeps each ad set within Meta's 50 ads, counting every ad that isn't
    deleted, and refuses a name already used in the ad set.
 4. Sends every ad without workspace Files to `POST /act_{id}/ads` with
@@ -1004,8 +990,8 @@ After approval, the tool:
    images are then checked with a dry run; a rejection stops every ad.
 7. Creates each ad with `POST /act_{id}/ads`, the creative inline, status
    always explicit, and `conversion_domain` when the ad set's promoted
-   object has a pixel and the ad has a link. Four run at a time, and later ads continue after a
-   failure. A create is sent once. A lost or unclear reply is settled by one
+   object has a pixel and the ad has a link. Four run at a time, and later
+   ads continue after a failure. A create is sent once. A lost or unclear reply is settled by one
    lookup for the name in the ad set, created since the attempt: one match
    counts as created with `recovered=true`; otherwise the ad is unverified.
 8. Reads every new ad back through the account's ads edge with its delivery
@@ -1174,8 +1160,8 @@ fixed settings, then:
 The result has the campaign's outcome (`created`, `failed`, or
 `unverified`), `recovered`, `verified`, its ID, effective status, and the
 read-back campaign reference, ready for `meta_ads_create_ad_set`.
-`advantage_state_info` isn't read back yet; a new campaign has no ad sets to
-qualify it.
+`advantage_state_info` isn't read back, because a new campaign has no ad
+sets to qualify it.
 
 ### Creating ad sets
 
@@ -1201,8 +1187,8 @@ kind. The table holds only the combinations Meta's mapping table confirms:
 | `website_conversions` | Sales | `OFFSITE_CONVERSIONS`, `WEBSITE` | `pixel` with `conversion_event` or `custom_conversion_id` |
 
 Messenger and WhatsApp traffic, lead, and conversation goals are left out,
-because ad creation can't fill those ad sets. Rows reported by third parties
-are added once a step 0 dry run confirms them. Every ad set bills on
+because ad creation can't fill those ad sets. Other combinations stay out
+until a live dry run confirms them. Every ad set bills on
 impressions, except `link_clicks` with `pay_per_click`, which bills on link
 clicks. `apps/web/src/integrations/meta_ads/lib/goals.ts` holds the card's copy,
 keyed identically. Ad set references carry `goal` when an ad set's settings
@@ -1227,7 +1213,7 @@ Besides `campaign`, `name` (up to 400 characters), `goal`, and `targeting`
   the campaign sets none; it's then sent on the ad set, defaulting to
   `highest_volume`. `bid_cap` and `cost_per_result_goal` need `bid_amount`;
   `roas_goal` needs `min_roas`, sent as `bid_constraints.roas_average_floor`
-  (the ratio times 10,000, a step 0 check); `highest_volume` takes neither.
+  (the ratio times 10,000, unverified live); `highest_volume` takes neither.
 - `start_date` and `end_date` as `YYYY-MM-DD` in the account's time zone.
   `tools/utils/schedule.py` turns them into the start of the first day and
   the last second of the last day. A start today or earlier isn't sent, so
@@ -1274,7 +1260,7 @@ After approval, the tool:
 3. Re-checks every campaign rule against the live campaign.
 4. Reads the account's time zone and EU defaults, and the goal's minimum
    from `minimum_budgets` (`min_daily_budget_imp`, `_high_freq`, or
-   `_low_freq`, a step 0 check), falling back to the account's
+   `_low_freq`, unverified live), falling back to the account's
    `min_daily_budget`. A lifetime budget must cover the minimum for each day.
 5. Decides EU transparency. A country, region, city, or postcode in the EU or
    an associated territory needs both names, given or from the account's
@@ -1368,7 +1354,7 @@ and [account SDK](https://github.com/facebook/facebook-python-business-sdk/blob/
 confirms the requested metadata fields and account edge. These definitions do
 not establish live permissions or action-ID mapping. The official action-stats
 reference returned HTTP 429. The maintainer extends the live-check waiver to
-slice B: account totals, paused-ad-set budgets, custom conversion availability
+these reads: account totals, paused-ad-set budgets, custom conversion availability
 and action-ID mapping, and mixed-provider manual checks remain unverified.
 The numeric custom-action mapping remains an implementation assumption until
 designated live Meta responses confirm it.

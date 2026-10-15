@@ -1,14 +1,9 @@
 // apps/web/tests/integrations/meta-ads/create-campaign.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import { metaAdsCreateCampaignPresenter } from "@/integrations/meta_ads/presenters/create-campaign"
-
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 function display(extra: Record<string, unknown> = {}) {
   return {
@@ -27,7 +22,7 @@ function display(extra: Record<string, unknown> = {}) {
 }
 
 describe("Meta Ads create campaign presenter", () => {
-  it("states the campaign in sentences and blocks a budget under the account minimum", () => {
+  it("blocks a budget under the account minimum", () => {
     expect(render(approval(display()))).not.toMatch(APPROVE_DISABLED)
     expect(render(approval(display({ _minimum: "200" })))).toMatch(APPROVE_DISABLED)
   })
@@ -88,38 +83,6 @@ function approval(args: Record<string, unknown>) {
         args,
       },
       true
-    )
-  )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement("div", null, node)
     )
   )
 }

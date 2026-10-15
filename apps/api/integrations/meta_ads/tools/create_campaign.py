@@ -2,7 +2,6 @@
 
 """Approval-only tool that creates one paused campaign in a selected ad account."""
 
-import asyncio
 from collections.abc import Mapping
 from typing import Annotated, Any
 
@@ -20,19 +19,11 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
-from services.integrations.approved_display_args import approved_display_args, proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import serialize_fan_out_results
-from services.integrations.context.targeted import run_context_scope
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 from utils.metadata import metadata_str
 
 from ..client import MetaAdsClient
@@ -47,11 +38,9 @@ from ..operations.create_campaign import (
     create_campaign,
     plan_campaign,
     read_campaign_account,
-    readback_message,
 )
 from ..operations.create_objects import validate_create
-from ..operations.list_objects import list_objects
-from ..throttle import ensure_account_available
+from ..operations.object_run import readback_message
 from .schemas.budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
 from .schemas.campaigns import (
     MetaAdsCampaignBudget,
@@ -60,25 +49,19 @@ from .schemas.campaigns import (
     MetaAdsObjective,
     MetaAdsSpecialAdCategory,
 )
-from .schemas.objects import OBJECT_STATUSES
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.client import meta_ads_available, meta_ads_client_for_principal
+from .utils.create_operation import ensure_name_free, given, run_create_tool, validated
 from .utils.mutation_evidence import (
     account_pin,
-    attach_interrupted_evidence,
-    audit_status,
     meta_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.schedule import account_schedule
-from .utils.validation import validation_retry
 
-_ACCOUNT_CHANGED = "The approved ad account is no longer selected. Ask for approval again."
 _FIXED_CHANGED = (
     "The objective, budget type, bid strategy, or special ad categories changed after "
     "approval. Ask the agent to prepare the campaign again."
 )
-_UNDELETED_CAMPAIGN_STATUSES = [s for s in OBJECT_STATUSES["campaign"] if s != "DELETED"]
 
 
 async def meta_ads_create_campaign(
@@ -107,89 +90,44 @@ async def meta_ads_create_campaign(
         Field(description="Most the campaign can ever spend, in the account currency."),
     ] = None,
 ) -> dict[str, Any]:
-    request = _request(_given({key: value for key, value in locals().items() if key != "ctx"}))
-    entry = _account_entry(ctx.deps)
-    reviewed = approved_display_args(ctx)
-
-    async def operation(selected: ResolvedContextEntry) -> Any:
-        client: MetaAdsClient | None = None
-        plan: CampaignPlan | None = None
-        currency = ""
-        pending_detail: PendingIntegrationOperationDetail | None = None
-
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, plan, currency, pending_detail
-            if reviewed.get("_account") != account_pin(selected):
-                raise ModelRetry(_ACCOUNT_CHANGED)
-            if _fixed(proposed_args(ctx)) != _fixed(request):
-                raise ModelRetry(_FIXED_CHANGED)
-            ensure_account_available(selected.external_id, operation=OPERATION)
-            client = await meta_ads_client(ctx, selected)
-            plan, currency = await _prepare(client, selected, request)
-            pending_detail = PendingIntegrationOperationDetail(
-                target=meta_ads_account_target(selected),
-                intent_groups=[
-                    IntegrationOperationIntentGroup(
-                        key=CAMPAIGN_GROUP,
-                        action="create_campaign",
-                        entity_type="meta_ads_campaign",
-                        items=[IntegrationOperationIntent(fields=plan.intent_fields)],
-                    )
-                ],
-            )
-            return pending_detail
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or plan is None or pending_detail is None:
-                raise RuntimeError("Meta Ads campaign preparation did not complete")
-            try:
-                run = await create_campaign(
-                    client, account_id=selected.external_id, currency=currency, plan=plan
-                )
-            except (asyncio.CancelledError, Exception) as exc:
-                attach_interrupted_evidence(
-                    exc, pending_detail, identity_key="key", refs_mean_changed=True
-                )
-                raise
-            ledger = run.ledger()
-            detail = terminal_operation_detail(pending_detail, ledger, identity_key="key")
-            result = {
-                "account_id": selected.external_id,
-                "currency": currency,
-                "campaign": _row(run, request, selected, currency),
-            }
-            outcome_status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                result,
-                status=outcome_status,
-                external_ref=",".join(ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=result if outcome_status is AuditStatus.UNVERIFIED else None,
-            )
-
-        return await run_audited_integration_operation(
-            ctx,
-            selected,
-            tool_name="meta_ads_create_campaign",
-            operation=OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
-        )
-
-    results = await run_context_scope(
-        ctx,
-        binding=META_ADS_WRITE_BINDING,
-        provider_scope_id=entry.external_id,
-        operation=operation,
+    request = validated(
+        MetaAdsCreateCampaignRequest,
+        given({key: value for key, value in locals().items() if key != "ctx"}),
     )
-    return {"results": serialize_fan_out_results(results)}
+    return await run_create_tool(
+        ctx,
+        _account_entry(ctx.deps),
+        tool_name="meta_ads_create_campaign",
+        operation=OPERATION,
+        proposal_changed=lambda proposed: _fixed(proposed) != _fixed(request),
+        changed_message=_FIXED_CHANGED,
+        prepare=lambda client, entry: _prepare(client, entry, request),
+        pending_detail=lambda entry, prepared: _pending_detail(entry, prepared[0]),
+        run=lambda client, entry, prepared: create_campaign(
+            client, account_id=entry.external_id, currency=prepared[1], plan=prepared[0]
+        ),
+        result=lambda run, entry, prepared: {
+            "account_id": entry.external_id,
+            "currency": prepared[1],
+            "campaign": _row(run, request, entry, prepared[1]),
+        },
+    )
 
 
-def _request(values: Mapping[str, Any]) -> MetaAdsCreateCampaignRequest:
-    try:
-        return MetaAdsCreateCampaignRequest.model_validate(values)
-    except ValidationError as exc:
-        raise validation_retry(exc) from None
+def _pending_detail(
+    entry: ResolvedContextEntry, plan: CampaignPlan
+) -> PendingIntegrationOperationDetail:
+    return PendingIntegrationOperationDetail(
+        target=meta_ads_account_target(entry),
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key=CAMPAIGN_GROUP,
+                action="create_campaign",
+                entity_type="meta_ads_campaign",
+                items=[IntegrationOperationIntent(fields=plan.intent_fields)],
+            )
+        ],
+    )
 
 
 def _account_entry(deps: RuntimeDeps) -> ResolvedContextEntry:
@@ -209,7 +147,7 @@ def _fixed(values: Mapping[str, Any] | MetaAdsCreateCampaignRequest) -> list[Any
     """Reads the settings the card can't change, because later steps depend on them."""
     if not isinstance(values, MetaAdsCreateCampaignRequest):
         try:
-            values = MetaAdsCreateCampaignRequest.model_validate(_given(values))
+            values = MetaAdsCreateCampaignRequest.model_validate(given(values))
         except ValidationError:
             return None
     return [
@@ -221,10 +159,6 @@ def _fixed(values: Mapping[str, Any] | MetaAdsCreateCampaignRequest) -> list[Any
     ]
 
 
-def _given(values: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in values.items() if value is not None}
-
-
 async def _prepare(
     client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateCampaignRequest
 ) -> tuple[CampaignPlan, str]:
@@ -233,7 +167,14 @@ async def _prepare(
     schedule = account_schedule(request.start_date, request.end_date, account.timezone_name)
     if problems := account_problems(request, account, schedule.days):
         raise ModelRetry(" ".join(problems))
-    await _check_name(client, entry, request, account.currency)
+    await ensure_name_free(
+        client,
+        entry,
+        object_type="campaign",
+        name=request.name,
+        currency=account.currency,
+        taken=f"A campaign called {request.name} is already in this ad account.",
+    )
     plan = plan_campaign(
         request,
         currency=account.currency,
@@ -249,28 +190,6 @@ async def _prepare(
     ):
         raise ModelRetry(f"Meta Ads rejected this campaign, so nothing was created. {reason}")
     return plan, account.currency
-
-
-async def _check_name(
-    client: MetaAdsClient,
-    entry: ResolvedContextEntry,
-    request: MetaAdsCreateCampaignRequest,
-    currency: str,
-) -> None:
-    """A lost reply is found by name, so the name must be free in the ad account."""
-    existing = await list_objects(
-        client,
-        account_id=entry.external_id,
-        object_type="campaign",
-        statuses=_UNDELETED_CAMPAIGN_STATUSES,
-        name_contains=request.name,
-        limit=50,
-        currency=currency,
-    )
-    if any(item.name == request.name for item in existing.objects):
-        raise ModelRetry(
-            f"A campaign called {request.name} is already in this ad account. Choose another name."
-        )
 
 
 def _row(
@@ -299,7 +218,7 @@ def _row(
 
 async def _validate_args(ctx: RunContext[RuntimeDeps], **values: Any) -> None:
     """Checks the rules that hold whatever the account says; preparation checks it live."""
-    request = _request(_given(values))
+    request = validated(MetaAdsCreateCampaignRequest, given(values))
     entry = _account_entry(ctx.deps)
     if request.start_date or request.end_date:
         account_schedule(

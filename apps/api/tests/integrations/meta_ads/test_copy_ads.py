@@ -3,24 +3,22 @@
 """Copying Meta ads: checks before anything is copied, one send per copy, and proof after."""
 
 import json
-from dataclasses import replace
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qsl
-from uuid import uuid4
 
 import httpx2
 import pytest
 from pydantic_ai import ModelRetry
 
-from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.operations import copy_ads as operation_module
 from integrations.meta_ads.references import MetaAdsAdReference, MetaAdsAdSetReference
-from integrations.meta_ads.tools import copy_ads as tool_module
 from integrations.meta_ads.tools.copy_ads import meta_ads_copy_ads
 from integrations.meta_ads.tools.schemas.copies import MetaAdsAdCopy, MetaAdsCopyAdsOutput
-from services.integrations.context.domain import ResolvedActiveContext
-from tests.integrations.meta_ads.support import FakeGraph, context_entry, obj, static_token
+from tests.integrations.meta_ads.support import (
+    FakeGraph,
+    obj,
+    write_tool_context,
+)
 
 PRIMARY_TEXT = "Spring sale on now"
 
@@ -102,36 +100,12 @@ class CopyGraph(FakeGraph):
 
 
 async def run_tool(monkeypatch, graph: CopyGraph, copies: list[MetaAdsAdCopy], proposed=None):
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event", audit
-    )
     http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
-
-    async def client(_ctx, _entry):
-        return MetaAdsClient(static_token, client=http)
-
-    entry = replace(context_entry("123"), write_allowed=True)
-    pin = {"account_id": "123", "resource_id": str(entry.integration_resource_id)}
-    monkeypatch.setattr(tool_module, "meta_ads_client", client)
-    monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: {"_account": pin})
-    proposed_copies = proposed or copies
-    monkeypatch.setattr(
-        tool_module,
-        "proposed_args",
-        lambda _ctx: {"copies": [item.model_dump(mode="json") for item in proposed_copies]},
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            db=None,
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4(), name="Ads agent"),
-            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
-        ),
-        tool_call_approved=True,
+    ctx, audit = write_tool_context(
+        monkeypatch,
+        http,
         tool_name="meta_ads_copy_ads",
-        tool_call_id="call-meta-copy-ads",
+        proposed={"copies": [item.model_dump(mode="json") for item in proposed or copies]},
     )
     async with http:
         result = await meta_ads_copy_ads(ctx, copies)

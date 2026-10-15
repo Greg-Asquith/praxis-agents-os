@@ -119,13 +119,14 @@ The core platform is wired end to end (API, worker, and UI):
   Context Groups. Agents can run bounded Insights reports with background
   fallback and retained-result previews, read account totals and advertising
   objects, discover custom conversions with names in Insights, read recent
-  change history, and list the Pages, Instagram accounts, media, and recent
-  posts an account can advertise with. With approval, agents can upload
-  images and videos, create up to 50 image, video, carousel, and existing
-  post ads in existing ad sets with every Meta automatic change off unless
-  the operator turns it on, copy ads into other ad sets, create paused
-  campaigns and paused ad sets in existing campaigns, turn objects on or
-  off, and change budgets.
+  change history, list the Pages, Instagram accounts, media, recent posts,
+  pixels, apps, and audiences an account can advertise with, find targeting
+  options, and estimate audience sizes. With approval, agents can upload
+  images and videos, create paused campaigns and paused ad sets, create up
+  to 50 image, video, carousel, and existing post ads in existing ad sets
+  with every Meta automatic change off unless the operator turns it on, copy
+  ads into other ad sets, turn objects on or off, and change budgets.
+  Building a campaign with its ad sets and ads in one approval is pending.
   Search Console connections discover verified properties for active context;
   agents can query bounded, typed organic-search performance, list submitted
   sitemap status, resubmit sitemaps with approval and read-after-write evidence,

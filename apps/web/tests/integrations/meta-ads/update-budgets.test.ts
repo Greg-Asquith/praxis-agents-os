@@ -1,12 +1,10 @@
 // apps/web/tests/integrations/meta-ads/update-budgets.test.ts
 
-import { createElement, type ReactNode } from "react"
-import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import type { ToolActivity } from "@/integrations/contract"
 import { budgetNotes, parseBudgetChangeArgs } from "@/integrations/meta_ads/lib/budget-change"
 import { metaAdsUpdateBudgetsPresenter } from "@/integrations/meta_ads/presenters/update-budgets"
+import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 const adSet = {
   version: 1,
@@ -28,8 +26,6 @@ const campaign = {
   budget: { kind: "lifetime", amount: "1000", remaining: "600" },
   currency: "EUR",
 }
-const APPROVE_DISABLED = /<button[^>]*\sdisabled=""[^>]*>Approve/
-
 describe("Meta Ads budget notes", () => {
   it("estimates a month of a daily budget and shows what a lifetime budget has spent", () => {
     const args = parseBudgetChangeArgs({
@@ -140,30 +136,4 @@ function settled(entry: unknown) {
       result: { results: [entry] },
     })
   )
-}
-
-function props(activity: ToolActivity, withApproval = false) {
-  return {
-    activity,
-    ...(withApproval
-      ? {
-          approvalDecision: {
-            decision: { decision: "pending" as const, edits: {}, message: "" as const },
-            error: null,
-            onDecisionChange: vi.fn(),
-            onRetry: vi.fn(),
-            pendingCount: 1,
-            submitting: false,
-          },
-        }
-      : {}),
-    compact: false,
-    defaultOpen: true,
-    live: false,
-    providerKey: "meta_ads",
-  }
-}
-
-function render(node: ReactNode) {
-  return renderToStaticMarkup(createElement("div", null, node))
 }
