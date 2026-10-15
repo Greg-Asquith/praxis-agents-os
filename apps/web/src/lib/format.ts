@@ -277,6 +277,18 @@ export function formatCurrency(
   }
 }
 
+export function currencySymbol(currencyCode: string): string {
+  try {
+    return (
+      new Intl.NumberFormat(undefined, { currency: currencyCode, style: "currency" })
+        .formatToParts(0)
+        .find((part) => part.type === "currency")?.value ?? currencyCode
+    )
+  } catch {
+    return currencyCode
+  }
+}
+
 export function formatCurrencyAmount(amount: string, currencyCode: string): string {
   const numeric = Number(amount)
   if (Number.isFinite(numeric) && Math.abs(numeric) < 1_000_000_000) {

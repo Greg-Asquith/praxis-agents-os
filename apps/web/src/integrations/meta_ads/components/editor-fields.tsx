@@ -18,12 +18,11 @@ import { cn } from "@/lib/utils"
 
 const NO_CHECKS: readonly AdCheck[] = []
 
-/** A label, its control, and the checks about it; narrow layouts put the counter below. */
+/** A label, its control, and the checks about it. */
 export function EditorField({
   checks = NO_CHECKS,
   children,
   counter,
-  counterBelow = false,
   hint,
   id,
   label,
@@ -31,7 +30,6 @@ export function EditorField({
   checks?: readonly AdCheck[] | undefined
   children: ReactNode
   counter?: ReactNode
-  counterBelow?: boolean | undefined
   // Says more about the field beside its label, such as who it applies to.
   hint?: string | undefined
   id: string
@@ -44,10 +42,9 @@ export function EditorField({
           {label}
           {hint ? <span className="text-muted-foreground font-normal"> · {hint}</span> : null}
         </label>
-        {counterBelow ? null : counter}
+        {counter}
       </div>
       {children}
-      {counter && counterBelow ? <div className="flex justify-end">{counter}</div> : null}
       <CheckMessages checks={checks} />
     </div>
   )
@@ -56,9 +53,7 @@ export function EditorField({
 export function LabelledInput({
   accessibleLabel,
   checks = NO_CHECKS,
-  className,
   counter,
-  counterBelow,
   disabled,
   hint,
   id,
@@ -70,9 +65,7 @@ export function LabelledInput({
 }: {
   accessibleLabel?: string | undefined
   checks?: readonly AdCheck[] | undefined
-  className?: string | undefined
   counter?: ReactNode
-  counterBelow?: boolean | undefined
   disabled: boolean
   hint?: string | undefined
   id: string
@@ -83,18 +76,11 @@ export function LabelledInput({
   value: string
 }) {
   return (
-    <EditorField
-      checks={checks}
-      counter={counter}
-      counterBelow={counterBelow}
-      hint={hint}
-      id={id}
-      label={label}
-    >
+    <EditorField checks={checks} counter={counter} hint={hint} id={id} label={label}>
       <Input
         aria-invalid={hasError(checks)}
         aria-label={accessibleLabel}
-        className={cn(fieldWellClass, "min-w-0", className)}
+        className={cn(fieldWellClass, "min-w-0")}
         disabled={disabled}
         id={id}
         inputMode={inputMode}
@@ -114,7 +100,6 @@ export function LabelledSelect({
   disabled,
   id,
   label,
-  note,
   onChange,
   options,
   value,
@@ -124,7 +109,6 @@ export function LabelledSelect({
   disabled: boolean
   id: string
   label: string
-  note?: string | null | undefined
   onChange: (value: string) => void
   options: readonly { value: string; label: string }[]
   value: string
@@ -156,7 +140,6 @@ export function LabelledSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
-      {note ? <p className="text-muted-foreground text-sm">{note}</p> : null}
     </EditorField>
   )
 }

@@ -2,7 +2,8 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { MetaAdsObjectType } from "@/integrations/meta_ads/lib/ads-manager-link"
-import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
+import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
+import { titleCaseToken } from "@/lib/format"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
 export type MetaAdsRequestedStatus = "ACTIVE" | "PAUSED"
@@ -248,10 +249,6 @@ function blockedByEffectiveStatus(effectiveStatus: string | null): Parent[] {
   return []
 }
 
-function money(amount: string, currency: string | null): string {
-  return currency ? formatCurrencyAmount(amount, currency) : amount
-}
-
 function startingChildrenNote(type: MetaAdsObjectType, impact: DeliveryImpact): string | null {
   if (impact.startingChildren === null) return null
   const noun = type === "campaign" ? OBJECT_NOUNS.adset : OBJECT_NOUNS.ad
@@ -268,20 +265,22 @@ function budgetNote(target: StatusTarget, impact: DeliveryImpact): string | null
   if (budget?.kind === "campaign" && target.type === "adset") {
     const period = budget.period ? `${budget.period} ` : ""
     const source = budget.amount
-      ? `the campaign's ${period}budget of ${money(budget.amount, target.currency)}`
+      ? `the campaign's ${period}budget of ${budgetMoney(budget.amount, target.currency)}`
       : "the campaign budget"
     return idle ? `Uses ${source} once its ads are on.` : `Spends from ${source}.`
   }
   if (budget && budget.kind !== "campaign" && budget.amount) {
-    const limit = `${money(budget.amount, target.currency)}${
+    const limit = `${budgetMoney(budget.amount, target.currency)}${
       budget.kind === "daily" ? " a day" : " in total"
     }`
     return idle ? `Holds a budget of up to ${limit}.` : `Starts spending up to ${limit}.`
   }
   if (target.type !== "campaign") return null
   const parts = [
-    impact.dailyBudget ? `${money(impact.dailyBudget, target.currency)} a day` : null,
-    impact.lifetimeBudget ? `${money(impact.lifetimeBudget, target.currency)} in total` : null,
+    impact.dailyBudget ? `${budgetMoney(impact.dailyBudget, target.currency)} a day` : null,
+    impact.lifetimeBudget
+      ? `${budgetMoney(impact.lifetimeBudget, target.currency)} in total`
+      : null,
   ].filter(isNonEmptyString)
   // Unread or uncounted budgets mean the total is a lower bound, never zero.
   const partial = impact.budgetsIncomplete || impact.childrenTruncated
@@ -321,10 +320,6 @@ export function deliveryLabel(
   return titleCaseToken(effectiveStatus.toLowerCase(), effectiveStatus)
 }
 
-function requestedStatusLabel(status: MetaAdsRequestedStatus): string {
-  return status === "ACTIVE" ? "Turn On" : "Pause"
-}
-
 function targetCounts(targets: readonly StatusTarget[]): string {
   return STATUS_LISTS.map(({ type }) => {
     const count = targets.filter((target) => target.type === type).length
@@ -337,7 +332,7 @@ function targetCounts(targets: readonly StatusTarget[]): string {
 export function statusChangeDetails(args: StatusChangeArgs | null): FanOutDetail[] {
   if (args === null) return []
   return [
-    { label: "Change", value: requestedStatusLabel(args.status) },
+    { label: "Change", value: args.status === "ACTIVE" ? "Turn On" : "Pause" },
     { label: "Objects", value: targetCounts(args.targets) },
   ]
 }

@@ -52,7 +52,6 @@ export function MediaPicker({
   excluded = NONE,
   onChoose,
   title,
-  triggerClassName,
   triggerLabel,
 }: {
   accept: readonly MediaType[]
@@ -63,7 +62,6 @@ export function MediaPicker({
   excluded?: readonly string[]
   onChoose: (value: MediaValue) => void
   title: string
-  triggerClassName?: string
   triggerLabel?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -76,7 +74,6 @@ export function MediaPicker({
     <>
       <Button
         aria-label={triggerLabel}
-        className={triggerClassName}
         disabled={disabled}
         onClick={() => {
           setOpen(true)

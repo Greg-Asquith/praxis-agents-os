@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest"
 
 import { parseCreateAdsArgs, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
-import { formatTag } from "@/integrations/meta_ads/lib/automatic-changes"
 import { allowedButtons } from "@/integrations/meta_ads/lib/call-to-action"
 import {
   adRows,
@@ -11,9 +10,9 @@ import {
   createAdsProblem,
 } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {
-  clearAdStatuses,
   editAd,
   editSetting,
+  editStatus,
   moveCard,
   setAdSets,
   setCardMedia,
@@ -214,6 +213,10 @@ describe("Meta Ads create ads model", () => {
     ).not.toBeNull()
     expect(createAdsProblem(parsed({ link: "https://example.com/spring sale" }))).not.toBeNull()
     expect(createAdsProblem(parsed({ ads: [design("A".repeat(201))] }))).not.toBeNull()
+    const adSets = Array.from({ length: 11 }, (_, index) => ({ ...adSet, adset_id: String(index) }))
+    expect(
+      createAdsProblem(parsed({ ads: [design("Spring", { ad_sets: adSets })] }))
+    ).not.toBeNull()
   })
 
   it("says ads created active spend only where their ad set and campaign are on", () => {
@@ -237,24 +240,12 @@ describe("Meta Ads create ads model", () => {
     expect(allowedButtons(lists, ["OUTCOME_SALES", "OUTCOME_APP_PROMOTION"])).toEqual(["DOWNLOAD"])
   })
 
-  it("tags a setting that applies to only some formats, and leaves universal ones untagged", () => {
-    const [imageOnly] = parsed().catalogue
-    if (!imageOnly) throw new Error("fixture has no change")
+  it("sets every ad's status in one edit, clearing an ad's own status", () => {
+    expect(editStatus(parsed(), "active")).toEqual({ status: "active" })
 
-    expect(formatTag(imageOnly)).toBe("Image Ads")
-    expect(formatTag({ ...imageOnly, formats: ["image", "video", "carousel"] })).toBeNull()
-  })
-
-  it("clears every ad's own status so the one shared status decides, and only when one is set", () => {
     const args = parsed({ ads: [design("Spring", { status: "active" }), design("Autumn")] })
-    const cleared = clearAdStatuses(args)
-
-    expect(cleared?.every((ad) => !("status" in ad))).toBe(true)
-    expect(adRows(parsed({ ads: cleared, status: "paused" })).map((row) => row.status)).toEqual([
-      "paused",
-      "paused",
-    ])
-    expect(clearAdStatuses(parsed())).toBeNull()
+    const edits = editStatus(args, "paused")
+    expect(adRows(parsed(edits)).map((row) => row.status)).toEqual(["paused", "paused"])
   })
 
   it("moves an ad to other ad sets, never to none", () => {

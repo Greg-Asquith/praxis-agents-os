@@ -94,13 +94,55 @@ async def test_query_rejects_non_select_statement_types(statement_type: str) -> 
     assert len(client.calls) == 1
 
 
-async def test_query_rejects_out_of_context_tables() -> None:
-    client = _QueryClient(dry_run=_dry_run(references=[("other", "private", "secrets")]))
+async def test_query_rejects_named_table_outside_context_before_provider_io() -> None:
+    client = _QueryClient(dry_run=_dry_run())
+
+    with pytest.raises(ModelRetry, match="outside the active context"):
+        await _run_operation(client, query="SELECT * FROM `other.private.secrets`")
+
+    assert client.calls == []
+
+
+async def test_query_rejects_dry_run_table_outside_context_when_no_view_is_named() -> None:
+    client = _QueryClient(
+        dry_run=_dry_run(
+            references=[
+                ("analytics", "marketing", "campaign_daily"),
+                ("other", "private", "secrets"),
+            ]
+        )
+    )
 
     with pytest.raises(ModelRetry, match="outside the active context"):
         await _run_operation(client)
 
     assert len(client.calls) == 1
+
+
+async def test_query_allows_view_in_context_that_reads_other_datasets() -> None:
+    view_reads = _dry_run(references=[("other", "private", "base_table")])
+    client = _QueryClient(dry_run=view_reads, view_dry_runs=[view_reads])
+
+    await _run_operation(client, query="SELECT * FROM `analytics.marketing.campaign_view`")
+
+    assert client.calls[1]["json"]["configuration"]["query"]["query"] == (
+        "SELECT * FROM `analytics.marketing.campaign_view`"
+    )
+    assert len(client.calls) == 3
+
+
+async def test_query_rejects_outside_table_that_no_named_view_reads() -> None:
+    client = _QueryClient(
+        dry_run=_dry_run(
+            references=[("other", "private", "base_table"), ("other", "private", "secrets")]
+        ),
+        view_dry_runs=[_dry_run(references=[("other", "private", "base_table")])],
+    )
+
+    with pytest.raises(ModelRetry, match=r"context: other\.private\.secrets\. "):
+        await _run_operation(client, query="SELECT * FROM `analytics.marketing.campaign_view`")
+
+    assert len(client.calls) == 2
 
 
 async def test_query_fails_closed_at_documented_reference_limit() -> None:
@@ -204,7 +246,7 @@ async def test_query_sends_row_filter_parameters_to_dry_run_and_execution() -> N
 
     result = await run_query(
         client,
-        query="SELECT * FROM filtered",
+        query="SELECT * FROM `analytics.marketing.campaign_daily` WHERE account IN UNNEST(@praxis_scope_0)",
         billing_project_id="analytics",
         allowed_datasets={
             ("analytics", "marketing"): AllowedDataset(
@@ -238,7 +280,7 @@ async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> Non
     with pytest.raises(ModelRetry, match="unavailable while row filters are active"):
         await run_query(
             client,
-            query="SELECT * FROM rewritten",
+            query="SELECT * FROM `analytics.marketing.campaign_daily`",
             billing_project_id="analytics",
             allowed_datasets={
                 ("analytics", "marketing"): AllowedDataset(
@@ -467,10 +509,11 @@ async def _run_operation(
     client: "_QueryClient",
     *,
     max_bytes: int = 1024,
+    query: str = "SELECT * FROM `analytics.marketing.campaign_daily`",
 ):
     return await run_query(
         client,
-        query="SELECT * FROM `analytics.marketing.campaign_daily`",
+        query=query,
         billing_project_id="analytics",
         allowed_datasets={
             ("analytics", "marketing"): AllowedDataset(
@@ -521,10 +564,12 @@ class _QueryClient:
         *,
         dry_run: dict,
         query_response: dict | None = None,
+        view_dry_runs: list[dict] | None = None,
     ) -> None:
         self.responses = iter(
             [
                 dry_run,
+                *(view_dry_runs or []),
                 query_response
                 or {
                     "jobComplete": True,

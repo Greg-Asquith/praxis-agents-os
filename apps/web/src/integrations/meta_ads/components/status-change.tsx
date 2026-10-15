@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
-import { MetaAdsManagerLink } from "@/integrations/meta_ads/components/object-card"
 import {
+  MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
@@ -139,6 +139,7 @@ export function StatusApprovalSummary({
               <Button
                 key={list.type}
                 aria-checked={list.type === addType.type}
+                disabled={disabled}
                 onClick={() => {
                   setAddType(list)
                 }}
@@ -191,16 +192,16 @@ function DeliveryStats({ args, rows }: { args: StatusChangeArgs; rows: StatusRow
   const spend = startingSpend(rows, args.delivery)
   const stats = [
     {
-      label: "Starts spending",
+      label: "Starts Spending",
       value: spend
         ? `${spend.atLeast ? "At least " : "Up to "}${formatCurrency(spend.amount, spend.currency)} a day`
         : "Nothing yet",
     },
     {
-      label: "Will deliver",
+      label: "Will Deliver",
       value: `${String(kept.length - blocked.length)} of ${String(kept.length)}`,
     },
-    { label: "Needs something else on", value: String(blocked.length) },
+    { label: "Needs Something Else On", value: String(blocked.length) },
   ]
   return (
     <dl
@@ -281,7 +282,7 @@ function StatusItem({
         : null}
       {href ? (
         <div className="pl-7">
-          <MetaAdsManagerLink href={href} />
+          <MetaAdsLink href={href}>Open in Ads Manager</MetaAdsLink>
         </div>
       ) : null}
     </div>
@@ -318,7 +319,7 @@ export function StatusOutcome({ result }: { result: StatusChangeResult }) {
         column.key === "name" && isRecord(row) && typeof row["href"] === "string" ? (
           <span className="grid gap-0.5">
             <span className="wrap-anywhere">{String(row["name"])}</span>
-            <MetaAdsManagerLink href={row["href"]} />
+            <MetaAdsLink href={row["href"]}>Open in Ads Manager</MetaAdsLink>
           </span>
         ) : null
       }

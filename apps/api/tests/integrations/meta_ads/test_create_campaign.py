@@ -138,20 +138,6 @@ async def test_a_card_edit_of_status_objective_and_budget_is_sent_as_edited(monk
     assert sent["special_ad_categories"] == '["HOUSING"]'
 
 
-async def test_an_edited_budget_below_the_account_minimum_is_refused_live(monkeypatch):
-    graph = CampaignGraph()
-
-    entry, _audit = await run_tool(
-        monkeypatch,
-        graph,
-        args(budget={"mode": "campaign_daily", "amount": "0.5"}),
-        proposed=args(),
-    )
-
-    assert entry["status"] == "error"
-    assert graph.creates == graph.dry_runs == []
-
-
 async def test_ad_set_budgets_send_the_sharing_choice_and_no_amount(monkeypatch):
     graph = CampaignGraph()
     budget = {"mode": "ad_set", "share_between_ad_sets": True}

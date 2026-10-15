@@ -6,6 +6,7 @@ export type TargetingItem = Record<string, unknown>
 type Targeting = Record<string, unknown>
 type LocationField = "locations" | "excluded_locations"
 type AudienceField = "audiences" | "excluded_audiences"
+type ListField = LocationField | AudienceField
 
 export function targetingItems(value: unknown): TargetingItem[] {
   return Array.isArray(value) ? value.filter(isRecord) : []
@@ -20,6 +21,8 @@ export function itemName(item: TargetingItem): string {
   return "Unnamed"
 }
 
+// Each add returns `targeting` unchanged for an item already in the list.
+
 /** Adds a place from a lookup, copying only the fields the targeting accepts. */
 export function addLocation(
   targeting: Targeting,
@@ -32,14 +35,6 @@ export function addLocation(
   const added: TargetingItem = { kind: place["kind"], key: place["key"], name: place["name"] }
   if (typeof place["country_code"] === "string") added["country_code"] = place["country_code"]
   return { ...targeting, [field]: [...current, added] }
-}
-
-export function removeLocation(
-  targeting: Targeting,
-  field: LocationField,
-  index: number
-): Targeting {
-  return { ...targeting, [field]: targetingItems(targeting[field]).filter((_, at) => at !== index) }
 }
 
 /** Adds an interest to the first group, whose items match with "or", or starts that group. */
@@ -75,15 +70,6 @@ export function addAudience(
   return { ...targeting, [field]: [...current, audience] }
 }
 
-export function removeAudience(
-  targeting: Targeting,
-  field: AudienceField,
-  index: number
-): Targeting {
+export function removeItem(targeting: Targeting, field: ListField, index: number): Targeting {
   return { ...targeting, [field]: targetingItems(targeting[field]).filter((_, at) => at !== index) }
-}
-
-/** Sets the age range; no maximum reaches 65 and over. */
-export function withAges(targeting: Targeting, min: number, max: number | null): Targeting {
-  return { ...targeting, age_min: min, age_max: max }
 }

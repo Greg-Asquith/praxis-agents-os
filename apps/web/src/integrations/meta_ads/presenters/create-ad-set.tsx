@@ -10,11 +10,11 @@ import {
   type CreateAdSetArgs,
 } from "@/integrations/meta_ads/lib/create-ad-set"
 import {
-  editFields,
   parseCreatedObject,
   type CreatedObjectResult,
 } from "@/integrations/meta_ads/lib/create-summary"
 import { metaAdsProvider } from "@/integrations/meta_ads/provider"
+import { editApprovalFields } from "@/integrations/approval-edits"
 import {
   createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
@@ -42,7 +42,7 @@ export const metaAdsCreateAdSetPresenter = createIntegrationWritePresenter({
               args={parseCreateAdSetArgs(value) ?? fallback}
               disabled={disabled}
               onEdit={(edits) => {
-                editFields(controls, disabled, edits)
+                editApprovalFields(controls, disabled, edits)
               }}
             />
           ),

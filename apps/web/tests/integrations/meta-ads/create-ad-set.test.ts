@@ -69,7 +69,10 @@ describe("Meta Ads create ad set presenter", () => {
     )
     if (!args) throw new Error("expected args")
     expect(createAdSetProblem(args)).toMatch(/minimum daily budget/)
-    expect(createAdSetProblem({ ...args, goal: "link_clicks" })).toBeNull()
+    const edited = parseCreateAdSetArgs(
+      display({ _minimum: "50", _minimum_goal: "website_conversions", goal: "link_clicks" })
+    )
+    expect(createAdSetProblem(edited)).toBeNull()
     expect(goalEdits(args, "link_clicks")).toEqual({
       goal: "link_clicks",
       pixel: null,

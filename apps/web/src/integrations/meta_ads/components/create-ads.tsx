@@ -11,7 +11,12 @@ import { SettingRows } from "@/integrations/meta_ads/components/setting-rows"
 import { StatusChoice } from "@/integrations/meta_ads/components/status-choice"
 import { UrlTagsRow } from "@/integrations/meta_ads/components/url-tags-row"
 import { hasAiGeneratedChange } from "@/integrations/meta_ads/lib/automatic-changes"
-import { clearAdStatuses, editSetting } from "@/integrations/meta_ads/lib/create-ads-edits"
+import {
+  editSetting,
+  editStatus,
+  type EditedAds,
+  type SharedKey,
+} from "@/integrations/meta_ads/lib/create-ads-edits"
 import { MediaAccountContext } from "@/integrations/meta_ads/lib/meta-pictures"
 import { MediaUploadOutcome } from "@/integrations/meta_ads/components/media-upload"
 import {
@@ -27,11 +32,11 @@ import { cn } from "@/lib/utils"
 export function CreateAdsApproval({
   args,
   disabled,
-  onFieldEdit,
+  onEdit,
 }: {
   args: CreateAdsArgs
   disabled: boolean
-  onFieldEdit: (key: string, value: EditedValue) => void
+  onEdit: (edits: Record<string, EditedValue>) => void
 }) {
   const id = useId()
   const rows = adRows(args)
@@ -41,10 +46,13 @@ export function CreateAdsApproval({
   const aiOn = hasAiGeneratedChange(args.catalogue, args.enabledChanges)
   const delivery = statusLines(args, rows).join(" ")
   const count = rows.length
-  const changeSetting = (key: "link" | "call_to_action" | "url_tags", value: string | null) => {
+  const editAds = (ads: EditedAds) => {
+    onEdit({ ads })
+  }
+  const changeSetting = (key: SharedKey, value: string | null) => {
     if (!row) return
     const edit = editSetting(args, row.ad.index, key, value)
-    onFieldEdit(edit.field, edit.value)
+    onEdit({ [edit.field]: edit.value })
   }
   return (
     <MediaAccountContext value={args.accountId}>
@@ -59,10 +67,7 @@ export function CreateAdsApproval({
               : null
           }
           onChange={(status) => {
-            onFieldEdit("status", status)
-            // Each ad follows the one status chosen here.
-            const cleared = clearAdStatuses(args)
-            if (cleared) onFieldEdit("ads", cleared)
+            onEdit(editStatus(args, status))
           }}
           pausedNote={delivery}
           value={rows.some((item) => item.status === "active") ? "active" : "paused"}
@@ -77,9 +82,7 @@ export function CreateAdsApproval({
               args={args}
               count={count}
               disabled={disabled}
-              onEdit={(ads) => {
-                onFieldEdit("ads", ads)
-              }}
+              onEdit={editAds}
               onEditSetting={changeSetting}
               onSelect={setSelected}
               row={row}
@@ -92,9 +95,7 @@ export function CreateAdsApproval({
               args={args}
               disabled={disabled}
               id={id}
-              onEdit={(ads) => {
-                onFieldEdit("ads", ads)
-              }}
+              onEdit={editAds}
               onEditSetting={changeSetting}
               row={row}
             />
@@ -103,7 +104,7 @@ export function CreateAdsApproval({
             args={args}
             disabled={disabled}
             onChange={(value) => {
-              onFieldEdit("automatic_changes", value)
+              onEdit({ automatic_changes: value })
             }}
           />
         </SettingRows>

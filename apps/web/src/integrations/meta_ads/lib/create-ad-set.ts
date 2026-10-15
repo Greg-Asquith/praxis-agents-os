@@ -2,8 +2,12 @@
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import type { CreateStatus } from "@/integrations/meta_ads/components/status-choice"
-import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
-import { BID_OPTIONS, type BidStrategy } from "@/integrations/meta_ads/lib/create-campaign"
+import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
+import {
+  AMOUNT_FORMAT,
+  BID_OPTIONS,
+  type BidStrategy,
+} from "@/integrations/meta_ads/lib/create-campaign"
 import { scheduleSummary } from "@/integrations/meta_ads/lib/create-summary"
 import {
   ASSET_LABELS,
@@ -40,6 +44,8 @@ const TARGETING_CATEGORIES = new Set([
   "FINANCIAL_PRODUCTS_SERVICES",
   "CREDIT",
 ])
+// The tool's min_roas format: up to four digits either side of the point.
+const ROAS = /^\d{1,4}(\.\d{1,4})?$/
 const LIST = new Intl.ListFormat("en", { type: "conjunction" })
 const GENDERS = { all: "All genders", men: "Men", women: "Women" } as const
 
@@ -100,9 +106,8 @@ export type CreateAdSetArgs = {
   accountName: string | null
   currency: string | null
   timezone: string | null
+  // Meta's daily minimum, only while the goal is still the one it was read for.
   minimum: string | null
-  // The goal the minimum was read for; null when the backend didn't say.
-  minimumGoal: string | null
   name: string
   status: CreateStatus
   campaign: CampaignFacts
@@ -116,6 +121,9 @@ export type CreateAdSetArgs = {
   bidStrategy: BidStrategy | null
   bidAmount: string | null
   minRoas: string | null
+  // Under a campaign budget only: what the ad set spends at least and at most each day.
+  minDailySpend: string | null
+  maxDailySpend: string | null
   payPerClick: boolean
   startDate: string | null
   endDate: string | null
@@ -137,7 +145,7 @@ export function parseCreateAdSetArgs(value: unknown): CreateAdSetArgs | null {
     !isRecord(campaign) ||
     !isNonEmptyString(campaign["campaign_id"]) ||
     !isOneOf(GOAL_SET, goal) ||
-    !isNonEmptyString(name) ||
+    typeof name !== "string" ||
     !isRecord(targeting)
   )
     return null
@@ -151,8 +159,7 @@ export function parseCreateAdSetArgs(value: unknown): CreateAdSetArgs | null {
     accountName: stringValue(value["_account_name"]),
     currency: stringValue(value["_currency"]),
     timezone: stringValue(value["_timezone"]),
-    minimum: stringValue(value["_minimum"]),
-    minimumGoal: stringValue(value["_minimum_goal"]),
+    minimum: value["_minimum_goal"] === goal ? stringValue(value["_minimum"]) : null,
     name,
     status: value["status"] === "active" ? "active" : "paused",
     campaign: parseCampaign(campaign),
@@ -172,6 +179,8 @@ export function parseCreateAdSetArgs(value: unknown): CreateAdSetArgs | null {
     bidStrategy: BID_KEYS[String(value["bid_strategy"])] ?? null,
     bidAmount: stringValue(value["bid_amount"]),
     minRoas: stringValue(value["min_roas"]),
+    minDailySpend: stringValue(value["min_daily_spend"]),
+    maxDailySpend: stringValue(value["max_daily_spend"]),
     payPerClick: value["pay_per_click"] === true,
     startDate: stringValue(value["start_date"]),
     endDate: stringValue(value["end_date"]),
@@ -289,15 +298,32 @@ function goalSummary(args: CreateAdSetArgs): string {
     .join(" · ")
 }
 
+/** The campaign's own budget, such as "£150.00 a day", when it has an amount. */
+export function campaignBudgetText({ campaign, currency }: CreateAdSetArgs): string | null {
+  const amount = campaign.budget?.amount
+  if (!amount) return null
+  return `${budgetMoney(amount, currency)} ${campaign.budget?.period === "lifetime" ? "in total" : "a day"}`
+}
+
 function budgetSummary(args: CreateAdSetArgs): string {
-  const { budget, campaign, currency } = args
-  const held = campaign.budget?.amount
+  const { budget, currency, minDailySpend, maxDailySpend } = args
+  const held = campaignBudgetText(args)
   const money = budget
     ? `${budgetMoney(budget.amount, currency)} ${budget.kind === "daily" ? "a day" : "in total"}`
     : held
-      ? `Campaign budget of ${budgetMoney(held, currency)}${campaign.budget?.period === "lifetime" ? " in total" : " a day"}`
+      ? `Campaign budget of ${held}`
       : "Uses the campaign budget"
-  return `${money} · ${scheduleSummary(args.startDate, args.endDate)}`
+  const spend = [
+    minDailySpend ? `at least ${budgetMoney(minDailySpend, currency)}` : null,
+    maxDailySpend ? `at most ${budgetMoney(maxDailySpend, currency)}` : null,
+  ].filter(Boolean)
+  return [
+    money,
+    spend.length > 0 ? `${spend.join(" and ")} a day` : null,
+    scheduleSummary(args.startDate, args.endDate),
+  ]
+    .filter(Boolean)
+    .join(" · ")
 }
 
 /** One line for each setting row, shown while the row is closed. */
@@ -347,11 +373,12 @@ export function bidLabel(strategy: BidStrategy): string {
   return BID_OPTIONS.find((item) => item.value === strategy)?.label ?? strategy
 }
 
-function euProblem(args: CreateAdSetArgs): string | null {
-  if (!args.euApplies) return null
-  if ((args.euPayer ?? args.defaultPayer) && (args.euBeneficiary ?? args.defaultBeneficiary))
-    return null
-  return "This ad set reaches the EU. Add who pays for the ads and who they benefit under EU Transparency."
+/** True when an EU ad set has no payer or beneficiary, given or from the account's defaults. */
+export function euNamesMissing(args: CreateAdSetArgs): boolean {
+  return (
+    args.euApplies &&
+    !((args.euPayer ?? args.defaultPayer) && (args.euBeneficiary ?? args.defaultBeneficiary))
+  )
 }
 
 function goalProblem(args: CreateAdSetArgs): string | null {
@@ -363,24 +390,30 @@ function goalProblem(args: CreateAdSetArgs): string | null {
   if (args.conversionPixelMismatch)
     return "The custom conversion counts events from another pixel. Choose that pixel, or a standard event."
   const strategy = effectiveBid(args)
-  if ((strategy === "cost_per_result_goal" || strategy === "bid_cap") && !args.bidAmount)
-    return strategy === "bid_cap" ? "Set the maximum bid." : "Set the target cost per result."
-  if (strategy === "roas_goal" && !args.minRoas) return "Set the minimum return on ad spend."
+  if (strategy === "cost_per_result_goal" || strategy === "bid_cap") {
+    if (!args.bidAmount)
+      return strategy === "bid_cap" ? "Set the maximum bid." : "Set the target cost per result."
+    if (!isBudgetAmount(args.bidAmount)) return AMOUNT_FORMAT
+  }
+  if (
+    strategy === "roas_goal" &&
+    !(args.minRoas && ROAS.test(args.minRoas) && Number(args.minRoas) > 0)
+  )
+    return "Set the minimum return on ad spend as a ratio above zero, such as 2.5."
   return null
 }
 
 function budgetProblem(args: CreateAdSetArgs): string | null {
   const { budget, campaign } = args
   if (!campaign.budget && !budget?.amount) return "Set the ad set's budget."
+  if (budget && !isBudgetAmount(budget.amount)) return AMOUNT_FORMAT
   if (budget?.kind === "lifetime" && !args.endDate) return "A lifetime budget needs an end date."
-  // The minimum was read for the proposed goal, so it holds only while the goal is unchanged.
-  if (
-    budget?.kind === "daily" &&
-    args.minimum &&
-    args.minimumGoal === args.goal &&
-    Number(budget.amount) < Number(args.minimum)
-  )
+  if (budget?.kind === "daily" && args.minimum && Number(budget.amount) < Number(args.minimum))
     return `The minimum daily budget for this goal is ${budgetMoney(args.minimum, args.currency)}.`
+  const { minDailySpend: least, maxDailySpend: most } = args
+  if ((least && !isBudgetAmount(least)) || (most && !isBudgetAmount(most))) return AMOUNT_FORMAT
+  if (least && most && Number(most) < Number(least))
+    return "The most it spends a day can't be below the least."
   return null
 }
 
@@ -403,7 +436,10 @@ function targetingProblem(args: CreateAdSetArgs): string | null {
 /** Blocks approval for what Meta would refuse, such as missing settings or a budget under the minimum. */
 export function createAdSetProblem(args: CreateAdSetArgs | null): string | null {
   if (!args) return null
-  return euProblem(args) ?? goalProblem(args) ?? budgetProblem(args) ?? targetingProblem(args)
+  if (!args.name.trim()) return "Name the ad set."
+  if (euNamesMissing(args))
+    return "This ad set reaches the EU. Add who pays for the ads and who they benefit under EU Transparency."
+  return goalProblem(args) ?? budgetProblem(args) ?? targetingProblem(args)
 }
 
 export function adSetPrompt(args: CreateAdSetArgs): string {

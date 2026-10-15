@@ -4,6 +4,7 @@ import { fieldOptionLabel } from "@/components/tool-ui/field-options"
 import { hasAiGeneratedChange } from "@/integrations/meta_ads/lib/automatic-changes"
 import { allowedButtons, DEFAULT_BUTTON } from "@/integrations/meta_ads/lib/call-to-action"
 import {
+  adCount,
   adSetName,
   MAX_CARDS,
   MIN_CARDS,
@@ -57,6 +58,9 @@ const URL_TAGS_PATTERN = /^[^=&\s]+=[^&\s]*(?:&[^=&\s]+=[^&\s]*)*$/
 const MIN_IMAGE_WIDTH = 600
 const VERTICAL_RATIO = 9 / 16
 const INSTAGRAM_FEED_CARDS = 5
+// One call creates at most 50 ads in at most 10 ad sets, counting each ad set an ad goes in.
+const MAX_ADS = 50
+const MAX_AD_SETS = 10
 
 export function adRows(args: CreateAdsArgs): AdRow[] {
   const forced = hasAiGeneratedChange(args.catalogue, args.enabledChanges)
@@ -310,6 +314,14 @@ function isHttpsLink(value: string): boolean {
 /** Blocks approval while any ad has an error the server would reject. */
 export function createAdsProblem(args: CreateAdsArgs | null): string | null {
   if (!args) return null
+  const adSets = new Set(args.ads.flatMap((ad) => ad.adSetIds)).size
+  if (adSets > MAX_AD_SETS) {
+    return `These ads use ${String(adSets)} ad sets. Use at most ${String(MAX_AD_SETS)} in one request.`
+  }
+  const ads = adCount(args)
+  if (ads > MAX_ADS) {
+    return `This creates ${String(ads)} ads. Create at most ${String(MAX_ADS)} in one request.`
+  }
   const rows = adRows(args)
   const failing = rows.filter((row) => row.check === "error").length
   return failing

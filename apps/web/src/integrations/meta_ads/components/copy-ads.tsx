@@ -51,24 +51,27 @@ export function CopyAdsApproval({
         </p>
         <DeliveryNote lines={statusLines(args, rows)} runs={runs} />
         <SettingRows ariaLabel="Ads to copy">
-          {args.copies.map((copy) => (
-            <SettingRow
-              key={copy.index}
-              rowKey={String(copy.index)}
-              summary={`→ ${adSetName(args, copy.adSetId)} · ${copy.source?.aiGenerated || copy.status === "paused" ? "Paused" : "Active"}`}
-              title={sourceName(copy)}
-              tone={copy.status === "active" && !copy.source?.aiGenerated ? "warning" : "neutral"}
-            >
-              <CopyItem
-                args={args}
-                copy={copy}
-                disabled={disabled}
-                onEdit={(edit) => {
-                  onFieldEdit("copies", editCopy(args, copy.index, edit))
-                }}
-              />
-            </SettingRow>
-          ))}
+          {args.copies.map((copy, index) => {
+            const active = rows[index]?.status === "active"
+            return (
+              <SettingRow
+                key={copy.index}
+                rowKey={String(copy.index)}
+                summary={`→ ${adSetName(args, copy.adSetId)} · ${active ? "Active" : "Paused"}`}
+                title={sourceName(copy)}
+                tone={active ? "warning" : "neutral"}
+              >
+                <CopyItem
+                  args={args}
+                  copy={copy}
+                  disabled={disabled}
+                  onEdit={(edit) => {
+                    onFieldEdit("copies", editCopy(args, copy.index, edit))
+                  }}
+                />
+              </SettingRow>
+            )
+          })}
         </SettingRows>
       </div>
     </MediaAccountContext>

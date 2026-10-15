@@ -68,7 +68,7 @@ class MetaAdsInterestOption(MetaAdsAccountReference):
 async def _find(
     ctx: EntityResolverContext, kinds: Sequence[MetaAdsTargetingKind], query: str, limit: int
 ) -> list[tuple[str, MetaAdsTargetingOption]]:
-    """Searches Meta once per kind; Meta's keys don't depend on the ad account, so one runs it."""
+    """Searches Meta once per kind through the first selected account; keys aren't per account."""
     entries = ctx.active_context.compatible_entries(META_ADS_BINDING)
     if not entries or not query.strip():
         return []
@@ -95,7 +95,8 @@ def _location(account_id: str, option: MetaAdsTargetingOption) -> EntityChoice:
     reference = MetaAdsLocationOption(
         account_id=account_id,
         label=option.name[:500],
-        description=", ".join(part for part in (option.region, option.description) if part) or None,
+        description=", ".join(part for part in (option.region, option.description) if part)[:1000]
+        or None,
         kind=option.kind,
         key=option.key,
         name=option.name,

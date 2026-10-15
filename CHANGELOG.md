@@ -184,7 +184,10 @@ minor release. Patch releases contain backward-compatible fixes only.
   instead. Results sit flat in the tool card, with tables showing a few
   default columns and the rest under Columns, and warnings use a readable
   amber.
-
+- BigQuery queries can read views in an active dataset even when the view
+  reads tables in other datasets. The tool checks the tables and views the
+  SQL names before any BigQuery request, so naming another dataset's table is
+  still refused.
 - Integration writes can record provider IDs as audit checkpoints between
   their pending and final records. Meta Ads video uploads record the video ID
   from Meta's `start` reply before sending any bytes, so an upload interrupted

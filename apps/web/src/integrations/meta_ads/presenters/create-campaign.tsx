@@ -10,11 +10,11 @@ import {
   type CreateCampaignArgs,
 } from "@/integrations/meta_ads/lib/create-campaign"
 import {
-  editFields,
   parseCreatedObject,
   type CreatedObjectResult,
 } from "@/integrations/meta_ads/lib/create-summary"
 import { metaAdsProvider } from "@/integrations/meta_ads/provider"
+import { editApprovalFields } from "@/integrations/approval-edits"
 import {
   createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
@@ -43,7 +43,7 @@ export const metaAdsCreateCampaignPresenter = createIntegrationWritePresenter({
             args={parseCreateCampaignArgs(value) ?? fallback}
             disabled={disabled}
             onEdit={(edits) => {
-              editFields(controls, disabled, edits)
+              editApprovalFields(controls, disabled, edits)
             }}
           />
         ),

@@ -11,6 +11,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Button } from "@/components/ui/button"
 import { FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { editApprovalFields } from "@/integrations/approval-edits"
 import type { ToolActivity } from "@/integrations/contract"
 import { MetaAdsLogo } from "@/integrations/meta_ads/components/logo"
 import { InsightsFilters } from "@/integrations/meta_ads/components/insights-filters"
@@ -21,9 +22,8 @@ import {
   insightsDatePresets,
   parseInsightsApproval,
 } from "@/integrations/meta_ads/lib/insights-approval"
-import { titleCaseToken } from "@/lib/format"
-
 import { parseInsightsOptions } from "@/integrations/meta_ads/lib/insights-options"
+import { pluralize, titleCaseToken } from "@/lib/format"
 
 function intervalLabel(value: string | number): string {
   if (typeof value === "number") return value === 1 ? "Daily" : `Every ${String(value)} days`
@@ -60,12 +60,8 @@ export function MetaAdsInsightsApproval({
     value,
     label: value === "adset" ? "Ad Set" : titleCaseToken(value, value),
   }))
-  const edit = (key: string, value: EditedValue) => {
-    controls.onDecisionChange({
-      decision: "pending",
-      edits: { ...controls.decision.edits, [key]: value },
-      message: "",
-    })
+  const edit = (patch: Record<string, EditedValue>) => {
+    editApprovalFields(controls, disabled, patch)
   }
   return (
     <ToolApprovalDecisionCard
@@ -94,16 +90,7 @@ export function MetaAdsInsightsApproval({
                       className="h-8 rounded-full"
                       disabled={disabled}
                       onClick={() => {
-                        if (preset.since)
-                          controls.onDecisionChange({
-                            decision: "pending",
-                            edits: {
-                              ...controls.decision.edits,
-                              since: preset.since,
-                              until: preset.until,
-                            },
-                            message: "",
-                          })
+                        if (preset.since) edit({ since: preset.since, until: preset.until })
                         else document.getElementById(`${activity.id}-since`)?.focus()
                       }}
                       role="radio"
@@ -123,7 +110,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-since`}
                   max={args.until || undefined}
                   onChange={(event) => {
-                    edit("since", event.currentTarget.value)
+                    edit({ since: event.currentTarget.value })
                   }}
                   required
                   type="date"
@@ -136,7 +123,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-until`}
                   min={args.since || undefined}
                   onChange={(event) => {
-                    edit("until", event.currentTarget.value)
+                    edit({ until: event.currentTarget.value })
                   }}
                   required
                   type="date"
@@ -167,7 +154,7 @@ export function MetaAdsInsightsApproval({
                       className="h-8"
                       disabled={disabled}
                       onClick={() => {
-                        edit("level", item.value)
+                        edit({ level: item.value })
                       }}
                       role="radio"
                       size="sm"
@@ -187,7 +174,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-fields`}
                   label="Measures"
                   onChange={(value) => {
-                    edit("fields", value)
+                    edit({ fields: value })
                   }}
                   options={options.fields.values}
                   value={args.fields}
@@ -209,7 +196,7 @@ export function MetaAdsInsightsApproval({
                   label="Interval"
                   onChange={(value) => {
                     const interval = options.intervals.find((item) => String(item) === value)
-                    if (interval !== undefined) edit("time_increment", interval)
+                    if (interval !== undefined) edit({ time_increment: interval })
                   }}
                   options={options.intervals.map((value) => ({
                     value: String(value),
@@ -231,7 +218,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-breakdowns`}
                   label="Breakdowns"
                   onChange={(value) => {
-                    edit("breakdowns", value)
+                    edit({ breakdowns: value })
                   }}
                   options={options.breakdowns.values}
                   value={args.breakdowns}
@@ -241,7 +228,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-actions`}
                   label="Action Breakdowns"
                   onChange={(value) => {
-                    edit("action_breakdowns", value)
+                    edit({ action_breakdowns: value })
                   }}
                   options={options.actionBreakdowns.values}
                   value={args.action_breakdowns}
@@ -262,7 +249,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-attribution`}
                   label="Attribution Windows"
                   onChange={(value) => {
-                    edit("attribution_windows", value.length ? value : null)
+                    edit({ attribution_windows: value.length ? value : null })
                   }}
                   options={options.attributionWindows.values}
                   value={args.attribution_windows}
@@ -275,7 +262,7 @@ export function MetaAdsInsightsApproval({
                 rowKey="sort"
                 summary={`${args.sort ? titleCaseToken(args.sort, args.sort) : "Default order"} \u00b7 ${
                   args.filters.length > 0
-                    ? `${String(args.filters.length)} ${args.filters.length === 1 ? "filter" : "filters"}`
+                    ? `${String(args.filters.length)} ${pluralize(args.filters.length, "filter")}`
                     : "no filters"
                 }`}
                 title="Sort and Filter"
@@ -285,7 +272,7 @@ export function MetaAdsInsightsApproval({
                   id={`${activity.id}-sort`}
                   label="Sort Order"
                   onChange={(value) => {
-                    edit("sort", value)
+                    edit({ sort: value })
                   }}
                   options={[
                     { value: "", label: "Default order" },
@@ -303,7 +290,7 @@ export function MetaAdsInsightsApproval({
                   fields={args.fields}
                   id={`${activity.id}-filters`}
                   onChange={(value) => {
-                    edit("filters", value)
+                    edit({ filters: value })
                   }}
                   options={options}
                   value={args.filters}
@@ -317,7 +304,7 @@ export function MetaAdsInsightsApproval({
                   max={options.rows.max}
                   min={options.rows.min}
                   onChange={(event) => {
-                    edit("limit", Number(event.currentTarget.value))
+                    edit({ limit: Number(event.currentTarget.value) })
                   }}
                   step={1}
                   type="number"

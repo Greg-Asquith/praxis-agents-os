@@ -6,8 +6,8 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { MetaAdsManagerLink } from "@/integrations/meta_ads/components/object-card"
 import {
+  MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
@@ -26,7 +26,7 @@ import {
   type BudgetChangeResult,
   type BudgetRow,
 } from "@/integrations/meta_ads/lib/budget-change"
-import { formatCurrency, formatPercentageChange, pluralize } from "@/lib/format"
+import { currencySymbol, formatCurrency, formatPercentageChange, pluralize } from "@/lib/format"
 
 export function BudgetApprovalSummary({
   args,
@@ -97,11 +97,7 @@ function BudgetItem({
   const { change, included } = row
   const key = budgetRowKey(change)
   const valid = isBudgetAmount(change.amount)
-  const symbol = change.currency
-    ? new Intl.NumberFormat(undefined, { style: "currency", currency: change.currency })
-        .formatToParts(0)
-        .find((part) => part.type === "currency")?.value
-    : null
+  const symbol = change.currency ? currencySymbol(change.currency) : null
   const previous = change.previousAmount === null ? null : Number(change.previousAmount)
   const percent =
     previous !== null && valid ? formatPercentageChange(previous, Number(change.amount)) : "—"
@@ -174,7 +170,7 @@ function BudgetItem({
         : null}
       {href ? (
         <div className="pl-7">
-          <MetaAdsManagerLink href={href} />
+          <MetaAdsLink href={href}>Open in Ads Manager</MetaAdsLink>
         </div>
       ) : null}
     </div>

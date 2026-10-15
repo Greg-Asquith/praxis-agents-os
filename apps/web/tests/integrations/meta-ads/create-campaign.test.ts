@@ -7,9 +7,7 @@ import {
   createCampaignProblem,
   parseCreateCampaignArgs,
 } from "@/integrations/meta_ads/lib/create-campaign"
-import { editFields } from "@/integrations/meta_ads/lib/create-summary"
 import { metaAdsCreateCampaignPresenter } from "@/integrations/meta_ads/presenters/create-campaign"
-import { vi } from "vitest"
 
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
@@ -46,35 +44,16 @@ describe("Meta Ads create campaign presenter", () => {
     ).toEqual({ mode: "campaign_daily", amount: "150" })
   })
 
-  it("blocks a cleared amount and a category with no country", () => {
+  it("blocks a cleared name or amount, a malformed amount, and a category with no country", () => {
     const problem = (extra: Record<string, unknown>) =>
       createCampaignProblem(parseCreateCampaignArgs(display(extra)))
     expect(problem({})).toBeNull()
+    expect(problem({ name: "" })).not.toBeNull()
     expect(problem({ budget: { mode: "campaign_daily" } })).toMatch(/budget amount/)
+    expect(problem({ budget: { mode: "campaign_daily", amount: "abc" } })).not.toBeNull()
     expect(problem({ special_ad_categories: [{ category: "housing", countries: [] }] })).toMatch(
       /country/
     )
-  })
-
-  it("applies several edits in one decision change", () => {
-    const onDecisionChange = vi.fn()
-    const controls = {
-      decision: { decision: "pending" as const, edits: { name: "Kept" }, message: "" as const },
-      error: null,
-      onDecisionChange,
-      onRetry: vi.fn(),
-      pendingCount: 1,
-      submitting: false,
-    }
-    editFields(controls, false, { objective: "traffic", bid_strategy: "highest_volume" })
-    editFields(controls, true, { name: "Ignored" })
-
-    expect(onDecisionChange).toHaveBeenCalledTimes(1)
-    expect(onDecisionChange).toHaveBeenCalledWith({
-      decision: "pending",
-      edits: { name: "Kept", objective: "traffic", bid_strategy: "highest_volume" },
-      message: "",
-    })
   })
 
   it("links a created campaign to Ads Manager", () => {

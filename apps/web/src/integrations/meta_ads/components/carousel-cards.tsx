@@ -4,11 +4,9 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   ChevronRightIcon,
-  CircleAlertIcon,
   ImageUpIcon,
   PlusIcon,
   Trash2Icon,
-  TriangleAlertIcon,
 } from "lucide-react"
 import { useId, useState } from "react"
 
@@ -16,7 +14,11 @@ import { fieldOptionLabel } from "@/components/tool-ui/field-options"
 import { Button } from "@/components/ui/button"
 import { ButtonSelect } from "@/integrations/meta_ads/components/button-select"
 import { LabelledInput } from "@/integrations/meta_ads/components/editor-fields"
-import { CheckMessages, LengthCounter } from "@/integrations/meta_ads/components/field-notes"
+import {
+  CheckMark,
+  CheckMessages,
+  LengthCounter,
+} from "@/integrations/meta_ads/components/field-notes"
 import { MediaFrame } from "@/integrations/meta_ads/components/media-frame"
 import { MediaPicker } from "@/integrations/meta_ads/components/media-picker"
 import {
@@ -27,7 +29,7 @@ import {
   type Card,
   type CreateAdsArgs,
 } from "@/integrations/meta_ads/lib/create-ads-args"
-import type { AdCheck, AdRow } from "@/integrations/meta_ads/lib/create-ads-checks"
+import { hasError, type AdCheck, type AdRow } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {
   addCard,
   blankToNull,
@@ -42,12 +44,21 @@ import { cn } from "@/lib/utils"
 
 const MEDIA_TYPES = ["image", "video"] as const
 
-function cardIssue(card: Card): "error" | "warning" | null {
-  if (!card.headline.trim()) return "error"
-  const long =
-    card.headline.length > RECOMMENDED_LENGTHS.cardHeadline ||
-    (card.description?.length ?? 0) > RECOMMENDED_LENGTHS.cardDescription
-  return long ? "warning" : null
+// What the card's closed row flags; the ad's own checks give the full messages.
+function cardChecks(card: Card): AdCheck[] {
+  const checks: AdCheck[] = []
+  if (!card.headline.trim()) {
+    checks.push({ level: "error", message: "Write a headline.", field: "cards" })
+  }
+  for (const [text, limit] of [
+    [card.headline, RECOMMENDED_LENGTHS.cardHeadline],
+    [card.description ?? "", RECOMMENDED_LENGTHS.cardDescription],
+  ] as const) {
+    if (text.length > limit) {
+      checks.push({ level: "warning", message: "Longer than Meta recommends.", field: "cards" })
+    }
+  }
+  return checks
 }
 
 /** Collapsible cards: each opens to its media, text, link, and button, and moves or goes. */
@@ -99,7 +110,7 @@ export function CarouselCards({
         {cards.map((card, index) => {
           const key = keys[index] ?? String(index)
           const open = openKey === key
-          const issue = cardIssue(card)
+          const flags = cardChecks(card)
           const label = `card ${String(index + 1)} of ${row.ad.name}`
           const fieldId = `${id}-${String(index)}`
           const edit = (field: EditableCardKey, value: string | null) => {
@@ -138,20 +149,8 @@ export function CarouselCards({
                     {card.headline || "No headline"} · {buttonLabel}
                     {card.callToAction ? "" : " (same as ad)"}
                   </span>
-                  {issue ? (
-                    <span
-                      className={cn(
-                        "flex shrink-0 items-center gap-1 text-sm font-medium",
-                        issue === "error" ? "text-destructive" : "text-warning-text"
-                      )}
-                    >
-                      {issue === "error" ? (
-                        <CircleAlertIcon aria-hidden="true" className="size-4" />
-                      ) : (
-                        <TriangleAlertIcon aria-hidden="true" className="size-4" />
-                      )}
-                      {issue === "error" ? "1 Problem" : "1 Warning"}
-                    </span>
+                  {flags.length > 0 ? (
+                    <CheckMark check={hasError(flags) ? "error" : "warning"} checks={flags} />
                   ) : null}
                 </button>
                 <div className="flex shrink-0 gap-1">

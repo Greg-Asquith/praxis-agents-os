@@ -101,11 +101,7 @@ async def run_create_tool[P, R: _Run](
     result: Callable[[R, ResolvedContextEntry, P], dict[str, Any]],
     check_edits: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Pins the approved account, prepares and dry-runs the write, then runs and audits it.
-
-    `check_edits` gets the arguments the agent proposed and raises ModelRetry on an edit
-    that goes beyond what was proposed.
-    """
+    """Pins the approved account, refuses edits `check_edits` rejects, dry-runs, runs, and audits."""
     reviewed = approved_display_args(ctx)
 
     async def scoped(selected: ResolvedContextEntry) -> Any:

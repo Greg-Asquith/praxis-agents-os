@@ -9,8 +9,6 @@ export type BudgetKind = "daily" | "lifetime"
 
 type BudgetCheck = {
   problem: string | null
-  // The amount this check was run for; an edited amount makes the check stale.
-  amount: string | null
   spent: string | null
   recentChanges: number | null
   // False when the counts are lower bounds because history couldn't be read in full.
@@ -95,7 +93,6 @@ function parseCheck(value: unknown, amount: string): BudgetCheck | null {
   if (typeof value["amount"] === "string" && value["amount"] !== amount) return null
   const recent = value["recent_changes"]
   return {
-    amount: isNonEmptyString(value["amount"]) ? value["amount"] : null,
     problem: isNonEmptyString(value["problem"]) ? value["problem"] : null,
     spent: isNonEmptyString(value["spent"]) ? value["spent"] : null,
     recentChanges: typeof recent === "number" && Number.isSafeInteger(recent) ? recent : null,

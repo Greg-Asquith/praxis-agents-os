@@ -1,12 +1,12 @@
 // apps/web/src/integrations/meta_ads/components/ad-set-targeting.tsx
 
-import { EntitySearch } from "@/integrations/meta_ads/components/ad-set-entity"
 import {
   Chip,
   ChoiceCards,
   SelectField,
   SwitchField,
 } from "@/integrations/meta_ads/components/campaign-controls"
+import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
 import type { CreateAdSetArgs } from "@/integrations/meta_ads/lib/create-ad-set"
 import {
   addAudience,
@@ -14,11 +14,9 @@ import {
   addLocation,
   detailedGroups,
   itemName,
-  removeAudience,
   removeDetailed,
-  removeLocation,
+  removeItem,
   targetingItems,
-  withAges,
 } from "@/integrations/meta_ads/lib/targeting-edit"
 import { TARGETING_KIND_LABELS } from "@/integrations/meta_ads/lib/targeting"
 
@@ -28,6 +26,7 @@ type TargetingProps = {
   onTargeting: (targeting: Record<string, unknown>) => void
 }
 
+const TOOL = "meta_ads_create_ad_set"
 const AGES = Array.from({ length: 53 }, (_, index) => {
   const age = String(index + 13)
   return { value: age, label: age }
@@ -64,7 +63,7 @@ export function AdSetLocations({ args, disabled, onTargeting }: TargetingProps) 
     <>
       <div className="flex min-w-0 flex-wrap gap-2">
         {chipItems(targetingItems(targeting["locations"]), disabled, (index) => {
-          onTargeting(removeLocation(targeting, "locations", index))
+          onTargeting(removeItem(targeting, "locations", index))
         })}
         {targetingItems(targeting["excluded_locations"]).map((item, index) => (
           <span
@@ -76,7 +75,7 @@ export function AdSetLocations({ args, disabled, onTargeting }: TargetingProps) 
               disabled={disabled}
               label={itemName(item)}
               onRemove={() => {
-                onTargeting(removeLocation(targeting, "excluded_locations", index))
+                onTargeting(removeItem(targeting, "excluded_locations", index))
               }}
             />
           </span>
@@ -85,11 +84,15 @@ export function AdSetLocations({ args, disabled, onTargeting }: TargetingProps) 
       <EntitySearch
         disabled={disabled}
         entityKind="meta_ads_targeting_location"
+        fieldKey="targeting"
+        isTaken={({ value }) => addLocation(targeting, "locations", value) === targeting}
         label="Add a Location"
-        onChoose={(place) => {
-          onTargeting(addLocation(targeting, "locations", place))
+        onChoose={({ value }) => {
+          onTargeting(addLocation(targeting, "locations", value))
         }}
         placeholder="Search for a country, region, or city"
+        searchRequired
+        toolName={TOOL}
       />
     </>
   )
@@ -112,7 +115,7 @@ export function AdSetPeople({ args, disabled, onTargeting }: TargetingProps) {
           disabled={disabled}
           label="Minimum Age"
           onChange={(age) => {
-            onTargeting(withAges(targeting, Number(age), max))
+            onTargeting({ ...targeting, age_min: Number(age), age_max: max })
           }}
           options={AGES}
           value={String(min)}
@@ -121,7 +124,7 @@ export function AdSetPeople({ args, disabled, onTargeting }: TargetingProps) {
           disabled={disabled}
           label="Maximum Age"
           onChange={(age) => {
-            onTargeting(withAges(targeting, min, age === "65+" ? null : Number(age)))
+            onTargeting({ ...targeting, age_min: min, age_max: age === "65+" ? null : Number(age) })
           }}
           options={MAX_AGES}
           value={max === null ? "65+" : String(max)}
@@ -166,27 +169,34 @@ export function AdSetInterests({ args, disabled, onTargeting }: TargetingProps) 
       <EntitySearch
         disabled={disabled}
         entityKind="meta_ads_targeting_interest"
+        fieldKey="targeting"
+        isTaken={({ value }) => addInterest(targeting, value) === targeting}
         label="Add an Interest"
-        onChoose={(interest) => {
-          onTargeting(addInterest(targeting, interest))
+        onChoose={({ value }) => {
+          onTargeting(addInterest(targeting, value))
         }}
         placeholder="Search interests"
+        searchRequired
+        toolName={TOOL}
       />
       {audiences.length > 0 ? (
         <div className="flex min-w-0 flex-wrap gap-2">
           {chipItems(audiences, disabled, (index) => {
-            onTargeting(removeAudience(targeting, "audiences", index))
+            onTargeting(removeItem(targeting, "audiences", index))
           })}
         </div>
       ) : null}
       <EntitySearch
         disabled={disabled}
         entityKind="meta_ads_audience"
+        fieldKey="targeting"
+        isTaken={({ value }) => addAudience(targeting, "audiences", value) === targeting}
         label="Add an Audience"
-        onChoose={(audience) => {
-          onTargeting(addAudience(targeting, "audiences", audience))
+        onChoose={({ value }) => {
+          onTargeting(addAudience(targeting, "audiences", value))
         }}
         placeholder="Search your saved audiences"
+        toolName={TOOL}
       />
       {excluded.length > 0 ? (
         <div className="grid min-w-0 gap-1.5">
@@ -196,7 +206,7 @@ export function AdSetInterests({ args, disabled, onTargeting }: TargetingProps) 
               excluded,
               disabled,
               (index) => {
-                onTargeting(removeAudience(targeting, "excluded_audiences", index))
+                onTargeting(removeItem(targeting, "excluded_audiences", index))
               },
               "not-"
             )}

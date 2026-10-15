@@ -3,6 +3,7 @@
 import { useId } from "react"
 
 import { Input } from "@/components/ui/input"
+import { currencySymbol } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** A labelled amount in the ad account currency, with an optional unit such as "a day". */
@@ -28,11 +29,7 @@ export function MoneyField({
   value: string
 }) {
   const id = useId()
-  const symbol = currency
-    ? (new Intl.NumberFormat("en-GB", { style: "currency", currency })
-        .formatToParts(0)
-        .find((part) => part.type === "currency")?.value ?? currency)
-    : null
+  const symbol = currency ? currencySymbol(currency) : null
   return (
     <div className={cn("grid min-w-0 gap-1", className)}>
       <label className="text-sm font-medium" htmlFor={id}>

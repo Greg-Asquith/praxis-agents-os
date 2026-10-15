@@ -1151,10 +1151,11 @@ The card reads the account's currency, time zone, `min_daily_budget`, and
 `min_campaign_group_spend_cap`, and states the campaign as sentences: the
 objective in plain words (`lib/objectives.ts`), the budget with Meta's
 daily flexibility note and the account minimum, the bid strategy and what
-each ad set will need, any special category, and the schedule. It edits the
-name, budget amount, dates, and, under **More settings**, the spending limit.
-Approval is blocked when a daily budget or spending limit is under the
-account's minimum. Every setting is editable, including status, objective,
+each ad set will need, any special category, and the schedule. The name and
+status are always shown; objective, budget, bidding, schedule (with the
+spending limit), and special ad category are one-line rows that open one at a
+time. Approval is blocked when the name is empty, an amount is malformed, or a
+daily budget or spending limit is under the account's minimum. Every setting is editable, including status, objective,
 the whole `budget` (mode, amount, sharing), bid strategy, and categories; the
 tool checks the edited request whole and again against the live account.
 
@@ -1257,12 +1258,17 @@ The card hydrates the campaign, Page, pixel, and app, and reads the account's
 currency, time zone, the goal's daily minimum, and its default EU names. It
 states the ad set as sentences: the goal, the budget or the campaign's, any
 bid, the schedule, who it reaches (`lib/targeting-sentence.ts`), where, and,
-for EU places, who pays and benefits. It edits the name, Page, pixel, app,
-budget amount, dates, ages, and, under **More settings**, the bid, spend
-limits, pay per click, and EU names. A custom conversion is shown by its
-name. Approval is blocked when an EU ad set has no names and no account
-defaults, a daily budget is under the minimum, or the custom conversion
-counts events from a pixel other than the one chosen.
+for EU places, who pays and benefits. The name, status, and campaign are always shown;
+goal, budget and schedule, locations, age and gender, interests, placements,
+and EU transparency are one-line rows that open one at a time. The goal row
+also holds the bid, ROAS goal, and pay per click. When the
+campaign holds the budget, the budget row edits the ad set's daily spend
+limits instead. A custom conversion is shown by its name. Approval is blocked
+when the name is empty, an amount is malformed, the most daily spend is below
+the least, an EU ad set has no names and no account defaults, a daily budget
+is under the goal's minimum, or the custom conversion counts events from a
+pixel other than the one chosen. The minimum applies only while the goal is
+the one it was read for.
 Everything but the campaign is editable: `status`, `goal`, `page`, `pixel`,
 `app`, `conversion_event`, `custom_conversion_id`, `app_store`, `placements`,
 `bid_strategy`, and the whole `targeting` value. `targeting` is a `structured`

@@ -109,7 +109,7 @@ export function MetaAdsFailureTargets({
   )
 }
 
-function OutcomeLink({ href, children }: { href: string; children: string }) {
+export function MetaAdsLink({ href, children }: { href: string; children: string }) {
   return (
     <a
       className="text-primary w-fit text-sm underline-offset-2 hover:underline"
@@ -134,8 +134,8 @@ export function AdOutcomeLinks({
   const manager = adsManagerObjectUrl("ad", accountId, ad.adId)
   return (
     <span className="flex flex-col gap-0.5">
-      {ad.previewUrl ? <OutcomeLink href={ad.previewUrl}>Preview on Meta</OutcomeLink> : null}
-      {manager ? <OutcomeLink href={manager}>Open in Ads Manager</OutcomeLink> : null}
+      {ad.previewUrl ? <MetaAdsLink href={ad.previewUrl}>Preview on Meta</MetaAdsLink> : null}
+      {manager ? <MetaAdsLink href={manager}>Open in Ads Manager</MetaAdsLink> : null}
     </span>
   )
 }

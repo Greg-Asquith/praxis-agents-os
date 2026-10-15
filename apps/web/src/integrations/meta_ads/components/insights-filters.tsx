@@ -124,12 +124,13 @@ export function InsightsFilters({
               type="button"
               variant="ghost"
               size="sm"
+              className="h-8"
               disabled={disabled}
               onClick={() => {
                 onChange(value.filter((_, rowIndex) => rowIndex !== index))
               }}
             >
-              Remove filter {String(index + 1)}
+              Remove Filter {String(index + 1)}
             </Button>
           </FieldGroup>
         )
@@ -138,7 +139,7 @@ export function InsightsFilters({
         type="button"
         variant="outline"
         size="sm"
-        className="w-fit"
+        className="h-8 w-fit"
         disabled={disabled || value.length >= options.maxFilters}
         onClick={() => {
           onChange([
@@ -147,7 +148,7 @@ export function InsightsFilters({
           ])
         }}
       >
-        Add filter
+        Add Filter
       </Button>
     </FieldGroup>
   )

@@ -61,7 +61,12 @@ from ..operations.update_budgets import (
 from ..operations.values import require_currency
 from ..references import MetaAdsAdSetReference, MetaAdsCampaignReference
 from ..throttle import ensure_account_available
-from .schemas.budgets import MetaAdsBudgetOutput, MetaAdsBudgetUpdate, MetaAdsUpdateBudgetsRequest
+from .schemas.budgets import (
+    MAX_BUDGET_UPDATES,
+    MetaAdsBudgetOutput,
+    MetaAdsBudgetUpdate,
+    MetaAdsUpdateBudgetsRequest,
+)
 from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -72,7 +77,6 @@ from .utils.mutation_evidence import (
 )
 
 _OPERATION = "update_budgets"
-_MAX_UPDATES = 50
 _REFERENCE_KEYS: tuple[tuple[str, str, MetaAdsBudgetObjectType], ...] = (
     ("campaign", "meta_ads_campaign", "campaign"),
     ("ad_set", "meta_ads_ad_set", "adset"),
@@ -88,7 +92,7 @@ async def meta_ads_update_budgets(
     ctx: RunContext[RuntimeDeps],
     updates: Annotated[
         list[MetaAdsBudgetUpdate],
-        Field(min_length=1, max_length=_MAX_UPDATES, description="Budget amount changes."),
+        Field(min_length=1, max_length=MAX_BUDGET_UPDATES, description="Budget amount changes."),
     ],
 ) -> dict[str, Any]:
     requested = _requested_amounts(updates)
@@ -149,8 +153,8 @@ async def meta_ads_update_budgets(
 def _requested_amounts(updates: Sequence[MetaAdsBudgetUpdate]) -> dict[_Key, Decimal]:
     if not updates:
         raise ModelRetry("Choose at least one Meta Ads campaign or ad set budget.")
-    if len(updates) > _MAX_UPDATES:
-        raise ModelRetry(f"Choose at most {_MAX_UPDATES} Meta Ads budgets per change.")
+    if len(updates) > MAX_BUDGET_UPDATES:
+        raise ModelRetry(f"Choose at most {MAX_BUDGET_UPDATES} Meta Ads budgets per change.")
     requested: dict[_Key, Decimal] = {}
     for update in updates:
         key = _key(update.reference)

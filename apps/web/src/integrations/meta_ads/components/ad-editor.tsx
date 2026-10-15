@@ -40,16 +40,16 @@ import {
   setAdSets,
   type EditableAdKey,
   type EditedAds,
+  type SharedKey,
 } from "@/integrations/meta_ads/lib/create-ads-edits"
 import { titleCaseToken, urlDomain } from "@/lib/format"
 
-type SettingKey = "link" | "call_to_action" | "url_tags"
 type Edits = {
   args: CreateAdsArgs
   disabled: boolean
   id: string
   onEdit: (ads: EditedAds) => void
-  onEditSetting: (key: SettingKey, value: string | null) => void
+  onEditSetting: (key: SharedKey, value: string | null) => void
   row: AdRow
 }
 
@@ -68,7 +68,7 @@ export function AdEditor({
   row: AdRow
   disabled: boolean
   onEdit: (ads: EditedAds) => void
-  onEditSetting: (key: SettingKey, value: string | null) => void
+  onEditSetting: (key: SharedKey, value: string | null) => void
   onSelect: (index: number) => void
 }) {
   const id = useId()

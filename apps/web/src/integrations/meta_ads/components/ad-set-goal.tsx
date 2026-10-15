@@ -16,7 +16,6 @@ import {
 import {
   ASSET_LABELS,
   CONVERSION_EVENT_LABELS,
-  GOAL_DESCRIPTIONS,
   GOALS,
   type Goal,
 } from "@/integrations/meta_ads/lib/goals"
@@ -62,7 +61,7 @@ export function AdSetGoal({
         }))}
         value={args.goal}
       />
-      <p className="text-foreground/75 text-sm">{GOAL_DESCRIPTIONS[args.goal]}</p>
+      <p className="text-foreground/75 text-sm">{GOALS[args.goal].description}</p>
       {asset ? (
         <EntityPicker
           currentLabel={stringValue(args.references[asset]?.["label"])}

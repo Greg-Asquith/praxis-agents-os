@@ -19,19 +19,26 @@ const SEARCH_DEBOUNCE_MS = 300
 
 /** Searches the tool's entity lookup and hands back the chosen reference unchanged. */
 export function EntitySearch({
+  disabled = false,
   entityKind,
   fieldKey,
   isTaken,
   label,
   onChoose,
+  placeholder = "Search by name",
+  searchRequired = false,
   toolName,
 }: {
+  disabled?: boolean
   entityKind?: string
   fieldKey: string
   // True for a choice already in use where this one would go.
   isTaken?: (choice: EntityChoice) => boolean
   label: string
   onChoose: (choice: EntityChoice) => void
+  placeholder?: string
+  // Lists nothing until the operator types, for lookups that need a search term.
+  searchRequired?: boolean
   toolName: string
 }) {
   const conversationId = use(ToolConversationContext)
@@ -46,12 +53,13 @@ export function EntitySearch({
       search,
       toolName,
     }),
-    enabled: conversationId !== null,
+    enabled: conversationId !== null && !(searchRequired && search === ""),
   })
   if (conversationId === null) {
     return <p className="text-muted-foreground text-sm">Open the conversation to search.</p>
   }
   const choices = mergeEntityChoices([], results.data?.pages ?? [])
+  const idle = searchRequired && input.trim() === ""
   return (
     <div className="grid min-w-0 gap-2">
       <div className="relative">
@@ -62,14 +70,15 @@ export function EntitySearch({
         <Input
           aria-label={label}
           className="pl-8"
+          disabled={disabled}
           onChange={(event) => {
             setInput(event.currentTarget.value)
           }}
-          placeholder="Search by name"
+          placeholder={placeholder}
           value={input}
         />
       </div>
-      {results.isPending ? (
+      {idle ? null : results.isPending ? (
         <p className="text-muted-foreground flex items-center gap-2 text-sm">
           <Loader2Icon
             aria-hidden="true"
@@ -89,7 +98,7 @@ export function EntitySearch({
               <li key={choice.identity.join(":")}>
                 <button
                   className="hover:bg-muted/60 focus-visible:ring-ring/50 grid min-h-9 w-full cursor-pointer gap-0.5 px-3 py-1.5 text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={taken}
+                  disabled={disabled || taken}
                   onClick={() => {
                     onChoose(choice)
                   }}
@@ -107,7 +116,7 @@ export function EntitySearch({
           })}
         </ul>
       )}
-      {results.hasNextPage ? (
+      {!idle && results.hasNextPage ? (
         <Button
           disabled={results.isFetchingNextPage}
           onClick={() => {

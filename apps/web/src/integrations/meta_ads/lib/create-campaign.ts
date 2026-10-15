@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/lib/create-campaign.ts
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
+import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
 import { scheduleSummary } from "@/integrations/meta_ads/lib/create-summary"
 import { OBJECTIVE_KEYS, OBJECTIVES, type Objective } from "@/integrations/meta_ads/lib/objectives"
 import type { CreateStatus } from "@/integrations/meta_ads/components/status-choice"
@@ -15,6 +15,7 @@ const BID_STRATEGIES = new Set([
   "bid_cap",
   "roas_goal",
 ] as const)
+export const AMOUNT_FORMAT = "Enter amounts above zero, with at most two decimal places."
 const LIST = new Intl.ListFormat("en", { type: "conjunction" })
 const REGIONS = new Intl.DisplayNames(["en-GB"], { type: "region" })
 
@@ -75,7 +76,7 @@ export type CreateCampaignArgs = {
 export function parseCreateCampaignArgs(value: unknown): CreateCampaignArgs | null {
   if (!isRecord(value)) return null
   const { name, objective, budget } = value
-  if (!isNonEmptyString(name) || !isOneOf(OBJECTIVE_SET, objective) || !isRecord(budget))
+  if (typeof name !== "string" || !isOneOf(OBJECTIVE_SET, objective) || !isRecord(budget))
     return null
   const mode = budget["mode"] ?? "campaign_daily"
   const bidStrategy = value["bid_strategy"] ?? "highest_volume"
@@ -170,17 +171,23 @@ export function campaignSummaries(args: CreateCampaignArgs) {
 export function campaignStatusNote(args: CreateCampaignArgs): string {
   const { budget, currency } = args
   const limit =
-    budget.mode === "ad_set"
+    budget.mode === "ad_set" || !budget.amount
       ? "what its ad sets are budgeted"
-      : `up to ${budgetMoney(budget.amount ?? "0", currency)}${budget.mode === "campaign_daily" ? " a day" : " in total"}`
+      : `up to ${budgetMoney(budget.amount, currency)}${budget.mode === "campaign_daily" ? " a day" : " in total"}`
   return `Turns on when created. It spends ${limit} once it has active ad sets and approved ads.`
 }
 
-/** Blocks approval for what Meta would refuse: a missing amount or country, or amounts under the minimums. */
+/** Blocks approval for what Meta would refuse: a missing name, amount, or country, or amounts under the minimums. */
 export function createCampaignProblem(args: CreateCampaignArgs | null): string | null {
   if (!args) return null
   const { budget } = args
+  if (!args.name.trim()) return "Name the campaign."
   if (budget.mode !== "ad_set" && !budget.amount) return "Set the campaign's budget amount."
+  if (
+    (budget.amount && !isBudgetAmount(budget.amount)) ||
+    (args.spendLimit && !isBudgetAmount(args.spendLimit))
+  )
+    return AMOUNT_FORMAT
   if (
     budget.mode === "campaign_daily" &&
     budget.amount &&

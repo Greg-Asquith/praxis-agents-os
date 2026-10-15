@@ -27,9 +27,11 @@ The query tool authorises the tables and views the SQL names, parsed with
 sqlglot before any provider request: each must sit in an active dataset, and
 every table needs its dataset in the name. A view in an active dataset is
 allowed whatever it reads. BigQuery's dry run lists the tables a view reads
-instead of the view itself, so dry-run tables from other datasets pass only
-when the query names something the dry run expanded, which only happens to a
-view. Naming another dataset's table directly is still refused. Region-level
+instead of the view itself. When the dry run lists tables from other
+datasets, the tool dry-runs each named view the dry run expanded (at most 10)
+and allows only the tables those views read. Naming another dataset's table
+directly is still refused, as is any table the parser missed that no named
+view reads. Region-level
 `INFORMATION_SCHEMA` views are outside every dataset and are refused. The
 schema cache stores views with their descriptions and column descriptions, as
 it does tables. Row filters still reject views.

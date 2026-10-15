@@ -13,6 +13,8 @@ from services.integrations.context.results import IntegrationFanOutEntry, Integr
 from ...models import MetaAdsId, MetaAdsMoney, MetaAdsStrictModel, MetaAdsText
 from ...references import MetaAdsAdSetReference, MetaAdsCampaignReference
 
+MAX_BUDGET_UPDATES = 50
+
 
 def _positive(value: str) -> str:
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]{1,2})?", value) or Decimal(value) <= 0:
@@ -69,7 +71,7 @@ class MetaAdsBudgetUpdate(MetaAdsStrictModel):
 class MetaAdsUpdateBudgetsRequest(MetaAdsStrictModel):
     """Every argument of a budget change, so an edited approval is checked whole."""
 
-    updates: list[MetaAdsBudgetUpdate] = Field(min_length=1, max_length=50)
+    updates: list[MetaAdsBudgetUpdate] = Field(min_length=1, max_length=MAX_BUDGET_UPDATES)
 
 
 class MetaAdsBudgetOutcome(MetaAdsStrictModel):

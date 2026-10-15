@@ -5,6 +5,7 @@ import {
   MAX_CARDS,
   MIN_CARDS,
   type AdDraft,
+  type AdStatus,
   type CreateAdsArgs,
   type MediaSlot,
   type MediaValue,
@@ -26,7 +27,7 @@ export function blankToNull(value: string): string | null {
 
 // The ad keys that override a shared setting, keyed by the shared value each overrides.
 const SHARED_KEYS = ["link", "call_to_action", "url_tags"] as const
-type SharedKey = (typeof SHARED_KEYS)[number]
+export type SharedKey = (typeof SHARED_KEYS)[number]
 
 function sharedValue(args: CreateAdsArgs, key: SharedKey): string | null {
   if (key === "link") return args.shared.link
@@ -44,7 +45,7 @@ export function followsShared(ad: AdDraft): boolean {
 export function editSetting(
   args: CreateAdsArgs,
   index: number,
-  key: "link" | "call_to_action" | "url_tags",
+  key: SharedKey,
   value: string | null
 ): { field: string; value: EditedValue } {
   const ad = args.ads[index]
@@ -53,10 +54,15 @@ export function editSetting(
   return { field: "ads", value: editAd(args, index, key, value) }
 }
 
-/** Clears every ad's own status, so the one shared status decides; null when none set one. */
-export function clearAdStatuses(args: CreateAdsArgs): EditedAds | null {
-  if (!args.rawAds.some((ad) => Object.hasOwn(ad, "status"))) return null
-  return args.rawAds.map((ad) => withValue(ad, "status", null))
+/** Sets the shared status and clears each ad's own, so every ad follows it. */
+export function editStatus(args: CreateAdsArgs, status: AdStatus): Record<string, EditedValue> {
+  if (!args.rawAds.some((ad) => Object.hasOwn(ad, "status"))) return { status }
+  return {
+    status,
+    ads: args.rawAds.map((ad) =>
+      Object.fromEntries(Object.entries(ad).filter(([key]) => key !== "status"))
+    ),
+  }
 }
 
 /** Replaces where an ad is created, keeping at least one ad set. */

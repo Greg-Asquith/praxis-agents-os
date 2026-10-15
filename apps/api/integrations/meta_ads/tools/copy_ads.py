@@ -274,16 +274,16 @@ DEFINITION = RuntimeToolDefinition(
     function=meta_ads_copy_ads,
     description=(
         "Copy up to 50 existing ads into other ad sets of the same Meta ad account, in one "
-        "approval, for example to roll a winning ad out to more audiences (at most 10 target "
-        "ad sets). A copy keeps its source ad's creative exactly: media, text, link, button, "
-        "and automatic changes. To change any of those, create new ads with "
-        "meta_ads_create_ads instead. The operator can change each copy's target ad set, name, "
-        "and status on the approval card, drop copies, and add copies of the same ads. Find ads and ad sets with meta_ads_list_objects. Each "
-        "copy keeps the source's name unless name is set, and must have a name not already "
-        "used in its ad set. Copies are paused unless status is active; active copies run and "
-        "spend once Meta approves them. A source with an AI-generated change on is always "
-        "copied paused. Each result reports Meta's review status; turn paused copies on with "
-        "meta_ads_update_status once approved."
+        "approval, for example to roll a winning ad out to more audiences (at most 10 target ad "
+        "sets). A copy keeps its source ad's creative exactly: media, text, link, button, and "
+        "automatic changes. To change any of those, create new ads with meta_ads_create_ads "
+        "instead. The operator can change each copy's target ad set, name, and status on the "
+        "approval card, drop copies, and add copies of the same ads. Find ads and ad sets with "
+        "meta_ads_list_objects. Each copy keeps the source's name unless name is set, and must "
+        "have a name not already used in its ad set. Copies are paused unless status is active; "
+        "active copies run and spend once Meta approves them. A source with an AI-generated "
+        "change on is always copied paused. Each result reports Meta's review status; turn "
+        "paused copies on with meta_ads_update_status once approved."
     ),
     provider="meta_ads",
     label="Copy Meta Ads",

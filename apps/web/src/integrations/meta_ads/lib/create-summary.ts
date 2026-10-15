@@ -1,7 +1,5 @@
 // apps/web/src/integrations/meta_ads/lib/create-summary.ts
 
-import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
-import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { isNonEmptyString, isOneOf, isRecord, stringValue } from "@/lib/guards"
 
 const DAY = new Intl.DateTimeFormat("en-GB", {
@@ -33,20 +31,6 @@ function day(value: string): string {
 export function scheduleSummary(startDate: string | null, endDate: string | null): string {
   const start = startDate ? `From ${day(startDate)}` : "Starts when turned on"
   return `${start} · ${endDate ? `until ${day(endDate)}` : "no end date"}`
-}
-
-/** Applies several edits in one decision change; separate edits in one handler would overwrite each other. */
-export function editFields(
-  controls: ToolApprovalDecisionControls,
-  disabled: boolean,
-  edits: Record<string, EditedValue>
-): void {
-  if (disabled) return
-  controls.onDecisionChange({
-    decision: "pending",
-    edits: { ...controls.decision.edits, ...edits },
-    message: "",
-  })
 }
 
 /** Reads the one campaign or ad set a create call made, held under `key` with its ID in `idKey`. */

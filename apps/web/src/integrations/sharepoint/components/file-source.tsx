@@ -2,6 +2,7 @@
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
 import { Button } from "@/components/ui/button"
+import { editApprovalFields } from "@/integrations/approval-edits"
 import type { SharePointWriteArgs } from "@/integrations/sharepoint/lib/write-args"
 import { formatBytes } from "@/lib/format"
 
@@ -17,18 +18,10 @@ export function SharePointFileSource({
   if (args.fieldKey === "parent") return null
   const details = args.sourceDetails?.id === args.source?.id ? args.sourceDetails : null
   const selectFileContent = () => {
-    controls.onDecisionChange({
-      decision: "pending",
-      message: "",
-      edits: { ...controls.decision.edits, content: null },
-    })
+    editApprovalFields(controls, disabled, { content: null })
   }
   const selectTextContent = () => {
-    controls.onDecisionChange({
-      decision: "pending",
-      message: "",
-      edits: { ...controls.decision.edits, source: null, content: args.content ?? "" },
-    })
+    editApprovalFields(controls, disabled, { source: null, content: args.content ?? "" })
   }
   return (
     <div className="grid min-w-0 gap-2">

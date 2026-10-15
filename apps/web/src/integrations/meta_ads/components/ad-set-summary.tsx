@@ -23,6 +23,8 @@ import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
 import {
   adSetStatusNote,
   adSetSummaries,
+  campaignBudgetText,
+  euNamesMissing,
   type CreateAdSetArgs,
 } from "@/integrations/meta_ads/lib/create-ad-set"
 import { OBJECTIVES } from "@/integrations/meta_ads/lib/objectives"
@@ -45,10 +47,10 @@ export function CreateAdSetApproval({
   const summaries = adSetSummaries(args)
   const { campaign, currency, budget } = args
   const kind = budget?.kind ?? "daily"
+  const held = campaignBudgetText(args)
   const onTargeting = (targeting: Record<string, unknown>) => {
     onEdit({ targeting })
   }
-  const euMissing = args.euApplies && summaries.eu.startsWith("Needs")
   return (
     <div className="grid min-w-0 gap-3">
       <StatusChoice
@@ -84,13 +86,34 @@ export function CreateAdSetApproval({
         </SettingRow>
         <SettingRow rowKey="budget" summary={summaries.budget} title="Budget and Schedule">
           {campaign.budget ? (
-            <p className="text-foreground/75 text-sm">
-              The campaign holds the budget
-              {campaign.budget.amount
-                ? `: ${budgetMoney(campaign.budget.amount, currency)}${campaign.budget.period === "lifetime" ? " in total" : " a day"}`
-                : ""}
-              .
-            </p>
+            <>
+              <p className="text-foreground/75 text-sm">
+                The campaign holds the budget{held ? `: ${held}` : ""}. You can make sure this ad
+                set gets at least, or at most, a set amount of it each day.
+              </p>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <MoneyField
+                  currency={currency}
+                  disabled={disabled}
+                  label="Spend at Least (Optional)"
+                  onChange={(amount) => {
+                    onEdit({ min_daily_spend: amount || null })
+                  }}
+                  suffix="a day"
+                  value={args.minDailySpend ?? ""}
+                />
+                <MoneyField
+                  currency={currency}
+                  disabled={disabled}
+                  label="Spend at Most (Optional)"
+                  onChange={(amount) => {
+                    onEdit({ max_daily_spend: amount || null })
+                  }}
+                  suffix="a day"
+                  value={args.maxDailySpend ?? ""}
+                />
+              </div>
+            </>
           ) : (
             <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <SelectField
@@ -168,7 +191,7 @@ export function CreateAdSetApproval({
             rowKey="eu"
             summary={summaries.eu}
             title="EU Transparency"
-            tone={euMissing ? "warning" : "neutral"}
+            tone={euNamesMissing(args) ? "warning" : "neutral"}
           >
             <p className="text-foreground/75 text-sm">
               Meta shows these names publicly in its ad library.

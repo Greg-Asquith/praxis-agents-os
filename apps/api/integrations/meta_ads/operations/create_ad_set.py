@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/create_ad_set.py
 
-"""Create one ad set, paused unless asked: campaign rules, the request body, one send, then a read-back."""
+"""Create one ad set: campaign rules, the request body, one send, then a read-back."""
 
 import json
 from collections.abc import Mapping

@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/create_campaign.py
 
-"""Create one campaign, paused unless asked: account checks, the request body, one send, then a read-back."""
+"""Create one campaign: account checks, the request body, one send, then a read-back."""
 
 import json
 from dataclasses import dataclass
@@ -146,7 +146,7 @@ def plan_campaign(
     start_time: str | None,
     end_time: str | None,
 ) -> CampaignPlan:
-    """Builds the body and its evidence; created by auction, paused unless the request says active."""
+    """Builds the body and its evidence; created by auction, paused unless status is active."""
     categories = [item.category.upper() for item in request.special_ad_categories]
     countries = sorted({code for item in request.special_ad_categories for code in item.countries})
     body = {

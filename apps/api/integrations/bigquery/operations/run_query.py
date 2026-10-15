@@ -15,6 +15,7 @@ from services.integrations.report_results import ReportResultBudget
 from services.integrations.table_scopes.domain import TableNamespace, TableScopeRewriteError
 
 MAX_AUTHORIZED_REFERENCES = 49
+MAX_EXPANDED_VIEWS = 10
 
 
 class BigQueryQueryClient(Protocol):
@@ -70,25 +71,12 @@ async def run_query(
             + ", ".join(sorted(named_outside_context))
             + ". Ask the user to change the active context or revise the query."
         )
-    dry_run_query: dict[str, Any] = {
-        "query": query,
-        "useLegacySql": False,
-    }
-    if query_parameters is not None:
-        dry_run_query["parameterMode"] = "NAMED"
-        dry_run_query["queryParameters"] = list(query_parameters)
-    dry_run = await client.post(
-        f"projects/{quote(billing_project_id, safe='')}/jobs",
-        operation="dry_run_query",
-        policy=IntegrationRequestPolicy.READ,
-        json={
-            "configuration": {
-                "dryRun": True,
-                "query": dry_run_query,
-            }
-        },
+    query_statistics = await _dry_run(
+        client,
+        query=query,
+        billing_project_id=billing_project_id,
+        query_parameters=query_parameters,
     )
-    query_statistics = _query_statistics(dry_run)
     statement_type = str(query_statistics.get("statementType", "")).upper()
     if statement_type != "SELECT":
         raise ModelRetry(
@@ -110,18 +98,21 @@ async def run_query(
             "BigQuery reported 50 or more referenced tables, so the complete "
             "authorization set cannot be verified. Narrow the query to fewer tables."
         )
-    # BigQuery lists the tables a view reads instead of the view, and those tables can sit in
-    # datasets outside the active context. A view in an active dataset is allowed whatever it
-    # reads, so other datasets' tables pass only when the query names a view.
-    outside_context = [
-        f"{project_id}.{dataset_id}.{table_id}"
-        for project_id, dataset_id, table_id in references
-        if (project_id, dataset_id) not in allowed_datasets
-    ]
-    if outside_context and not _names_view(named, references):
+    # BigQuery lists the tables a view reads instead of the view. A view in an active dataset is
+    # allowed whatever it reads, so other datasets' tables pass only when a named view reads them.
+    outside_context = {
+        reference for reference in references if reference[:2] not in allowed_datasets
+    }
+    if outside_context:
+        outside_context -= await _view_reads(
+            client,
+            views=_expanded_views(named, references),
+            billing_project_id=billing_project_id,
+        )
+    if outside_context:
         raise ModelRetry(
             "The query references tables outside the active context: "
-            + ", ".join(sorted(outside_context))
+            + ", ".join(sorted(".".join(table) for table in outside_context))
             + ". Ask the user to change the active context or revise the query."
         )
     if permitted_tables is not None:
@@ -242,18 +233,71 @@ def _named_tables(query: str, *, billing_project_id: str) -> set[tuple[str, str,
     return {(table.catalog, table.schema, table.table) for table in coordinates}
 
 
-def _names_view(
+async def _dry_run(
+    client: BigQueryQueryClient,
+    *,
+    query: str,
+    billing_project_id: str,
+    query_parameters: tuple[dict[str, object], ...] | None = None,
+) -> dict[str, Any]:
+    dry_run_query: dict[str, Any] = {
+        "query": query,
+        "useLegacySql": False,
+    }
+    if query_parameters is not None:
+        dry_run_query["parameterMode"] = "NAMED"
+        dry_run_query["queryParameters"] = list(query_parameters)
+    dry_run = await client.post(
+        f"projects/{quote(billing_project_id, safe='')}/jobs",
+        operation="dry_run_query",
+        policy=IntegrationRequestPolicy.READ,
+        json={
+            "configuration": {
+                "dryRun": True,
+                "query": dry_run_query,
+            }
+        },
+    )
+    return _query_statistics(dry_run)
+
+
+def _expanded_views(
     named: set[tuple[str, str, str]],
     references: list[tuple[str, str, str]],
-) -> bool:
-    """Whether BigQuery expanded a named table, which only happens to views."""
+) -> list[tuple[str, str, str]]:
+    """Named tables the dry run replaced with what they read, which only happens to views."""
     listed = set(references)
-    return any(
-        table not in listed
+    return sorted(
+        table
+        for table in named
+        if table not in listed
         and "*" not in table[2]
         and not _is_information_schema_reference(table[1], table[2])
-        for table in named
     )
+
+
+async def _view_reads(
+    client: BigQueryQueryClient,
+    *,
+    views: list[tuple[str, str, str]],
+    billing_project_id: str,
+) -> set[tuple[str, str, str]]:
+    if len(views) > MAX_EXPANDED_VIEWS:
+        raise ModelRetry(
+            f"The query names more than {MAX_EXPANDED_VIEWS} views that read other datasets. "
+            "Narrow the query to fewer views."
+        )
+    reads: set[tuple[str, str, str]] = set()
+    for view in views:
+        if any("`" in part or "\\" in part for part in view):
+            raise ModelRetry("Table names can't contain backticks or backslashes.")
+        statistics = await _dry_run(
+            client,
+            query=f"SELECT * FROM `{'.'.join(view)}`",  # noqa: S608
+            billing_project_id=billing_project_id,
+        )
+        reads.update(_referenced_tables(statistics))
+    return reads
 
 
 def _is_information_schema_reference(dataset_id: str, table_id: str) -> bool:

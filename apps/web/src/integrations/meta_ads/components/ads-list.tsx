@@ -59,6 +59,9 @@ export function AdsList({
   const page = paginateItems(visible, offset, PAGE_SIZE)
   const flagged = rows.filter((row) => row.check !== "ready").length
   const filters = rows.length > FILTER_THRESHOLD
+  const usedAdSets = [...args.adSets.values()].filter((adSet) =>
+    rows.some((row) => row.ad.adSetIds.includes(adSet.id))
+  )
   return (
     <section aria-label="Ads to create" className="grid min-w-0 gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -67,7 +70,7 @@ export function AdsList({
         </p>
         {filters ? (
           <div className="flex flex-wrap items-center gap-2">
-            {args.adSets.size > 1 ? (
+            {usedAdSets.length > 1 ? (
               <Select<string>
                 onValueChange={(value) => {
                   setAdSetFilter(value ?? ALL_AD_SETS)
@@ -75,21 +78,19 @@ export function AdsList({
                 }}
                 value={adSetFilter}
               >
-                <SelectTrigger aria-label="Show ads in" className="w-48" size="sm">
+                <SelectTrigger aria-label="Show ads in" className="w-48">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent align="end">
                   <SelectGroup>
-                    <SelectItem label="All ad sets" value={ALL_AD_SETS}>
-                      All ad sets
+                    <SelectItem label="All Ad Sets" value={ALL_AD_SETS}>
+                      All Ad Sets
                     </SelectItem>
-                    {[...args.adSets.values()]
-                      .filter((adSet) => rows.some((row) => row.ad.adSetIds.includes(adSet.id)))
-                      .map((adSet) => (
-                        <SelectItem key={adSet.id} label={adSet.name} value={adSet.id}>
-                          {adSet.name}
-                        </SelectItem>
-                      ))}
+                    {usedAdSets.map((adSet) => (
+                      <SelectItem key={adSet.id} label={adSet.name} value={adSet.id}>
+                        {adSet.name}
+                      </SelectItem>
+                    ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
@@ -101,7 +102,6 @@ export function AdsList({
                   setFlaggedOnly((value) => !value)
                   setOffset(0)
                 }}
-                size="sm"
                 type="button"
                 variant={flaggedOnly ? "secondary" : "outline"}
               >

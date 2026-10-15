@@ -14,6 +14,7 @@ import {
   type CreateAdsResult,
 } from "@/integrations/meta_ads/lib/create-ads-result"
 import { metaAdsProvider } from "@/integrations/meta_ads/provider"
+import { editApprovalFields } from "@/integrations/approval-edits"
 import {
   createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
@@ -36,11 +37,13 @@ export const metaAdsCreateAdsPresenter = createIntegrationWritePresenter({
           // An ad Meta would reject can't be approved; the operator fixes it here or declines.
           validateArgs: (value) => createAdsProblem(parseCreateAdsArgs(value)),
           renderInvalidDraft: true,
-          renderSummary: (value, fallback, onFieldEdit, disabled) => (
+          renderSummary: (value, fallback, _onFieldEdit, disabled, controls) => (
             <CreateAdsApproval
               args={parseCreateAdsArgs(value) ?? fallback}
               disabled={disabled}
-              onFieldEdit={onFieldEdit}
+              onEdit={(edits) => {
+                editApprovalFields(controls, disabled, edits)
+              }}
             />
           ),
         },
