@@ -94,9 +94,10 @@ async def test_confirm_ingestible_upload_sets_pending_and_enqueues_ids_only(
         select(FileRevision).where(FileRevision.id == confirmed.current_revision_id)
     )
     assert revision is not None
-    job = await db_session.scalar(select(Job).where(Job.kind == "files.extract"))
+    job = await db_session.scalar(
+        select(Job).where(Job.kind == "files.extract", Job.workspace_id == workspace.id)
+    )
     assert job is not None
-    assert job.workspace_id == workspace.id
     assert job.subject_type == "file_revision"
     assert job.subject_id == revision.id
     assert job.payload == {"file_id": str(confirmed.id), "revision_id": str(revision.id)}
@@ -150,7 +151,9 @@ async def test_confirmed_video_waits_for_its_probe_before_it_is_ready(
     )
 
     assert confirmed.processing_status == "pending"
-    job = await db_session.scalar(select(Job).where(Job.kind == "video.probe"))
+    job = await db_session.scalar(
+        select(Job).where(Job.kind == "video.probe", Job.workspace_id == workspace.id)
+    )
     assert job is not None
     assert job.subject_id == confirmed.current_revision_id
     assert job.initiated_by_user_id == actor.id
