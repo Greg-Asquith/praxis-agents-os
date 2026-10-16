@@ -38,9 +38,15 @@ WORKDIR /app
 # Create an unprivileged user first so we can copy with ownership
 RUN useradd --create-home --uid 1001 appuser
 
+# The base image ships the standard library without bytecode, and the
+# non-root runtime can't cache it, so compile it once here for cold starts.
+RUN python -m compileall -q -j 0 /usr/local/lib/python3.12
+
 # Copy only the virtualenv and app code with correct ownership
 COPY --from=builder --chown=1001:1001 /opt/venv /opt/venv
 COPY --chown=1001:1001 . .
+# Build app bytecode here rather than shipping whatever the build machine had.
+RUN python -m compileall -q -j 0 /app
 
 USER 1001:1001
 

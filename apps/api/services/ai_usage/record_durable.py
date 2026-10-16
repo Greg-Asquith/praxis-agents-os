@@ -5,7 +5,6 @@
 import logging
 
 from core.database import (
-    configure_async_db_session,
     get_ai_usage_async_db_session_factory,
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
@@ -29,7 +28,6 @@ async def record_ai_usage_durable(event: AIUsageEventData) -> bool:
             else get_ai_usage_async_db_session_factory()
         )
         async with session_factory() as db:
-            await configure_async_db_session(db)
             if event.scope == ContentScope.WORKSPACE:
                 await set_session_tenant_context(
                     db,

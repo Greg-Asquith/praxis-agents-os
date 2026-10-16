@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
     SESSION_MAINTENANCE_KEY,
-    configure_async_db_session,
     get_maintenance_async_db_session_factory,
 )
 from models.audit_event import AuditEvent
@@ -100,7 +99,6 @@ async def safe_record_operation_audit_event(db: AsyncSession, **kwargs: Any) -> 
         try:
             session_factory = get_maintenance_async_db_session_factory()
             async with session_factory() as maintenance_db:
-                await configure_async_db_session(maintenance_db)
                 await record_operation_audit_event(maintenance_db, **kwargs)
                 await maintenance_db.commit()
         except Exception:

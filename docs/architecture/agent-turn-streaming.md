@@ -58,8 +58,7 @@ that dependency no longer brackets the work. It also gets torn down when the
 connection drops — exactly when the worker must keep running. Therefore:
 
 - **The worker creates and closes its own session** via
-  `get_async_db_session_factory()` and `configure_async_db_session()`. It doesn't use
-  the request session for turn work.
+  `get_async_db_session_factory()`. It doesn't use the request session for turn work.
 - Only the worker task touches that session. The sink drain is pure queue reads, so
   there is no cross-task use of one `AsyncSession`.
 

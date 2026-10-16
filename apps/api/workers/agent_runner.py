@@ -17,7 +17,6 @@ from sqlalchemy import select
 
 from core.database import (
     close_db_connections,
-    configure_async_db_session,
     get_async_db_session_factory,
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
@@ -70,7 +69,6 @@ async def run_once(
     session_factory = get_maintenance_async_db_session_factory()
 
     async with session_factory() as db:
-        await configure_async_db_session(db)
         reconciled = await reconcile_schedule_run_execution(db)
         if reconciled:
             logger.info("Reconciled scheduled agent runs", extra={"count": reconciled})
@@ -218,7 +216,6 @@ async def run_drain(
 async def _claim_one_schedule_run() -> UUID | None:
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         claimed = await claim_due_schedule_runs(
             db,
             batch_size=1,
@@ -319,7 +316,6 @@ async def _prepare(schedule_run_id: UUID) -> PreparedScheduleRunExecution | None
     workspace_id, user_id = tenant
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         try:
             prepared = await prepare_schedule_run_execution(
@@ -367,7 +363,6 @@ async def _execute_prepared(
                     workspace_id=prepared.workspace_id,
                     user_id=prepared.user_id,
                 )
-                await configure_async_db_session(db)
             await execute_run(
                 db,
                 conversation_id=conversation_id,
@@ -392,7 +387,6 @@ async def _finalize(prepared: PreparedScheduleRunExecution) -> None:
 
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(
             db,
             workspace_id=prepared.workspace_id,
@@ -438,7 +432,6 @@ async def _agent_run_was_cancelled(
 ) -> bool:
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         run_status = await db.scalar(
             select(AgentRun.status).where(
@@ -457,7 +450,6 @@ async def _record_claim_setup_failure(schedule_run_id: UUID, exc: Exception) -> 
     workspace_id, user_id = tenant
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         try:
             schedule_run = await db.scalar(

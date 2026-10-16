@@ -12,7 +12,6 @@ from pydantic_ai.models import Model
 from sqlalchemy import select
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -62,7 +61,6 @@ async def run_turn_worker(
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
-            await configure_async_db_session(session)
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -113,7 +111,6 @@ async def run_resume_worker(
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
-            await configure_async_db_session(session)
             run = await session.get(AgentRun, run_id)
             if run is None:
                 raise ConflictError(
@@ -182,7 +179,6 @@ async def _finalize_linked_schedule_run(
 
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         schedule_run_id: UUID | None = None
         try:

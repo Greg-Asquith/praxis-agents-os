@@ -7,7 +7,6 @@ from contextlib import suppress
 from uuid import UUID
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -27,7 +26,6 @@ async def safe_enqueue_history_summary(
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
             try:
-                await configure_async_db_session(db)
                 await set_session_tenant_context(db, workspace_id=workspace_id)
                 await enqueue_history_summary(
                     db,

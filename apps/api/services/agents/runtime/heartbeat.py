@@ -8,7 +8,6 @@ from contextlib import suppress
 from uuid import UUID, uuid4
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     get_async_engine,
     set_session_tenant_context,
@@ -46,7 +45,6 @@ async def renew_agent_run_lease_once(
     """Renew one run lease in an isolated short-lived transaction."""
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         try:
             renewed = await renew_agent_run_lease(

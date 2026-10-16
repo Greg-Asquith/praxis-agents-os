@@ -72,7 +72,7 @@ async def mock_google_native(monkeypatch, handler=None, *, vertex=False):
             clients.append(client)
             return client
 
-        monkeypatch.setattr(vertex_clients, "Client", build_client)
+        monkeypatch.setattr("google.genai.Client", build_client)
         try:
             yield requests
         finally:

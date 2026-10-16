@@ -14,7 +14,6 @@ from sqlalchemy import select
 
 from core.database import (
     close_db_connections,
-    configure_async_db_session,
     get_maintenance_async_db_session_factory,
 )
 from models.jobs import Job
@@ -34,7 +33,6 @@ async def run(mode: str) -> int:
 
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         job = await enqueue_job(
             db,
             kind=APPLICATION_ENCRYPTION_JOB_KIND,

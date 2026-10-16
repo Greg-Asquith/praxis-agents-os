@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
     SESSION_USER_ID_KEY,
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -408,7 +407,6 @@ async def test_ingest_uses_dedicated_creator_context_without_provider_transactio
 
     session_factory = get_async_db_session_factory()
     async with session_factory() as job_db:
-        await configure_async_db_session(job_db)
         await set_session_tenant_context(job_db, workspace_id=kb_actors.workspace.id)
         assert SESSION_USER_ID_KEY not in job_db.info
         await _ingest(job_db, kb_actors, imported.id)

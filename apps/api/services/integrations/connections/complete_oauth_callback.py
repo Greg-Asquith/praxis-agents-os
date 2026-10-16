@@ -12,7 +12,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     inherit_session_tenant_context,
 )
@@ -372,7 +371,6 @@ async def _consume_pending_state(source_db: AsyncSession, jti: str) -> str | Non
     """Consume state in its own committed transaction so provider failures cannot replay it."""
     session_factory = get_async_db_session_factory()
     async with session_factory() as consume_db:
-        await configure_async_db_session(consume_db)
         await inherit_session_tenant_context(consume_db, source_db)
         value = await consume_db.scalar(
             delete(IntegrationOAuthState)

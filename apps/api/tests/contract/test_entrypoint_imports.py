@@ -8,6 +8,7 @@ import sys
 
 def test_entrypoints_import_without_assembling_catalogs_then_assemble_idempotently() -> None:
     statement = """
+import sys
 from main import app
 import workers.main
 from services.runtime_catalogs import assemble_runtime_catalogs
@@ -24,6 +25,9 @@ first_counts = (len(ENTITY_RESOLVERS), len(RUNTIME_TOOL_CATALOG), len(JOB_HANDLE
 assemble_runtime_catalogs()
 assert first_counts == (len(ENTITY_RESOLVERS), len(RUNTIME_TOOL_CATALOG), len(JOB_HANDLERS))
 assert all(first_counts)
+# Model provider SDKs load on first use, never during a cold start.
+provider_sdks = [name for name in ("anthropic", "google.genai", "ollama", "openai") if name in sys.modules]
+assert not provider_sdks, f"Startup loaded provider SDKs: {provider_sdks}"
 assert set(settings.INTEGRATIONS_ENABLED_PROVIDERS) == set(PROVIDER_MANIFESTS)
 """
     result = subprocess.run(  # noqa: S603 - fixed interpreter and audited statement

@@ -167,8 +167,7 @@ async def test_vertex_shutdown_closes_anthropic_after_google_close_failure(monke
     google_close = AsyncMock(side_effect=RuntimeError("close failed"))
     anthropic_close = AsyncMock()
     monkeypatch.setattr(
-        module,
-        "Client",
+        "google.genai.Client",
         Mock(
             return_value=SimpleNamespace(
                 aio=SimpleNamespace(aclose=google_close),
@@ -176,8 +175,7 @@ async def test_vertex_shutdown_closes_anthropic_after_google_close_failure(monke
         ),
     )
     monkeypatch.setattr(
-        module,
-        "AsyncAnthropicVertex",
+        "anthropic.AsyncAnthropicVertex",
         Mock(
             return_value=SimpleNamespace(
                 close=anthropic_close,

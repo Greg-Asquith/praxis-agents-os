@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -37,7 +36,6 @@ async def fetch_integration_source(document: KBDocument) -> KnowledgeSourceDocum
 
     session_factory = get_async_db_session_factory()
     async with session_factory() as fetch_db:
-        await configure_async_db_session(fetch_db)
         await set_session_tenant_context(
             fetch_db,
             workspace_id=workspace_id,

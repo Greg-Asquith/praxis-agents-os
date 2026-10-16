@@ -45,6 +45,9 @@ def _engine_kwargs() -> dict[str, object]:
         "pool_recycle": _POOL_RECYCLE_SECONDS,
         "echo": settings.SQL_DEBUG,
         "echo_pool": "debug" if settings.SQL_DEBUG else False,
+        # Set once as a connection default, so a new session checks out no
+        # connection until its first query and a rollback can't undo it.
+        "connect_args": {"server_settings": {"ivfflat.probes": str(settings.IVFFLAT_PROBES)}},
     }
     if settings.DEBUG and settings.is_dev:
         engine_kwargs["poolclass"] = NullPool
@@ -196,14 +199,6 @@ async def inherit_session_tenant_context(
     )
 
 
-async def configure_async_db_session(session: AsyncSession) -> None:
-    """Apply per-session database settings used by request and fallback sessions."""
-    # PostgreSQL SET statements do not accept bind parameters for configuration values, so interpolate the validated integer setting directly.
-    await session.execute(
-        text(f"SET ivfflat.probes = {settings.IVFFLAT_PROBES}"),
-    )
-
-
 async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency that yields an async database session."""
     existing_session = getattr(request.state, "db", None)
@@ -213,8 +208,6 @@ async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]
 
     session_factory = get_async_db_session_factory()
     session = session_factory()
-
-    await configure_async_db_session(session)
 
     try:
         yield session
@@ -242,7 +235,6 @@ async def maintenance_async_db_session() -> AsyncGenerator[AsyncSession]:
     """Manage one configured maintenance session and its transaction."""
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as session:
-        await configure_async_db_session(session)
         try:
             yield session
         except Exception:

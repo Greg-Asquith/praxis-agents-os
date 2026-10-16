@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     inherit_session_tenant_context,
 )
@@ -54,7 +53,6 @@ async def ensure_fresh_credential(
     await ensure_credential_keys_loaded(db)
     session_factory = get_async_db_session_factory()
     async with session_factory() as refresh_db:
-        await configure_async_db_session(refresh_db)
         await inherit_session_tenant_context(refresh_db, db)
         credential_filters = [
             ExternalCredential.id == credential_id,

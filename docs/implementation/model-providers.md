@@ -14,6 +14,14 @@ pickup. Direct providers share the retrying HTTP client
 embedding adapters use the same transport. Vertex partner authentication and
 endpoint-bound Mistral clients also use HTTPX2.
 
+Import a provider SDK (Google, OpenAI, Anthropic, or Ollama) only inside the
+code path that uses it: the factory builder, the Vertex client getter, the
+embedding provider, the transcription provider, or the native tool's provider
+branch. The SDKs are large,
+so loading them at import time slows every cold start, and a deployment should
+load only the providers it calls. The clean-process test in
+`tests/contract/test_entrypoint_imports.py` fails if startup loads any of them.
+
 ### Gemini 4 Argon
 
 The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)

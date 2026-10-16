@@ -91,6 +91,7 @@ else
 fi
 grep -q 'autoscaling.knative.dev/maxScale: "1"' "$TEST_TMP/rendered/services/praxis-api.yaml"
 grep -q 'run.googleapis.com/cpu-throttling: "false"' "$TEST_TMP/rendered/services/praxis-api.yaml"
+grep -q 'run.googleapis.com/startup-cpu-boost: "true"' "$TEST_TMP/rendered/services/praxis-api.yaml"
 grep -q 'path: /healthz' "$TEST_TMP/rendered/services/praxis-api.yaml"
 if grep -q '/readyz' "$TEST_TMP/rendered/services/praxis-api.yaml"; then
   echo "API lifecycle probes must not use /readyz" >&2

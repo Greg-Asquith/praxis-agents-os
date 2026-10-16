@@ -8,7 +8,7 @@ from collections.abc import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from core.database import configure_async_db_session, get_async_db_session_factory
+from core.database import get_async_db_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ class DBSessionMiddleware(BaseHTTPMiddleware):
         async with session_factory() as session:
             request.state.db = session
             try:
-                await configure_async_db_session(session)
                 response = await call_next(request)
                 if response.status_code < 400:
                     await session.commit()

@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -238,7 +237,6 @@ async def _prune_failed_initial_conversation(
     session_factory = get_async_db_session_factory()
     session = session_factory()
     try:
-        await configure_async_db_session(session)
         await set_session_tenant_context(
             session,
             workspace_id=workspace_id,

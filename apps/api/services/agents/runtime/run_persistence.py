@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -381,7 +380,6 @@ async def persist_cancelled_run(
     try:
         session_factory = get_async_db_session_factory()
         async with session_factory() as db:
-            await configure_async_db_session(db)
             await set_session_tenant_context(
                 db,
                 workspace_id=workspace_id,

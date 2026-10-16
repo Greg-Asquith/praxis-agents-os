@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -85,7 +84,6 @@ async def resume_approved_delegate_run(
     owner_id = agent_run_owner_instance_id()
 
     try:
-        await configure_async_db_session(session)
         await set_session_tenant_context(
             session,
             workspace_id=ctx.deps.workspace.id,

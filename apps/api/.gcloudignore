@@ -44,9 +44,10 @@ pnpm-debug.log*
 ########################################
 # Python / Backend
 ########################################
-__pycache__/
-*.py[cod]
-*$py.class
+# Docker matches bare names only at the root; bytecode is built in the image.
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
 
 # Virtual environments & tests
 .venv/

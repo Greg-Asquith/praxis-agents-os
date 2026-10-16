@@ -39,13 +39,13 @@ async def test_admitted_deadline_bounds_worker_session_setup(
     control.deadline = asyncio.get_running_loop().time() + 0.05
     stopped = asyncio.Event()
 
-    async def blocked_setup(_db):
+    async def blocked_setup(*_args, **_kwargs):
         try:
             await asyncio.Event().wait()
         finally:
             stopped.set()
 
-    monkeypatch.setattr("services.agents.runtime.worker.configure_async_db_session", blocked_setup)
+    monkeypatch.setattr("services.agents.runtime.worker.set_session_tenant_context", blocked_setup)
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
     await asyncio.wait_for(
         run_turn_worker(

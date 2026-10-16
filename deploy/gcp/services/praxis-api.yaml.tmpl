@@ -18,6 +18,7 @@ spec:
         run.googleapis.com/cloudsql-instances: ${CLOUD_SQL_CONNECTION_NAME}
         run.googleapis.com/cpu-throttling: "false"
         run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: "true"
         run.googleapis.com/secrets: '${RUNTIME_SECRET_ANNOTATION}'
     spec:
       containerConcurrency: 80
@@ -196,7 +197,7 @@ ${RUNTIME_SECRET_ENV_YAML}
               port: 8080
             initialDelaySeconds: 0
             timeoutSeconds: 5
-            failureThreshold: 12
+            failureThreshold: 24
             periodSeconds: 5
           livenessProbe:
             httpGet:

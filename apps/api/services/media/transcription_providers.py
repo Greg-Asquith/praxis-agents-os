@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx2 as httpx
-from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel
 from pydantic_ai import Agent as PydanticAgent, BinaryContent
 from pydantic_ai.exceptions import AgentRunError
@@ -183,6 +182,8 @@ async def _whisper(
 ) -> ChunkTranscript:
     if chunk.size_bytes > WHISPER_MAX_BYTES:
         raise TranscriptionError("The audio is too large for OpenAI transcription.")
+    from openai import APIError, AsyncOpenAI
+
     data = await get_storage_provider().get_object(chunk.ref)
     client = AsyncOpenAI(
         api_key=provider_api_key(PROVIDER_OPENAI),

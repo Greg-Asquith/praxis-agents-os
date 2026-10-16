@@ -14,7 +14,6 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import (
-    configure_async_db_session,
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -107,7 +106,6 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
         "to": datetime(2098, 1, 3, tzinfo=UTC),
     }
     async with get_maintenance_async_db_session_factory()() as query_db:
-        await configure_async_db_session(query_db)
         summary = await get_platform_usage_summary(query_db, **usage_range)
 
         assert summary.totals.estimated_cost_usd == Decimal("4")

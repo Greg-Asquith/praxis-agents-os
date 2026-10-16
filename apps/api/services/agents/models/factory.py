@@ -6,18 +6,12 @@ Credentials are injected explicitly (never relying on Pydantic AI's implicit
 env-var pickup) via the ``provider_api_key`` seam. Google and Anthropic can route
 through their direct APIs or Vertex AI depending on settings. Keeping construction
 here means the runtime loop stays library-agnostic.
+
+Each provider's SDK is imported inside the builder that uses it, so a cold
+start loads none of them and a deployment only ever loads the providers it calls.
 """
 
-from google.genai.types import HttpRetryOptions
 from pydantic_ai.models import Model
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-from pydantic_ai.profiles.openai import OpenAIModelProfile
-from pydantic_ai.providers.anthropic import AnthropicProvider
-from pydantic_ai.providers.azure import AzureProvider
-from pydantic_ai.providers.google import GoogleProvider
-from pydantic_ai.providers.openai import OpenAIProvider
 
 from core.settings import settings
 from services.agents.models.domain import (
@@ -50,52 +44,13 @@ def build_model(spec: ResolvedModel) -> Model:
     model_settings = _model_settings_for(spec)
 
     if spec.provider == PROVIDER_ANTHROPIC:
-        if provider_transport(PROVIDER_ANTHROPIC) == "google-cloud":
-            provider = AnthropicProvider(anthropic_client=get_anthropic_vertex_client())
-        else:
-            provider = AnthropicProvider(
-                api_key=provider_api_key(PROVIDER_ANTHROPIC),
-                http_client=retrying_http_client(),
-            )
-        provider.client.max_retries = 0
-        model = AnthropicModel(
-            spec.transport_model,
-            provider=provider,
-            profile=provider_model_profile(spec.provider, spec.transport_model),
-            settings=model_settings,
-        )
-        thinking = (model_settings or {}).get("anthropic_thinking")
-        thinking_type = thinking.get("type") if isinstance(thinking, dict) else None
-        if (thinking_type == "disabled" and model.profile.get("thinking_always_enabled")) or (
-            thinking_type == "enabled" and model.profile.get("anthropic_disallows_budget_thinking")
-        ):
-            raise ModelConfigurationError(
-                "This Claude model requires adaptive thinking. Choose a thinking effort instead.",
-                details={"provider": spec.provider, "model": spec.model},
-            )
-        return model
+        return _build_anthropic_model(spec, model_settings)
 
     if spec.provider == PROVIDER_OPENAI:
-        provider = OpenAIProvider(
-            base_url=settings.OPENAI_BASE_URL,
-            api_key=provider_api_key(PROVIDER_OPENAI),
-            http_client=retrying_http_client(),
-        )
-        provider.client.max_retries = 0
-        return OpenAIResponsesModel(
-            spec.transport_model,
-            provider=provider,
-            profile=provider_model_profile(spec.provider, spec.transport_model),
-            settings=model_settings,
-        )
+        return _build_openai_model(spec, model_settings)
 
     if spec.provider == PROVIDER_GOOGLE:
-        return GoogleModel(
-            spec.transport_model,
-            provider=_google_provider(spec.model),
-            profile=provider_model_profile(spec.provider, spec.transport_model),
-            settings=model_settings,
-        )
+        return _build_google_model(spec, model_settings)
 
     if spec.provider == PROVIDER_AZURE:
         return _build_azure_model(spec, model_settings)
@@ -109,16 +64,74 @@ def build_model(spec: ResolvedModel) -> Model:
     )
 
 
-def _google_provider(model: str) -> GoogleProvider:
+def _build_anthropic_model(spec: ResolvedModel, model_settings) -> Model:
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    if provider_transport(PROVIDER_ANTHROPIC) == "google-cloud":
+        provider = AnthropicProvider(anthropic_client=get_anthropic_vertex_client())
+    else:
+        provider = AnthropicProvider(
+            api_key=provider_api_key(PROVIDER_ANTHROPIC),
+            http_client=retrying_http_client(),
+        )
+    provider.client.max_retries = 0
+    model = AnthropicModel(
+        spec.transport_model,
+        provider=provider,
+        profile=provider_model_profile(spec.provider, spec.transport_model),
+        settings=model_settings,
+    )
+    thinking = (model_settings or {}).get("anthropic_thinking")
+    thinking_type = thinking.get("type") if isinstance(thinking, dict) else None
+    if (thinking_type == "disabled" and model.profile.get("thinking_always_enabled")) or (
+        thinking_type == "enabled" and model.profile.get("anthropic_disallows_budget_thinking")
+    ):
+        raise ModelConfigurationError(
+            "This Claude model requires adaptive thinking. Choose a thinking effort instead.",
+            details={"provider": spec.provider, "model": spec.model},
+        )
+    return model
+
+
+def _build_openai_model(spec: ResolvedModel, model_settings) -> Model:
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    provider = OpenAIProvider(
+        base_url=settings.OPENAI_BASE_URL,
+        api_key=provider_api_key(PROVIDER_OPENAI),
+        http_client=retrying_http_client(),
+    )
+    provider.client.max_retries = 0
+    return OpenAIResponsesModel(
+        spec.transport_model,
+        provider=provider,
+        profile=provider_model_profile(spec.provider, spec.transport_model),
+        settings=model_settings,
+    )
+
+
+def _build_google_model(spec: ResolvedModel, model_settings) -> Model:
     """Gemini Developer API by default; Vertex AI (ADC) when configured."""
-    if not settings.GOOGLE_VERTEX_AI:
-        return GoogleProvider(
+    from google.genai.types import HttpRetryOptions
+    from pydantic_ai.models.google import GoogleModel
+    from pydantic_ai.providers.google import GoogleProvider
+
+    if settings.GOOGLE_VERTEX_AI:
+        provider = GoogleProvider(client=get_google_vertex_client(spec.model))
+    else:
+        provider = GoogleProvider(
             api_key=provider_api_key(PROVIDER_GOOGLE),
             retry_options=HttpRetryOptions(attempts=1),
             http_client=retrying_http_client(),
         )
-
-    return GoogleProvider(client=get_google_vertex_client(model))
+    return GoogleModel(
+        spec.transport_model,
+        provider=provider,
+        profile=provider_model_profile(spec.provider, spec.transport_model),
+        settings=model_settings,
+    )
 
 
 def _model_settings_for(spec: ResolvedModel):
@@ -134,6 +147,10 @@ def _model_settings_for(spec: ResolvedModel):
 
 
 def _build_partner_model(spec: ResolvedModel, model_settings) -> Model:
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.profiles.openai import OpenAIModelProfile
+    from pydantic_ai.providers.openai import OpenAIProvider
+
     if not settings.VERTEX_PARTNER_MODELS_ENABLED:
         raise ModelConfigurationError(
             "Vertex partner models require VERTEX_PARTNER_MODELS_ENABLED=true.",
@@ -182,6 +199,9 @@ def _build_partner_model(spec: ResolvedModel, model_settings) -> Model:
 
 def _build_azure_model(spec: ResolvedModel, model_settings) -> Model:
     """Azure OpenAI is deployment-based: prefer the agent's azure_deployment."""
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.azure import AzureProvider
+
     endpoint = (settings.AZURE_OPENAI_ENDPOINT or "").strip()
     if not endpoint:
         raise ModelConfigurationError(

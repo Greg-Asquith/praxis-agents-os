@@ -8,7 +8,6 @@ from contextlib import suppress
 from uuid import UUID
 
 from core.database import (
-    configure_async_db_session,
     get_maintenance_async_db_session_factory,
     get_maintenance_async_engine,
 )
@@ -48,7 +47,6 @@ async def heartbeat_job_lease(
         session_factory = get_maintenance_async_db_session_factory()
         try:
             async with session_factory() as db:
-                await configure_async_db_session(db)
                 renewed = await renew_job_lease(
                     db,
                     job_id=job_id,

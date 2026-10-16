@@ -9,7 +9,6 @@ from uuid import UUID
 from sqlalchemy import select
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     set_session_tenant_context,
 )
@@ -31,7 +30,6 @@ async def read_execution_states(
 ) -> dict[UUID, ExecutionState]:
     """Reads the invocation and controlling root from one fresh database snapshot."""
     async with get_async_db_session_factory()() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         rows = await db.execute(
             select(

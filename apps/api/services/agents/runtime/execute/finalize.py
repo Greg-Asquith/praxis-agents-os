@@ -13,7 +13,6 @@ from pydantic_ai.messages import ModelMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
-    configure_async_db_session,
     get_ai_usage_async_db_session_factory,
     get_async_db_session_factory,
     set_session_tenant_context,
@@ -251,7 +250,6 @@ async def emit_failure_events(
         for attempt_wait in (history_wait, 0.0):
             try:
                 async with get_async_db_session_factory()() as settlement_db:
-                    await configure_async_db_session(settlement_db)
                     await set_session_tenant_context(
                         settlement_db, workspace_id=workspace_id, user_id=user_id
                     )
@@ -330,7 +328,6 @@ async def emit_final_events(event_sink: EventSink, run: AgentRun) -> None:
 async def finalize_interrupted_usage(event: AIUsageEventData) -> None:
     """Settles shutdown usage without changing the run's lifecycle verdict."""
     async with get_ai_usage_async_db_session_factory()() as db:
-        await configure_async_db_session(db)
         await set_session_tenant_context(db, workspace_id=event.workspace_id, user_id=event.user_id)
         await record_ai_usage_in_transaction(db, event)
         await db.commit()
@@ -353,7 +350,6 @@ async def finalize_stopped_run(
     for attempt_wait in (history_wait, 0.0):
         try:
             async with get_async_db_session_factory()() as db:
-                await configure_async_db_session(db)
                 await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
                 run = await persist_failed_run(
                     db,

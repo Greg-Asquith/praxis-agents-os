@@ -53,7 +53,6 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.native.openai_images import run_openai_image
 from services.agents.runtime.tools.registry import runtime_tool
 from services.ai_usage.domain import PURPOSE_IMAGE_GENERATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
@@ -356,6 +355,9 @@ async def run_native_image_generation(
             "Choose one of those values, omit aspect_ratio, or use Google."
         )
     if model_spec.provider == PROVIDER_OPENAI:
+        # The OpenAI SDK loads on first use, like every model provider SDK.
+        from services.agents.runtime.tools.native.openai_images import run_openai_image
+
         return await run_openai_image(
             deps=deps,
             prompt=prompt,

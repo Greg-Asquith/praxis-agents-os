@@ -18,7 +18,6 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from core.database import (
     check_database_connection,
     close_db_connections,
-    configure_async_db_session,
     get_maintenance_async_db_session_factory,
 )
 from core.exceptions.auth import AuthenticationError
@@ -73,7 +72,6 @@ async def lifespan(app: FastAPI):
 
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         await ensure_application_encryption_keys_loaded(db)
     logger.info("Application encryption key ring loaded")
 

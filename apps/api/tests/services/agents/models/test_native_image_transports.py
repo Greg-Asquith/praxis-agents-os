@@ -110,7 +110,7 @@ async def test_invalid_vertex_image_configuration_never_requests_provider(monkey
     )
     constructor = Mock()
     async with mock_google_native(monkeypatch, vertex=True) as requests:
-        monkeypatch.setattr("services.agents.models.vertex_clients.Client", constructor)
+        monkeypatch.setattr("google.genai.Client", constructor)
         with pytest.raises(
             ModelRetry,
             match={

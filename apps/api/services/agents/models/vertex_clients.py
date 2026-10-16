@@ -3,10 +3,8 @@
 """Process-owned Google and Anthropic Vertex AI client lifecycle."""
 
 from threading import Lock
+from typing import TYPE_CHECKING
 
-from anthropic import AsyncAnthropicVertex
-from google.genai import Client
-from google.genai.types import HttpOptions, HttpRetryOptions
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 
 from core.settings import settings
@@ -24,8 +22,13 @@ from services.agents.models.utils import (
 from services.agents.models.vertex_mistral_client import close_vertex_mistral_clients
 from services.agents.models.vertex_openai_client import close_vertex_openai_client
 
-_clients: dict[tuple[str, str, int, float], Client] = {}
-_anthropic_clients: dict[tuple[str, str, int, float], AsyncAnthropicVertex] = {}
+if TYPE_CHECKING:
+    # Each provider SDK loads when its first client is built, not at import.
+    from anthropic import AsyncAnthropicVertex
+    from google.genai import Client
+
+_clients: dict[tuple[str, str, int, float], "Client"] = {}
+_anthropic_clients: dict[tuple[str, str, int, float], "AsyncAnthropicVertex"] = {}
 _clients_lock = Lock()
 
 
@@ -49,8 +52,11 @@ def google_vertex_location(model: str | None = None) -> str:
     return location
 
 
-def get_google_vertex_client(model: str | None = None) -> Client:
+def get_google_vertex_client(model: str | None = None) -> "Client":
     """Returns the process-owned Vertex client for the active configuration."""
+    from google.genai import Client
+    from google.genai.types import HttpOptions, HttpRetryOptions
+
     project = vertex_project()
     if not project:
         raise ModelConfigurationError(
@@ -85,8 +91,10 @@ def get_google_vertex_client(model: str | None = None) -> Client:
         return client
 
 
-def get_anthropic_vertex_client() -> AsyncAnthropicVertex:
+def get_anthropic_vertex_client() -> "AsyncAnthropicVertex":
     """Returns the process-owned Claude client for the active Vertex configuration."""
+    from anthropic import AsyncAnthropicVertex
+
     project = vertex_project()
     if not project:
         raise ModelConfigurationError(

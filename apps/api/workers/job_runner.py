@@ -16,7 +16,6 @@ from sqlalchemy import select
 
 from core.database import (
     close_db_connections,
-    configure_async_db_session,
     get_async_db_session_factory,
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
@@ -80,7 +79,6 @@ async def run_once(
     session_factory = get_maintenance_async_db_session_factory()
 
     async with session_factory() as db:
-        await configure_async_db_session(db)
         reclaimed_count = await reclaim_stale_jobs(db)
         if reclaimed_count:
             logger.info("Reclaimed stale generic jobs", extra={"count": reclaimed_count})
@@ -163,7 +161,6 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
             else get_async_db_session_factory()
         )
         async with session_factory() as db:
-            await configure_async_db_session(db)
             if not is_system_job:
                 await set_session_tenant_context(
                     db,
@@ -341,7 +338,6 @@ async def run_drain(
 async def _claim_one_job(*, owner_instance_id: str) -> UUID | None:
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         claimed = await claim_jobs(
             db,
             owner_instance_id=owner_instance_id,
@@ -366,7 +362,6 @@ async def main(argv: Sequence[str] | None = None) -> int:
     try:
         session_factory = get_maintenance_async_db_session_factory()
         async with session_factory() as db:
-            await configure_async_db_session(db)
             await ensure_application_encryption_keys_loaded(db)
         if args.once:
             await run_once()
@@ -390,7 +385,6 @@ async def _record_job_failure(
 ) -> None:
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         try:
             job = await db.scalar(
                 select(Job)

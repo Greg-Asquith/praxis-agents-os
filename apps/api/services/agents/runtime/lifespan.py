@@ -4,7 +4,7 @@
 
 import logging
 
-from core.database import configure_async_db_session, get_maintenance_async_db_session_factory
+from core.database import get_maintenance_async_db_session_factory
 from services.agent_runs import reap_abandoned_runs
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,6 @@ async def sweep_abandoned_agent_runs_on_startup() -> None:
 
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
         result = await reap_abandoned_runs(db)
         await ensure_abandoned_agent_run_sweep_job(db)
         await db.commit()

@@ -141,6 +141,13 @@ removing it for a downgrade.
 
 ## Connection capacity
 
+A session checks out a pooled connection on its first query, not when it opens.
+Each engine sends `IVFFLAT_PROBES` as a connection default, so no session needs
+its own setup query. Keep it that way in the request path: the rate limiter
+opens a second session inside each request, and a request that already holds a
+connection while it waits for another can exhaust the pool under a burst of
+requests.
+
 The per-process connection and turn-concurrency settings are defined as
 follows:
 

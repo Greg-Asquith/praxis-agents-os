@@ -7,7 +7,6 @@ from typing import Any
 from uuid import UUID
 
 from core.database import (
-    configure_async_db_session,
     get_async_db_session_factory,
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
@@ -32,7 +31,6 @@ async def safe_record_independent_operation_audit_event(**kwargs: Any) -> None:
             else get_maintenance_async_db_session_factory()
         )
         async with session_factory() as audit_db:
-            await configure_async_db_session(audit_db)
             if workspace_id is not None:
                 await set_session_tenant_context(
                     audit_db,
