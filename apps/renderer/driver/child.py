@@ -38,6 +38,8 @@ def _child_environment(workdir: Path) -> dict[str, str]:
         "TMPDIR": str(workdir),
         "PATH": "/opt/ffmpeg/bin:/usr/local/bin:/usr/bin:/bin",
         "LANG": "C.UTF-8",
+        # glibc reserves 64 MB of address space per arena, so RLIMIT_AS would scale with cores.
+        "MALLOC_ARENA_MAX": "2",
     }
 
 

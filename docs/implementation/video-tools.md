@@ -108,8 +108,11 @@ Each native command runs as a child of the driver:
   `no_new_privs` and the seccomp filter. The filter kills other architectures
   and x32 calls, allows only `AF_UNIX` sockets, and returns `EPERM` for
   io_uring, ptrace, and `process_vm_readv`/`writev`.
-- **Environment:** only `HOME`, `TMPDIR`, `PATH`, and `LANG`. The driver is
-  non-dumpable, so a child can't read its memory or `/proc/<pid>/environ`.
+- **Environment:** only `HOME`, `TMPDIR`, `PATH`, `LANG`, and
+  `MALLOC_ARENA_MAX=2`, which stops glibc's per-thread arenas from scaling
+  the reserved address space, and so `RLIMIT_AS`, with the host's core count.
+  The driver is non-dumpable, so a child can't read its memory or
+  `/proc/<pid>/environ`.
 - **After each request:** the driver kills the child's process group, then
   every other process under its user with `kill(-1, SIGKILL)`, which the
   kernel applies atomically against fork. It checks that none is left and
