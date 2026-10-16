@@ -5,7 +5,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,9 @@ from core.exceptions.general import CustomValueError
 from models.session import Session
 from models.user import User
 from utils.security import create_session_token, hash_token
+
+# Coarse enough that concurrent requests rarely write the session row.
+LAST_ACCESSED_RESOLUTION = timedelta(minutes=5)
 
 
 class SessionLifecycleMixin:
@@ -134,10 +137,20 @@ class SessionLifecycleMixin:
         if not session:
             return None
 
-        # Update last accessed timestamp
-        if update_last_accessed:
-            session.last_accessed = now
-            await db.flush()
+        if update_last_accessed and session.last_accessed <= now - LAST_ACCESSED_RESOLUTION:
+            # Skip a row another request is touching instead of queueing behind its lock.
+            touchable = (
+                select(Session.id)
+                .where(Session.id == session.id)
+                .with_for_update(skip_locked=True)
+                .scalar_subquery()
+            )
+            await db.execute(
+                update(Session)
+                .where(Session.id == touchable)
+                .values(last_accessed=now)
+                .execution_options(synchronize_session=False)
+            )
 
         return session.user
 

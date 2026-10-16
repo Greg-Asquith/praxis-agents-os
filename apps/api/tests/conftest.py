@@ -118,6 +118,14 @@ def _direct_model_transports(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_memory_rate_limits(monkeypatch: pytest.MonkeyPatch):
+    """Starts every test with empty in-memory request budgets."""
+    from core.rate_limiting import rate_limiter
+
+    monkeypatch.setattr(rate_limiter, "_memory_buckets", {})
+
+
+@pytest.fixture(autouse=True)
 def _reset_test_tenant_context():
     workspace_token = _test_workspace_id.set(None)
     user_token = _test_user_id.set(None)

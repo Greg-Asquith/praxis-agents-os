@@ -321,3 +321,25 @@ async def test_sweep_rate_limit_attempts_deletes_old_rows_and_reschedules(
         )
     )
     assert follow_up is not None
+
+
+async def test_memory_budget_prunes_expired_windows_before_live_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limiter = RateLimiter()
+    monkeypatch.setattr(rate_limiting_module, "_MEMORY_BUCKET_LIMIT", 2)
+    expired_start = datetime.now(UTC) - timedelta(minutes=5)
+    limiter._memory_buckets[("203.0.113.40", "/api/v1/a", "requests_per_minute")] = (
+        expired_start,
+        60,
+    )
+
+    limiter.check_memory_rate_limit("203.0.113.41", "/api/v1/b", "requests_per_minute")
+    live = limiter.check_memory_rate_limit("203.0.113.41", "/api/v1/b", "requests_per_minute")
+    limiter.check_memory_rate_limit("203.0.113.42", "/api/v1/c", "requests_per_minute")
+
+    assert live.attempts == 2
+    assert set(limiter._memory_buckets) == {
+        ("203.0.113.41", "/api/v1/b", "requests_per_minute"),
+        ("203.0.113.42", "/api/v1/c", "requests_per_minute"),
+    }

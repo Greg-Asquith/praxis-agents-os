@@ -1,12 +1,10 @@
 # apps/api/core/rate_limiting.py
 
 """
-PostgreSQL-backed rate limiting system with Redis upgrade path.
+IP-based rate limiting.
 
-Provides:
-- IP-based rate limiting using database storage
-- Configurable rate limits per endpoint
-- Designed for easy migration to Redis
+Auth budgets are stored in PostgreSQL so they survive restarts. General request
+budgets are counted in process memory because the API runs as one instance.
 """
 
 import hashlib
@@ -30,6 +28,9 @@ from models.rate_limiting import RateLimitAttempt
 
 logger = logging.getLogger(__name__)
 
+# Caps general-budget memory; expired windows are dropped first.
+_MEMORY_BUCKET_LIMIT = 20_000
+
 
 class RateLimitResult:
     """Result of a rate limit check."""
@@ -52,7 +53,7 @@ class RateLimitResult:
 
 
 class RateLimiter:
-    """PostgreSQL-backed rate limiter with configurable limits."""
+    """Rate limiter with durable auth budgets and in-memory general budgets."""
 
     def __init__(self):
         self.enabled = settings.RATE_LIMIT_ENABLED
@@ -65,6 +66,71 @@ class RateLimiter:
             "registration": (settings.RATE_LIMIT_REGISTRATION_PER_DAY, 86400),
             "password_reset": (settings.RATE_LIMIT_PASSWORD_RESET_PER_DAY, 86400),
         }
+        self._memory_buckets: dict[tuple[str, str, str], tuple[datetime, int]] = {}
+
+    def check_memory_rate_limit(self, ip: str, endpoint: str, limit_type: str) -> RateLimitResult:
+        """Consume one attempt from a general budget held in this process."""
+        unchecked = self._unchecked_result(ip)
+        if unchecked is not None:
+            return unchecked
+
+        limit, window_seconds = self.default_limits[limit_type]
+        now = datetime.now(UTC)
+        window_start = self._window_start(now, window_seconds)
+        key = (ip, endpoint, limit_type)
+        bucket_start, attempts = self._memory_buckets.get(key, (window_start, 0))
+        attempts = attempts + 1 if bucket_start == window_start else 1
+        self._memory_buckets[key] = (window_start, attempts)
+        if len(self._memory_buckets) > _MEMORY_BUCKET_LIMIT:
+            self._prune_memory_buckets(now)
+
+        reset_time = window_start + timedelta(seconds=window_seconds)
+        allowed = attempts <= limit
+        return RateLimitResult(
+            allowed=allowed,
+            attempts=attempts,
+            limit=limit,
+            window_seconds=window_seconds,
+            reset_time=reset_time,
+            retry_after=None if allowed else self._seconds_until(reset_time, now),
+        )
+
+    def _prune_memory_buckets(self, now: datetime) -> None:
+        """Drop expired windows, then the oldest buckets if still over the cap."""
+        for key, (window_start, _) in list(self._memory_buckets.items()):
+            window_seconds = self.default_limits[key[2]][1]
+            if window_start + timedelta(seconds=window_seconds) <= now:
+                del self._memory_buckets[key]
+        if len(self._memory_buckets) > _MEMORY_BUCKET_LIMIT:
+            # Evict to 90% so a full table isn't rescanned on every request.
+            overflow = len(self._memory_buckets) - _MEMORY_BUCKET_LIMIT * 9 // 10
+            for key in list(self._memory_buckets)[:overflow]:
+                del self._memory_buckets[key]
+
+    def _unchecked_result(self, ip: str) -> RateLimitResult | None:
+        """Return the fixed result for a disabled limiter or an invalid IP."""
+        if not self.enabled:
+            return RateLimitResult(
+                allowed=True,
+                attempts=0,
+                limit=None,
+                window_seconds=0,
+                reset_time=datetime.now(UTC),
+            )
+        try:
+            ip_address(ip)
+        except ValueError:
+            # If IP is invalid, apply most restrictive limit
+            logger.warning("Invalid IP address for rate limit: %s", ip)
+            return RateLimitResult(
+                allowed=False,
+                attempts=999,
+                limit=1,
+                window_seconds=3600,
+                reset_time=datetime.now(UTC) + timedelta(hours=1),
+                retry_after=3600,
+            )
+        return None
 
     async def check_rate_limit(
         self,
@@ -86,29 +152,9 @@ class RateLimiter:
             custom_window: Override default window (seconds)
             db: Database session (optional)
         """
-        if not self.enabled:
-            return RateLimitResult(
-                allowed=True,
-                attempts=0,
-                limit=None,
-                window_seconds=0,
-                reset_time=datetime.now(UTC),
-            )
-
-        # Validate IP address
-        try:
-            ip_address(ip)
-        except ValueError:
-            # If IP is invalid, apply most restrictive limit
-            logger.warning("Invalid IP address for rate limit: %s", ip)
-            return RateLimitResult(
-                allowed=False,
-                attempts=999,
-                limit=1,
-                window_seconds=3600,
-                reset_time=datetime.now(UTC) + timedelta(hours=1),
-                retry_after=3600,
-            )
+        unchecked = self._unchecked_result(ip)
+        if unchecked is not None:
+            return unchecked
 
         # Get limit configuration
         if custom_limit is not None and custom_window is not None:
@@ -197,27 +243,9 @@ class RateLimiter:
         db: AsyncSession | None = None,
     ) -> RateLimitResult:
         """Read a rate-limit bucket without consuming an attempt."""
-        if not self.enabled:
-            return RateLimitResult(
-                allowed=True,
-                attempts=0,
-                limit=None,
-                window_seconds=0,
-                reset_time=datetime.now(UTC),
-            )
-
-        try:
-            ip_address(ip)
-        except ValueError:
-            logger.warning("Invalid IP address for rate limit: %s", ip)
-            return RateLimitResult(
-                allowed=False,
-                attempts=999,
-                limit=1,
-                window_seconds=3600,
-                reset_time=datetime.now(UTC) + timedelta(hours=1),
-                retry_after=3600,
-            )
+        unchecked = self._unchecked_result(ip)
+        if unchecked is not None:
+            return unchecked
 
         limit, window_seconds = self.default_limits.get(
             limit_type,

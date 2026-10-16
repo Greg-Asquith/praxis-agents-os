@@ -18,9 +18,11 @@ The following contracts apply in this area:
   lookup; RBAC uses the `require_role`/`require_owner`/`require_editor`/
   `require_read` dependencies.
 - CSRF is enforced when a session cookie is present (Origin check plus
-  HMAC-signed `X-CSRF-Token`). Rate limiting is Postgres-backed and
-  fail-closed for auth flows: general requests consume minute and hour
-  budgets; login failures consume a client-IP-and-account budget while
+  HMAC-signed `X-CSRF-Token`). Auth rate limits are Postgres-backed and
+  fail closed. General requests consume minute and hour budgets counted in
+  API process memory, which is exact while the API runs as one instance
+  (`maxScale: 1`) and resets on restart. Login failures consume a
+  client-IP-and-account budget while
   successful logins don't; pre-account TOTP and OAuth failures use separate
   per-flow IP buckets that don't block requests with a resolved account;
   registration and password reset remain per IP.

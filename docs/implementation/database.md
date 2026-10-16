@@ -143,10 +143,15 @@ removing it for a downgrade.
 
 A session checks out a pooled connection on its first query, not when it opens.
 Each engine sends `IVFFLAT_PROBES` as a connection default, so no session needs
-its own setup query. Keep it that way in the request path: the rate limiter
-opens a second session inside each request, and a request that already holds a
-connection while it waits for another can exhaust the pool under a burst of
-requests.
+its own setup query. Keep the request path to one connection at a time. A
+request that holds a connection while it waits for another can exhaust the pool
+under a burst of requests. General rate limits are counted in memory, and only
+auth rate limits open their own session.
+
+Avoid row locks that every request takes. Session validation writes
+`sessions.last_accessed` at most every five minutes, and it skips the row if
+another request holds it. Concurrent requests from one browser therefore don't
+queue behind each other's transactions.
 
 The per-process connection and turn-concurrency settings are defined as
 follows:

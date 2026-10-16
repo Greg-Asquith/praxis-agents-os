@@ -1,6 +1,6 @@
 # apps/api/middleware/rate_limit.py
 
-"""Rate limiting middleware using the PostgreSQL-backed limiter."""
+"""Rate limiting middleware with durable auth budgets and in-memory general budgets."""
 
 import json
 import logging
@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.database import get_async_db_session_factory
 from core.rate_limiting import (
+    RateLimitResult,
     get_client_ip,
     get_login_failure_status,
     normalize_endpoint,
@@ -19,7 +20,11 @@ from core.rate_limiting import (
     rate_limiter,
 )
 from core.request_paths import redact_capability_path
-from services.security import SecurityEventType, safe_record_security_event
+from services.security import (
+    SecurityEventType,
+    safe_record_security_event,
+    safe_record_security_event_committed,
+)
 from utils.validation import normalize_email
 
 logger = logging.getLogger(__name__)
@@ -27,12 +32,10 @@ logger = logging.getLogger(__name__)
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Rate limiting middleware using PostgreSQL backend.
+    Rate limiting middleware.
 
-    Applies different rate limits based on endpoint patterns:
-    - Auth endpoints: stricter limits
-    - General API: standard limits
-    - Static/health endpoints: relaxed limits
+    Auth endpoints use stricter PostgreSQL-backed limits that fail closed. All
+    other requests use per-minute and per-hour budgets counted in memory.
     """
 
     def __init__(self, app, exclude_paths: list[str] | None = None):
@@ -42,7 +45,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/readyz",
             "/api/metrics",
         ]
-        self.fail_closed_limit_types = {
+        self.durable_limit_types = {
             "login_attempts",
             "registration",
             "password_reset",
@@ -70,65 +73,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit_type = self._get_limit_type(endpoint, method)
         login_email = await self._login_email(request, endpoint, limit_type)
 
-        async def _check_with_db(db):
-            result_local = None
-            if limit_type == "login_attempts" and login_email is not None:
-                result_local = await get_login_failure_status(client_ip, login_email, db)
-            elif limit_type != "login_attempts":
-                result_local = await rate_limiter.check_rate_limit(
-                    ip=client_ip,
-                    endpoint=rate_limit_endpoint,
-                    limit_type=limit_type,
-                    db=db,
+        result = None
+        if limit_type in self.durable_limit_types:
+            try:
+                result, blocked_resp = await self._check_durable_limit(
+                    request, client_ip, endpoint, rate_limit_endpoint, limit_type, login_email
                 )
-            if result_local is not None and not result_local.allowed:
-                return result_local, await self._blocked_response(
-                    db=db,
-                    request=request,
-                    client_ip=client_ip,
-                    endpoint=endpoint,
-                    limit_type=limit_type,
-                    result=result_local,
-                )
-
-            hourly_result = await rate_limiter.check_rate_limit(
-                ip=client_ip,
-                endpoint=rate_limit_endpoint,
-                limit_type="requests_per_hour",
-                db=db,
-            )
-            if not hourly_result.allowed:
-                return hourly_result, await self._blocked_response(
-                    db=db,
-                    request=request,
-                    client_ip=client_ip,
-                    endpoint=endpoint,
-                    limit_type="requests_per_hour",
-                    result=hourly_result,
-                )
-
-            return result_local or hourly_result, None
-
-        try:
-            # Always use a dedicated session that commits its own writes. The
-            # request-scoped session owned by DBSessionMiddleware is rolled back
-            # on any >=400 response (e.g. a failed login 401), which would undo
-            # the attempt-counter increment and the RATE_LIMIT_EXCEEDED audit
-            # write — defeating brute-force protection. Rate-limit bookkeeping
-            # must persist independently of the request's final status.
-            session_factory = get_async_db_session_factory()
-            async with session_factory() as db:
-                try:
-                    result, blocked_resp = await _check_with_db(db)
-                    await db.commit()
-                except Exception:
-                    await db.rollback()
-                    raise
-
-        except Exception as e:
-            # Fail-closed on auth-critical paths to prevent brute-force during
-            # backend instability; fail-open on general traffic to avoid outages.
-            if limit_type in self.fail_closed_limit_types:
+            except Exception as e:
+                # Fail closed on auth paths to prevent brute force during backend instability.
                 logger.error(
                     f"RateLimitMiddleware fail-closed on {limit_type} due to error: {e}",
                     extra={"client_ip": client_ip, "endpoint": endpoint},
@@ -140,45 +92,91 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         "detail": "Service temporarily unavailable. Please try again shortly."
                     },
                 )
-            logger.error(
-                f"RateLimitMiddleware pass-through due to error: {e}",
-                extra={"client_ip": client_ip, "endpoint": endpoint},
-                exc_info=True,
-            )
-            return await call_next(request)
+            if blocked_resp is not None:
+                return blocked_resp
 
-        if blocked_resp is not None:
-            return blocked_resp
+        # General budgets stay in memory so ordinary requests don't need a connection.
+        memory_limit_types = (
+            ("requests_per_minute", "requests_per_hour")
+            if limit_type == "requests_per_minute"
+            else ("requests_per_hour",)
+        )
+        for memory_limit_type in memory_limit_types:
+            memory_result = rate_limiter.check_memory_rate_limit(
+                client_ip, rate_limit_endpoint, memory_limit_type
+            )
+            if not memory_result.allowed:
+                await safe_record_security_event_committed(
+                    **self._security_event(
+                        request, client_ip, endpoint, memory_limit_type, memory_result
+                    )
+                )
+                return self._rate_limited_response(endpoint, memory_limit_type, memory_result)
+            result = result or memory_result
 
         response = await call_next(request)
         self._attach_rate_limit_headers(response, result)
         return response
 
-    async def _blocked_response(
+    async def _check_durable_limit(
         self,
-        *,
-        db,
+        request: Request,
+        client_ip: str,
+        endpoint: str,
+        rate_limit_endpoint: str,
+        limit_type: str,
+        login_email: str | None,
+    ) -> tuple[RateLimitResult | None, Response | None]:
+        """Check an auth budget in its own committed session."""
+        # The request session rolls back on 4xx responses, which would undo the
+        # attempt count and the RATE_LIMIT_EXCEEDED event, so commit separately.
+        session_factory = get_async_db_session_factory()
+        async with session_factory() as db:
+            try:
+                if limit_type != "login_attempts":
+                    result = await rate_limiter.check_rate_limit(
+                        ip=client_ip,
+                        endpoint=rate_limit_endpoint,
+                        limit_type=limit_type,
+                        db=db,
+                    )
+                elif login_email is not None:
+                    result = await get_login_failure_status(client_ip, login_email, db)
+                else:
+                    return None, None
+                blocked_resp = None
+                if not result.allowed:
+                    await safe_record_security_event(
+                        db, **self._security_event(request, client_ip, endpoint, limit_type, result)
+                    )
+                    blocked_resp = self._rate_limited_response(endpoint, limit_type, result)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return result, blocked_resp
+
+    @staticmethod
+    def _security_event(
         request: Request,
         client_ip: str,
         endpoint: str,
         limit_type: str,
-        result,
-    ) -> Response:
-        await safe_record_security_event(
-            db,
-            event_type=SecurityEventType.RATE_LIMIT_EXCEEDED,
-            ip_address=client_ip,
-            user_agent=request.headers.get("user-agent", None),
-            user_email=None,
-            endpoint=endpoint,
-            details={
+        result: RateLimitResult,
+    ) -> dict:
+        return {
+            "event_type": SecurityEventType.RATE_LIMIT_EXCEEDED,
+            "ip_address": client_ip,
+            "user_agent": request.headers.get("user-agent", None),
+            "user_email": None,
+            "endpoint": endpoint,
+            "details": {
                 "limit_type": limit_type,
                 "attempts": result.attempts,
                 "limit": result.limit,
                 "retry_after": result.retry_after,
             },
-        )
-        return self._rate_limited_response(endpoint, limit_type, result)
+        }
 
     @staticmethod
     async def _login_email(
