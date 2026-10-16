@@ -2,7 +2,7 @@
 
 """Bounded filters and typed Meta advertising objects."""
 
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 
 from pydantic import Field, model_validator
 
@@ -100,6 +100,21 @@ class MetaAdsObject(MetaAdsStrictModel):
     special_ad_categories: list[MetaAdsText] | None = Field(default=None, max_length=8)
     # Campaigns only: whether ad sets may share up to 20% of their own budgets.
     share_between_ad_sets: bool | None = None
+    # Ad sets only: return goal as a ratio, spend controls under a campaign budget (null for
+    # none), EU payer and beneficiary, learning phase, and the countries the ad set reaches.
+    min_roas: MetaAdsText | None = None
+    min_daily_spend: MetaAdsMoney | None = None
+    max_daily_spend: MetaAdsMoney | None = None
+    min_lifetime_spend: MetaAdsMoney | None = None
+    max_lifetime_spend: MetaAdsMoney | None = None
+    eu_payer: MetaAdsText | None = None
+    eu_beneficiary: MetaAdsText | None = None
+    learning_status: MetaAdsText | None = None
+    countries: list[Annotated[str, Field(pattern=r"^[A-Z]{2}$")]] | None = Field(
+        default=None, max_length=300
+    )
+    # Campaigns only: set for legacy Advantage+ shopping and app campaigns.
+    smart_promotion_type: MetaAdsText | None = None
     # Ads only: why Meta's review rejected the ad, and what stops it delivering.
     review_reasons: list[MetaAdsText] | None = Field(default=None, max_length=5)
     issues: list[MetaAdsText] | None = Field(default=None, max_length=5)

@@ -55,6 +55,11 @@ def _roas(value: str) -> str:
     return value
 
 
+type MetaAdsMinRoas = Annotated[str, Field(max_length=16), AfterValidator(_roas)]
+type MetaAdsAdSetName = Annotated[str, Field(max_length=MAX_AD_SET_NAME), AfterValidator(tidy_text)]
+type MetaAdsEuName = Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(tidy_text)]
+
+
 class MetaAdsAdSetBudget(MetaAdsStrictModel):
     kind: Literal["daily", "lifetime"]
     amount: MetaAdsBudgetAmount
@@ -77,7 +82,7 @@ class MetaAdsAdSetPlacements(MetaAdsStrictModel):
 class MetaAdsAdSetSettings(MetaAdsStrictModel):
     """Everything about a new ad set but its campaign, which a launch creates first."""
 
-    name: Annotated[str, Field(max_length=MAX_AD_SET_NAME), AfterValidator(tidy_text)]
+    name: MetaAdsAdSetName
     goal: MetaAdsGoal
     targeting: MetaAdsTargeting
     page: MetaAdsPageReference | None = None
@@ -90,16 +95,14 @@ class MetaAdsAdSetSettings(MetaAdsStrictModel):
     budget: MetaAdsAdSetBudget | None = None
     bid_strategy: MetaAdsBidStrategy | None = None
     bid_amount: MetaAdsBudgetAmount | None = None
-    min_roas: Annotated[str, Field(max_length=16), AfterValidator(_roas)] | None = None
+    min_roas: MetaAdsMinRoas | None = None
     min_daily_spend: MetaAdsBudgetAmount | None = None
     max_daily_spend: MetaAdsBudgetAmount | None = None
     pay_per_click: bool = False
     start_date: str | None = Field(default=None, max_length=10)
     end_date: str | None = Field(default=None, max_length=10)
-    eu_payer: Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(tidy_text)] | None = None
-    eu_beneficiary: (
-        Annotated[str, Field(max_length=MAX_EU_NAME), AfterValidator(tidy_text)] | None
-    ) = None
+    eu_payer: MetaAdsEuName | None = None
+    eu_beneficiary: MetaAdsEuName | None = None
 
     @model_validator(mode="after")
     def _check_settings(self) -> Self:
@@ -155,12 +158,6 @@ def _settings_problems(request: MetaAdsAdSetSettings) -> list[str]:
         problems.append("Only the link_clicks goal can pay per click.")
     if request.budget and request.budget.kind == "lifetime" and not request.end_date:
         problems.append("A lifetime budget needs an end_date.")
-    if (
-        request.min_daily_spend
-        and request.max_daily_spend
-        and Decimal(request.max_daily_spend) < Decimal(request.min_daily_spend)
-    ):
-        problems.append("Set max_daily_spend at or above min_daily_spend.")
     if any(
         location.kind in ("region", "city") and location.country_code is None
         for location in request.targeting.locations

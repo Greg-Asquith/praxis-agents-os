@@ -28,17 +28,32 @@ from ..tools.schemas.objects import (
 )
 from .ad_review import issue_summaries, review_reasons
 from .paging import read_pages
-from .values import bounded_string, invalid_response, iso_datetime, money_value, require_currency
+from .values import (
+    bounded_string,
+    invalid_response,
+    iso_datetime,
+    money_value,
+    require_currency,
+    squashed_text,
+)
 
 _OPERATION = "list_objects"
 _FIELDS = {
-    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled",
-    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,targeting{publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
-    "ad": "id,name,status,effective_status,campaign_id,adset_id,ad_review_feedback,issues_info",
+    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled,smart_promotion_type",
+    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,bid_constraints,daily_budget,lifetime_budget,budget_remaining,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,dsa_payor,dsa_beneficiary,learning_stage_info,targeting{geo_locations,publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
+    "ad": "id,name,status,effective_status,campaign_id,adset_id,bid_amount,ad_review_feedback,issues_info",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
 _PLACEMENT_PLATFORMS = ("facebook", "instagram", "audience_network", "messenger", "threads")
 _PROMOTED_IDS = ("page_id", "pixel_id", "application_id", "custom_conversion_id")
+_SPEND_CONTROLS = {
+    "min_daily_spend": "daily_min_spend_target",
+    "max_daily_spend": "daily_spend_cap",
+    "min_lifetime_spend": "lifetime_min_spend_target",
+    "max_lifetime_spend": "lifetime_spend_cap",
+}
+# Meta's value for a spend cap that isn't set, in minor units.
+NO_SPEND_CAP = 922337203685478
 
 
 async def list_objects(
@@ -164,7 +179,54 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         else None,
         review_reasons=review_reasons(raw) if object_type == "ad" else None,
         issues=issue_summaries(raw) if object_type == "ad" else None,
+        smart_promotion_type=bounded_string(raw.get("smart_promotion_type"), operation=_OPERATION)
+        if object_type == "campaign"
+        else None,
+        **(_ad_set_settings(raw, currency) if object_type == "adset" else {}),
     )
+
+
+def _ad_set_settings(raw: dict[str, Any], currency: str) -> dict[str, Any]:
+    """Reads the ad set settings that edits change, beyond those every object has."""
+    floor = _mapping(raw.get("bid_constraints")).get("roas_average_floor")
+    learning = _mapping(raw.get("learning_stage_info"))
+    targeting = raw.get("targeting")
+    return {
+        "min_roas": _ratio(floor),
+        **{key: _spend_control(raw.get(field), currency) for key, field in _SPEND_CONTROLS.items()},
+        "eu_payer": squashed_text(raw.get("dsa_payor"), 512),
+        "eu_beneficiary": squashed_text(raw.get("dsa_beneficiary"), 512),
+        "learning_status": bounded_string(learning.get("status"), operation=_OPERATION),
+        "countries": _countries(targeting) if isinstance(targeting, dict) else None,
+    }
+
+
+def _ratio(floor: Any) -> str | None:
+    """Turns Meta's return floor, the ratio times 10,000, back into the ratio."""
+    if floor is None:
+        return None
+    if isinstance(floor, bool) or not isinstance(floor, (int, str)) or not str(floor).isdigit():
+        raise invalid_response("Meta Ads returned an invalid return goal.", operation=_OPERATION)
+    return format((Decimal(int(floor)) / 10_000).normalize(), "f")
+
+
+def _spend_control(value: Any, currency: str) -> str | None:
+    """Returns None for a control that isn't set, which Meta shows as empty, zero, or no cap."""
+    if value in (None, "", "0", 0) or str(value) == str(NO_SPEND_CAP):
+        return None
+    return money_value(value, currency, operation=_OPERATION)
+
+
+def _countries(targeting: dict[str, Any]) -> list[str]:
+    """Lists the countries of every place the ad set reaches, for rules such as the EU's."""
+    geo = _mapping(targeting.get("geo_locations"))
+    countries = [item for item in geo.get("countries") or [] if isinstance(item, str)]
+    for key in ("regions", "cities", "zips", "geo_markets", "custom_locations"):
+        for place in geo.get(key) or []:
+            country = _mapping(place).get("country")
+            if isinstance(country, str):
+                countries.append(country)
+    return sorted({item for item in countries if len(item) == 2 and item.isupper()})[:300]
 
 
 def _held_budget(raw: dict[str, Any], currency: str) -> tuple[str, str] | None:

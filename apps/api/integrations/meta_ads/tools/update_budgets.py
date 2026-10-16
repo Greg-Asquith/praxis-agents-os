@@ -5,7 +5,7 @@
 import asyncio
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -43,15 +43,14 @@ from utils.metadata import metadata_str
 from ..client import MetaAdsClient
 from ..models import MetaAdsObjectBudget
 from ..money import amount_to_minor
+from ..operations.edit_impact import MetaAdsRecentChanges, count_recent_changes
 from ..operations.get_account import get_account
 from ..operations.mutations import MetaAdsMutationLedger
 from ..operations.update_budgets import (
     MetaAdsBudgetObjectType,
     MetaAdsBudgetTarget,
-    MetaAdsRecentBudgetChanges,
     budget_problem,
     budget_target,
-    count_recent_budget_changes,
     lifetime_spent,
     read_budget_objects,
     update_budgets,
@@ -417,14 +416,18 @@ async def _account_checks(
 
 async def _recent_changes(
     client: MetaAdsClient, entry: ResolvedContextEntry, object_ids: Sequence[str]
-) -> MetaAdsRecentBudgetChanges | None:
+) -> MetaAdsRecentChanges | None:
+    now = datetime.now(UTC)
     try:
-        return await count_recent_budget_changes(
+        # Meta limits how often an ad set budget can change in an hour.
+        return await count_recent_changes(
             client,
             account_id=entry.external_id,
             timezone_name=metadata_str(entry.permissions_metadata.get("timezone_name")) or "UTC",
             object_ids=object_ids,
-            now=datetime.now(UTC),
+            since=now - timedelta(hours=1),
+            now=now,
+            words=("budget",),
         )
     except IntegrationError:
         # The warning is advisory, so an unreadable history doesn't hide the rest of the checks.

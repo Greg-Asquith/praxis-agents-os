@@ -3,7 +3,7 @@
 """Create one ad set: campaign rules, the request body, one send, then a read-back."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -14,7 +14,7 @@ from core.exceptions.integration import IntegrationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import MetaAdsClient, ad_account_path
-from ..goals import GOALS
+from ..goals import GOALS, MetaAdsMinimumKind
 from ..models import MetaAdsObjectBudget, MetaAdsPlacements, MetaAdsPromotedObject
 from ..money import amount_to_minor
 from ..references import MetaAdsApplicationReference
@@ -59,7 +59,8 @@ _STORE_HOSTS = {
     "google_play": ("play.google.com",),
     "app_store": ("apps.apple.com", "itunes.apple.com"),
 }
-_BID_AMOUNT_STRATEGIES = frozenset({"COST_CAP", "LOWEST_COST_WITH_BID_CAP"})
+BID_AMOUNT_STRATEGIES = frozenset({"COST_CAP", "LOWEST_COST_WITH_BID_CAP"})
+LEGACY_ADVANTAGE_TYPES = frozenset({"AUTOMATED_SHOPPING_ADS", "SMART_APP_PROMOTION"})
 _EU_NAMES_MISSING = (
     "This ad set reaches people in the EU, so Meta needs who pays for the ads and who they "
     "benefit, and this ad account has no defaults. Ask the operator for eu_payer and "
@@ -112,17 +113,42 @@ def _objective(value: str | None) -> str:
 
 
 def _budget_problems(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> list[str]:
+    problems: list[str] = []
     if campaign.budget is not None:
         if request.budget is not None:
-            return ["This campaign holds the budget, so leave the ad set's budget out."]
-        return []
-    problems: list[str] = []
-    if request.budget is None:
+            problems.append("This campaign holds the budget, so leave the ad set's budget out.")
+    elif request.budget is None:
         problems.append("This campaign's ad sets hold their own budgets, so set a budget.")
     elif campaign.share_between_ad_sets and request.budget.kind != "daily":
         problems.append("This campaign's ad sets share budgets, so use a daily budget.")
-    if request.min_daily_spend or request.max_daily_spend:
-        problems.append("Daily spend limits apply only under a campaign budget.")
+    period = campaign.budget.kind if campaign.budget is not None else None
+    problems.extend(
+        spend_control_problems(
+            period, min_daily=request.min_daily_spend, max_daily=request.max_daily_spend
+        )
+    )
+    return problems
+
+
+def spend_control_problems(
+    campaign_period: str | None,
+    *,
+    min_daily: str | None,
+    max_daily: str | None,
+    min_lifetime: str | None = None,
+    max_lifetime: str | None = None,
+) -> list[str]:
+    """Spend controls need a campaign budget of the same period, and a maximum at or above
+    the minimum. Amounts are the values the ad set has after the change; None for no limit."""
+    problems: list[str] = []
+    for period, low, high in (
+        ("daily", min_daily, max_daily),
+        ("lifetime", min_lifetime, max_lifetime),
+    ):
+        if (low or high) and campaign_period != period:
+            problems.append(f"{period.capitalize()} spend limits need a campaign {period} budget.")
+        elif low and high and Decimal(high) < Decimal(low):
+            problems.append(f"Set max_{period}_spend at or above min_{period}_spend.")
     return problems
 
 
@@ -136,13 +162,21 @@ def _bid_problems(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> lis
     strategy = bid_strategy(request, campaign)
     if request.bid_strategy and BID_STRATEGIES[request.bid_strategy] != strategy:
         return ["The ad set follows its campaign's bid strategy, so leave bid_strategy out."]
-    if strategy in _BID_AMOUNT_STRATEGIES and request.bid_amount is None:
-        return ["This bid strategy needs a bid_amount on the ad set."]
-    if strategy not in _BID_AMOUNT_STRATEGIES and request.bid_amount is not None:
-        return ["This bid strategy doesn't take a bid_amount."]
-    if (strategy == "LOWEST_COST_WITH_MIN_ROAS") != (request.min_roas is not None):
-        return ["Set min_roas for a return on ad spend goal, and only for it."]
-    return []
+    problem = bid_problem(
+        strategy, bid_amount=request.bid_amount is not None, min_roas=request.min_roas is not None
+    )
+    return [problem] if problem else []
+
+
+def bid_problem(strategy: str | None, *, bid_amount: bool, min_roas: bool) -> str | None:
+    """Checks that Meta's bid strategy has the bid or return goal it needs, and no other."""
+    if strategy in BID_AMOUNT_STRATEGIES and not bid_amount:
+        return "This bid strategy needs a bid_amount on the ad set."
+    if strategy not in BID_AMOUNT_STRATEGIES and bid_amount:
+        return "This bid strategy doesn't take a bid_amount."
+    if (strategy == "LOWEST_COST_WITH_MIN_ROAS") != min_roas:
+        return "Set min_roas for a return on ad spend goal, and only for it."
+    return None
 
 
 def reaches_eu(request: MetaAdsAdSetSettings) -> bool:
@@ -155,6 +189,10 @@ def reaches_eu(request: MetaAdsAdSetSettings) -> bool:
         for location in request.targeting.locations
         if location.kind == "postcode"
     )
+    return includes_eu(countries)
+
+
+def includes_eu(countries: Iterable[str | None]) -> bool:
     return bool(_EU_COUNTRIES.intersection(countries))
 
 
@@ -182,7 +220,8 @@ async def read_ad_set_account(
         usage_account_id=account_id,
     )
     currency = require_currency(raw.get("currency"), operation=OPERATION)
-    minimum = await _goal_minimum(client, account_id, request, currency)
+    kind = "high_freq" if request.pay_per_click else GOALS[request.goal].minimum
+    minimum = await read_goal_minimum(client, account_id, kind, currency, operation=OPERATION)
     return AdSetAccount(
         currency=currency,
         timezone_name=bounded_string(raw.get("timezone_name"), operation=OPERATION),
@@ -192,16 +231,20 @@ async def read_ad_set_account(
     )
 
 
-async def _goal_minimum(
-    client: MetaAdsClient, account_id: str, request: MetaAdsAdSetSettings, currency: str
+async def read_goal_minimum(
+    client: MetaAdsClient,
+    account_id: str,
+    kind: MetaAdsMinimumKind,
+    currency: str,
+    *,
+    operation: str,
 ) -> str | None:
     """Reads the goal's daily minimum; None when Meta reports none, so the account's applies."""
-    kind = "high_freq" if request.pay_per_click else GOALS[request.goal].minimum
     try:
         payload = await client.graph_get(
             f"{ad_account_path(account_id)}/minimum_budgets",
             params={"fields": f"min_daily_budget_{kind}"},
-            operation=OPERATION,
+            operation=operation,
             policy=IntegrationRequestPolicy.READ,
             usage_account_id=account_id,
         )
@@ -210,7 +253,7 @@ async def _goal_minimum(
     rows = payload.get("data")
     row = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}
     try:
-        return money_value(row.get(f"min_daily_budget_{kind}"), currency, operation=OPERATION)
+        return money_value(row.get(f"min_daily_budget_{kind}"), currency, operation=operation)
     except IntegrationError:
         return None
 

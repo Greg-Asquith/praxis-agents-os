@@ -338,6 +338,17 @@ Ad sets also carry what ad creation validates before approval:
   its own nor a campaign budget has a null budget, because ownership is
   unknown.
 
+Ad sets also carry the settings that [ad set edits](#editing-ad-sets) change:
+`min_roas` (Meta's `bid_constraints.roas_average_floor` divided by 10,000),
+the spend controls `min_daily_spend`, `max_daily_spend`, `min_lifetime_spend`,
+and `max_lifetime_spend` (null when unset, empty, zero, or Meta's no-cap value
+`922337203685478`), `eu_payer` and `eu_beneficiary` (`dsa_payor` and
+`dsa_beneficiary`), `learning_status` from `learning_stage_info`, which Meta
+returns only for active ad sets, and `countries`, the country codes of every
+place in `targeting.geo_locations`. Campaigns carry `smart_promotion_type`,
+which marks legacy Advantage+ shopping and app campaigns. Ads carry
+`bid_amount` when an ad has its own bid.
+
 The provider operation also reads exact object IDs in any status, still through
 the selected account's edge. Writes use it to read state before and after a
 change.
@@ -686,6 +697,117 @@ links as status changes.
 The dry-run reply, Meta's minimum-budget and lifetime-spend errors, and the
 `event_type` names for budget changes in the change history are documented
 behaviour that hasn't been checked against a live account; see
+[Live qualification record](#live-qualification-record).
+
+### Editing ad sets
+
+`meta_ads_update_ad_sets` changes the settings of up to 50 existing ad sets in
+one approval. Each entry names one ad set and only the settings that change;
+an omitted setting stays as it is. Status stays with `meta_ads_update_status`,
+budget amounts with `meta_ads_update_budgets`. Goal, attribution, frequency
+cap, ad scheduling, and targeting edits are pending.
+
+| Setting | Meta field |
+| --- | --- |
+| `name` | `name` |
+| `start_date`, `end_date` (`YYYY-MM-DD` in the account's time zone; `end_date: "none"` runs continuously) | `start_time`, `end_time` (`0` runs continuously) |
+| `bid_strategy` | `bid_strategy` |
+| `bid_amount` (cost per result goal or bid cap) | `bid_amount` in minor units |
+| `min_roas` (a ratio such as `2.5`) | `bid_constraints.roas_average_floor` (ratio × 10,000) |
+| `min_daily_spend`, `max_daily_spend`, `min_lifetime_spend`, `max_lifetime_spend` (an amount, or `remove`) | `daily_min_spend_target`, `daily_spend_cap`, `lifetime_min_spend_target`, `lifetime_spend_cap` in minor units; `remove` sends `922337203685478` |
+| `eu_payer`, `eu_beneficiary` | `dsa_payor`, `dsa_beneficiary` |
+
+`operations/edit_ad_set.py` holds the rules, checked against the ad set and
+its campaign as they are now:
+
+- Ad sets in legacy Advantage+ shopping or app campaigns
+  (`smart_promotion_type` `AUTOMATED_SHOPPING_ADS` or `SMART_APP_PROMOTION`)
+  are refused, because Meta no longer accepts API changes to them.
+- Archived and deleted ad sets take only a new name.
+- `bid_strategy` is refused when the campaign holds a budget or a strategy,
+  because its ad sets follow it. A new strategy must come with what it
+  needs: `bid_amount` for `bid_cap` and `cost_per_result_goal`, `min_roas`
+  for `roas_goal`, and neither for `highest_volume`. Alone, `bid_amount`
+  needs a bid cap or cost goal strategy and `min_roas` a return goal. The
+  bid rule is `bid_problem` in `operations/create_ad_set.py`, which ad set
+  creation also uses.
+- Daily spend controls need a campaign daily budget and lifetime controls a
+  campaign lifetime budget. Each maximum must be at or above its minimum,
+  compared on the values after the change. Ad set creation uses the same
+  `spend_control_problems`.
+- Dates can't be in the past, and the end can't be before the start.
+  `end_date: "none"` is refused for an ad set with its own or its campaign's
+  lifetime budget. A start date of today sends the current time.
+- `eu_payer` and `eu_beneficiary` are refused unless one of the ad set's
+  `countries` is in the EU.
+- Money with fractional minor units is refused.
+- When an end date changes on an ad set with its own lifetime budget, the
+  remaining budget is spread over the remaining days. A daily pace below the
+  goal's daily minimum from `minimum_budgets` (or the account's
+  `min_daily_budget`) blocks the change.
+
+`operations/update_fields.py` is the shared edit seam, generic over
+campaigns and ad sets, and `operations/edit_impact.py` builds the notes. The
+tool works as follows:
+
+1. Approval display re-reads each ad set and its campaign, applies the rules,
+   and dry-runs each change that passes and isn't already set, with the body
+   and `execution_options=["validate_only"]`. For the card it adds, under
+   `_checks` by ad set ID, every setting's current value (`before`), the
+   values checked (`requested`), the problems, the currency, and notes:
+   - "This restarts learning" for a bid change on an ad set with
+     `learning_status`.
+   - The number of ads with their own bid, which a new `bid_amount` replaces.
+   - Bid or budget changes today (activity `event_type` containing `bid` or
+     `budget` since local midnight), when there are 3 or more.
+   - A lifetime budget's new daily pace after an end date change.
+   - A minimum spend above the ad set's even share of the campaign budget
+     across its active ad sets.
+
+   The notes are advisory: an unreadable history or ad list drops them. An
+   account that can't be read marks its ad sets unavailable, and they stay
+   approvable because execution checks again.
+2. The card opens with the same "Changes take effect straight away"
+   banner as the budget card, then one row per ad set, one open at a
+   time, laid out like the Create Ad Set card. A closed row shows the new
+   values; an open one shows each setting's field with its current
+   setting under it, and the percentage change for amounts. Leaving an
+   optional spend limit or end date empty removes it. Effects that can
+   cost results for a while (restarting learning, three or more bid or
+   budget changes today) show as warnings; other notes are plain text.
+   Every proposed value is editable (`changes` is an editable
+   `structured` field), and an ad set can be switched off. A problem
+   blocks approval only while the card still shows the values it was
+   found for.
+3. After approval, the tool refuses any ad set or setting the agent didn't
+   propose, compared with `proposed_args`. It refuses the run while the
+   account has used 75% or more of Meta's hourly request allowance. It reads
+   every ad set and campaign again, applies the rules, and dry-runs again.
+   Any problem or rejection stops the account before anything is sent.
+4. An ad set whose changed settings now differ from the `before` values on
+   the approved card fails with `CHANGED_SINCE_APPROVAL` and isn't sent.
+   Other settings may differ. Ad sets already at the requested values are
+   skipped as `already_set`.
+5. Pending evidence records each ad set's ID, name, currency, and the before
+   and requested values of its changed settings, with money in minor units
+   and EU names as given.
+6. Before each send, a checkpoint records the ad set ID. The tool then sends
+   one `POST /{adset_id}` per ad set, in order and never through Graph
+   `/batch`, without retry.
+7. The tool reads the changed ad sets again. An ad set is `updated` only when
+   every changed setting reads back as requested, comparing amounts as
+   numbers and times as dates in the account's time zone. A disagreeing
+   read-back fails the ad set with `SETTING_NOT_CONFIRMED` and keeps the
+   values Meta returned. A lost reply or a failed read-back is `unverified`.
+
+Each result row has the ad set, its settings with `before`, `requested`, and
+read-back `after` values, and the outcome. The tool has a 300-second timeout,
+supports Code Mode, and is listed in the spend policy test.
+
+Whether a delivered ad set accepts a new start date, whether `roas_goal`
+can be left at ad set level, the `learning_stage_info` shape, whether ad sets
+in legacy Advantage+ campaigns refuse updates, and the time for 50 ad sets in
+sequence haven't been checked against a live account; see
 [Live qualification record](#live-qualification-record).
 
 ### Uploading media
@@ -1234,8 +1356,8 @@ Besides `campaign`, `name` (up to 400 characters), `goal`, and `targeting`
   Facebook video feeds, Instagram Explore, and Messenger Stories.
 - `budget` (`daily` or `lifetime` with an amount) only when the campaign has
   no budget of its own. A lifetime budget needs `end_date`, and a campaign
-  whose ad sets share budgets needs a daily one. Under a campaign budget,
-  `min_daily_spend` and `max_daily_spend` are optional.
+  whose ad sets share budgets needs a daily one. Under a campaign daily
+  budget, `min_daily_spend` and `max_daily_spend` are optional.
 - Bids follow the campaign's strategy. `bid_strategy` is accepted only when
   the campaign sets none; it's then sent on the ad set, defaulting to
   `highest_volume`. `bid_cap` and `cost_per_result_goal` need `bid_amount`;
@@ -1577,6 +1699,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
 | Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
+| Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |

@@ -16,13 +16,14 @@ import { metaAdsEstimateAudiencePresenter } from "@/integrations/meta_ads/presen
 import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/objects"
 import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
+import { metaAdsUpdateAdSetsPresenter } from "@/integrations/meta_ads/presenters/update-ad-sets"
 import { metaAdsUpdateBudgetsPresenter } from "@/integrations/meta_ads/presenters/update-budgets"
 import { metaAdsUpdateStatusPresenter } from "@/integrations/meta_ads/presenters/update-status"
 import { metaAdsUploadMediaPresenter } from "@/integrations/meta_ads/presenters/upload-media"
 
 export default {
   catalogDescription:
-    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, find targeting options and estimate audience sizes, and, with your approval, upload images and videos, create paused campaigns, create paused ad sets in existing campaigns, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, launch a whole campaign with its ad sets and ads in one approval, turn campaigns, ad sets, and ads on or off, and change budgets.",
+    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, find targeting options and estimate audience sizes, and, with your approval, upload images and videos, create paused campaigns, create paused ad sets in existing campaigns, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, launch a whole campaign with its ad sets and ads in one approval, turn campaigns, ad sets, and ads on or off, change budgets, and change ad set names, schedules, bids, spend limits, and EU payer and beneficiary names.",
   ConnectHelp: MetaAdsConnectHelp,
   credentialLabel: "Access token",
   Logo: MetaAdsLogo,
@@ -38,6 +39,7 @@ export default {
     metaAdsEstimateAudiencePresenter,
     metaAdsUpdateStatusPresenter,
     metaAdsUpdateBudgetsPresenter,
+    metaAdsUpdateAdSetsPresenter,
     metaAdsUploadMediaPresenter,
     metaAdsCreateCampaignPresenter,
     metaAdsCreateAdSetPresenter,

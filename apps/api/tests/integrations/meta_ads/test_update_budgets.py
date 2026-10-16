@@ -4,7 +4,7 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -16,11 +16,11 @@ from pydantic_ai import ModelRetry
 
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.models import MetaAdsObjectBudget
-from integrations.meta_ads.operations import update_budgets as budgets_module
+from integrations.meta_ads.operations import edit_impact
+from integrations.meta_ads.operations.edit_impact import count_recent_changes
 from integrations.meta_ads.operations.update_budgets import (
     budget_problem,
     budget_target,
-    count_recent_budget_changes,
     read_budget_objects,
     update_budgets,
 )
@@ -166,12 +166,14 @@ async def test_recent_changes_count_only_budget_events_in_the_last_hour():
         event["object_id"] = "8"
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle)) as http:
-        counts = await count_recent_budget_changes(
+        counts = await count_recent_changes(
             MetaAdsClient(static_token, client=http),
             account_id="123",
             timezone_name="Europe/Paris",
             object_ids=["8"],
+            since=now - timedelta(hours=1),
             now=now,
+            words=("budget",),
         )
 
     assert counts.counts == {"8": 1}
@@ -182,14 +184,17 @@ async def test_truncated_history_leaves_recent_changes_incomplete(monkeypatch):
     history = MetaAdsActivitiesData(
         events=[], event_count=0, truncated=True, window_note=None, timezone_name="UTC"
     )
-    monkeypatch.setattr(budgets_module, "list_activities", AsyncMock(return_value=history))
+    monkeypatch.setattr(edit_impact, "list_activities", AsyncMock(return_value=history))
+    now = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 
-    counts = await count_recent_budget_changes(
+    counts = await count_recent_changes(
         AsyncMock(),
         account_id="123",
         timezone_name="UTC",
         object_ids=["8"],
-        now=datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+        since=now - timedelta(hours=1),
+        now=now,
+        words=("budget",),
     )
 
     assert counts.counts == {"8": 0}

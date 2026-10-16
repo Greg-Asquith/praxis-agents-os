@@ -44,8 +44,6 @@ const TARGETING_CATEGORIES = new Set([
   "FINANCIAL_PRODUCTS_SERVICES",
   "CREDIT",
 ])
-// The tool's min_roas format: up to four digits either side of the point.
-const ROAS = /^\d{1,4}(\.\d{1,4})?$/
 const LIST = new Intl.ListFormat("en", { type: "conjunction" })
 const GENDERS = { all: "All genders", men: "Men", women: "Women" } as const
 
@@ -369,7 +367,19 @@ export function adSetStatusNote(args: CreateAdSetArgs): string {
   return `Turns on when created. ${limit} once it has approved ads.`
 }
 
-export function bidLabel(strategy: BidStrategy): string {
+export const ROAS_FORMAT = "Set the minimum return on ad spend as a ratio above zero, such as 2.5."
+
+/** True for the tool's min_roas format: above zero, up to four digits either side of the point. */
+export function isRoas(value: string): boolean {
+  return /^\d{1,4}(\.\d{1,4})?$/.test(value) && Number(value) > 0
+}
+
+/** The amount field's name for a strategy that takes one. */
+export function bidAmountTitle(strategy: BidStrategy): string {
+  return strategy === "bid_cap" ? "Maximum Bid" : "Target Cost per Result"
+}
+
+export function bidLabel(strategy: string): string {
   return BID_OPTIONS.find((item) => item.value === strategy)?.label ?? strategy
 }
 
@@ -395,11 +405,7 @@ function goalProblem(args: CreateAdSetArgs): string | null {
       return strategy === "bid_cap" ? "Set the maximum bid." : "Set the target cost per result."
     if (!isBudgetAmount(args.bidAmount)) return AMOUNT_FORMAT
   }
-  if (
-    strategy === "roas_goal" &&
-    !(args.minRoas && ROAS.test(args.minRoas) && Number(args.minRoas) > 0)
-  )
-    return "Set the minimum return on ad spend as a ratio above zero, such as 2.5."
+  if (strategy === "roas_goal" && !(args.minRoas && isRoas(args.minRoas))) return ROAS_FORMAT
   return null
 }
 

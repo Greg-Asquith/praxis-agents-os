@@ -23,14 +23,14 @@ export type CreatedObjectResult = {
   errorCode: string | null
 }
 
-function day(value: string): string {
+export function formatDay(value: string): string {
   const parsed = new Date(`${value}T00:00:00Z`)
   return Number.isNaN(parsed.getTime()) ? value : DAY.format(parsed)
 }
 
 export function scheduleSummary(startDate: string | null, endDate: string | null): string {
-  const start = startDate ? `From ${day(startDate)}` : "Starts when turned on"
-  return `${start} · ${endDate ? `until ${day(endDate)}` : "no end date"}`
+  const start = startDate ? `From ${formatDay(startDate)}` : "Starts when turned on"
+  return `${start} · ${endDate ? `until ${formatDay(endDate)}` : "no end date"}`
 }
 
 /** Reads the one campaign or ad set a create call made, held under `key` with its ID in `idKey`. */

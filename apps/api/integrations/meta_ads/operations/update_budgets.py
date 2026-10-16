@@ -6,10 +6,8 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from typing import Literal
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
@@ -17,9 +15,7 @@ from services.integrations.http import IntegrationRequestPolicy
 from ..client import MetaAdsClient
 from ..models import MetaAdsObjectBudget
 from ..throttle import ensure_account_available
-from ..tools.schemas.activities import MetaAdsActivitiesInput
 from ..tools.schemas.objects import CLOSED_STATUSES, MetaAdsObject
-from .list_activities import list_activities
 from .list_objects import read_objects_by_id
 from .mutations import (
     MetaAdsMutationEffect,
@@ -152,53 +148,6 @@ def budget_target(
         requested_amount=format(requested, "f"),
         requested_minor=requested_minor,
     )
-
-
-@dataclass(frozen=True, slots=True)
-class MetaAdsRecentBudgetChanges:
-    """Budget changes per object in the last hour; counts are lower bounds when incomplete."""
-
-    counts: dict[str, int]
-    complete: bool
-
-
-async def count_recent_budget_changes(
-    client: MetaAdsClient,
-    *,
-    account_id: str,
-    timezone_name: str,
-    object_ids: Sequence[str],
-    now: datetime,
-) -> MetaAdsRecentBudgetChanges:
-    """Counts each object's budget changes in the hour before `now` from the account history.
-
-    Meta limits how often an ad set budget can change in an hour, so these counts warn
-    the approver before a change that Meta might throttle.
-    """
-    try:
-        zone = ZoneInfo(timezone_name)
-    except (ValueError, ZoneInfoNotFoundError):
-        zone = ZoneInfo("UTC")
-    start = now - timedelta(hours=1)
-    history = await list_activities(
-        client,
-        account_id=account_id,
-        request=MetaAdsActivitiesInput(
-            since=start.astimezone(zone).date(),
-            until=now.astimezone(zone).date(),
-            object_ids=list(object_ids),
-        ),
-        timezone_name=zone.key,
-    )
-    counts = dict.fromkeys(object_ids, 0)
-    for event in history.events:
-        if (
-            event.object_id in counts
-            and "budget" in (event.event_type or "")
-            and start <= datetime.fromisoformat(event.event_time) <= now
-        ):
-            counts[event.object_id] += 1
-    return MetaAdsRecentBudgetChanges(counts=counts, complete=not history.truncated)
 
 
 async def validate_budgets(

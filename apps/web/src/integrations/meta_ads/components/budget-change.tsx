@@ -1,11 +1,12 @@
 // apps/web/src/integrations/meta_ads/components/budget-change.tsx
 
-import { CircleAlertIcon, TriangleAlertIcon } from "lucide-react"
+import { CircleAlertIcon } from "lucide-react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
@@ -47,29 +48,20 @@ export function BudgetApprovalSummary({
   }
   return (
     <div className="grid min-w-0 gap-3">
-      <div
-        className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
-        role="note"
-      >
-        <div className="grid gap-0.5">
-          <p className="text-warning-text flex items-center gap-2 text-sm font-medium">
-            <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
-            Changes take effect straight away
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {String(kept)} {pluralize(kept, "budget")}
-          </p>
-        </div>
-        {total ? (
-          <div className="text-right">
-            <p className="text-muted-foreground text-sm">Daily total</p>
-            <p className="text-lg font-semibold tabular-nums">
-              {formatCurrency(total.before, total.currency)} →{" "}
-              {formatCurrency(total.after, total.currency)}
-            </p>
-          </div>
-        ) : null}
-      </div>
+      <ChangeBanner
+        aside={
+          total ? (
+            <div className="text-right">
+              <p className="text-muted-foreground text-sm">Daily total</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {formatCurrency(total.before, total.currency)} →{" "}
+                {formatCurrency(total.after, total.currency)}
+              </p>
+            </div>
+          ) : null
+        }
+        detail={`${String(kept)} ${pluralize(kept, "budget")}`}
+      />
       <ul
         aria-label="Proposed budget changes"
         className="divide-y overflow-hidden rounded-lg border"

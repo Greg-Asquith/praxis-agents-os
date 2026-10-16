@@ -6,6 +6,7 @@ import { SelectField, SwitchField } from "@/integrations/meta_ads/components/cam
 import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
 import { BID_OPTIONS, type BidStrategy } from "@/integrations/meta_ads/lib/create-campaign"
 import {
+  bidAmountTitle,
   bidEdits,
   bidLabel,
   effectiveBid,
@@ -122,7 +123,7 @@ export function AdSetGoal({
           currency={args.currency}
           disabled={disabled}
           invalid={!args.bidAmount}
-          label={strategy === "bid_cap" ? "Maximum Bid" : "Target Cost per Result"}
+          label={bidAmountTitle(strategy)}
           onChange={(amount) => {
             onEdit({ bid_amount: amount || null })
           }}

@@ -15,6 +15,7 @@ from .list_conversions import DEFINITION as LIST_CONVERSIONS
 from .list_objects import DEFINITION as LIST_OBJECTS
 from .run_insights import DEFINITION as RUN_INSIGHTS
 from .search_targeting import DEFINITION as SEARCH_TARGETING
+from .update_ad_sets import DEFINITION as UPDATE_AD_SETS
 from .update_budgets import DEFINITION as UPDATE_BUDGETS
 from .update_status import DEFINITION as UPDATE_STATUS
 from .upload_media import DEFINITION as UPLOAD_MEDIA
@@ -30,6 +31,7 @@ TOOL_DEFINITIONS = (
     ESTIMATE_AUDIENCE,
     UPDATE_STATUS,
     UPDATE_BUDGETS,
+    UPDATE_AD_SETS,
     UPLOAD_MEDIA,
     CREATE_CAMPAIGN,
     CREATE_AD_SET,

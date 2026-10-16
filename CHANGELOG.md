@@ -170,6 +170,15 @@ minor release. Patch releases contain backward-compatible fixes only.
   failure leaves the campaign paused, and the result shows what was built so
   the step tools can finish it. A launch doesn't start while the ad account
   has used 75% or more of Meta's hourly request allowance.
+- Meta Ads ad set edits: `meta_ads_update_ad_sets` changes the name, start
+  and end dates, bid strategy, bid or cost goal, minimum return on ad spend,
+  spend limits, and EU payer and beneficiary of up to 50 ad sets in one
+  approval. The card shows each new setting with its value now, and notes
+  when a change restarts learning, replaces ad-level bids, or changes a
+  lifetime budget's daily pace. Meta checks every change first, an ad set that changed
+  after approval isn't sent, and each result shows the values Meta reads back.
+  Ad set creation now accepts daily spend limits only under a campaign daily
+  budget.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image
