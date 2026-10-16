@@ -221,9 +221,12 @@ def write_tool_context(
     entry = replace(context_entry("123"), write_allowed=True)
     pin = {"account_id": "123", "resource_id": str(entry.integration_resource_id)}
     monkeypatch.setattr(create_operation, "meta_ads_client", client)
+    patches = {
+        "approved_display_args": lambda _ctx: {"_account": pin, **(reviewed or {})},
+        "proposed_args": lambda _ctx: proposed,
+    }
     for module in (create_operation, *tool_modules):
-        monkeypatch.setattr(
-            module, "approved_display_args", lambda _ctx: {"_account": pin, **(reviewed or {})}
-        )
-        monkeypatch.setattr(module, "proposed_args", lambda _ctx: proposed)
+        for name, patch in patches.items():
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, patch)
     return runtime_ctx(entry, tool_name=tool_name), audit

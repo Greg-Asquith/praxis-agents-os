@@ -11,6 +11,7 @@ const OUTCOMES = {
   uploaded: ["applied", "Uploaded"],
   processing: ["applied", "Processing"],
   already_set: ["skipped", "Already Set"],
+  skipped: ["skipped", "Skipped"],
   failed: ["failed", "Failed"],
   unverified: ["unverified", "Couldn't Confirm"],
 } as const satisfies Record<string, readonly [OutcomeKind, string]>

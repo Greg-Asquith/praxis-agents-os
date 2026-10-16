@@ -2,7 +2,7 @@
 
 """Approval-only tool that creates one ad set in an existing campaign."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal, get_args
 
 from pydantic import Field
@@ -36,8 +36,10 @@ from ..operations.ad_rows import ad_effect
 from ..operations.create_ad_set import (
     AD_SET_GROUP,
     OPERATION,
+    AdSetAccount,
     AdSetPlan,
     AdSetRun,
+    AdSetTerms,
     campaign_problems,
     create_ad_set,
     eu_transparency,
@@ -67,8 +69,10 @@ from ..references import (
 from .schemas.ad_sets import (
     MetaAdsAdSetBudget,
     MetaAdsAdSetPlacements,
+    MetaAdsAdSetSettings,
     MetaAdsCreateAdSetOutput,
     MetaAdsCreateAdSetRequest,
+    MetaAdsEuTransparency,
 )
 from .schemas.budgets import BID_STRATEGIES, MetaAdsBidStrategy, MetaAdsBudgetAmount
 from .schemas.campaigns import MetaAdsNewObjectStatus
@@ -181,7 +185,15 @@ async def meta_ads_create_ad_set(
         result=lambda run, entry, prepared: {
             "account_id": entry.external_id,
             "currency": prepared[1],
-            "ad_set": _row(run, request, prepared[0], entry, prepared[1]),
+            "ad_set": ad_set_row(
+                run,
+                name=request.name,
+                campaign_id=request.campaign.campaign_id,
+                goal=request.goal,
+                eu=prepared[0].eu,
+                entry=entry,
+                currency=prepared[1],
+            ),
         },
     )
 
@@ -236,18 +248,12 @@ async def _prepare(
     campaign = campaigns.get(request.campaign.campaign_id)
     if campaign is None:
         raise ModelRetry("The campaign is no longer in this ad account. Choose it again.")
-    store = await _check_assets(client, entry, request)
-    request = await _with_live_audiences(client, entry, request)
+    (store,) = await check_ad_set_assets(client, entry, [request])
+    (request,) = await with_live_audiences(client, entry, [request])
     if problems := campaign_problems(request, campaign):
         raise ModelRetry(" ".join(problems))
     account = await read_ad_set_account(client, account_id=account_id, request=request)
-    schedule = account_schedule(request.start_date, request.end_date, account.timezone_name)
-    if problem := minimum_problem(request, account, schedule.days):
-        raise ModelRetry(problem)
-    try:
-        eu = eu_transparency(request, account)
-    except ValueError as exc:
-        raise ModelRetry(str(exc)) from None
+    terms = ad_set_terms(request, account, store)
     await ensure_name_free(
         client,
         entry,
@@ -262,10 +268,10 @@ async def _prepare(
         campaign,
         campaign_id=request.campaign.campaign_id,
         currency=account.currency,
-        start_time=schedule.start_time,
-        end_time=schedule.end_time,
-        eu=eu,
-        object_store_url=store,
+        start_time=terms.start_time,
+        end_time=terms.end_time,
+        eu=terms.eu,
+        object_store_url=terms.object_store_url,
         status=request.status,
     )
     if reason := await validate_create(
@@ -275,49 +281,97 @@ async def _prepare(
     return plan, account.currency
 
 
-async def _check_assets(
-    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdSetRequest
-) -> str | None:
-    """Confirms the account can use the Page, pixel, app, and custom conversion; returns the app's store page."""
+def ad_set_terms(
+    request: MetaAdsAdSetSettings, account: AdSetAccount, object_store_url: str | None
+) -> AdSetTerms:
+    """Checks the ad set's dates, budget minimum, and EU names against the ad account."""
+    schedule = account_schedule(request.start_date, request.end_date, account.timezone_name)
+    if problem := minimum_problem(request, account, schedule.days):
+        raise ModelRetry(problem)
+    try:
+        eu = eu_transparency(request, account)
+    except ValueError as exc:
+        raise ModelRetry(str(exc)) from None
+    return AdSetTerms(schedule.start_time, schedule.end_time, eu, object_store_url)
+
+
+async def check_ad_set_assets(
+    client: MetaAdsClient, entry: ResolvedContextEntry, ad_sets: Sequence[MetaAdsAdSetSettings]
+) -> list[str | None]:
+    """Confirms the account can use each ad set's Page, pixel, app, and custom conversion.
+
+    Reads each kind of asset once for every ad set, and returns each ad set's app store page.
+    """
     read_args = asset_read_args(entry, ReportResultBudget("meta_ads", OPERATION))
-    if request.page is not None:
+    if any(item.page is not None for item in ad_sets):
         pages, _more = await read_page_references(client, **read_args)
-        if request.page.page_id not in {page.page_id for page in pages}:
-            raise ModelRetry(
-                f"This ad account can't advertise as the Page {request.page.label}. Choose one "
-                "from meta_ads_list_assets."
-            )
-    if request.pixel is not None:
+        live_pages = {page.page_id for page in pages}
+        for item in ad_sets:
+            if item.page is not None and item.page.page_id not in live_pages:
+                raise ModelRetry(
+                    f"This ad account can't advertise as the Page {item.page.label}. Choose one "
+                    "from meta_ads_list_assets."
+                )
+    if any(item.pixel is not None for item in ad_sets):
         pixels, _more = await read_pixel_references(client, **read_args)
-        if request.pixel.pixel_id not in {pixel.pixel_id for pixel in pixels}:
-            raise ModelRetry(
-                f"This ad account can't use the pixel {request.pixel.label}. Choose one from "
-                "meta_ads_list_assets."
-            )
-    if request.custom_conversion_id is not None:
-        conversion = await _custom_conversion(client, entry, request.custom_conversion_id)
+        live_pixels = {pixel.pixel_id for pixel in pixels}
+        for item in ad_sets:
+            if item.pixel is not None and item.pixel.pixel_id not in live_pixels:
+                raise ModelRetry(
+                    f"This ad account can't use the pixel {item.pixel.label}. Choose one from "
+                    "meta_ads_list_assets."
+                )
+    await _check_custom_conversions(client, entry, ad_sets)
+    return await _store_urls(client, read_args, ad_sets)
+
+
+async def _check_custom_conversions(
+    client: MetaAdsClient, entry: ResolvedContextEntry, ad_sets: Sequence[MetaAdsAdSetSettings]
+) -> None:
+    if not any(item.custom_conversion_id is not None for item in ad_sets):
+        return
+    conversions = await list_custom_conversions(
+        client, account_id=entry.external_id, limit=CUSTOM_CONVERSIONS_MAX_ROWS
+    )
+    live = {item.id: item for item in conversions.conversions}
+    for item in ad_sets:
+        if item.custom_conversion_id is None:
+            continue
+        conversion = live.get(item.custom_conversion_id)
         if conversion is None or conversion.is_archived or conversion.is_unavailable:
             raise ModelRetry(
                 "That custom conversion isn't usable in this ad account. Choose one from "
                 "meta_ads_list_conversions."
             )
-        if request.pixel is not None and conversion.pixel_id not in (None, request.pixel.pixel_id):
+        if item.pixel is not None and conversion.pixel_id not in (None, item.pixel.pixel_id):
             raise ModelRetry(
                 f"The custom conversion {conversion.name or conversion.id} counts events from "
                 "another pixel. Choose that pixel, or a custom conversion on this one."
             )
-    if request.app is None or request.app_store is None:
-        return None
+
+
+async def _store_urls(
+    client: MetaAdsClient, read_args: Mapping[str, Any], ad_sets: Sequence[MetaAdsAdSetSettings]
+) -> list[str | None]:
+    if not any(item.app is not None and item.app_store is not None for item in ad_sets):
+        return [None] * len(ad_sets)
     apps, _more = await read_application_references(client, **read_args)
-    live = next((app for app in apps if app.application_id == request.app.application_id), None)
-    if live is None:
-        raise ModelRetry(
-            f"This ad account can't advertise the app {request.app.label}. Choose one from "
-            "meta_ads_list_assets."
-        )
-    if (url := store_url(live, request.app_store)) is None:
-        raise ModelRetry(f"Meta has no {request.app_store} page for {live.label}.")
-    return url
+    live = {app.application_id: app for app in apps}
+    urls: list[str | None] = []
+    for item in ad_sets:
+        if item.app is None or item.app_store is None:
+            urls.append(None)
+            continue
+        app = live.get(item.app.application_id)
+        if app is None:
+            raise ModelRetry(
+                f"This ad account can't advertise the app {item.app.label}. Choose one from "
+                "meta_ads_list_assets."
+            )
+        if (url := store_url(app, item.app_store)) is None:
+            raise ModelRetry(f"Meta has no {item.app_store} page for {app.label}.")
+        urls.append(url)
+    return urls
 
 
 async def _custom_conversion(
@@ -329,16 +383,19 @@ async def _custom_conversion(
     return next((item for item in conversions.conversions if item.id == conversion_id), None)
 
 
-async def _with_live_audiences(
-    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdSetRequest
-) -> MetaAdsCreateAdSetRequest:
+async def with_live_audiences[S: MetaAdsAdSetSettings](
+    client: MetaAdsClient, entry: ResolvedContextEntry, ad_sets: Sequence[S]
+) -> list[S]:
     """Re-reads the audiences, so rules such as no lookalikes use Meta's own subtype."""
-    targeting = request.targeting
     ids = sorted(
-        {item.audience_id for item in (*targeting.audiences, *targeting.excluded_audiences)}
+        {
+            audience.audience_id
+            for item in ad_sets
+            for audience in (*item.targeting.audiences, *item.targeting.excluded_audiences)
+        }
     )
     if not ids:
-        return request
+        return list(ad_sets)
     read_args = asset_read_args(entry, ReportResultBudget("meta_ads", OPERATION))
     found, _more = await read_audience_references(client, **read_args, audience_ids=ids)
     live = {audience.audience_id: audience for audience in found}
@@ -347,24 +404,30 @@ async def _with_live_audiences(
             "Some audiences are no longer in this ad account. Choose them again from "
             "meta_ads_list_assets."
         )
-    return request.model_copy(
-        update={
-            "targeting": targeting.model_copy(
-                update={
-                    "audiences": [live[item.audience_id] for item in targeting.audiences],
-                    "excluded_audiences": [
-                        live[item.audience_id] for item in targeting.excluded_audiences
-                    ],
-                }
-            )
-        }
-    )
+    return [
+        item.model_copy(
+            update={
+                "targeting": item.targeting.model_copy(
+                    update={
+                        "audiences": [live[a.audience_id] for a in item.targeting.audiences],
+                        "excluded_audiences": [
+                            live[a.audience_id] for a in item.targeting.excluded_audiences
+                        ],
+                    }
+                )
+            }
+        )
+        for item in ad_sets
+    ]
 
 
-def _row(
+def ad_set_row(
     run: AdSetRun,
-    request: MetaAdsCreateAdSetRequest,
-    plan: AdSetPlan,
+    *,
+    name: str,
+    campaign_id: str | None,
+    goal: MetaAdsGoal,
+    eu: MetaAdsEuTransparency,
     entry: ResolvedContextEntry,
     currency: str,
 ) -> dict[str, Any]:
@@ -373,16 +436,16 @@ def _row(
     created = run.created
     reference = ad_set_reference(entry, created, currency) if created is not None else None
     return {
-        "name": created.name if created is not None and created.name else request.name,
-        "campaign_id": request.campaign.campaign_id,
-        "goal": request.goal,
+        "name": created.name if created is not None and created.name else name,
+        "campaign_id": campaign_id,
+        "goal": goal,
         "outcome": {"applied": "created"}.get(effect.outcome, effect.outcome),
         "recovered": observed.get("recovered") == "true",
         "verified": effect.outcome == "applied" and created is not None,
         "adset_id": effect.external_ref,
         "effective_status": observed.get("effective_status"),
         "ad_set": reference.model_dump(mode="json") if reference is not None else None,
-        "eu_transparency": plan.eu,
+        "eu_transparency": eu,
         "error_code": effect.error_code,
         "message": readback_message(run),
     }

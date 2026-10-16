@@ -47,10 +47,13 @@ const PERIOD_OPTIONS = [
 export function CreateCampaignApproval({
   args,
   disabled,
+  embedded = false,
   onEdit,
 }: {
   args: CreateCampaignArgs
   disabled: boolean
+  // True inside a launch, which sets the status itself.
+  embedded?: boolean
   onEdit: (edits: Record<string, EditedValue>) => void
 }) {
   const nameId = useId()
@@ -70,17 +73,19 @@ export function CreateCampaignApproval({
   }
   return (
     <div className="grid min-w-0 gap-3">
-      <StatusChoice
-        activeNote={campaignStatusNote(args)}
-        disabled={disabled}
-        label="Campaign Status"
-        onChange={(status) => {
-          onEdit({ status })
-        }}
-        pausedNote="Created paused. Nothing spends until you turn it on."
-        value={args.status}
-      />
-      <SettingRows ariaLabel="Campaign Settings" defaultOpen="budget">
+      {embedded ? null : (
+        <StatusChoice
+          activeNote={campaignStatusNote(args)}
+          disabled={disabled}
+          label="Campaign Status"
+          onChange={(status) => {
+            onEdit({ status })
+          }}
+          pausedNote="Created paused. Nothing spends until you turn it on."
+          value={args.status}
+        />
+      )}
+      <SettingRows ariaLabel="Campaign Settings" bare={embedded} defaultOpen="budget">
         <SettingLine htmlFor={nameId} title="Name">
           <Input
             className="text-sm font-medium"

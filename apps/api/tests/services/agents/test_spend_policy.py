@@ -25,6 +25,9 @@ from integrations.meta_ads.tools.create_ads import DEFINITION as META_ADS_CREATE
 from integrations.meta_ads.tools.create_campaign import (
     DEFINITION as META_ADS_CREATE_CAMPAIGN_DEFINITION,
 )
+from integrations.meta_ads.tools.launch_campaign import (
+    DEFINITION as META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
+)
 from integrations.meta_ads.tools.update_budgets import DEFINITION as META_ADS_BUDGETS_DEFINITION
 from integrations.meta_ads.tools.update_status import DEFINITION as META_ADS_STATUS_DEFINITION
 from services.agents.models.domain import ModelConfigurationError
@@ -45,6 +48,7 @@ from services.agents.utils import validate_tool_configuration
         META_ADS_COPY_ADS_DEFINITION,
         META_ADS_CREATE_AD_SET_DEFINITION,
         META_ADS_CREATE_CAMPAIGN_DEFINITION,
+        META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
     ],
 )
 def test_spend_policy_is_approval_only(monkeypatch, definition) -> None:

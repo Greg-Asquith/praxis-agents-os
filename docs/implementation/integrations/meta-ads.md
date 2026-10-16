@@ -137,6 +137,11 @@ business headers can qualify Insights utilisation; healthy quotas and other
 business-use-case types cannot. Saturated usage without a usable wait does
 not block locally. Malformed usage headers are ignored. All five read tools
 check the account cooldown before provider requests.
+The highest ads management utilisation from the last response, from
+`X-Ad-Account-Usage` or an `ads_management` business-use-case entry, is kept
+too. It doesn't block on its own; `meta_ads_launch_campaign` refuses to start
+at 75% or more, because a full launch uses a large share of a new account's
+hourly allowance.
 
 The Marketing API access tier is separate from permission access. In the
 agency's App Dashboard, check the Marketing API access tier. If it is
@@ -1323,6 +1328,104 @@ After approval, the tool:
 The result has the ad set's outcome (`created`, `failed`, or `unverified`),
 `recovered`, `verified`, its ID, effective status, how EU transparency was
 given, and the read-back ad set reference, ready for `meta_ads_create_ads`.
+
+### Launching a campaign
+
+`meta_ads_launch_campaign` builds a new campaign, 1 to 10 ad sets, and 1 to
+50 ads in one approval, and turns them on when the operator asked to launch.
+It's approval-only, supports Code Mode, has a 300-second timeout, and is listed
+in `test_spend_policy.py`. It composes the three create tools: the step tools
+remain for fixing or extending a build.
+
+#### Arguments and checks before approval
+
+`tools/schemas/launch.py` holds `MetaAdsLaunchCampaignRequest`:
+
+- `campaign`: `meta_ads_create_campaign`'s arguments. `status` must stay
+  `paused`, because Go Live turns the campaign on.
+- `ad_sets`: `meta_ads_create_ad_set`'s arguments without `campaign` and
+  `status`, each with a `key` such as `uk_prospecting`. Keys and names must
+  differ, because a lost create is found by name in its campaign.
+- `ads`: `meta_ads_create_ads` designs with `ad_set_keys` in place of
+  `ad_sets` and no `status`. Every key must name an ad set, and every ad set
+  needs an ad.
+- The shared ad settings from `meta_ads_create_ads`: `page`,
+  `instagram_account`, `link`, `call_to_action`, `url_tags`, and
+  `automatic_changes`, with the same limits (50 ads counting each ad set an ad
+  goes in, 20 workspace image Files, and one ad account for every asset).
+- `go_live`: `false` by default; `true` only when the operator asked to launch.
+
+The validator also checks each ad set against the campaign the launch
+creates, and each ad against its new ad sets (`launch_problems` in
+`operations/launch_campaign.py`), the dates in the account's time zone, that
+videos are ready, and that each workspace File is an image the workspace can
+use.
+
+#### Approval display
+
+The approval display reads the account's currency, time zone, campaign minimums, and,
+per ad set key in `_ad_set_accounts`, the goal's daily minimum and EU
+defaults. It hydrates each ad set's Page, pixel, and app, the shared Page and
+Instagram account, library media, and posts, and pins each File's revision,
+as `meta_ads_create_ads` does.
+
+The card (`presenters/launch-campaign.tsx`, `components/launch-summary.tsx`,
+`launch-ad-set.tsx`, and `lib/launch-model.ts`) opens with the account and a
+spend line: the campaign's daily budget, or the sum of the ad sets' daily
+budgets, with Meta's 75% daily and 7-times weekly flexibility; a lifetime
+budget shows its total and end date. One set of rows holds the campaign, each
+ad set with its ads, URL tags, and automatic changes, and one opens at a time;
+the first row with a problem starts open. The rows reuse the campaign, ad set,
+and Create Ads cards, so every setting is editable and edits are written back
+in the shape the tool takes. Each ad picks its ad sets from the launch's own.
+Below the spend line, a **Build Paused** | **Launch** choice (the shared
+`StatusChoice`) edits `go_live`, which is a `structured` field so only the
+card shows it, and the approve label reads **Approve & Launch** or **Approve
+& Build** to match. Approval is blocked by the step-tool cards' own checks,
+and by an ad set without ads, two ad sets with one name, or an ad naming an
+ad set the launch doesn't have.
+
+#### Preparation and execution
+
+After approval, the tool requires the approved account, then:
+
+1. Refuses to start when the account's ads management usage is at 75% or
+   more, with Meta's wait time when known.
+2. Re-reads the audiences, then re-checks the edited build against itself.
+3. Re-reads each ad set's Page, pixel, app, and custom conversion once per
+   kind of asset, and the account's minimum and EU defaults once per kind of
+   goal minimum. Each ad set's dates, minimum, and EU names are checked as
+   `meta_ads_create_ad_set` checks them.
+4. Re-reads the ads' Page, Instagram account, posts, and library media, and
+   requires each proposed File to be the revision shown.
+5. Re-reads the account for the campaign, refuses a campaign name already in
+   use, and asks Meta to check the campaign with `validate_only`. Meta checks
+   an ad set only against a real campaign, and an ad only against a real ad
+   set, so those dry runs happen during the build.
+6. Records pending evidence for every object the launch may create or turn
+   on, keyed `campaign`, `ad_set:{key}`, `file:{id}`, `ad:{index}`,
+   `turn_on:ad_set:{key}`, and `turn_on:campaign`.
+
+`operations/launch_campaign.py` then creates the campaign paused, dry-runs
+and creates each ad set paused, uploads the Files the remaining ads need,
+and dry-runs every ad in an ad set before creating them four at a time. Ads
+are created `active` with Go Live (paused if an AI-generated automatic change
+is on) and `paused` without it. A rejection fails that object and skips what
+depends on it; an unclear create that its name lookup can't settle, a
+throttle, or the time limit stops the build. Everything created is read back,
+except after a throttle. With Go Live, and only when every object was created
+and confirmed with no automatic change Meta turned on that the operator left
+off, the ad sets are turned on and then the campaign last. Nothing is deleted
+after a failure; a paused, partly built campaign costs nothing.
+
+The result has `state` (`live`, `paused`, `partial`, or `stopped`), a
+`message` with the next step, the campaign, each ad set with its `key`, and
+each ad with its `ad_set_key`, as the step tools report them, plus whether
+each ad set and the campaign were turned on. Created campaigns and ad sets
+come back as references, so the step tools can finish a partial build.
+The card's result shows a banner from `state` and `message`, then one row per
+object with its outcome, whether it was turned on, Meta's review, and links;
+an object the build never sent shows as skipped.
 
 ## Custom conversions and custom events
 

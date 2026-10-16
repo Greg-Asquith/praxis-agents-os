@@ -7,16 +7,14 @@ import { cn } from "@/lib/utils"
 
 export type CreateStatus = "paused" | "active"
 
-const CHOICES: readonly { value: CreateStatus; label: string }[] = [
-  { value: "paused", label: "Paused" },
-  { value: "active", label: "Active" },
-]
+const LABELS: Record<CreateStatus, string> = { paused: "Paused", active: "Active" }
 
 /** Whether a new object starts paused or active, with what that means for spend. */
 export function StatusChoice({
   activeNote,
   disabled,
   label,
+  labels = LABELS,
   lockedNote = null,
   onChange,
   pausedNote,
@@ -25,6 +23,8 @@ export function StatusChoice({
   activeNote: string
   disabled: boolean
   label: string
+  // Each choice's button text, such as Build Paused and Launch.
+  labels?: Record<CreateStatus, string>
   // Set when the status can't be changed, saying why.
   lockedNote?: string | null
   onChange: (value: CreateStatus) => void
@@ -50,26 +50,26 @@ export function StatusChoice({
           className="bg-background flex rounded-lg border p-0.5"
           role="radiogroup"
         >
-          {CHOICES.map((choice) => {
-            const checked = choice.value === value
+          {(["paused", "active"] as const).map((choice) => {
+            const checked = choice === value
             return (
               <button
-                key={choice.value}
+                key={choice}
                 aria-checked={checked}
                 className={cn(
                   "focus-visible:ring-ring/50 h-8 min-w-20 cursor-pointer rounded-md px-3 text-sm font-medium outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-60",
-                  checked && choice.value === "paused" && "bg-foreground text-background",
-                  checked && choice.value === "active" && "bg-primary text-primary-foreground",
+                  checked && choice === "paused" && "bg-foreground text-background",
+                  checked && choice === "active" && "bg-primary text-primary-foreground",
                   !checked && "text-foreground/70 hover:bg-muted"
                 )}
                 disabled={disabled || lockedNote !== null}
                 onClick={() => {
-                  if (!checked) onChange(choice.value)
+                  if (!checked) onChange(choice)
                 }}
                 role="radio"
                 type="button"
               >
-                {choice.label}
+                {labels[choice]}
               </button>
             )
           })}

@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/ad-editor.tsx
 
 import { ChevronLeftIcon, ChevronRightIcon, ImageUpIcon, PlusIcon, XIcon } from "lucide-react"
-import { useId, useState } from "react"
+import { useId, useState, type ReactNode } from "react"
 
 import { fieldLabelClass } from "@/components/tool-ui/field-styles"
 import { Button } from "@/components/ui/button"
@@ -50,6 +50,8 @@ type Edits = {
   id: string
   onEdit: (ads: EditedAds) => void
   onEditSetting: (key: SharedKey, value: string | null) => void
+  // Replaces the ad set picker where the ad sets aren't existing Meta ad sets, as in a launch.
+  renderAdSets?: ((row: AdRow, id: string) => ReactNode) | undefined
   row: AdRow
 }
 
@@ -62,6 +64,7 @@ export function AdEditor({
   onEdit,
   onEditSetting,
   onSelect,
+  renderAdSets,
 }: {
   args: CreateAdsArgs
   count: number
@@ -70,11 +73,12 @@ export function AdEditor({
   onEdit: (ads: EditedAds) => void
   onEditSetting: (key: SharedKey, value: string | null) => void
   onSelect: (index: number) => void
+  renderAdSets?: ((row: AdRow, id: string) => ReactNode) | undefined
 }) {
   const id = useId()
   const [tab, setTab] = useState<"edit" | "preview">("edit")
   const { ad } = row
-  const edits: Edits = { args, disabled, id, onEdit, onEditSetting, row }
+  const edits: Edits = { args, disabled, id, onEdit, onEditSetting, renderAdSets, row }
   const adSets = ad.adSetIds.map((adSetId) => adSetName(args, adSetId))
   const kind = ad.post
     ? `${ad.post.source === "facebook" ? "Facebook" : "Instagram"} post`
@@ -143,7 +147,7 @@ export function AdEditor({
   )
 }
 
-function EditPanel({ args, disabled, id, onEdit, onEditSetting, row }: Edits) {
+function EditPanel({ args, disabled, id, onEdit, onEditSetting, renderAdSets, row }: Edits) {
   const { ad } = row
   const edit = (key: EditableAdKey, value: string | null) => {
     onEdit(editAd(args, ad.index, key, value))
@@ -163,7 +167,14 @@ function EditPanel({ args, disabled, id, onEdit, onEditSetting, row }: Edits) {
   return (
     <div className="grid min-w-0 gap-4">
       <CheckMessages checks={unplaced} />
-      <NameAndAdSet args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+      <NameAndAdSet
+        args={args}
+        disabled={disabled}
+        id={id}
+        onEdit={onEdit}
+        renderAdSets={renderAdSets}
+        row={row}
+      />
       {carousel ? null : <MediaRow args={args} disabled={disabled} onEdit={onEdit} row={row} />}
       <EditorField
         checks={checksFor(row, "primary_text")}
@@ -250,7 +261,14 @@ function EditPanel({ args, disabled, id, onEdit, onEditSetting, row }: Edits) {
 }
 
 /** The ad's name, and the ad sets it is created in. */
-function NameAndAdSet({ args, disabled, id, onEdit, row }: Omit<Edits, "onEditSetting">) {
+function NameAndAdSet({
+  args,
+  disabled,
+  id,
+  onEdit,
+  renderAdSets,
+  row,
+}: Omit<Edits, "onEditSetting">) {
   const { ad } = row
   return (
     <div className="grid gap-4 @2xl:grid-cols-2">
@@ -266,15 +284,19 @@ function NameAndAdSet({ args, disabled, id, onEdit, row }: Omit<Edits, "onEditSe
         value={ad.name}
       />
       <EditorField hint="where the ad is created" id={`${id}-adset`} label="Ad Set">
-        <AdSetPicker
-          args={args}
-          disabled={disabled}
-          id={`${id}-adset`}
-          index={ad.index}
-          onChange={(adSets) => {
-            onEdit(setAdSets(args, ad.index, adSets))
-          }}
-        />
+        {renderAdSets ? (
+          renderAdSets(row, `${id}-adset`)
+        ) : (
+          <AdSetPicker
+            args={args}
+            disabled={disabled}
+            id={`${id}-adset`}
+            index={ad.index}
+            onChange={(adSets) => {
+              onEdit(setAdSets(args, ad.index, adSets))
+            }}
+          />
+        )}
       </EditorField>
     </div>
   )
@@ -371,13 +393,21 @@ function PostAdBody({
   onEdit,
   onEditSetting,
   post,
+  renderAdSets,
   row,
 }: Edits & { post: PostPreview }) {
   const instagram = post.source === "instagram"
   return (
     <div className="grid min-w-0 gap-4">
       <CheckMessages checks={checksFor(row, "post")} />
-      <NameAndAdSet args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+      <NameAndAdSet
+        args={args}
+        disabled={disabled}
+        id={id}
+        onEdit={onEdit}
+        renderAdSets={renderAdSets}
+        row={row}
+      />
       <div className="w-full max-w-sm justify-self-center">
         <PostAdPreview
           callToAction={row.callToAction}

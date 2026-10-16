@@ -163,6 +163,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   schedule, special ad categories, targeting, placements, and EU payer and
   beneficiary names. Rules Meta would refuse are checked before approval,
   Meta checks each object in a dry run, and a lost reply is settled by name.
+- Meta Ads one-approval launches: `meta_ads_launch_campaign` builds a new
+  campaign, up to 10 ad sets, and up to 50 ads in one approval. Everything is
+  created paused and checked by Meta first; with Go Live, the ad sets and
+  then the campaign are turned on once everything is built and confirmed. A
+  failure leaves the campaign paused, and the result shows what was built so
+  the step tools can finish it. A launch doesn't start while the ad account
+  has used 75% or more of Meta's hourly request allowance.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

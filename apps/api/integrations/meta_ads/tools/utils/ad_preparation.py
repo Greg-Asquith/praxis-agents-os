@@ -7,10 +7,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import ModelRetry
+from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
+from services.integrations.approved_display_args import proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.entity_references import resolve_runtime_references
 from services.integrations.files import FileReference
@@ -48,9 +49,12 @@ from ..schemas.ads import (
     MetaAdsCreateAdsRequest,
     SharedAdSettings,
     design_media,
+    follow_shared,
     media_key,
 )
+from ..schemas.launch import MetaAdsLaunchCampaignRequest
 from ..schemas.objects import UNDELETED_AD_STATUSES, MetaAdsObject
+from .create_operation import validated
 
 _OPERATION = "create_ads"
 MAX_ADS_PER_AD_SET = 50
@@ -90,6 +94,21 @@ async def hydrate_references(
     return hydrated
 
 
+def ads_as_reviewed(
+    ctx: RunContext[RuntimeDeps],
+    model: type[MetaAdsCreateAdsRequest | MetaAdsLaunchCampaignRequest],
+    ads: list[Any],
+) -> list[Any]:
+    """Returns the ads as the card showed them: unedited ones follow the shared settings they copy."""
+    # Card edits start from `follow_shared`, so only ads left as proposed still hold copies.
+    proposed = proposed_args(ctx)
+    try:
+        unedited = validated(model, proposed).ads == ads
+    except ModelRetry:
+        return ads
+    return follow_shared(proposed) if unedited else ads
+
+
 def required_currency(entry: ResolvedContextEntry) -> str:
     return require_currency(account_currency(entry), operation=_OPERATION)
 
@@ -98,8 +117,22 @@ def distinct_ad_sets(request: MetaAdsCreateAdsRequest) -> dict[str, MetaAdsAdSet
     return {reference.adset_id: reference for design in request.ads for reference in design.ad_sets}
 
 
-def distinct_media(request: MetaAdsCreateAdsRequest) -> dict[MediaKey, Any]:
+def distinct_media(request: SharedAdSettings) -> dict[MediaKey, Any]:
     return {media_key(item): item for design in request.ads for item in design_media(design)}
+
+
+def require_ready_videos(request: SharedAdSettings) -> None:
+    """Refuses a library video Meta is still processing, so the agent waits for it."""
+    for item in distinct_media(request).values():
+        if (
+            isinstance(item, MetaAdsMediaReference)
+            and item.media_type == "video"
+            and item.media_status != "ready"
+        ):
+            raise ModelRetry(
+                f"The video {item.label} isn't ready. List the account's videos and use it "
+                "once its media_status is ready."
+            )
 
 
 def check_designs(request: MetaAdsCreateAdsRequest, ad_sets: Mapping[str, Any]) -> None:
@@ -119,7 +152,7 @@ def raise_design_problems(request: SharedAdSettings, ad_sets: Sequence[Sequence[
         raise ModelRetry(" ".join(problems[:_MAX_LISTED_PROBLEMS]))
 
 
-async def resolve_sources(deps: RuntimeDeps, request: MetaAdsCreateAdsRequest) -> list[MediaSource]:
+async def resolve_sources(deps: RuntimeDeps, request: SharedAdSettings) -> list[MediaSource]:
     """Checks each workspace File against Meta's image policy; Files can only be images."""
     sources: list[MediaSource] = []
     for item in distinct_media(request).values():
@@ -143,20 +176,7 @@ async def prepare(
     account_id = entry.external_id
     live = await _live_ad_sets(client, entry, request)
     check_designs(request, live)
-    await _check_identities(client, entry, request)
-    await _check_posts(client, entry, request)
-    media = await _library_media(client, entry, request)
-    sources = await resolve_sources(deps, request)
-    pinned = {
-        str(item.get("file_id")): item
-        for item in reviewed.get("_files") or ()
-        if isinstance(item, Mapping)
-    }
-    for source in sources:
-        # A File the agent proposed must be the revision shown; one chosen on the card is
-        # uploaded as it is when the operator approves.
-        if str(source.file.id) in pinned:
-            require_pinned(source, pinned[str(source.file.id)])
+    media, sources = await read_ad_inputs(deps, client, entry, request, reviewed)
     planned = plan_ads(request, {adset_id: item.name for adset_id, item in live.items()})
     await _check_capacity(client, entry, planned)
     promoted = {adset_id: item.promoted_object for adset_id, item in live.items()}
@@ -190,6 +210,31 @@ async def prepare(
     )
 
 
+async def read_ad_inputs(
+    deps: RuntimeDeps,
+    client: MetaAdsClient,
+    entry: ResolvedContextEntry,
+    request: SharedAdSettings,
+    reviewed: Mapping[str, Any],
+) -> tuple[dict[MediaKey, CreativeMedia], list[MediaSource]]:
+    """Re-reads the Page, Instagram account, posts, and library media, and checks File pins."""
+    await _check_identities(client, entry, request)
+    await _check_posts(client, entry, request)
+    media = await _library_media(client, entry, request)
+    sources = await resolve_sources(deps, request)
+    pinned = {
+        str(item.get("file_id")): item
+        for item in reviewed.get("_files") or ()
+        if isinstance(item, Mapping)
+    }
+    for source in sources:
+        # A File the agent proposed must be the revision shown; one chosen on the card is
+        # uploaded as it is when the operator approves.
+        if str(source.file.id) in pinned:
+            require_pinned(source, pinned[str(source.file.id)])
+    return media, sources
+
+
 async def _live_ad_sets(
     client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdsRequest
 ) -> dict[str, MetaAdsObject]:
@@ -209,7 +254,7 @@ async def _live_ad_sets(
 
 
 async def _check_identities(
-    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdsRequest
+    client: MetaAdsClient, entry: ResolvedContextEntry, request: SharedAdSettings
 ) -> None:
     """Confirms the ad account can still advertise as the Page and Instagram account."""
     read_args = asset_read_args(entry, ReportResultBudget("meta_ads", _OPERATION))
@@ -231,7 +276,7 @@ async def _check_identities(
 
 
 async def _check_posts(
-    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdsRequest
+    client: MetaAdsClient, entry: ResolvedContextEntry, request: SharedAdSettings
 ) -> None:
     """Re-reads each post through its Page or Instagram account, and its boost eligibility."""
     posts = {design.post.key: design.post for design in request.ads if design.post is not None}
@@ -255,7 +300,7 @@ async def _check_posts(
 
 
 async def _library_media(
-    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdsRequest
+    client: MetaAdsClient, entry: ResolvedContextEntry, request: SharedAdSettings
 ) -> dict[MediaKey, CreativeMedia]:
     """Confirms library images exist and videos are ready, and reads video thumbnails."""
     items = [
@@ -327,7 +372,7 @@ async def _library_videos(
 
 
 def _require_video_thumbnails(
-    request: MetaAdsCreateAdsRequest, media: Mapping[MediaKey, CreativeMedia]
+    request: SharedAdSettings, media: Mapping[MediaKey, CreativeMedia]
 ) -> None:
     """Instagram needs a thumbnail for every video; fail when neither one was chosen nor found."""
 

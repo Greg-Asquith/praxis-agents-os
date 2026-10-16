@@ -25,6 +25,9 @@ _USAGE_NUMBERS = TypeAdapter(
 @dataclass
 class _Usage:
     deadlines: dict[str, float] = field(default_factory=dict)
+    # Ads management utilisation last seen, as a percentage, and when Meta said it resets.
+    management: float | None = None
+    management_regain_at: float = 0
     last_used_at: float = 0
 
     @property
@@ -41,8 +44,8 @@ def record_usage(account_id: str, headers: Mapping[str, str]) -> None:
         return
     now = monotonic()
     _evict(now)
-    observations, _ = _parse_usage(headers)
-    if not observations:
+    observations, wait, management = _parse_usage(headers)
+    if not observations and management is None:
         return
     state = _accounts.get(account_id)
     if state is None:
@@ -56,6 +59,9 @@ def record_usage(account_id: str, headers: Mapping[str, str]) -> None:
             state.deadlines.pop(source, None)
         elif wait is not None and wait > 0:
             state.deadlines[source] = max(state.deadlines.get(source, 0), now + wait)
+    if management is not None:
+        state.management = management
+        state.management_regain_at = now + wait if wait else 0
     state.last_used_at = now
 
 
@@ -76,22 +82,42 @@ def ensure_account_available(account_id: str, *, operation: str) -> None:
         )
 
 
+def ensure_headroom(account_id: str, *, operation: str, limit: float) -> None:
+    """Rejects work that needs many calls once ads management usage reaches `limit` percent."""
+    state = _accounts.get(account_id)
+    if state is None or state.management is None or state.management < limit:
+        return
+    wait = state.management_regain_at - monotonic()
+    raise IntegrationRateLimitError(
+        f"This ad account has used {state.management:.0f}% of Meta's hourly request "
+        f"allowance, so this could stop part way. {_wait_hint(wait if wait > 0 else None)}",
+        provider_key="meta_ads",
+        operation=operation,
+        failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
+    )
+
+
 def throttle_message(headers: Mapping[str, str]) -> str:
     """Returns rate-limit guidance with Meta's wait time when available."""
     return _message(_parse_usage(headers)[1])
 
 
 def _message(wait_seconds: float | None) -> str:
+    return f"Meta Ads has reached its request limit. {_wait_hint(wait_seconds)}"
+
+
+def _wait_hint(wait_seconds: float | None) -> str:
     if wait_seconds is not None and wait_seconds > 0:
         minutes = math.ceil(wait_seconds / 60)
         unit = "minute" if minutes == 1 else "minutes"
-        return f"Meta Ads has reached its request limit. Try again in {minutes} {unit}."
-    return "Meta Ads has reached its request limit. Wait a few minutes before trying again."
+        return f"Try again in {minutes} {unit}."
+    return "Wait a few minutes before trying again."
 
 
 def _parse_usage(
     headers: Mapping[str, str],
-) -> tuple[dict[str, tuple[float, float | None]], float | None]:
+) -> tuple[dict[str, tuple[float, float | None]], float | None, float | None]:
+    """Returns each quota's utilisation and wait, the longest wait, and ads management usage."""
     parsed = _USAGE_HEADERS.validate_python(
         {name.lower(): raw for name, raw in headers.items() if len(raw) <= _MAX_HEADER_CHARS}
     )
@@ -112,7 +138,9 @@ def _parse_usage(
         if key in insights:
             observations[f"insights:{key}"] = (insights[key], insights_wait)
     waits = [wait for wait in (account_wait, business_wait) if wait is not None]
-    return observations, max(waits, default=None)
+    management = [account["acc_id_util_pct"]] if "acc_id_util_pct" in account else []
+    management.extend(_management_usage(parsed.get("x-business-use-case-usage", {})))
+    return observations, max(waits, default=None), max(management, default=None)
 
 
 def _business_usage(
@@ -144,6 +172,16 @@ def _business_usage(
     if utilisations:
         observations["business_insights"] = (max(utilisations), max(saturated_waits, default=None))
     return observations, max(waits, default=None), max(insights_hints, default=None)
+
+
+def _management_usage(usage: dict[str, Any]) -> Iterator[float]:
+    for entry in _business_entries(usage):
+        if entry.get("type") != "ads_management":
+            continue
+        values = _USAGE_NUMBERS.validate_python(entry)
+        yield from (
+            values[key] for key in ("call_count", "total_cputime", "total_time") if key in values
+        )
 
 
 def _business_entries(usage: dict[str, Any]) -> Iterator[dict[str, Any]]:

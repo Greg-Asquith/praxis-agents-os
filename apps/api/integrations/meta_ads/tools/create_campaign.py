@@ -99,7 +99,7 @@ async def meta_ads_create_campaign(
         _account_entry(ctx.deps),
         tool_name="meta_ads_create_campaign",
         operation=OPERATION,
-        prepare=lambda client, entry: _prepare(client, entry, request),
+        prepare=lambda client, entry: prepare_campaign(client, entry, request),
         pending_detail=lambda entry, prepared: _pending_detail(entry, prepared[0]),
         run=lambda client, entry, prepared: create_campaign(
             client, account_id=entry.external_id, currency=prepared[1], plan=prepared[0]
@@ -107,7 +107,7 @@ async def meta_ads_create_campaign(
         result=lambda run, entry, prepared: {
             "account_id": entry.external_id,
             "currency": prepared[1],
-            "campaign": _row(run, request, entry, prepared[1]),
+            "campaign": campaign_row(run, request, entry, prepared[1]),
         },
     )
 
@@ -141,7 +141,7 @@ def _account_entry(deps: RuntimeDeps) -> ResolvedContextEntry:
     return candidates[0]
 
 
-async def _prepare(
+async def prepare_campaign(
     client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateCampaignRequest
 ) -> tuple[CampaignPlan, str]:
     """Re-reads the account, checks its status and minimums, then has Meta dry-run the body."""
@@ -174,7 +174,7 @@ async def _prepare(
     return plan, account.currency
 
 
-def _row(
+def campaign_row(
     run: CampaignRun,
     request: MetaAdsCreateCampaignRequest,
     entry: ResolvedContextEntry,

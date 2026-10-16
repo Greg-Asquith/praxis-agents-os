@@ -176,7 +176,8 @@ type MetaAdsEuTransparency = Literal["not_needed", "sent", "account_defaults"]
 
 class MetaAdsCreatedAdSet(MetaAdsStrictModel):
     name: MetaAdsText
-    campaign_id: MetaAdsId
+    # None in a launch whose campaign wasn't created.
+    campaign_id: MetaAdsId | None
     goal: MetaAdsGoal
     outcome: MetaAdsCreatedAdSetOutcome
     # True when an unclear reply was settled by finding the ad set by name.

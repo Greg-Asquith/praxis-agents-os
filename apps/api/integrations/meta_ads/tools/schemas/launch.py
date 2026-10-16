@@ -1,27 +1,32 @@
 # apps/api/integrations/meta_ads/tools/schemas/launch.py
 
-"""Input contract for building a campaign, its ad sets, and their ads in one approval."""
+"""Input and result contracts for building a campaign, its ad sets, and their ads in one approval."""
 
 from collections import Counter
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, StrictBool, model_validator
+
+from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from ...creative_features import OFFERED_CHANGE_KEYS
-from ...models import MetaAdsStrictModel
+from ...models import MetaAdsId, MetaAdsStrictModel
 from ...references import MetaAdsInstagramAccountReference, MetaAdsPageReference
-from .ad_sets import MetaAdsAdSetSettings
+from .ad_sets import MetaAdsAdSetSettings, MetaAdsCreatedAdSet
 from .ads import (
     MAX_AD_SETS,
     MAX_ADS,
+    MAX_FILES,
     MetaAdsAdContent,
     MetaAdsAutomaticChangeKey,
     MetaAdsButton,
+    MetaAdsCreatedAd,
     MetaAdsLink,
     MetaAdsUrlTags,
     check_ads,
 )
-from .campaigns import MetaAdsCreateCampaignRequest
+from .campaigns import MetaAdsCreateCampaignRequest, MetaAdsCreatedCampaign
+from .media import MetaAdsMediaUpload
 
 type MetaAdsAdSetKey = Annotated[
     str,
@@ -52,7 +57,7 @@ class MetaAdsLaunchCampaignRequest(MetaAdsStrictModel):
         default=None, max_length=len(OFFERED_CHANGE_KEYS)
     )
     # Turns the ad sets and then the campaign on once everything is built and confirmed.
-    go_live: bool = False
+    go_live: StrictBool = False
 
     @model_validator(mode="after")
     def _check_launch(self) -> Self:
@@ -83,3 +88,45 @@ class MetaAdsLaunchCampaignRequest(MetaAdsStrictModel):
     @property
     def instagram_user_id(self) -> str | None:
         return self.instagram_account.instagram_user_id if self.instagram_account else None
+
+
+# Live: on and waiting for Meta's review. Partial: something wasn't built or confirmed, and
+# nothing is on. Stopped: Meta didn't confirm part of the build.
+type MetaAdsLaunchState = Literal["live", "paused", "partial", "stopped"]
+type MetaAdsTurnOnOutcome = Literal["turned_on", "not_turned_on", "unverified"]
+
+
+class MetaAdsLaunchedAdSet(MetaAdsCreatedAdSet):
+    key: MetaAdsAdSetKey
+    # None unless the launch was asked to go live.
+    turned_on: MetaAdsTurnOnOutcome | None
+
+
+class MetaAdsLaunchedAd(MetaAdsCreatedAd):
+    ad_set_key: MetaAdsAdSetKey
+    # None while the ad's ad set wasn't created.
+    adset_id: MetaAdsId | None
+
+
+class MetaAdsLaunchData(MetaAdsStrictModel):
+    account_id: MetaAdsId
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    state: MetaAdsLaunchState
+    # What happened and what to do next, for the banner.
+    message: str = Field(max_length=1000)
+    go_live: bool
+    campaign: MetaAdsCreatedCampaign
+    campaign_turned_on: MetaAdsTurnOnOutcome | None
+    ad_sets: list[MetaAdsLaunchedAdSet] = Field(max_length=MAX_AD_SETS)
+    ads: list[MetaAdsLaunchedAd] = Field(max_length=MAX_ADS)
+    uploads: list[MetaAdsMediaUpload] = Field(max_length=MAX_FILES)
+    automatic_changes: list[MetaAdsAutomaticChangeKey]
+    created_off_for_ai: bool
+
+
+class MetaAdsLaunchEntry(IntegrationFanOutEntry):
+    data: MetaAdsLaunchData | None = None
+
+
+class MetaAdsLaunchCampaignOutput(IntegrationFanOutOutput):
+    results: list[MetaAdsLaunchEntry]

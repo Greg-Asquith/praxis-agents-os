@@ -253,6 +253,16 @@ def store_url(app: MetaAdsApplicationReference, store: str) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class AdSetTerms:
+    """What preparation read for one ad set: its times, EU names, and app store page."""
+
+    start_time: str | None
+    end_time: str | None
+    eu: MetaAdsEuTransparency
+    object_store_url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AdSetPlan:
     """The approved ad set as Meta will receive it."""
 

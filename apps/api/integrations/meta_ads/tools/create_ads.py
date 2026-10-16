@@ -23,7 +23,7 @@ from services.audit_events import (
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
-from services.integrations.approved_display_args import approved_display_args, proposed_args
+from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 
 from ..creative_features import offered_catalogue
@@ -55,11 +55,13 @@ from .schemas.ads import (
 )
 from .utils.ad_preparation import (
     Prepared,
+    ads_as_reviewed,
     check_designs,
     distinct_ad_sets,
     distinct_media,
     hydrate_references,
     prepare,
+    require_ready_videos,
     required_currency,
     resolve_sources,
 )
@@ -113,7 +115,10 @@ async def meta_ads_create_ads(
         "status": status,
         "automatic_changes": automatic_changes,
     }
-    request = validated(MetaAdsCreateAdsRequest, {**values, "ads": _ads_as_reviewed(ctx, ads)})
+    request = validated(
+        MetaAdsCreateAdsRequest,
+        {**values, "ads": ads_as_reviewed(ctx, MetaAdsCreateAdsRequest, ads)},
+    )
     # References nested in `ads` aren't re-resolved when an approval is edited, so preparation
     # re-reads every ad set, Page, post, and media item through this account and the workspace.
     return await run_create_tool(
@@ -148,17 +153,6 @@ async def meta_ads_create_ads(
     )
 
 
-def _ads_as_reviewed(ctx: RunContext[RuntimeDeps], ads: list[MetaAdsAdDesign]) -> list[Any]:
-    """Returns the ads as the card showed them: unedited ones follow the shared settings they copy."""
-    # Card edits start from `follow_shared`, so only ads left as proposed still hold copies.
-    proposed = proposed_args(ctx)
-    try:
-        unedited = validated(MetaAdsCreateAdsRequest, proposed).ads == ads
-    except ModelRetry:
-        return ads
-    return follow_shared(proposed) if unedited else ads
-
-
 def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
     return selected_account(
         deps,
@@ -174,16 +168,7 @@ async def _validate_args(ctx: RunContext[RuntimeDeps], **values: Any) -> None:
     _account_entry(ctx.deps, request.account_id)
     ad_sets = distinct_ad_sets(request)
     check_designs(request, ad_sets)
-    for item in distinct_media(request).values():
-        if (
-            isinstance(item, MetaAdsMediaReference)
-            and item.media_type == "video"
-            and item.media_status != "ready"
-        ):
-            raise ModelRetry(
-                f"The video {item.label} isn't ready. List the account's videos and use it "
-                "once its media_status is ready."
-            )
+    require_ready_videos(request)
     try:
         await resolve_sources(ctx.deps, request)
     except IntegrationError as exc:

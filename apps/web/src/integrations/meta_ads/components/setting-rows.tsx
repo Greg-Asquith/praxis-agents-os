@@ -12,10 +12,13 @@ const OpenRowContext = createContext<OpenRow | null>(null)
 /** Settings as one-line rows; opening a row closes the one that was open, to save height. */
 export function SettingRows({
   ariaLabel,
+  bare = false,
   children,
   defaultOpen = null,
 }: {
   ariaLabel: string
+  // True inside a row of another SettingRows, which already draws the border.
+  bare?: boolean
   children: ReactNode
   defaultOpen?: string | null
 }) {
@@ -23,7 +26,10 @@ export function SettingRows({
   const value = useMemo(() => ({ open, setOpen }), [open])
   return (
     <OpenRowContext value={value}>
-      <section aria-label={ariaLabel} className="divide-y overflow-hidden rounded-lg border">
+      <section
+        aria-label={ariaLabel}
+        className={cn("divide-y", !bare && "overflow-hidden rounded-lg border")}
+      >
         {children}
       </section>
     </OpenRowContext>

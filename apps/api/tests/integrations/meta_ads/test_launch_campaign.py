@@ -4,10 +4,16 @@
 
 import json
 import time
+from dataclasses import replace
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qsl
+from uuid import uuid4
 
 import httpx2
+import pytest
+from pydantic_ai import ModelRetry
 
+from integrations.meta_ads import throttle
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.operations.create_campaign import plan_campaign
 from integrations.meta_ads.operations.creatives import CreativeImage
@@ -18,20 +24,30 @@ from integrations.meta_ads.operations.launch_campaign import (
     launch_problems,
     plan_launch,
 )
-from integrations.meta_ads.tools.schemas.launch import MetaAdsLaunchCampaignRequest
+from integrations.meta_ads.tools import launch_campaign as tool_module
+from integrations.meta_ads.tools.launch_campaign import meta_ads_launch_campaign
+from integrations.meta_ads.tools.schemas.launch import (
+    MetaAdsLaunchCampaignOutput,
+    MetaAdsLaunchCampaignRequest,
+)
+from integrations.meta_ads.tools.utils import ad_preparation as preparation_module
 from integrations.meta_ads.tools.utils.mutation_evidence import (
     audit_status,
     meta_ads_account_target,
     terminal_operation_detail,
 )
 from services.audit_events import AuditStatus, PendingIntegrationOperationDetail
+from services.integrations.files import FileReference
 from tests.integrations.meta_ads.support import (
     GRAPH_EDGES,
     FakeGraph,
     context_entry,
     obj,
+    runtime_ctx,
     static_token,
+    write_tool_context,
 )
+from tests.integrations.meta_ads.test_create_ads import file_source
 
 PAGE = {"account_id": "123", "page_id": "11", "label": "Acme"}
 IMAGE = {
@@ -103,11 +119,22 @@ def plan(request: MetaAdsLaunchCampaignRequest):
     )
 
 
+ASSETS = {
+    "promote_pages": [{"id": "11", "name": "Acme"}],
+    "adspixels": [{"id": "77", "name": "Shop Pixel"}],
+    "adimages": [{"hash": "abc", "name": "hero.jpg", "status": "ACTIVE"}],
+    "minimum_budgets": [],
+}
+
+
 class LaunchGraph(FakeGraph):
-    """Dry-runs and creates campaigns, ad sets, and ads by name, and applies status changes."""
+    """Serves the account's assets, dry-runs and creates objects by name, and turns them on."""
 
     def __init__(self, behaviour=None, turn_on=None):
-        super().__init__([], account={"currency": "GBP"})
+        super().__init__(
+            [],
+            account={"currency": "GBP", "timezone_name": "Europe/London", "min_daily_budget": 100},
+        )
         self.behaviour = behaviour or {}
         self.turn_on = turn_on or {}
         self.creates: list[tuple[str, dict[str, str]]] = []
@@ -117,6 +144,8 @@ class LaunchGraph(FakeGraph):
         path = request.url.path.split("/")[2:]
         if request.method == "POST" and path[0] == "act_123":
             return self.create(request, path[1])
+        if len(path) == 2 and path[1] in ASSETS:
+            return httpx2.Response(200, json={"data": ASSETS[path[1]]}, request=request)
         return super().handle(request)
 
     def create(self, request: httpx2.Request, edge: str) -> httpx2.Response:
@@ -293,3 +322,139 @@ def test_ad_sets_are_checked_against_the_campaign_the_launch_creates():
     assert launch_problems(request) == [
         "Prospecting: This campaign holds the budget, so leave the ad set's budget out."
     ]
+
+
+async def run_tool(monkeypatch, graph: LaunchGraph, request: MetaAdsLaunchCampaignRequest, **kw):
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
+    ctx, audit = write_tool_context(
+        monkeypatch,
+        http,
+        tool_name="meta_ads_launch_campaign",
+        proposed=request.model_dump(mode="json"),
+        reviewed=kw.get("reviewed"),
+        tool_modules=(tool_module, preparation_module),
+    )
+    async with http:
+        result = await meta_ads_launch_campaign(ctx, **dict(request))
+    MetaAdsLaunchCampaignOutput.model_validate(result)
+    return result["results"][0], audit
+
+
+async def test_one_approval_checks_then_builds_and_turns_on_the_whole_campaign(monkeypatch):
+    graph = LaunchGraph()
+
+    entry, audit = await run_tool(monkeypatch, graph, launch(go_live=True))
+
+    data = entry["data"]
+    # The campaign is dry-run at preparation, before the pending event and any create.
+    assert graph.creates[0][0] == "campaigns"
+    assert audit.await_args_list[0].kwargs["status"] == AuditStatus.PENDING
+    assert (data["state"], data["campaign_turned_on"]) == ("live", "turned_on")
+    assert [row["turned_on"] for row in data["ad_sets"]] == ["turned_on", "turned_on"]
+    # Created references come back, so the step tools can extend the campaign.
+    assert data["campaign"]["campaign"]["campaign_id"] == data["ad_sets"][0]["campaign_id"]
+    assert {row["ad_set_key"]: row["adset_id"] for row in data["ads"]} == {
+        row["key"]: row["adset_id"] for row in data["ad_sets"]
+    }
+    assert audit.await_args_list[-1].kwargs["status"] == AuditStatus.SUCCESS
+
+
+async def test_a_preparation_rejection_creates_nothing(monkeypatch):
+    graph = LaunchGraph({"Spring Sale": "reject_dry_run"})
+
+    entry, audit = await run_tool(monkeypatch, graph, launch(go_live=True))
+
+    assert entry["status"] == "error"
+    assert "The link is broken." in entry["error_message"]
+    assert graph.creates == []
+    assert all(call.kwargs["status"] != AuditStatus.PENDING for call in audit.await_args_list)
+
+
+async def test_usage_at_three_quarters_of_the_hourly_allowance_fails_fast(monkeypatch):
+    graph = LaunchGraph()
+    usage = {"type": "ads_management", "call_count": 80, "estimated_time_to_regain_access": 12}
+    throttle.record_usage("123", {"x-business-use-case-usage": json.dumps({"123": [usage]})})
+
+    entry, _audit = await run_tool(monkeypatch, graph, launch(go_live=True))
+
+    assert entry["status"] == "error"
+    assert "12 minutes" in entry["error_message"]
+    assert graph.creates == []
+
+
+async def test_a_file_changed_after_approval_fails_in_preparation(monkeypatch):
+    graph = LaunchGraph()
+    source = file_source()
+    monkeypatch.setattr(preparation_module, "resolve_media_source", AsyncMock(return_value=source))
+    image = FileReference(entity_id=source.file.id, label="spring.png").model_dump(mode="json")
+    request = launch(ads=[ad("Hero", "prospecting", media=image), ad("Offer", "retargeting")])
+    stale = {**source.approval_details(), "revision_id": str(uuid4())}
+
+    entry, _audit = await run_tool(monkeypatch, graph, request, reviewed={"_files": [stale]})
+
+    assert entry["error_code"] == "source_changed"
+    assert graph.creates == []
+
+
+async def test_an_asset_from_another_ad_account_cant_be_named():
+    other_pixel = {"account_id": "456", "pixel_id": "88", "label": "Their Pixel"}
+    values = launch().model_dump(mode="json")
+    values["ad_sets"][0]["pixel"] = other_pixel
+    entry = replace(context_entry("123"), write_allowed=True)
+
+    with pytest.raises(ModelRetry, match="one ad account"):
+        await tool_module._validate_args(runtime_ctx(entry), **values)
+
+
+async def test_evidence_for_a_launch_at_the_maximum_size_stays_within_the_bound():
+    regions = [
+        {"kind": "region", "key": f"{index:032d}", "country_code": "GB"} for index in range(200)
+    ]
+    cards = [
+        {"media": {**IMAGE, "image_hash": f"h{index}"}, "headline": "20% off"}
+        for index in range(10)
+    ]
+    keys = [f"ad_set_{index}" for index in range(10)]
+    request = launch(
+        ad_sets=[ad_set(key, key, targeting={"locations": regions}) for key in keys],
+        ads=[
+            ad(
+                f"Ad {index}",
+                keys[index % 10],
+                format="carousel",
+                media=None,
+                headline=None,
+                cards=cards,
+            )
+            for index in range(50)
+        ],
+        go_live=True,
+    )
+    launch_plan = plan_launch(
+        request,
+        campaign=plan_campaign(request.campaign, currency="GBP", start_time=None, end_time=None),
+        currency="GBP",
+        terms={key: AdSetTerms(None, None, "not_needed") for key in keys},
+        sources=[],
+        media={("image", f"h{index}"): CreativeImage(f"h{index}") for index in range(10)},
+    )
+    graph = LaunchGraph()
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle)) as http:
+        run = await launch_campaign(
+            MetaAdsClient(static_token, client=http),
+            account_id="123",
+            currency="GBP",
+            scope_label="Account 123",
+            plan=launch_plan,
+            deadline=time.monotonic() + 60,
+        )
+    pending = PendingIntegrationOperationDetail(
+        target=meta_ads_account_target(context_entry("123")),
+        intent_groups=launch_intent_groups(launch_plan),
+    )
+
+    # Both details validate their own size and item limits when built.
+    terminal = terminal_operation_detail(pending, run.ledger(), identity_key="key")
+    assert (run.state, len(graph.created("ads"))) == ("live", 50)
+    assert len(terminal.model_dump_json()) < 1_000_000

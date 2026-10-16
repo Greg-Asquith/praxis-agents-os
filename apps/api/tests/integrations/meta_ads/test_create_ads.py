@@ -173,7 +173,7 @@ def tool_context(monkeypatch, http: httpx2.AsyncClient, reviewed: dict, proposed
         tool_name="meta_ads_create_ads",
         proposed=proposed,
         reviewed=reviewed,
-        tool_modules=(tool_module,),
+        tool_modules=(tool_module, preparation_module),
     )
 
 

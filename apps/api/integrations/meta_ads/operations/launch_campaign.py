@@ -26,6 +26,7 @@ from .ad_rows import AdRun, ad_effect, unexpected_changes
 from .create_ad_set import (
     AdSetPlan,
     AdSetRun,
+    AdSetTerms,
     PlannedAdSet,
     campaign_problems,
     plan_ad_set,
@@ -100,16 +101,6 @@ def launch_problems(request: MetaAdsLaunchCampaignRequest) -> list[str]:
         if (problem := design_problem(ad, request, [facts[key] for key in ad.ad_set_keys]))
     )
     return problems
-
-
-@dataclass(frozen=True, slots=True)
-class AdSetTerms:
-    """What preparation read for one ad set: its times, EU names, and app store page."""
-
-    start_time: str | None
-    end_time: str | None
-    eu: Literal["not_needed", "sent", "account_defaults"]
-    object_store_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

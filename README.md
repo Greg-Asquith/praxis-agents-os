@@ -125,8 +125,9 @@ The core platform is wired end to end (API, worker, and UI):
   images and videos, create paused campaigns and paused ad sets, create up
   to 50 image, video, carousel, and existing post ads in existing ad sets
   with every Meta automatic change off unless the operator turns it on, copy
-  ads into other ad sets, turn objects on or off, and change budgets.
-  Building a campaign with its ad sets and ads in one approval is pending.
+  ads into other ad sets, turn objects on or off, and change budgets. They
+  can also build a new campaign with up to 10 ad sets and 50 ads in one
+  approval, and turn it on once everything is built and confirmed.
   Search Console connections discover verified properties for active context;
   agents can query bounded, typed organic-search performance, list submitted
   sitemap status, resubmit sitemaps with approval and read-after-write evidence,

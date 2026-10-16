@@ -37,10 +37,13 @@ const KIND_OPTIONS = [
 export function CreateAdSetApproval({
   args,
   disabled,
+  embedded = false,
   onEdit,
 }: {
   args: CreateAdSetArgs
   disabled: boolean
+  // True inside a launch, which sets the status and the campaign itself.
+  embedded?: boolean
   onEdit: (edits: Record<string, EditedValue>) => void
 }) {
   const nameId = useId()
@@ -53,17 +56,19 @@ export function CreateAdSetApproval({
   }
   return (
     <div className="grid min-w-0 gap-3">
-      <StatusChoice
-        activeNote={adSetStatusNote(args)}
-        disabled={disabled}
-        label="Ad Set Status"
-        onChange={(status) => {
-          onEdit({ status })
-        }}
-        pausedNote="Created paused. Nothing spends until you turn it on."
-        value={args.status}
-      />
-      <SettingRows ariaLabel="Ad Set Settings" defaultOpen="goal">
+      {embedded ? null : (
+        <StatusChoice
+          activeNote={adSetStatusNote(args)}
+          disabled={disabled}
+          label="Ad Set Status"
+          onChange={(status) => {
+            onEdit({ status })
+          }}
+          pausedNote="Created paused. Nothing spends until you turn it on."
+          value={args.status}
+        />
+      )}
+      <SettingRows ariaLabel="Ad Set Settings" bare={embedded} defaultOpen="goal">
         <SettingLine htmlFor={nameId} title="Name">
           <Input
             className="text-sm font-medium"
@@ -75,12 +80,14 @@ export function CreateAdSetApproval({
             value={args.name}
           />
         </SettingLine>
-        <SettingLine title="Campaign">
-          <p className="truncate text-sm">
-            {campaign.name}
-            {campaign.objective ? ` · ${OBJECTIVES[campaign.objective].label}` : ""}
-          </p>
-        </SettingLine>
+        {embedded ? null : (
+          <SettingLine title="Campaign">
+            <p className="truncate text-sm">
+              {campaign.name}
+              {campaign.objective ? ` · ${OBJECTIVES[campaign.objective].label}` : ""}
+            </p>
+          </SettingLine>
+        )}
         <SettingRow rowKey="goal" summary={summaries.goal} title="Goal">
           <AdSetGoal args={args} disabled={disabled} onEdit={onEdit} />
         </SettingRow>
