@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/lib/budget-schedule.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { formatCurrencyAmount } from "@/lib/format"
+import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
 type ScheduleObjectType = "campaign" | "adset"
@@ -24,7 +24,7 @@ type ExistingPeriod = {
 
 type CheckedPeriod = BudgetPeriod & { problem: string | null }
 
-type ScheduleCheck = {
+export type ScheduleCheck = {
   unavailable: boolean
   currency: string | null
   timeZone: string | null
@@ -151,10 +151,7 @@ function minutes(value: string): number | null {
 }
 
 function minor(amount: string): number | null {
-  const trimmed = amount.trim()
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null
-  const value = Math.round(Number(trimmed) * 100)
-  return value > 0 ? value : null
+  return isBudgetAmount(amount) ? Math.round(Number(amount.trim()) * 100) : null
 }
 
 /** The increase in currency units: the amount, or the percentage of today's daily budget. */
@@ -170,17 +167,26 @@ function increaseOf(period: BudgetPeriod, dailyBudget: string | null): number | 
   return Math.floor((daily * percent) / 100) / 100
 }
 
-/** Why one period can't be added, judged against Meta's rules and the periods before it. */
-export function periodProblem(args: BudgetScheduleArgs, index: number): string | null {
-  const period = args.periods[index]
+/** Why each period can't be added, judged against Meta's rules and the periods before it. */
+export function periodProblems(args: BudgetScheduleArgs): (string | null)[] {
   const check = args.check
-  if (period === undefined) return null
-  const shown = check?.periods[index]
-  // The server's verdict holds while this period and those before it are as it judged them.
-  const unchanged = args.periods
-    .slice(0, index + 1)
-    .every((item, at) => check?.periods[at] !== undefined && samePeriod(check.periods[at], item))
-  if (shown?.problem && unchanged) return shown.problem
+  const taken: { start: string; end: string }[] = [...(check?.existing ?? [])]
+  let unchanged = true
+  return args.periods.map((period, index) => {
+    const shown = check?.periods[index]
+    // The server's verdict holds while this period and those before it are as it judged them.
+    unchanged &&= shown !== undefined && samePeriod(shown, period)
+    const problem = unchanged && shown?.problem ? shown.problem : ruleProblem(period, check, taken)
+    if (problem === null) taken.push(period)
+    return problem
+  })
+}
+
+function ruleProblem(
+  period: BudgetPeriod,
+  check: ScheduleCheck | null,
+  taken: readonly { start: string; end: string }[]
+): string | null {
   const start = minutes(period.start)
   const end = minutes(period.end)
   if (start === null || end === null) return "Enter a real date and time for the start and end."
@@ -194,12 +200,8 @@ export function periodProblem(args: BudgetScheduleArgs, index: number): string |
       : "Enter a whole percentage from 1 to 700."
   const daily = check?.dailyBudget ? Number(check.dailyBudget) : null
   if (daily !== null && increase > daily * (MAX_MULTIPLE - 1) + 1e-9)
-    return `Meta allows a budget of at most ${String(MAX_MULTIPLE)} times the daily budget, so the increase can be at most ${money((daily * (MAX_MULTIPLE - 1)).toFixed(2), check?.currency ?? null)}.`
-  const earlier = [
-    ...(check?.existing ?? []),
-    ...args.periods.slice(0, index).filter((_, other) => periodProblem(args, other) === null),
-  ]
-  const overlap = earlier.find((other) => {
+    return `Meta allows a budget of at most ${String(MAX_MULTIPLE)} times the daily budget, so the increase can be at most ${budgetMoney((daily * (MAX_MULTIPLE - 1)).toFixed(2), check?.currency ?? null)}.`
+  const overlap = taken.find((other) => {
     const otherStart = minutes(other.start)
     const otherEnd = minutes(other.end)
     return otherStart !== null && otherEnd !== null && start < otherEnd && otherStart < end
@@ -226,7 +228,7 @@ export function budgetScheduleProblem(args: BudgetScheduleArgs | null): string |
   if (check?.problems.length) return check.problems[0] ?? null
   if (check !== null && check.existingCount + args.periods.length > MAX_PERIODS)
     return `Meta allows ${String(MAX_PERIODS)} periods on a campaign or ad set, and this one already has ${String(check.existingCount)}.`
-  if (args.periods.some((_, index) => periodProblem(args, index) !== null))
+  if (periodProblems(args).some((problem) => problem !== null))
     return "Change or leave out the periods Meta won't accept, or decline this request."
   return null
 }
@@ -280,9 +282,9 @@ function periodArg(period: BudgetPeriod): Record<string, unknown> {
 export function highestBudget(args: BudgetScheduleArgs): number | null {
   const daily = args.check?.dailyBudget ? Number(args.check.dailyBudget) : null
   if (daily === null) return null
+  const problems = periodProblems(args)
   const increases = args.periods.flatMap((period, index) => {
-    const increase =
-      periodProblem(args, index) === null ? increaseOf(period, daily.toString()) : null
+    const increase = problems[index] === null ? increaseOf(period, daily.toString()) : null
     return increase === null ? [] : [increase]
   })
   return increases.length > 0 ? daily + Math.max(...increases) : null
@@ -308,9 +310,10 @@ export function scheduleTimeline(args: BudgetScheduleArgs): ScheduleTimeline | n
     const times = span(period)
     return times ? [{ ...times, tone: "existing" as const }] : []
   })
+  const problems = periodProblems(args)
   const added = args.periods.flatMap((period, index) => {
     const times = span(period)
-    const tone = periodProblem(args, index) === null ? ("new" as const) : ("blocked" as const)
+    const tone = problems[index] === null ? ("new" as const) : ("blocked" as const)
     return times ? [{ ...times, tone }] : []
   })
   const all = [...existing, ...added]
@@ -329,10 +332,6 @@ export function scheduleTimeline(args: BudgetScheduleArgs): ScheduleTimeline | n
     now: existing.map(bar),
     after: all.map(bar),
   }
-}
-
-export function money(amount: string, currency: string | null): string {
-  return currency ? formatCurrencyAmount(amount, currency) : amount
 }
 
 /** A local YYYY-MM-DDTHH:MM time as "Fri 27 Nov 2026, 00:00", without shifting its zone. */
@@ -354,7 +353,8 @@ export function formatLocalTime(value: string): string {
 export function periodSummary(period: BudgetPeriod, check: ScheduleCheck | null): string {
   const times = `${formatLocalTime(period.start)} → ${formatLocalTime(period.end)}`
   const increase = increaseOf(period, check?.dailyBudget ?? null)
-  const amount = increase === null ? null : money(increase.toFixed(2), check?.currency ?? null)
+  const amount =
+    increase === null ? null : budgetMoney(increase.toFixed(2), check?.currency ?? null)
   if (period.increasePercent !== null)
     return `${times} · +${period.increasePercent}%${amount ? ` (${amount})` : ""}`
   return `${times} · +${amount ?? period.increaseAmount ?? ""}`
@@ -362,7 +362,8 @@ export function periodSummary(period: BudgetPeriod, check: ScheduleCheck | null)
 
 export function existingSummary(period: ExistingPeriod, currency: string | null): string {
   const times = `${formatLocalTime(period.start)} → ${formatLocalTime(period.end)}`
-  if (period.increaseAmount !== null) return `${times} · +${money(period.increaseAmount, currency)}`
+  if (period.increaseAmount !== null)
+    return `${times} · +${budgetMoney(period.increaseAmount, currency)}`
   return `${times} · Percentage increase (${period.value})`
 }
 

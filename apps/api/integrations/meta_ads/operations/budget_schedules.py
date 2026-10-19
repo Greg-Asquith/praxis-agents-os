@@ -24,7 +24,7 @@ from .mutations import (
     MetaAdsMutationParent,
     freeze_fields,
 )
-from .values import invalid_response
+from .values import invalid_response, numeric_value
 
 type MetaAdsScheduleObjectType = Literal["campaign", "adset"]
 
@@ -123,24 +123,18 @@ async def read_periods(
 
 
 def _existing(row: Mapping[str, Any]) -> MetaAdsExistingPeriod:
-    period_id, value = row.get("id"), row.get("budget_value")
-    value_type = row.get("budget_value_type")
+    period_id, value_type = row.get("id"), row.get("budget_value_type")
     if not isinstance(period_id, str) or not period_id.isdigit():
         raise invalid_response("Meta Ads returned a period without an ID.", operation=_OPERATION)
-    try:
-        number = (
-            int(value) if isinstance(value, int | str) and not isinstance(value, bool) else None
-        )
-    except ValueError:
-        number = None
-    if number is None or not isinstance(value_type, str):
+    value = numeric_value(row.get("budget_value"), count=True, operation=_OPERATION)
+    if value is None or not isinstance(value_type, str):
         raise invalid_response("Meta Ads returned a period without a value.", operation=_OPERATION)
     return MetaAdsExistingPeriod(
         id=period_id,
         start=_meta_time(row.get("time_start")),
         end=_meta_time(row.get("time_end")),
         value_type=value_type,
-        value=number,
+        value=int(value),
     )
 
 

@@ -7,7 +7,7 @@ import {
   editPeriods,
   highestBudget,
   parseBudgetScheduleArgs,
-  periodProblem,
+  periodProblems,
   periodRows,
 } from "@/integrations/meta_ads/lib/budget-schedule"
 import { metaAdsScheduleBudgetIncreasesPresenter } from "@/integrations/meta_ads/presenters/schedule-budget-increases"
@@ -57,10 +57,10 @@ describe("Meta Ads budget increase periods", () => {
     const shown = parse([{ ...blackFriday, increase_percent: 900 }], {
       periods: [{ ...blackFriday, increase_percent: 900, problem: "Too high." }],
     })
-    expect(periodProblem(shown, 0)).toBe("Too high.")
+    expect(periodProblems(shown)[0]).toBe("Too high.")
 
     const edited = parse(editPeriods(periodRows(shown, shown), 0, { increasePercent: "50" }))
-    expect(periodProblem(edited, 0)).toBeNull()
+    expect(periodProblems(edited)[0]).toBeNull()
     expect(highestBudget(edited)).toBe(150)
   })
 
@@ -71,9 +71,9 @@ describe("Meta Ads budget increase periods", () => {
       { start: "2026-11-29T00:00", end: "2026-11-29T02:00", increase_amount: "20" },
     ])
 
-    expect(periodProblem(args, 0)).toContain("£700.00")
-    expect(periodProblem(args, 1)).toContain("overlaps")
-    expect(periodProblem(args, 2)).toContain("3 hours")
+    expect(periodProblems(args)[0]).toContain("£700.00")
+    expect(periodProblems(args)[1]).toContain("overlaps")
+    expect(periodProblems(args)[2]).toContain("3 hours")
     expect(budgetScheduleProblem(args)).not.toBeNull()
   })
 

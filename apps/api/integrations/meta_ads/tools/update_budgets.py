@@ -66,8 +66,13 @@ from .schemas.budgets import (
     MetaAdsBudgetUpdate,
     MetaAdsUpdateBudgetsRequest,
 )
-from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
+from .utils.client import (
+    meta_ads_available,
+    meta_ads_client,
+    meta_ads_client_for_principal,
+    meta_ads_entries,
+)
 from .utils.mutation_evidence import (
     attach_interrupted_evidence,
     audit_status,
@@ -360,11 +365,7 @@ async def _budget_checks(
                 by_account[str(reference["account_id"])].append(
                     (object_type, reference, str(update.get("amount")))
                 )
-    active_context = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active_context.compatible_entries(META_ADS_BINDING) if active_context else ())
-    }
+    entries = meta_ads_entries(deps)
     checks: dict[str, dict[str, Any]] = {}
     for account_id, items in by_account.items():
         entry = entries.get(account_id)

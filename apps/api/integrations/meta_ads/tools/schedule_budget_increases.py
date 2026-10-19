@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, ValidationError
 from pydantic_ai import ModelRetry, RunContext
@@ -66,8 +66,13 @@ from .schemas.budget_schedules import (
 )
 from .schemas.objects import MetaAdsObject
 from .utils.ad_preparation import hydrate_references, required_currency
-from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
+from .utils.client import (
+    meta_ads_available,
+    meta_ads_client,
+    meta_ads_client_for_principal,
+    meta_ads_entries,
+)
 from .utils.create_operation import validated
 from .utils.mutation_evidence import (
     attach_interrupted_evidence,
@@ -75,6 +80,7 @@ from .utils.mutation_evidence import (
     meta_ads_account_target,
     terminal_operation_detail,
 )
+from .utils.schedule import account_zone
 
 _OPERATION = "schedule_budget_increases"
 _CHECKS_KEY = "_schedule_checks"
@@ -106,6 +112,8 @@ class _Review:
 
     object_type: MetaAdsScheduleObjectType
     item: MetaAdsObject
+    currency: str
+    zone: ZoneInfo
     existing: list[MetaAdsExistingPeriod] = field(default_factory=list)
     periods: list[MetaAdsPeriodReview] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
@@ -115,13 +123,9 @@ class _Review:
         budget = self.item.budget
         return budget.amount if budget is not None and budget.kind == "daily" else None
 
-
-@dataclass(frozen=True, slots=True)
-class _Prepared:
-    review: _Review
-    currency: str
-    zone: ZoneInfo
-    periods: list[MetaAdsPlannedPeriod]
+    @property
+    def planned(self) -> list[MetaAdsPlannedPeriod]:
+        return [period.planned for period in self.periods if period.planned is not None]
 
 
 async def meta_ads_schedule_budget_increases(
@@ -152,7 +156,7 @@ async def meta_ads_schedule_budget_increases(
 
     async def operation(entry: ResolvedContextEntry, _selected: Sequence[_Reference]) -> Any:
         client: MetaAdsClient | None = None
-        prepared: _Prepared | None = None
+        prepared: _Review | None = None
         pending: PendingIntegrationOperationDetail | None = None
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
@@ -170,8 +174,8 @@ async def meta_ads_schedule_budget_increases(
                 ledger = await add_periods(
                     client,
                     account_id=entry.external_id,
-                    object_id=prepared.review.item.id,
-                    periods=prepared.periods,
+                    object_id=prepared.item.id,
+                    periods=prepared.planned,
                 )
             except asyncio.CancelledError as exc:
                 attach_interrupted_evidence(
@@ -230,16 +234,6 @@ def _require_proposed(
         )
 
 
-def _zone(entry: ResolvedContextEntry) -> ZoneInfo:
-    try:
-        return ZoneInfo(metadata_str(entry.permissions_metadata.get("timezone_name")) or "")
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ModelRetry(
-            "This ad account's time zone is unknown. Use Look for New Resources on the "
-            "Meta Ads connection, then try again."
-        ) from None
-
-
 async def _review(
     client: MetaAdsClient,
     entry: ResolvedContextEntry,
@@ -250,19 +244,21 @@ async def _review(
     """Re-reads the target, its periods, and the account capability, then checks each period."""
     reference = request.reference
     object_type = _object_type(reference)
+    currency = required_currency(entry)
+    zone = account_zone(metadata_str(entry.permissions_metadata.get("timezone_name")))
     found = await read_objects_by_id(
         client,
         account_id=entry.external_id,
         object_type=object_type,
         object_ids=[reference.provider_entity_id],
-        currency=required_currency(entry),
+        currency=currency,
     )
     item = found.get(reference.provider_entity_id)
     if item is None:
         raise ModelRetry(
             "This campaign or ad set is no longer in this ad account. Choose it again."
         )
-    review = _Review(object_type=object_type, item=item)
+    review = _Review(object_type=object_type, item=item, currency=currency, zone=zone)
     if problem := schedule_problem(object_type, item):
         review.problems.append(problem)
         return review
@@ -274,8 +270,8 @@ async def _review(
         request.periods,
         review.existing,
         daily_budget=review.daily_budget or "0",
-        currency=required_currency(entry),
-        zone=_zone(entry),
+        currency=currency,
+        zone=zone,
         now=now,
     )
     if problem := count_problem(len(review.existing), len(request.periods)):
@@ -288,7 +284,7 @@ async def _prepare(
     entry: ResolvedContextEntry,
     request: MetaAdsScheduleBudgetIncreasesRequest,
     shown: Any,
-) -> _Prepared:
+) -> _Review:
     """Checks every period again, refuses a stale budget, and stops if any period breaks a rule."""
     review = await _review(client, entry, request, now=datetime.now(UTC))
     problems = [
@@ -307,20 +303,14 @@ async def _prepare(
         raise ModelRetry(_NOT_SHOWN)
     if shown.get("daily_budget") != review.daily_budget:
         raise ModelRetry(_CHANGED)
-    return _Prepared(
-        review=review,
-        currency=required_currency(entry),
-        zone=_zone(entry),
-        periods=[period.planned for period in review.periods if period.planned is not None],
-    )
+    return review
 
 
 def _pending_detail(
-    entry: ResolvedContextEntry, prepared: _Prepared
+    entry: ResolvedContextEntry, review: _Review
 ) -> PendingIntegrationOperationDetail:
-    review = prepared.review
     items = []
-    for period in prepared.periods:
+    for period in review.planned:
         fields = {
             "period": str(period.number),
             "object_id": review.item.id,
@@ -330,7 +320,7 @@ def _pending_detail(
             "daily_budget": review.daily_budget,
             "increase_amount": period.increase_amount,
             "increase_percent": str(period.increase_percent) if period.increase_percent else None,
-            "currency": prepared.currency,
+            "currency": review.currency,
         }
         items.append(
             IntegrationOperationIntent(
@@ -351,17 +341,17 @@ def _pending_detail(
 
 
 def _result(
-    entry: ResolvedContextEntry, prepared: _Prepared, ledger: MetaAdsMutationLedger
+    entry: ResolvedContextEntry, review: _Review, ledger: MetaAdsMutationLedger
 ) -> dict[str, Any]:
     parents = {dict(parent.identity)["period"]: parent for parent in ledger.parents}
     periods = []
-    for period in prepared.periods:
+    for period in review.planned:
         effect = parents[str(period.number)].effects[0]
         periods.append(
             {
                 "id": dict(effect.fields).get("period_id") if effect.outcome == "applied" else None,
-                "start": local_time(period.start, prepared.zone),
-                "end": local_time(period.end, prepared.zone),
+                "start": local_time(period.start, review.zone),
+                "end": local_time(period.end, review.zone),
                 "increase_amount": period.increase_amount,
                 "increase_percent": period.increase_percent,
                 "outcome": "added" if effect.outcome == "applied" else effect.outcome,
@@ -369,11 +359,10 @@ def _result(
                 "message": effect.message,
             }
         )
-    review = prepared.review
     return {
         "account_id": entry.external_id,
-        "currency": prepared.currency,
-        "time_zone": prepared.zone.key,
+        "currency": review.currency,
+        "time_zone": review.zone.key,
         "object_type": review.object_type,
         "object_id": review.item.id,
         "object_name": review.item.name,
@@ -389,17 +378,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     [reference] = await hydrate_references(
         deps, _ENTITY_TYPES[_object_type(request.reference)], key, [request.reference]
     )
-    active_context = deps.active_context
-    entry = next(
-        (
-            entry
-            for entry in (
-                active_context.compatible_entries(META_ADS_BINDING) if active_context else ()
-            )
-            if entry.external_id == request.reference.account_id
-        ),
-        None,
-    )
+    entry = meta_ads_entries(deps).get(request.reference.account_id)
     return {**args, key: reference, _CHECKS_KEY: await _checks(deps, entry, request)}
 
 
@@ -417,10 +396,9 @@ async def _checks(
             deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
         )
         review = await _review(client, entry, request, now=now)
-        zone = _zone(entry)
     except (IntegrationError, LookupError, ModelRetry):
         return {"unavailable": True}
-    currency = required_currency(entry)
+    currency, zone = review.currency, review.zone
     return {
         "unavailable": False,
         "currency": currency,

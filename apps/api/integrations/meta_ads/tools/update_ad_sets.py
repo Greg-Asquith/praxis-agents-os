@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from pydantic import Field, ValidationError
 from pydantic_ai import ModelRetry, RunContext
@@ -91,8 +91,13 @@ from .schemas.ad_set_edits import (
 )
 from .schemas.conversions import CUSTOM_CONVERSIONS_MAX_ROWS, MetaAdsConversion
 from .utils.ad_preparation import hydrate_references, required_currency
-from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
+from .utils.client import (
+    meta_ads_available,
+    meta_ads_client,
+    meta_ads_client_for_principal,
+    meta_ads_entries,
+)
 from .utils.create_operation import validated
 from .utils.mutation_evidence import (
     attach_interrupted_evidence,
@@ -100,6 +105,7 @@ from .utils.mutation_evidence import (
     meta_ads_account_target,
     terminal_operation_detail,
 )
+from .utils.schedule import account_zone
 
 _OPERATION = "update_ad_sets"
 _GROUP = "adsets:update-settings"
@@ -259,16 +265,6 @@ def _proposal(edit: MetaAdsAdSetEdit) -> set[str]:
     return {_RESULT_KEYS.get(key, key) for key in edit.settings}
 
 
-def _zone(entry: ResolvedContextEntry) -> ZoneInfo:
-    try:
-        return ZoneInfo(metadata_str(entry.permissions_metadata.get("timezone_name")) or "")
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ModelRetry(
-            "This ad account's time zone is unknown. Use Look for New Resources on the "
-            "Meta Ads connection, then try again."
-        ) from None
-
-
 async def _review_account(
     client: MetaAdsClient,
     entry: ResolvedContextEntry,
@@ -280,7 +276,7 @@ async def _review_account(
     """Re-reads each ad set and its campaign, applies Meta's rules, and asks Meta to check."""
     account_id = entry.external_id
     currency = required_currency(entry)
-    zone = _zone(entry)
+    zone = account_zone(metadata_str(entry.permissions_metadata.get("timezone_name")))
     today = now.astimezone(zone).date()
     ad_sets = await read_objects_by_id(
         client,
@@ -598,7 +594,7 @@ async def _prepare(
         raise ModelRetry(
             f"These ad set changes can't be made, so nothing was changed. {' '.join(problems)}"
         )
-    zone = _zone(entry)
+    zone = account_zone(metadata_str(entry.permissions_metadata.get("timezone_name")))
     changes = [
         FieldChange(
             object_type="adset",
@@ -715,11 +711,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     by_account: dict[str, list[MetaAdsAdSetEdit]] = defaultdict(list)
     for edit in request.changes:
         by_account[edit.ad_set.account_id].append(edit)
-    active_context = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active_context.compatible_entries(META_ADS_BINDING) if active_context else ())
-    }
+    entries = meta_ads_entries(deps)
     checks: dict[str, dict[str, Any]] = {}
     for account_id, edits in by_account.items():
         checks.update(await _account_checks(deps, entries.get(account_id), edits))

@@ -15,6 +15,14 @@ from services.secrets.domain import SecretReference
 
 from ...client import MetaAdsClient
 from ...settings import meta_ads_settings
+from .bindings import META_ADS_BINDING
+
+
+def meta_ads_entries(deps: RuntimeDeps) -> dict[str, ResolvedContextEntry]:
+    """Maps each ad account in the active context to its entry, by Meta account ID."""
+    active_context = deps.active_context
+    entries = active_context.compatible_entries(META_ADS_BINDING) if active_context else ()
+    return {entry.external_id: entry for entry in entries}
 
 
 async def meta_ads_client(

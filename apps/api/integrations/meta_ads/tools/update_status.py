@@ -52,8 +52,13 @@ from ..references import MetaAdsAdReference, MetaAdsAdSetReference, MetaAdsCampa
 from ..throttle import ensure_account_available
 from .schemas.objects import CLOSED_STATUSES, OBJECT_STATUSES, MetaAdsObject, MetaAdsObjectType
 from .schemas.status import MetaAdsStatusOutput, MetaAdsStatusSelection
-from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
+from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
+from .utils.client import (
+    meta_ads_available,
+    meta_ads_client,
+    meta_ads_client_for_principal,
+    meta_ads_entries,
+)
 from .utils.mutation_evidence import (
     attach_interrupted_evidence,
     audit_status,
@@ -299,11 +304,7 @@ async def _delivery_preview(
 
     Objects in an account that can't be read are marked unavailable, so the card says so.
     """
-    active_context = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active_context.compatible_entries(META_ADS_BINDING) if active_context else ())
-    }
+    entries = meta_ads_entries(deps)
     preview: dict[str, dict[str, Any]] = {}
     for account_id, object_ids in selected.items():
         entry = entries.get(account_id)

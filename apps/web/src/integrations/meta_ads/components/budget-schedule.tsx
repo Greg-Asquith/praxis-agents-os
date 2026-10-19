@@ -17,14 +17,14 @@ import {
 } from "@/integrations/meta_ads/components/outcome-table"
 import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
 import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
+import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
 import {
   SCHEDULE_OBJECT_TITLES,
   editPeriods,
   existingSummary,
   formatLocalTime,
   highestBudget,
-  money,
-  periodProblem,
+  periodProblems,
   periodRows,
   periodSummary,
   scheduleTimeline,
@@ -32,6 +32,7 @@ import {
   type BudgetScheduleArgs,
   type BudgetScheduleResult,
   type PeriodRow as Row,
+  type ScheduleCheck,
   type ScheduleTimeline,
 } from "@/integrations/meta_ads/lib/budget-schedule"
 import { pluralize } from "@/lib/format"
@@ -64,6 +65,7 @@ export function BudgetScheduleApproval({
   const check = args.check
   const currency = check?.currency ?? null
   const rows = periodRows(proposed, args)
+  const problems = periodProblems(args)
   const highest = highestBudget(args)
   const timeline = scheduleTimeline(args)
   const href = adsManagerObjectUrl(args.type, args.accountId, args.id)
@@ -78,8 +80,8 @@ export function BudgetScheduleApproval({
             <div className="text-right tabular-nums">
               <p className="text-muted-foreground text-sm">Daily Budget</p>
               <p className="text-lg font-semibold">
-                {money(check.dailyBudget, currency)}
-                {highest !== null ? ` → up to ${money(highest.toFixed(2), currency)}` : ""}
+                {budgetMoney(check.dailyBudget, currency)}
+                {highest !== null ? ` → up to ${budgetMoney(highest.toFixed(2), currency)}` : ""}
               </p>
             </div>
           ) : null
@@ -107,11 +109,16 @@ export function BudgetScheduleApproval({
           <PeriodRow
             // eslint-disable-next-line react-x/no-array-index-key -- Periods have no ID until Meta adds them, and a key from their values would remount the row, and lose focus, on each edit.
             key={index}
-            args={args}
-            current={rows.slice(0, index).filter((other) => other.included).length}
+            check={check}
             disabled={disabled}
             edit={edit}
             index={index}
+            // The period's place in `args.periods` while it is switched on.
+            problem={
+              row.included
+                ? (problems[rows.slice(0, index).filter((other) => other.included).length] ?? null)
+                : null
+            }
             row={row}
           />
         ))}
@@ -140,26 +147,24 @@ export function BudgetScheduleApproval({
 }
 
 function PeriodRow({
-  args,
-  current,
+  check,
   disabled,
   edit,
   index,
+  problem,
   row,
 }: {
-  args: BudgetScheduleArgs
-  // The period's place in `args.periods` while it is switched on.
-  current: number
+  check: ScheduleCheck | null
   disabled: boolean
   edit: Edit
   index: number
+  problem: string | null
   row: Row
 }) {
   const { period, included } = row
-  const problem = included ? periodProblem(args, current) : null
-  const currency = args.check?.currency ?? null
+  const currency = check?.currency ?? null
   const percent = period.increasePercent !== null
-  const summary = !included ? "Left out" : (problem ?? periodSummary(period, args.check))
+  const summary = !included ? "Left out" : (problem ?? periodSummary(period, check))
   return (
     <SettingRow
       rowKey={`period-${String(index)}`}
@@ -282,7 +287,7 @@ export function BudgetScheduleOutcome({ result }: { result: BudgetScheduleResult
     starts: formatLocalTime(period.start),
     ends: formatLocalTime(period.end),
     increase:
-      `+${money(period.increaseAmount, result.currency)}` +
+      `+${budgetMoney(period.increaseAmount, result.currency)}` +
       (period.increasePercent !== null ? ` (${String(period.increasePercent)}%)` : ""),
     outcome: period.outcome,
     details: period.message ?? "",
@@ -291,7 +296,7 @@ export function BudgetScheduleOutcome({ result }: { result: BudgetScheduleResult
   return (
     <div className="grid min-w-0 gap-2">
       <p className="text-muted-foreground text-sm">
-        {result.name}: daily budget {money(result.dailyBudget, result.currency)}. Times are in{" "}
+        {result.name}: daily budget {budgetMoney(result.dailyBudget, result.currency)}. Times are in{" "}
         {result.timeZone}.
       </p>
       <MetaAdsOutcomeTable

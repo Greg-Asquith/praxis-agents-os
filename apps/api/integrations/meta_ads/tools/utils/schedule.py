@@ -21,6 +21,21 @@ class Schedule:
     days: int | None
 
 
+def account_zone(timezone_name: str | None) -> ZoneInfo:
+    """Returns the ad account's time zone.
+
+    Raises:
+        ModelRetry: For an account without a known time zone.
+    """
+    try:
+        return ZoneInfo(timezone_name or "")
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ModelRetry(
+            "This ad account's time zone is unknown. Use Look for New Resources on the "
+            "Meta Ads connection, then try again."
+        ) from None
+
+
 def account_schedule(
     start_date: str | None,
     end_date: str | None,
@@ -34,13 +49,7 @@ def account_schedule(
         ModelRetry: For a malformed or past date, an end before the start, or an
             account without a known time zone.
     """
-    try:
-        zone = ZoneInfo(timezone_name or "")
-    except (ZoneInfoNotFoundError, ValueError):
-        raise ModelRetry(
-            "This ad account's time zone is unknown. Use Look for New Resources on the "
-            "Meta Ads connection, then try again."
-        ) from None
+    zone = account_zone(timezone_name)
     today = (now or datetime.now(UTC)).astimezone(zone).date()
     start = absolute_date(start_date, "start_date") if start_date else None
     end = absolute_date(end_date, "end_date") if end_date else None

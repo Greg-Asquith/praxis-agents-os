@@ -100,11 +100,7 @@ async def test_increases_need_a_daily_budget_held_by_the_object():
     assert "campaign's budget" in schedule_problem("adset", ad_sets["6"])
 
 
-async def test_periods_are_sent_once_in_time_order_and_a_moved_period_stays_unverified(
-    monkeypatch,
-):
-    sleep = AsyncMock()
-    monkeypatch.setattr("services.integrations.http.asyncio.sleep", sleep)
+async def test_periods_are_sent_once_in_time_order_and_a_moved_period_stays_unverified():
     later, earlier = review_periods(
         [
             period("2026-12-24T00:00", "2026-12-26T00:00"),
