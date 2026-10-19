@@ -18,6 +18,12 @@ from ..models import (
     MetaAdsPlacements,
     MetaAdsPromotedObject,
 )
+from ..tools.schemas.delivery import (
+    WEEKDAYS,
+    MetaAdsAdSchedule,
+    MetaAdsAttribution,
+    MetaAdsFrequencyCap,
+)
 from ..tools.schemas.objects import (
     DEFAULT_STATUSES,
     OBJECT_STATUSES,
@@ -35,12 +41,13 @@ from .values import (
     money_value,
     require_currency,
     squashed_text,
+    store_page,
 )
 
 _OPERATION = "list_objects"
 _FIELDS = {
     "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled,smart_promotion_type",
-    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,bid_constraints,daily_budget,lifetime_budget,budget_remaining,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,dsa_payor,dsa_beneficiary,learning_stage_info,targeting{geo_locations,publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
+    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,bid_constraints,daily_budget,lifetime_budget,budget_remaining,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,dsa_payor,dsa_beneficiary,learning_stage_info,attribution_spec,frequency_control_specs,pacing_type,adset_schedule,targeting{geo_locations,publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
     "ad": "id,name,status,effective_status,campaign_id,adset_id,bid_amount,ad_review_feedback,issues_info",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
@@ -198,7 +205,69 @@ def _ad_set_settings(raw: dict[str, Any], currency: str) -> dict[str, Any]:
         "eu_beneficiary": squashed_text(raw.get("dsa_beneficiary"), 512),
         "learning_status": bounded_string(learning.get("status"), operation=_OPERATION),
         "countries": _countries(targeting) if isinstance(targeting, dict) else None,
+        "attribution": _attribution(raw.get("attribution_spec")),
+        "frequency_cap": _frequency_cap(raw.get("frequency_control_specs")),
+        "ad_schedule": _ad_schedule(raw.get("pacing_type"), raw.get("adset_schedule")),
     }
+
+
+# Meta's attribution event types, as the attribution setting names their windows.
+_ATTRIBUTION_EVENTS = {
+    "CLICK_THROUGH": "click_days",
+    "VIEW_THROUGH": "view_days",
+    "ENGAGED_VIDEO_VIEW": "engaged_view_days",
+}
+
+
+def _attribution(value: Any) -> MetaAdsAttribution | None:
+    """Reads the attribution windows; None for Meta's default or windows Praxis can't show."""
+    windows = {
+        _ATTRIBUTION_EVENTS[item["event_type"]]: item.get("window_days")
+        for item in value or []
+        if isinstance(item, dict) and item.get("event_type") in _ATTRIBUTION_EVENTS
+    }
+    try:
+        return MetaAdsAttribution.model_validate(windows) if windows else None
+    except ValidationError:
+        return None
+
+
+def _frequency_cap(value: Any) -> MetaAdsFrequencyCap | None:
+    specs = [
+        item
+        for item in value or []
+        if isinstance(item, dict) and item.get("event") == "IMPRESSIONS"
+    ]
+    if not specs:
+        return None
+    try:
+        return MetaAdsFrequencyCap(
+            max_impressions=specs[0].get("max_frequency"), every_days=specs[0].get("interval_days")
+        )
+    except ValidationError:
+        return None
+
+
+def _ad_schedule(pacing: Any, schedule: Any) -> MetaAdsAdSchedule | None:
+    """Reads ad scheduling, which is on only while pacing includes day_parting."""
+    if not isinstance(pacing, list) or "day_parting" not in pacing or not schedule:
+        return None
+    try:
+        entries = [item for item in schedule if isinstance(item, dict)]
+        zones = {item.get("timezone_type") for item in entries}
+        return MetaAdsAdSchedule(
+            time_zone="account" if zones == {"ADVERTISER"} else "viewer",
+            windows=[
+                {
+                    "days": [WEEKDAYS[day] for day in item.get("days") or []],
+                    "start_hour": item.get("start_minute", 0) // 60,
+                    "end_hour": item.get("end_minute", 0) // 60,
+                }
+                for item in entries
+            ],
+        )
+    except (ValidationError, TypeError, IndexError):
+        return None
 
 
 def _ratio(floor: Any) -> str | None:
@@ -263,6 +332,7 @@ def _promoted_object(value: Any) -> MetaAdsPromotedObject | None:
     return MetaAdsPromotedObject(
         **ids,
         custom_event_type=bounded_string(raw.get("custom_event_type"), operation=_OPERATION),
+        object_store_url=store_page(raw.get("object_store_url")),
     )
 
 

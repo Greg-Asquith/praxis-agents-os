@@ -116,7 +116,9 @@ async def test_confirm_ingestible_upload_sets_pending_and_enqueues_ids_only(
     assert double_confirmed.current_revision_id == confirmed.current_revision_id
     assert (
         await db_session.scalar(
-            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
+            select(func.count())
+            .select_from(Job)
+            .where(Job.kind == "files.extract", Job.workspace_id == workspace.id)
         )
         == 1
     )

@@ -3,8 +3,8 @@
 """Tests for extraction failure notifications through the job harness."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, select
@@ -16,7 +16,7 @@ from models.files import File, FileRevision
 from models.jobs import Job
 from models.notification import Notification
 from services.files.utils import private_ref_from_key, revision_object_key
-from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING
+from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING, JOB_STATUS_RUNNING
 from services.jobs.enqueue_job import enqueue_job
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision, build_user, build_workspace
@@ -24,6 +24,8 @@ from tests.support.storage import reset_storage_provider_cache
 from utils.document_markdown import DocumentConversionError
 
 pytestmark = pytest.mark.asyncio
+
+_OWNER = "extract-failure-test"
 
 
 @pytest.fixture
@@ -66,16 +68,14 @@ async def test_extraction_final_failure_notifies_only_after_attempts_exhaust(
         job_id = job.id
         await db.commit()
 
-    await job_runner.run_once(owner_instance_id="extract-failure-test")
+    await _attempt(committed_db_session_factory, job_id)
     async with committed_db_session_factory() as db:
         job = await db.get(Job, job_id)
         assert job is not None
         assert job.status == JOB_STATUS_PENDING
         assert await db.scalar(select(Notification).where(Notification.source == "jobs")) is None
-        job.run_after = datetime.now(UTC)
-        await db.commit()
 
-    await job_runner.run_once(owner_instance_id="extract-failure-test")
+    await _attempt(committed_db_session_factory, job_id)
     async with committed_db_session_factory() as db:
         job = await db.get(Job, job_id)
         assert job is not None
@@ -88,6 +88,21 @@ async def test_extraction_final_failure_notifies_only_after_attempts_exhaust(
         assert file.processing_status == "error"
 
     await _clear_jobs_and_notifications(committed_db_session_factory)
+
+
+async def _attempt(session_factory: async_sessionmaker[AsyncSession], job_id: UUID) -> None:
+    """Claims this job the way the worker does and runs it, whatever else is due."""
+    now = datetime.now(UTC)
+    async with session_factory() as db:
+        job = await db.get(Job, job_id)
+        assert job is not None
+        job.status = JOB_STATUS_RUNNING
+        job.attempts += 1
+        job.locked_by = _OWNER
+        job.locked_at = now
+        job.lock_expires_at = now + timedelta(minutes=1)
+        await db.commit()
+    await job_runner.execute_claimed_job(job_id, owner_instance_id=_OWNER)
 
 
 async def _persist_extractable_file(db: AsyncSession) -> tuple[File, FileRevision, object]:

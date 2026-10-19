@@ -1,10 +1,11 @@
 # apps/api/integrations/meta_ads/operations/values.py
 
-"""Bound provider text and parse finite Meta metric values."""
+"""Bound provider text and addresses, and parse finite Meta metric values."""
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 
 from core.exceptions.integration import IntegrationValidationError
 
@@ -22,6 +23,12 @@ ACCOUNT_STATUSES = {
     201: "ANY_ACTIVE",
     202: "ANY_CLOSED",
 }
+_MAX_URL_LENGTH = 2048
+STORE_HOSTS = {
+    "google_play": ("play.google.com",),
+    "app_store": ("apps.apple.com", "itunes.apple.com"),
+}
+_ALL_STORE_HOSTS = tuple(host for hosts in STORE_HOSTS.values() for host in hosts)
 _DISABLE_REASONS = {
     1: "Advertising policy violation",
     2: "Ad review",
@@ -153,6 +160,25 @@ def numeric_value(value: Any, *, operation: str, count: bool = False) -> int | f
         raise invalid_response(
             "Meta Ads returned an invalid metric value.", operation=operation
         ) from None
+
+
+def https_url(value: Any, hosts: tuple[str, ...]) -> str | None:
+    """Keeps an HTTPS address without credentials on one of the hosts or their subdomains."""
+    if not isinstance(value, str) or len(value) > _MAX_URL_LENGTH:
+        return None
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    on_host = any(host == item or host.endswith(f".{item}") for item in hosts)
+    has_userinfo = parts.username is not None or parts.password is not None
+    return value if parts.scheme == "https" and on_host and not has_userinfo else None
+
+
+def store_page(value: Any) -> str | None:
+    """Keeps an App Store or Google Play page."""
+    return https_url(value, _ALL_STORE_HOSTS)
 
 
 def invalid_response(message: str, *, operation: str) -> IntegrationValidationError:

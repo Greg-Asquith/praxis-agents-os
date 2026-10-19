@@ -54,6 +54,39 @@ describe("Meta Ads ad set edits", () => {
     expect(adSetEditProblem(parseAdSetEditArgs({ changes: edited, _checks: checks }))).toBeNull()
   })
 
+  it("compares an ad schedule by its hours, not by how the server ordered its days", () => {
+    const schedule = { windows: [{ days: ["friday", "monday"], start_hour: 18, end_hour: 22 }] }
+    const proposed = parseAdSetEditArgs({
+      changes: [{ ad_set: adSet("8", "Spring UK"), ad_schedule: schedule }],
+      _checks: {
+        "8": {
+          currency: "GBP",
+          before: { ad_schedule: null },
+          requested: {
+            ad_schedule:
+              '{"time_zone":"viewer","windows":[{"days":["monday","friday"],"start_hour":18,"end_hour":22}]}',
+          },
+          problems: ["Ad scheduling needs a lifetime budget."],
+          notes: [],
+        },
+      },
+    })
+    expect(adSetEditProblem(proposed)).toContain("Meta won't accept")
+  })
+
+  it("replaces the proposed event when the operator picks a custom conversion", () => {
+    const event = { ad_set: adSet("8", "Spring UK"), conversion_event: "PURCHASE" }
+    const proposed = parseAdSetEditArgs({ changes: [event] })
+    if (!proposed) throw new Error("expected proposed edits")
+
+    expect(
+      editAdSets(adSetEditRows(proposed, proposed), "8", {
+        key: "custom_conversion_id",
+        value: "44",
+      })
+    ).toEqual([{ ad_set: event.ad_set, custom_conversion_id: "44" }])
+  })
+
   it("drops an ad set and brings it back with the values it was proposed with", () => {
     const proposed = parseAdSetEditArgs({ changes: [spring, summer] })
     if (!proposed) throw new Error("expected proposed edits")
@@ -71,7 +104,22 @@ describe("Meta Ads ad set edits", () => {
 
 describe("Meta Ads update ad sets presenter", () => {
   it("shows each ad set's settings now and after, with its impact notes", () => {
-    const html = render(approval({ changes: [spring], _checks: { "8": checks["8"] } }))
+    const schedule = { windows: [{ days: ["monday"], start_hour: 9, end_hour: 17 }] }
+    const html = render(
+      approval({
+        changes: [{ ...spring, ad_schedule: schedule }],
+        _checks: {
+          "8": {
+            ...checks["8"],
+            requested: {
+              ...checks["8"].requested,
+              ad_schedule:
+                '{"time_zone":"viewer","windows":[{"days":["monday"],"start_hour":9,"end_hour":17}]}',
+            },
+          },
+        },
+      })
+    )
 
     expect(html).toContain("Spring UK")
     expect(html).toContain("15 May 2026")

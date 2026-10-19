@@ -325,7 +325,7 @@ Ad sets also carry what ad creation validates before approval:
 
 - `objective`, read from the parent campaign.
 - `destination_type` and `promoted_object` (Page, pixel, application, custom
-  conversion, and custom event type).
+  conversion, custom event type, and the app's store page).
 - `placements`: `automatic` when targeting names no publisher platform,
   otherwise `manual` with entries such as `facebook` (every position on that
   platform) or `instagram:story`. Null when Meta returns no targeting, because
@@ -345,8 +345,12 @@ and `max_lifetime_spend` (null when unset, empty, zero, or Meta's no-cap value
 `922337203685478`), `eu_payer` and `eu_beneficiary` (`dsa_payor` and
 `dsa_beneficiary`), `learning_status` from `learning_stage_info`, which Meta
 returns only for active ad sets, and `countries`, the country codes of every
-place in `targeting.geo_locations`. Campaigns carry `smart_promotion_type`,
-which marks legacy Advantage+ shopping and app campaigns. Ads carry
+place in `targeting.geo_locations`. They also carry `attribution` (click,
+view, and engaged-view windows from `attribution_spec`), `frequency_cap`
+(the `IMPRESSIONS` entry of `frequency_control_specs`), and `ad_schedule`
+(from `adset_schedule`, only while `pacing_type` includes `day_parting`).
+Each is null when Meta returns none or a value Praxis can't read. Campaigns
+carry `smart_promotion_type`, which marks legacy Advantage+ shopping and app campaigns. Ads carry
 `bid_amount` when an ad has its own bid.
 
 The provider operation also reads exact object IDs in any status, still through
@@ -704,8 +708,8 @@ behaviour that hasn't been checked against a live account; see
 `meta_ads_update_ad_sets` changes the settings of up to 50 existing ad sets in
 one approval. Each entry names one ad set and only the settings that change;
 an omitted setting stays as it is. Status stays with `meta_ads_update_status`,
-budget amounts with `meta_ads_update_budgets`. Goal, attribution, frequency
-cap, ad scheduling, and targeting edits are pending.
+budget amounts with `meta_ads_update_budgets`. Targeting and placement edits
+are pending.
 
 | Setting | Meta field |
 | --- | --- |
@@ -716,6 +720,11 @@ cap, ad scheduling, and targeting edits are pending.
 | `min_roas` (a ratio such as `2.5`) | `bid_constraints.roas_average_floor` (ratio × 10,000) |
 | `min_daily_spend`, `max_daily_spend`, `min_lifetime_spend`, `max_lifetime_spend` (an amount, or `remove`) | `daily_min_spend_target`, `daily_spend_cap`, `lifetime_min_spend_target`, `lifetime_spend_cap` in minor units; `remove` sends `922337203685478` |
 | `eu_payer`, `eu_beneficiary` | `dsa_payor`, `dsa_beneficiary` |
+| `goal` (a goal key from [Goals](#goals)) | `optimization_goal`, with `billing_event=IMPRESSIONS` |
+| `pixel` with `conversion_event` or `custom_conversion_id`; `page`; `app` with `app_store` | `promoted_object`, sent whole: the new values merged with the current ones |
+| `attribution` (`click_days` 1 or 7, `view_days` and `engaged_view_days` 0 or 1) | `attribution_spec` entries of `CLICK_THROUGH`, `VIEW_THROUGH`, and `ENGAGED_VIDEO_VIEW` with `window_days`; a 0 window is left out |
+| `frequency_cap` (`max_impressions` and `every_days`, each 1 to 90, or `remove`) | `frequency_control_specs` with `event=IMPRESSIONS`, `max_frequency`, and `interval_days`; `remove` sends `[]` |
+| `ad_schedule` (`time_zone` `viewer` or `account`, and up to 7 windows of `days`, `start_hour`, and `end_hour`, or `remove`) | `pacing_type=["day_parting"]` and `adset_schedule` entries of `start_minute`, `end_minute`, `days` (0 is Sunday), and `timezone_type` (`USER` or `ADVERTISER`); `remove` sends `pacing_type=["standard"]` and `adset_schedule=[]` |
 
 `operations/edit_ad_set.py` holds the rules, checked against the ad set and
 its campaign as they are now:
@@ -741,6 +750,24 @@ its campaign as they are now:
 - `eu_payer` and `eu_beneficiary` are refused unless one of the ad set's
   `countries` is in the EU.
 - Money with fractional minor units is refused.
+- A new `goal` must belong to the campaign's objective and send people to the
+  same place: its goal row's destination must fit the ad set's
+  `destination_type` (`fits_destination` in `goals.py`), because Meta doesn't
+  change an ad set's destination. Otherwise the agent creates a new ad set.
+- Promoted object settings must suit the goal after the edit: `pixel`,
+  `conversion_event`, and `custom_conversion_id` for website conversions,
+  `page` for awareness and Page likes, `app` and `app_store` for app
+  installs. A pixel goal keeps an event or a custom conversion, and an ad
+  set whose goal isn't in the table can't change its goal or promoted
+  object. New Pages, pixels, and apps must be ones the account can use, read
+  from `promote_pages`, `adspixels`, and `advertisable_applications`; a new
+  app's store page comes from its `object_store_urls`. A custom conversion
+  must be usable and count events from the ad set's pixel.
+- `attribution` is accepted only for website conversion and app install
+  goals (`OFFSITE_CONVERSIONS`, `VALUE`, `APP_INSTALLS`), and
+  `frequency_cap` only for `REACH` and `THRUPLAY`, both checked against the
+  goal after the edit. `ad_schedule` needs the ad set's own or its
+  campaign's lifetime budget, and its windows can't overlap.
 - When an end date changes on an ad set with its own lifetime budget, the
   remaining budget is spread over the remaining days. A daily pace below the
   goal's daily minimum from `minimum_budgets` (or the account's
@@ -755,8 +782,8 @@ tool works as follows:
    and `execution_options=["validate_only"]`. For the card it adds, under
    `_checks` by ad set ID, every setting's current value (`before`), the
    values checked (`requested`), the problems, the currency, and notes:
-   - "This restarts learning" for a bid change on an ad set with
-     `learning_status`.
+   - "This restarts learning" for a change of bid, goal, promoted object, or
+     attribution on an ad set with `learning_status`.
    - The number of ads with their own bid, which a new `bid_amount` replaces.
    - Bid or budget changes today (activity `event_type` containing `bid` or
      `budget` since local midnight), when there are 3 or more.
@@ -766,7 +793,11 @@ tool works as follows:
 
    The notes are advisory: an unreadable history or ad list drops them. An
    account that can't be read marks its ad sets unavailable, and they stay
-   approvable because execution checks again.
+   approvable because execution checks again. `_checks` also names the
+   current and new Pages, pixels, apps, and custom conversions (`labels`),
+   and each result row carries the same names. For an edit of the
+   conversion event or custom conversion, `_checks.conversions` lists the
+   account's usable custom conversions on the ad set's pixel.
 2. The card opens with the same "Changes take effect straight away"
    banner as the budget card, then one row per ad set, one open at a
    time, laid out like the Create Ad Set card. A closed row shows the new
@@ -775,13 +806,22 @@ tool works as follows:
    optional spend limit or end date empty removes it. Effects that can
    cost results for a while (restarting learning, three or more bid or
    budget changes today) show as warnings; other notes are plain text.
+   New Pages, pixels, and apps are picked from the ad account through the
+   `changes` field's entity kinds. As on the Create Ad Set card, one "What
+   Counts as a Result" select lists standard events and custom conversions;
+   picking one replaces the other setting. The frequency cap and ad
+   scheduling each open with two radio cards ("No Cap" or "Set a Cap", "All
+   Day, Every Day" or "On a Schedule"); the first sends `remove`. Frequency
+   caps use selects of common steps, and ad scheduling lists its windows
+   with day checkboxes and shows the week now and after, one cell per hour.
    Every proposed value is editable (`changes` is an editable
    `structured` field), and an ad set can be switched off. A problem
    blocks approval only while the card still shows the values it was
    found for.
 3. After approval, the tool refuses any ad set or setting the agent didn't
-   propose, compared with `proposed_args`. It refuses the run while the
-   account has used 75% or more of Meta's hourly request allowance. It reads
+   propose, compared with `proposed_args`. A conversion event and a custom
+   conversion count as one proposed setting, so the card can swap one for
+   the other. It refuses the run while the account has used 75% or more of Meta's hourly request allowance. It reads
    every ad set and campaign again, applies the rules, and dry-runs again.
    Any problem or rejection stops the account before anything is sent.
 4. An ad set whose changed settings now differ from the `before` values on
@@ -796,7 +836,9 @@ tool works as follows:
    `/batch`, without retry.
 7. The tool reads the changed ad sets again. An ad set is `updated` only when
    every changed setting reads back as requested, comparing amounts as
-   numbers and times as dates in the account's time zone. A disagreeing
+   numbers, times as dates in the account's time zone, and attribution,
+   frequency caps, and ad scheduling in one canonical JSON form
+   (`canonical` in `tools/schemas/delivery.py`). A disagreeing
    read-back fails the ad set with `SETTING_NOT_CONFIRMED` and keeps the
    values Meta returned. A lost reply or a failed read-back is `unverified`.
 
@@ -804,10 +846,15 @@ Each result row has the ad set, its settings with `before`, `requested`, and
 read-back `after` values, and the outcome. The tool has a 300-second timeout,
 supports Code Mode, and is listed in the spend policy test.
 
-Whether a delivered ad set accepts a new start date, whether `roas_goal`
-can be left at ad set level, the `learning_stage_info` shape, whether ad sets
-in legacy Advantage+ campaigns refuse updates, and the time for 50 ad sets in
-sequence haven't been checked against a live account; see
+Whether a delivered ad set accepts a new start date, goal, or promoted
+object, whether `roas_goal` can be left at ad set level, the attribution
+windows each goal accepts and whether `ENGAGED_VIDEO_VIEW` is still the
+write value, whether `frequency_control_specs=[]` removes a cap, the
+`learning_stage_info` shape, whether ad sets in legacy Advantage+ campaigns
+refuse updates, and the time for 50 ad sets in sequence haven't been checked
+against a live account. Meta's dry run is the backstop until then.
+Incremental attribution (`is_incremental_attribution_enabled`) is pending:
+reading an unconfirmed field would fail every ad set read. See
 [Live qualification record](#live-qualification-record).
 
 ### Uploading media
@@ -1699,7 +1746,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
 | Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
-| Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
+| Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; a goal and a promoted object change on a delivered ad set; attribution windows per goal, the engaged-view write value, and a change after delivery; `frequency_control_specs=[]` removing a cap; `adset_schedule` read-back; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |

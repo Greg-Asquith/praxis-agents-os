@@ -30,6 +30,7 @@ from .create_objects import MetaAdsCreateEdge, MetaCreateLookup
 from .object_run import ObjectRun, create_and_read_back
 from .targeting import targeting_problems, targeting_spec
 from .values import (
+    STORE_HOSTS,
     bounded_string,
     minimum_budget_problem,
     money_value,
@@ -55,10 +56,6 @@ _EU_COUNTRIES = frozenset(
         *("AX", "GF", "GP", "MQ", "MF", "RE", "YT"),
     }
 )
-_STORE_HOSTS = {
-    "google_play": ("play.google.com",),
-    "app_store": ("apps.apple.com", "itunes.apple.com"),
-}
 BID_AMOUNT_STRATEGIES = frozenset({"COST_CAP", "LOWEST_COST_WITH_BID_CAP"})
 LEGACY_ADVANTAGE_TYPES = frozenset({"AUTOMATED_SHOPPING_ADS", "SMART_APP_PROMOTION"})
 _EU_NAMES_MISSING = (
@@ -291,8 +288,14 @@ def minimum_problem(
 
 def store_url(app: MetaAdsApplicationReference, store: str) -> str | None:
     """Returns the app's page in the chosen store, from Meta's own store URLs."""
-    hosts = _STORE_HOSTS[store]
+    hosts = STORE_HOSTS[store]
     return next((url for url in app.store_urls if urlsplit(url).hostname in hosts), None)
+
+
+def store_for(url: str | None) -> str | None:
+    """Names the store a store page belongs to, or None for another host."""
+    host = urlsplit(url).hostname if url else None
+    return next((store for store, hosts in STORE_HOSTS.items() if host in hosts), None)
 
 
 @dataclass(frozen=True, slots=True)

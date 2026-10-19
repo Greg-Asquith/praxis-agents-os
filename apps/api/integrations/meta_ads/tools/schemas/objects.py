@@ -17,6 +17,7 @@ from ...models import (
     MetaAdsStrictModel,
     MetaAdsText,
 )
+from .delivery import MetaAdsAdSchedule, MetaAdsAttribution, MetaAdsFrequencyCap
 
 type MetaAdsObjectType = Literal["campaign", "adset", "ad"]
 type MetaAdsReviewState = Literal["in_review", "approved", "rejected", "with_issues", "unknown"]
@@ -113,6 +114,11 @@ class MetaAdsObject(MetaAdsStrictModel):
     countries: list[Annotated[str, Field(pattern=r"^[A-Z]{2}$")]] | None = Field(
         default=None, max_length=300
     )
+    # Ad sets only, null for Meta's default or none: attribution windows, frequency cap, and
+    # ad scheduling.
+    attribution: MetaAdsAttribution | None = None
+    frequency_cap: MetaAdsFrequencyCap | None = None
+    ad_schedule: MetaAdsAdSchedule | None = None
     # Campaigns only: set for legacy Advantage+ shopping and app campaigns.
     smart_promotion_type: MetaAdsText | None = None
     # Ads only: why Meta's review rejected the ad, and what stops it delivering.

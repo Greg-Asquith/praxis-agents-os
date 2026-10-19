@@ -18,6 +18,7 @@ import {
   ASSET_LABELS,
   CONVERSION_EVENT_LABELS,
   GOALS,
+  STORE_OPTIONS,
   type Goal,
 } from "@/integrations/meta_ads/lib/goals"
 import { stringValue } from "@/lib/guards"
@@ -26,10 +27,6 @@ const EVENT_OPTIONS = Object.entries(CONVERSION_EVENT_LABELS).map(([value, label
   value,
   label,
 }))
-const STORE_OPTIONS = [
-  { value: "google_play", label: "Google Play" },
-  { value: "app_store", label: "App Store" },
-]
 const CUSTOM = "custom"
 
 /** The goal, what it measures against, and how Meta bids for it. */

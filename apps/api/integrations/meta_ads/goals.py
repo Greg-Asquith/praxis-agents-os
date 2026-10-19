@@ -72,11 +72,17 @@ def goal_for(
 ) -> MetaAdsGoal | None:
     """Names the goal an existing ad set's settings match, or None for settings outside the table."""
     for key, row in GOALS.items():
-        if (row.objective, row.optimization_goal) != (objective, optimization_goal):
-            continue
-        # Meta reads an ad set sent without a destination back as UNDEFINED or WEBSITE.
-        if destination_type == row.destination_type or (
-            row.destination_type is None and destination_type in (None, "UNDEFINED", "WEBSITE")
-        ):
+        if (row.objective, row.optimization_goal) == (
+            objective,
+            optimization_goal,
+        ) and fits_destination(row, destination_type):
             return key
     return None
+
+
+def fits_destination(row: GoalRow, destination_type: str | None) -> bool:
+    """Whether an ad set with this destination can have the goal; Meta won't change one."""
+    # Meta reads an ad set sent without a destination back as UNDEFINED or WEBSITE.
+    return destination_type == row.destination_type or (
+        row.destination_type is None and destination_type in (None, "UNDEFINED", "WEBSITE")
+    )

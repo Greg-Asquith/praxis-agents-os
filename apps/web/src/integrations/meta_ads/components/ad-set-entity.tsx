@@ -22,29 +22,36 @@ import { getErrorMessage } from "@/lib/api/errors"
 
 const CURRENT = "current"
 
-/** Picks the Page, pixel, or app a goal needs from what the ad account can use. */
+/** Picks the Page, pixel, or app a goal needs from what the ad account can use.
+ *
+ * Inside a structured field, `fieldKey` is that field and `entityKind` names the kind. */
 export function EntityPicker({
   currentLabel,
   disabled,
+  entityKind,
   fieldKey,
   label,
   onChoose,
+  toolName = "meta_ads_create_ad_set",
 }: {
   currentLabel: string | null
   disabled: boolean
-  fieldKey: "page" | "pixel" | "app"
+  entityKind?: string
+  fieldKey: string
   label: string
   onChoose: (value: EntityReferenceValue) => void
+  toolName?: string
 }) {
   const conversationId = use(ToolConversationContext)
   const results = useInfiniteQuery({
     ...entityReferenceSearchQueryOptions({
       conversationId: conversationId ?? "",
       dependentArgs: {},
+      entityKind,
       fieldKey,
       pageSize: 25,
       search: "",
-      toolName: "meta_ads_create_ad_set",
+      toolName,
     }),
     enabled: conversationId !== null,
   })

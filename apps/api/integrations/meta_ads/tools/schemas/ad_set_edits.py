@@ -2,16 +2,23 @@
 
 """Input and result contracts for changing the settings of existing ad sets."""
 
-from typing import Literal, Self, get_args
+from typing import Annotated, Literal, Self, get_args
 
 from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ...goals import MetaAdsConversionEvent, MetaAdsGoal
 from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
-from ...references import MetaAdsAdSetReference
+from ...references import (
+    MetaAdsAdSetReference,
+    MetaAdsApplicationReference,
+    MetaAdsPageReference,
+    MetaAdsPixelReference,
+)
 from .ad_sets import MetaAdsAdSetName, MetaAdsEuName, MetaAdsMinRoas
 from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .delivery import MetaAdsAdSchedule, MetaAdsAttribution, MetaAdsFrequencyCap
 
 MAX_AD_SET_EDITS = 50
 # Every setting an edit can change, in the order the card and results show them.
@@ -28,6 +35,16 @@ type MetaAdsAdSetSetting = Literal[
     "max_lifetime_spend",
     "eu_payer",
     "eu_beneficiary",
+    "goal",
+    "pixel",
+    "conversion_event",
+    "custom_conversion_id",
+    "page",
+    "app",
+    "app_store",
+    "attribution",
+    "frequency_cap",
+    "ad_schedule",
 ]
 AD_SET_SETTINGS: tuple[MetaAdsAdSetSetting, ...] = get_args(MetaAdsAdSetSetting.__value__)
 
@@ -56,11 +73,32 @@ class MetaAdsAdSetEdit(MetaAdsStrictModel):
     max_lifetime_spend: MetaAdsSpendControl | None = None
     eu_payer: MetaAdsEuName | None = None
     eu_beneficiary: MetaAdsEuName | None = None
+    goal: MetaAdsGoal | None = Field(
+        default=None, description="A goal for the campaign's objective and the same destination."
+    )
+    pixel: MetaAdsPixelReference | None = None
+    conversion_event: MetaAdsConversionEvent | None = None
+    custom_conversion_id: MetaAdsId | None = Field(
+        default=None, description="From meta_ads_list_conversions, instead of conversion_event."
+    )
+    page: MetaAdsPageReference | None = None
+    app: MetaAdsApplicationReference | None = None
+    app_store: Literal["google_play", "app_store"] | None = None
+    attribution: MetaAdsAttribution | None = None
+    frequency_cap: MetaAdsFrequencyCap | Literal["remove"] | None = None
+    ad_schedule: MetaAdsAdSchedule | Literal["remove"] | None = None
 
     @model_validator(mode="after")
     def _one_setting(self) -> Self:
         if not self.settings:
             raise ValueError("Set at least one setting to change for each ad set.")
+        if self.conversion_event is not None and self.custom_conversion_id is not None:
+            raise ValueError("Set conversion_event or custom_conversion_id, not both.")
+        if (self.app is None) != (self.app_store is None):
+            raise ValueError("Set app and app_store together.")
+        accounts = {item.account_id for item in (self.pixel, self.page, self.app) if item}
+        if accounts - {self.ad_set.account_id}:
+            raise ValueError("Use a Page, pixel, and app from the ad set's ad account.")
         return self
 
     @property
@@ -82,19 +120,30 @@ class MetaAdsUpdateAdSetsRequest(MetaAdsStrictModel):
         return self
 
 
+# Room for a week of ad scheduling, which the card reads as compact JSON.
+type MetaAdsSettingValue = Annotated[str, Field(max_length=1000)]
+
+
 class MetaAdsSettingChange(MetaAdsStrictModel):
     setting: MetaAdsAdSetSetting
     # Null means not set: no end date, no spend limit, or no bid.
-    before: MetaAdsText | None
-    requested: MetaAdsText | None
+    before: MetaAdsSettingValue | None
+    requested: MetaAdsSettingValue | None
     # Read back after the change; null when not set, or when it couldn't be read.
-    after: MetaAdsText | None
+    after: MetaAdsSettingValue | None
+
+
+class MetaAdsAssetLabel(MetaAdsStrictModel):
+    id: MetaAdsId
+    name: MetaAdsText
 
 
 class MetaAdsAdSetEditOutcome(MetaAdsStrictModel):
     adset_id: MetaAdsId
     name: MetaAdsText | None
     changes: list[MetaAdsSettingChange] = Field(max_length=len(AD_SET_SETTINGS))
+    # Names of the Pages, pixels, apps, and custom conversions in the changes.
+    labels: list[MetaAdsAssetLabel] = Field(default_factory=list, max_length=12)
     outcome: Literal["updated", "already_set", "failed", "unverified"]
     error_code: str | None = Field(default=None, max_length=100)
     message: str | None = Field(default=None, max_length=1000)

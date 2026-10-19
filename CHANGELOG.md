@@ -172,11 +172,14 @@ minor release. Patch releases contain backward-compatible fixes only.
   has used 75% or more of Meta's hourly request allowance.
 - Meta Ads ad set edits: `meta_ads_update_ad_sets` changes the name, start
   and end dates, bid strategy, bid or cost goal, minimum return on ad spend,
-  spend limits, and EU payer and beneficiary of up to 50 ad sets in one
-  approval. The card shows each new setting with its value now, and notes
-  when a change restarts learning, replaces ad-level bids, or changes a
-  lifetime budget's daily pace. Meta checks every change first, an ad set that changed
-  after approval isn't sent, and each result shows the values Meta reads back.
+  spend limits, EU payer and beneficiary, goal, conversion event or custom
+  conversion, Page, app, attribution setting, frequency cap, and ad
+  scheduling of up to 50 ad sets in one approval. Ad scheduling shows the
+  week's hours on the card. The card shows each new setting with its value
+  now, and notes when a change restarts learning, replaces ad-level bids, or
+  changes a lifetime budget's daily pace. Meta checks every change first, an
+  ad set that changed after approval isn't sent, and each result shows the
+  values Meta reads back.
   Ad set creation now accepts daily spend limits only under a campaign daily
   budget.
 - Meta Ads library images and video thumbnails show on the ad creation card.

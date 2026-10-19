@@ -38,6 +38,8 @@ class MetaAdsPromotedObject(MetaAdsStrictModel):
     application_id: MetaAdsId | None = None
     custom_conversion_id: MetaAdsId | None = None
     custom_event_type: MetaAdsText | None = None
+    # App installs: the app's store page the ad set sends people to.
+    object_store_url: MetaAdsStoreUrl | None = None
 
 
 class MetaAdsPlacements(MetaAdsStrictModel):

@@ -38,14 +38,20 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.report_results import ReportResultBudget
 from utils.metadata import metadata_str
 
 from ..client import MetaAdsClient
+from ..entity_resolvers.utils import asset_read_args
 from ..goals import GOALS, goal_for
-from ..operations.create_ad_set import read_goal_minimum
+from ..operations.create_ad_set import read_goal_minimum, store_url
 from ..operations.edit_ad_set import (
     BID_SETTINGS,
+    LEARNING_SETTINGS,
+    PROMOTED_SETTINGS,
     ad_set_values,
+    after_goal,
+    after_promoted,
     edit_body,
     edit_dates,
     edit_problems,
@@ -64,6 +70,12 @@ from ..operations.edit_impact import (
     pace_note,
 )
 from ..operations.get_account import get_account
+from ..operations.list_assets import (
+    read_application_references,
+    read_page_references,
+    read_pixel_references,
+)
+from ..operations.list_custom_conversions import list_custom_conversions
 from ..operations.list_objects import read_objects_by_id
 from ..operations.mutations import MetaAdsMutationLedger
 from ..operations.update_fields import FieldChange, same_value, update_fields, validate_fields
@@ -77,6 +89,7 @@ from .schemas.ad_set_edits import (
     MetaAdsUpdateAdSetsOutput,
     MetaAdsUpdateAdSetsRequest,
 )
+from .schemas.conversions import CUSTOM_CONVERSIONS_MAX_ROWS, MetaAdsConversion
 from .utils.ad_preparation import hydrate_references, required_currency
 from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
@@ -103,6 +116,9 @@ _NOT_SHOWN = (
 
 type _Key = tuple[str, str]
 
+# The card offers standard events and custom conversions in one "What Counts as a Result".
+_RESULT_KEYS = {"custom_conversion_id": "conversion_event"}
+
 
 @dataclass
 class _Review:
@@ -117,6 +133,12 @@ class _Review:
     # Effects that can cost results for a while, shown more prominently than notes.
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Names of the Pages, pixels, apps, and custom conversions the card shows, by ID.
+    labels: dict[str, str] = field(default_factory=dict)
+    # The app's store page, for a new app or store.
+    store_url: str | None = None
+    # Custom conversions the card can offer instead of a standard event.
+    conversions: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def requested(self) -> dict[str, str | None]:
@@ -132,6 +154,8 @@ class _Prepared:
     currency: str
     zone: ZoneInfo
     changes: list[FieldChange]
+    # Names of the Pages, pixels, apps, and custom conversions each result row shows.
+    labels: dict[str, dict[str, str]]
 
 
 async def meta_ads_update_ad_sets(
@@ -222,12 +246,17 @@ def _require_proposed(proposed: Mapping[str, Any], request: MetaAdsUpdateAdSetsR
         original = MetaAdsUpdateAdSetsRequest.model_validate(proposed).changes
     except ValidationError:
         original = []
-    settings = {_key(edit.ad_set): set(edit.settings) for edit in original}
+    settings = {_key(edit.ad_set): _proposal(edit) for edit in original}
     for edit in request.changes:
-        if not set(edit.settings) <= settings.get(_key(edit.ad_set), set()):
+        if not _proposal(edit) <= settings.get(_key(edit.ad_set), set()):
             raise ModelRetry(
                 "A setting or ad set was added after approval. Ask the agent to prepare it again."
             )
+
+
+def _proposal(edit: MetaAdsAdSetEdit) -> set[str]:
+    """The settings an edit proposes; an event and a custom conversion are one choice."""
+    return {_RESULT_KEYS.get(key, key) for key in edit.settings}
 
 
 def _zone(entry: ResolvedContextEntry) -> ZoneInfo:
@@ -286,9 +315,18 @@ async def _review_account(
             review.problems.extend(
                 edit_problems(edit, ad_set, campaign, currency=currency, zone=zone, today=today)
             )
-        if not review.problems:
-            review.body = edit_body(edit, currency=currency, zone=zone, now=now)
         reviews.append(review)
+    await _check_assets(client, entry, reviews)
+    for review in reviews:
+        if not review.problems:
+            review.body = edit_body(
+                review.edit,
+                review.ad_set,
+                currency=currency,
+                zone=zone,
+                now=now,
+                store_url=review.store_url,
+            )
     await _check_paces(client, entry, reviews, currency=currency, zone=zone, today=today)
     for review in reviews:
         if review.problems or review.unchanged:
@@ -304,6 +342,99 @@ async def _review_account(
     if with_notes:
         await _add_notes(client, entry, reviews, currency=currency, zone=zone, now=now)
     return reviews
+
+
+async def _check_assets(
+    client: MetaAdsClient, entry: ResolvedContextEntry, reviews: Sequence[_Review]
+) -> None:
+    """Confirms the account can use each new Page, pixel, app, and custom conversion.
+
+    Reads each kind of asset once for the account, and names the new and current ones for
+    the card.
+    """
+    changing = [
+        review
+        for review in reviews
+        if not review.problems and PROMOTED_SETTINGS.intersection(review.edit.settings)
+    ]
+    if not changing:
+        return
+    kinds = {
+        GOALS[goal].asset
+        for review in changing
+        if (goal := after_goal(review.edit, review.ad_set)) is not None
+    }
+    read_args = asset_read_args(entry, ReportResultBudget("meta_ads", _OPERATION))
+    pages = (await read_page_references(client, **read_args))[0] if "page" in kinds else []
+    pixels = (await read_pixel_references(client, **read_args))[0] if "pixel" in kinds else []
+    apps = (await read_application_references(client, **read_args))[0] if "app" in kinds else []
+    labels = {item.provider_entity_id: item.label for item in (*pages, *pixels, *apps)}
+    usable = set(labels)
+    conversions: dict[str, MetaAdsConversion] = {}
+    if "pixel" in kinds:
+        conversions = {
+            item.id: item
+            for item in (
+                await list_custom_conversions(
+                    client, account_id=entry.external_id, limit=CUSTOM_CONVERSIONS_MAX_ROWS
+                )
+            ).conversions
+            if item.id
+        }
+        labels.update({key: item.name or key for key, item in conversions.items()})
+    live_apps = {app.application_id: app for app in apps}
+    for review in changing:
+        review.problems.extend(_asset_problems(review, usable, conversions))
+        if (app := review.edit.app) is not None and review.edit.app_store is not None:
+            live = live_apps.get(app.application_id)
+            review.store_url = store_url(live, review.edit.app_store) if live else None
+            if live is not None and review.store_url is None:
+                review.problems.append(
+                    f"Meta has no {review.edit.app_store} page for {live.label}."
+                )
+        if {"conversion_event", "custom_conversion_id"} & set(review.edit.settings):
+            pixel = after_promoted(review.edit, review.ad_set, store_url=None).get("pixel_id")
+            review.conversions = [
+                {"id": key, "name": item.name or key}
+                for key, item in conversions.items()
+                if not item.is_archived
+                and not item.is_unavailable
+                and item.pixel_id in (None, pixel)
+            ]
+        review.labels = {
+            value: labels[value]
+            for key in PROMOTED_SETTINGS.intersection(review.edit.settings)
+            for value in (review.values[key], review.requested.get(key))
+            if value is not None and value in labels
+        }
+
+
+def _asset_problems(
+    review: _Review, usable: set[str], conversions: Mapping[str, MetaAdsConversion]
+) -> list[str]:
+    edit = review.edit
+    problems = [
+        f"This ad account can't use {reference.label}. Choose one from meta_ads_list_assets."
+        for reference in (edit.page, edit.pixel, edit.app)
+        if reference is not None and reference.provider_entity_id not in usable
+    ]
+    if edit.custom_conversion_id is None and edit.pixel is None:
+        return problems
+    after = after_promoted(edit, review.ad_set, store_url=None)
+    conversion = conversions.get(after.get("custom_conversion_id") or "")
+    if edit.custom_conversion_id is not None and (
+        conversion is None or conversion.is_archived or conversion.is_unavailable
+    ):
+        problems.append(
+            "That custom conversion isn't usable in this ad account. Choose one from "
+            "meta_ads_list_conversions."
+        )
+    elif conversion is not None and conversion.pixel_id not in (None, after.get("pixel_id")):
+        problems.append(
+            f"The custom conversion {conversion.name or conversion.id} counts events from "
+            "another pixel. Choose that pixel, or a custom conversion on this one."
+        )
+    return problems
 
 
 async def _check_paces(
@@ -369,10 +500,12 @@ async def _add_notes(
     now: datetime,
 ) -> None:
     """Adds learning, ad bid, change frequency, and minimum spend notes for the card."""
-    bids = [review for review in reviews if BID_SETTINGS.intersection(review.edit.settings)]
-    for review in bids:
-        if review.ad_set.learning_status is not None:
+    for review in reviews:
+        if review.ad_set.learning_status is not None and LEARNING_SETTINGS.intersection(
+            review.edit.settings
+        ):
             review.warnings.append(LEARNING_NOTE)
+    bids = [review for review in reviews if BID_SETTINGS.intersection(review.edit.settings)]
     try:
         await _bid_notes(client, entry, bids, currency=currency, zone=zone, now=now)
         await _minimum_spend_notes(client, entry, reviews, currency=currency)
@@ -477,7 +610,12 @@ async def _prepare(
         )
         for review in reviews
     ]
-    return _Prepared(currency=required_currency(entry), zone=zone, changes=changes)
+    return _Prepared(
+        currency=required_currency(entry),
+        zone=zone,
+        changes=changes,
+        labels={review.ad_set.id: review.labels for review in reviews},
+    )
 
 
 def _stale(review: _Review, shown: Any) -> str | None:
@@ -546,6 +684,10 @@ def _result(
                     }
                     for key, value in change.requested.items()
                 ],
+                "labels": [
+                    {"id": key, "name": name}
+                    for key, name in prepared.labels.get(change.object_id, {}).items()
+                ],
                 "outcome": {"applied": "updated", "skipped": "already_set"}.get(
                     parent.outcome, parent.outcome
                 ),
@@ -610,6 +752,8 @@ async def _account_checks(
             "problems": review.problems,
             "warnings": review.warnings,
             "notes": review.notes,
+            "labels": review.labels,
+            "conversions": review.conversions,
             "budget": review.ad_set.budget.model_dump(mode="json")
             if review.ad_set.budget
             else None,
@@ -632,7 +776,14 @@ DEFINITION = RuntimeToolDefinition(
         "change the current bid or return goal; min_daily_spend and max_daily_spend under a "
         "campaign daily budget, or min_lifetime_spend and max_lifetime_spend under a campaign "
         "lifetime budget, each an amount or remove; eu_payer and eu_beneficiary for ad sets "
-        "that reach the EU. Archived and deleted ad sets can only be renamed. Change status "
+        "that reach the EU; goal, for another goal of the same campaign objective that sends "
+        "people to the same place; pixel with conversion_event or custom_conversion_id for "
+        "website conversions, page for awareness and Page likes, or app with app_store for app "
+        "installs, each from meta_ads_list_assets; attribution (click_days 1 or 7, view_days and "
+        "engaged_view_days 0 or 1) for website conversion and app install goals; frequency_cap "
+        "(max_impressions every_days) or remove, for reach goals; ad_schedule (time_zone viewer "
+        "or account, up to 7 windows of days with start_hour and end_hour) or remove, for "
+        "lifetime budgets. Archived and deleted ad sets can only be renamed. Change status "
         "with meta_ads_update_status and budget amounts with meta_ads_update_budgets. The card "
         "shows each new setting with its current one, and notes when a change restarts "
         "learning or replaces ad-level bids. Meta checks every change before any is made, and each result "
@@ -664,7 +815,12 @@ DEFINITION = RuntimeToolDefinition(
         approve_label="Approve & Update",
         arg_fields=(
             ToolFieldPresentation(
-                key="changes", label="Setting Changes", editable=True, format="structured"
+                key="changes",
+                label="Setting Changes",
+                editable=True,
+                format="structured",
+                # The card picks new Pages, pixels, and apps from the ad account.
+                entity_kinds=("meta_ads_page", "meta_ads_pixel", "meta_ads_application"),
             ),
         ),
         result_fields=RESULTS_FIELD,

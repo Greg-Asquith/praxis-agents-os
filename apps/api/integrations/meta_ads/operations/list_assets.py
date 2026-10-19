@@ -6,7 +6,6 @@ import json
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -30,7 +29,7 @@ from ..references import (
 from ..throttle import ensure_account_available
 from ..tools.schemas.assets import MetaAdsAssetKind, MetaAdsAssetsData
 from .paging import read_pages
-from .values import bounded_string, excerpt, invalid_response, squashed_text
+from .values import bounded_string, excerpt, https_url, invalid_response, squashed_text, store_page
 
 _OPERATION = "list_assets"
 _MEDIA_LIMIT = 50
@@ -44,10 +43,8 @@ _MAX_PAGES = 5
 _VIDEO_SCAN_PAGE_SIZE = 100
 # Meta's video edge has no ID filter, so exact lookups scan this many recent videos.
 VIDEO_SCAN_LIMIT = _VIDEO_SCAN_PAGE_SIZE * _MAX_PAGES
-_MAX_URL_LENGTH = 2048
 _MEDIA_HOSTS = ("fbcdn.net", "facebook.com", "cdninstagram.com")
 _POST_HOSTS = ("facebook.com", "instagram.com")
-_STORE_HOSTS = ("apps.apple.com", "itunes.apple.com", "play.google.com")
 _POST_LIMIT = 25
 # Pages and Instagram accounts whose posts are read, each.
 _MAX_POST_SOURCES = 5
@@ -530,7 +527,7 @@ def _post_values(
         "excerpt": excerpt(text, MAX_POST_EXCERPT),
         "created_time": created_time,
         "thumbnail_url": media_url(thumbnail),
-        "permalink_url": _https_url(permalink, _POST_HOSTS),
+        "permalink_url": https_url(permalink, _POST_HOSTS),
     }
 
 
@@ -674,7 +671,7 @@ def _store_urls(value: Any) -> list[str]:
     """Keeps App Store and Google Play pages from Meta's store URLs for the app."""
     if not isinstance(value, dict):
         return []
-    urls = (_https_url(item, _STORE_HOSTS) for item in value.values())
+    urls = (store_page(item) for item in value.values())
     return list(dict.fromkeys(url for url in urls if url))[:4]
 
 
@@ -756,21 +753,7 @@ def _picture_url(value: Any) -> Any:
 
 def media_url(value: Any) -> str | None:
     """Keeps only HTTPS addresses on Meta's own hosts; anything else is dropped."""
-    return _https_url(value, _MEDIA_HOSTS)
-
-
-def _https_url(value: Any, hosts: tuple[str, ...]) -> str | None:
-    """Keeps an HTTPS address without credentials on one of the hosts or their subdomains."""
-    if not isinstance(value, str) or len(value) > _MAX_URL_LENGTH:
-        return None
-    try:
-        parts = urlsplit(value)
-    except ValueError:
-        return None
-    host = (parts.hostname or "").lower()
-    on_host = any(host == item or host.endswith(f".{item}") for item in hosts)
-    has_userinfo = parts.username is not None or parts.password is not None
-    return value if parts.scheme == "https" and on_host and not has_userinfo else None
+    return https_url(value, _MEDIA_HOSTS)
 
 
 def _dimension(value: Any) -> int | None:

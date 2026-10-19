@@ -1,6 +1,21 @@
 // apps/web/src/integrations/meta_ads/lib/ad-set-edits.ts
 
+import type { EditedValue } from "@/components/tool-ui/edited-values"
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import {
+  adScheduleProblem,
+  DELIVERY_KINDS,
+  deliveryText,
+  formatAdSchedule,
+  formatAttribution,
+  formatFrequencyCap,
+  frequencyCapProblem,
+  fromText,
+  parseAdSchedule,
+  parseAttribution,
+  parseFrequencyCap,
+  type DeliveryKind,
+} from "@/integrations/meta_ads/lib/ad-set-delivery"
 import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
 import {
   bidAmountTitle,
@@ -10,7 +25,13 @@ import {
 } from "@/integrations/meta_ads/lib/create-ad-set"
 import { AMOUNT_FORMAT } from "@/integrations/meta_ads/lib/create-campaign"
 import { formatDay } from "@/integrations/meta_ads/lib/create-summary"
-import { formatPercentageChange } from "@/lib/format"
+import {
+  CONVERSION_EVENT_LABELS,
+  GOALS,
+  STORE_LABELS,
+  type Goal,
+} from "@/integrations/meta_ads/lib/goals"
+import { formatPercentageChange, titleCaseToken } from "@/lib/format"
 import { isDateString, isNonEmptyString, isOneOf, isRecord, isStringArray } from "@/lib/guards"
 
 export type SettingKey =
@@ -26,8 +47,33 @@ export type SettingKey =
   | "max_lifetime_spend"
   | "eu_payer"
   | "eu_beneficiary"
+  | "goal"
+  | "pixel"
+  | "conversion_event"
+  | "custom_conversion_id"
+  | "page"
+  | "app"
+  | "app_store"
+  | "attribution"
+  | "frequency_cap"
+  | "ad_schedule"
 
-type SettingKind = "text" | "date" | "end" | "bid" | "money" | "limit" | "ratio"
+type SettingKind =
+  | "text"
+  | "date"
+  | "end"
+  | "bid"
+  | "money"
+  | "limit"
+  | "ratio"
+  | "goal"
+  | "asset"
+  | "event"
+  | "custom"
+  | "store"
+  | "attribution"
+  | "frequency"
+  | "schedule"
 
 // In the order the card and the tool list them; titles and units match the create cards.
 const SETTINGS: readonly { key: SettingKey; title: string; kind: SettingKind; unit?: string }[] = [
@@ -43,7 +89,26 @@ const SETTINGS: readonly { key: SettingKey; title: string; kind: SettingKind; un
   { key: "max_lifetime_spend", title: "Lifetime Spend at Most", kind: "limit", unit: "in total" },
   { key: "eu_payer", title: "Who Pays for the Ads", kind: "text" },
   { key: "eu_beneficiary", title: "Who the Ads Benefit", kind: "text" },
+  { key: "goal", title: "Goal", kind: "goal" },
+  { key: "pixel", title: "Pixel", kind: "asset" },
+  { key: "conversion_event", title: "What Counts as a Result", kind: "event" },
+  { key: "custom_conversion_id", title: "What Counts as a Result", kind: "custom" },
+  { key: "page", title: "Facebook Page", kind: "asset" },
+  { key: "app", title: "App", kind: "asset" },
+  { key: "app_store", title: "App Store", kind: "store" },
+  { key: "attribution", title: "Attribution Setting", kind: "attribution" },
+  { key: "frequency_cap", title: "Frequency Cap", kind: "frequency" },
+  { key: "ad_schedule", title: "Ad Scheduling", kind: "schedule" },
 ]
+// The reference ID each asset setting carries, and the entity kind the card picks it from.
+export const ASSET_SETTINGS: Partial<Record<SettingKey, { idField: string; entityKind: string }>> =
+  {
+    pixel: { idField: "pixel_id", entityKind: "meta_ads_pixel" },
+    page: { idField: "page_id", entityKind: "meta_ads_page" },
+    app: { idField: "application_id", entityKind: "meta_ads_application" },
+  }
+// Settings the card lays out across both columns.
+export const WIDE_KINDS: ReadonlySet<SettingKind> = new Set(["attribution", "schedule"])
 const SETTING_KEYS: ReadonlySet<SettingKey> = new Set(SETTINGS.map((setting) => setting.key))
 const KINDS = new Map(SETTINGS.map((setting) => [setting.key, setting]))
 
@@ -57,10 +122,17 @@ type AdSetCheck = {
   // Effects that can cost results for a while.
   warnings: string[]
   notes: string[]
+  // Names of the Pages, pixels, apps, and custom conversions, by ID.
+  labels: Record<string, string>
+  // Custom conversions the card can offer in place of a standard event.
+  conversions: { id: string; name: string }[]
   unavailable: boolean
 }
 
+/** One setting's new value, as text the server's checks compare with. */
 export type SettingEdit = { key: SettingKey; value: string }
+/** One setting's new value as the card edits it: text, a reference, or a structured value. */
+export type SettingChange = { key: SettingKey; value: EditedValue }
 
 export type AdSetEdit = {
   id: string
@@ -117,9 +189,10 @@ function parseEdit(value: unknown, checks: Record<string, unknown>): AdSetEdit |
   const reference = value["ad_set"]
   const id = reference["adset_id"]
   if (!isNonEmptyString(id)) return null
-  const settings = SETTINGS.flatMap(({ key }) =>
-    typeof value[key] === "string" ? [{ key, value: value[key] }] : []
-  )
+  const settings = SETTINGS.flatMap(({ key }) => {
+    const text = settingText(key, value[key])
+    return text === null ? [] : [{ key, value: text }]
+  })
   return {
     id,
     accountId: typeof reference["account_id"] === "string" ? reference["account_id"] : "",
@@ -131,6 +204,35 @@ function parseEdit(value: unknown, checks: Record<string, unknown>): AdSetEdit |
   }
 }
 
+/** A proposed value as text; references by their ID and structured values in one form. */
+function settingText(key: SettingKey, value: unknown): string | null {
+  const kind = settingKind(key)
+  const asset = ASSET_SETTINGS[key]
+  if (asset !== undefined) {
+    const id = isRecord(value) ? value[asset.idField] : null
+    return isNonEmptyString(id) ? id : null
+  }
+  if (value === "remove" && (kind === "frequency" || kind === "schedule")) return value
+  if (isDeliveryKind(kind))
+    // A malformed value stays as given, so the card can flag it.
+    return value === undefined || value === null
+      ? null
+      : (deliveryText(kind, value) ?? JSON.stringify(value))
+  return typeof value === "string" ? value : null
+}
+
+/** The name the card shows for a Page, pixel, app, or custom conversion ID. */
+function settingLabel(edit: AdSetEdit, key: SettingKey, id: string): string {
+  const reference = edit.raw[key]
+  if (
+    isRecord(reference) &&
+    isNonEmptyString(reference["label"]) &&
+    settingText(key, reference) === id
+  )
+    return reference["label"]
+  return edit.check?.labels[id] ?? id
+}
+
 function parseCheck(value: unknown): AdSetCheck | null {
   if (!isRecord(value)) return null
   return {
@@ -140,8 +242,17 @@ function parseCheck(value: unknown): AdSetCheck | null {
     problems: isStringArray(value["problems"]) ? value["problems"] : [],
     warnings: isStringArray(value["warnings"]) ? value["warnings"] : [],
     notes: isStringArray(value["notes"]) ? value["notes"] : [],
+    labels: labelValues(value["labels"]),
+    conversions: resultLabelList(value["conversions"]),
     unavailable: value["unavailable"] === true,
   }
+}
+
+function labelValues(value: unknown): Record<string, string> {
+  if (!isRecord(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  )
 }
 
 function settingValues(value: unknown): Partial<Record<SettingKey, string | null>> {
@@ -149,8 +260,14 @@ function settingValues(value: unknown): Partial<Record<SettingKey, string | null
   const values: Partial<Record<SettingKey, string | null>> = {}
   for (const [key, item] of Object.entries(value))
     if (isOneOf(SETTING_KEYS, key) && (item === null || typeof item === "string"))
-      values[key] = item
+      values[key] = item === null ? null : serverText(key, item)
   return values
+}
+
+/** Puts a structured value the server wrote into the card's form, so the two compare. */
+function serverText(key: SettingKey, value: string): string {
+  const kind = settingKind(key)
+  return isDeliveryKind(kind) ? (deliveryText(kind, fromText(value)) ?? value) : value
 }
 
 /** The value as the tool compares it: removing a limit or end date means not set. */
@@ -191,15 +308,31 @@ export function adSetNotes(edit: AdSetEdit): string[] {
   return check.notes
 }
 
+const EMPTY: Partial<Record<SettingKind, string>> = {
+  end: "No end date",
+  limit: "No limit",
+  attribution: "Meta's default",
+  frequency: "No cap",
+  schedule: "All day, every day",
+}
+
 export function formatSettingValue(
   key: SettingKey,
   value: string | null,
-  currency: string | null
+  currency: string | null,
+  labels: Record<string, string> = {}
 ): string {
   const kind = settingKind(key)
-  if (value === null || value === "remove" || value === "none")
-    return kind === "end" ? "No end date" : kind === "limit" ? "No limit" : "Not set"
+  if (value === null || value === "remove" || value === "none") return EMPTY[kind] ?? "Not set"
   const unit = settingUnit(key)
+  // A goal outside the card's list shows as Meta's own name, such as Thruplay.
+  if (kind === "goal")
+    return value in GOALS ? GOALS[value as Goal].label : titleCaseToken(value.toLowerCase(), value)
+  if (kind === "event") return CONVERSION_EVENT_LABELS[value] ?? value
+  if (kind === "store") return STORE_LABELS[value] ?? value
+  if (kind === "asset") return labels[value] ?? value
+  if (kind === "custom") return `Custom Conversion: ${labels[value] ?? value}`
+  if (isDeliveryKind(kind)) return formatDelivery(kind, value)
   if (kind === "date" || kind === "end") return formatDay(value)
   if (kind === "money") return budgetMoney(value, currency)
   if (kind === "limit") return `${budgetMoney(value, currency)} ${unit ?? ""}`.trim()
@@ -208,13 +341,42 @@ export function formatSettingValue(
   return value
 }
 
+function isDeliveryKind(kind: SettingKind): kind is DeliveryKind {
+  return DELIVERY_KINDS.has(kind)
+}
+
+function formatDelivery(kind: DeliveryKind, text: string): string {
+  const value = fromText(text)
+  if (kind === "attribution") {
+    const attribution = parseAttribution(value)
+    return attribution ? formatAttribution(attribution) : "Not set"
+  }
+  if (kind === "frequency") {
+    const cap = parseFrequencyCap(value)
+    return cap ? formatFrequencyCap(cap) : "Not set"
+  }
+  const schedule = parseAdSchedule(value)
+  return schedule ? formatAdSchedule(schedule) : "Not set"
+}
+
+/** Names for every Page, pixel, app, and custom conversion this ad set's card shows. */
+export function adSetLabels(edit: AdSetEdit): Record<string, string> {
+  const labels = { ...edit.check?.labels }
+  for (const conversion of edit.check?.conversions ?? []) labels[conversion.id] = conversion.name
+  for (const setting of edit.settings)
+    if (ASSET_SETTINGS[setting.key] !== undefined)
+      labels[setting.value] = settingLabel(edit, setting.key, setting.value)
+  return labels
+}
+
 /** The new values on one line, for the ad set's closed row. */
 export function adSetSummary(edit: AdSetEdit, strategy: string | null): string {
   const currency = edit.check?.currency ?? null
+  const labels = adSetLabels(edit)
   return edit.settings
     .map(
       (setting) =>
-        `${settingTitle(setting.key, strategy)}: ${formatSettingValue(setting.key, setting.value, currency)}`
+        `${settingTitle(setting.key, strategy)}: ${formatSettingValue(setting.key, setting.value, currency, labels)}`
     )
     .join(" · ")
 }
@@ -237,6 +399,9 @@ export function settingProblem(setting: SettingEdit): string | null {
   if (kind === "date" || (kind === "end" && value !== "none"))
     return isDateString(value) ? null : "Choose a date."
   if (kind === "ratio" && !isRoas(value)) return ROAS_FORMAT
+  if (kind === "custom" && !/^[0-9]+$/.test(value)) return "Enter the custom conversion's ID."
+  if (kind === "frequency" && value !== "remove") return frequencyCapProblem(fromText(value))
+  if (kind === "schedule" && value !== "remove") return adScheduleProblem(fromText(value))
   return null
 }
 
@@ -264,16 +429,32 @@ export function adSetEditRows(proposed: AdSetEditArgs, current: AdSetEditArgs): 
 export function editAdSets(
   rows: readonly AdSetEditRow[],
   id: string,
-  change: { included: boolean } | SettingEdit
+  change: { included: boolean } | SettingChange
 ): Record<string, unknown>[] {
   return rows.flatMap((row) => {
     const same = row.edit.id === id
     const included = same && "included" in change ? change.included : row.included
     if (!included) return []
-    return [
-      same && "key" in change ? { ...row.edit.raw, [change.key]: change.value } : row.edit.raw,
-    ]
+    if (!same || !("key" in change)) return [row.edit.raw]
+    // One "What Counts as a Result" choice: an event or a custom conversion, never both.
+    const other = RESULT_PAIR[change.key]
+    const kept = Object.entries(row.edit.raw).filter(([key]) => key !== other)
+    return [{ ...Object.fromEntries(kept), [change.key]: change.value }]
   })
+}
+
+const RESULT_PAIR: Partial<Record<SettingKey, SettingKey>> = {
+  conversion_event: "custom_conversion_id",
+  custom_conversion_id: "conversion_event",
+}
+
+/** The value now for a setting; for what counts as a result, whichever of the two is set. */
+export function currentSetting(edit: AdSetEdit, key: SettingKey): SettingEdit {
+  const before = edit.check?.before ?? {}
+  const other = RESULT_PAIR[key]
+  if (other !== undefined && !before[key] && before[other])
+    return { key: other, value: before[other] }
+  return { key, value: before[key] ?? "" }
 }
 
 export function adSetEditDetails(args: AdSetEditArgs | null): FanOutDetail[] {
@@ -302,6 +483,7 @@ type AdSetEditOutcome = {
   id: string
   name: string
   changes: SettingResult[]
+  labels: Record<string, string>
   outcome: EditOutcomeToken
   errorCode: string | null
   message: string | null
@@ -350,8 +532,23 @@ function parseOutcome(value: unknown): AdSetEditOutcome | null {
     id: value["adset_id"],
     name: isNonEmptyString(value["name"]) ? value["name"] : value["adset_id"],
     changes,
+    labels: resultLabels(value["labels"]),
     outcome: value["outcome"],
     errorCode: text("error_code"),
     message: text("message"),
   }
+}
+
+function resultLabels(value: unknown): Record<string, string> {
+  return Object.fromEntries(resultLabelList(value).map((item) => [item.id, item.name]))
+}
+
+/** IDs with names, as the server lists them. */
+function resultLabelList(value: unknown): { id: string; name: string }[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) =>
+    isRecord(item) && isNonEmptyString(item["id"]) && typeof item["name"] === "string"
+      ? [{ id: item["id"], name: item["name"] }]
+      : []
+  )
 }

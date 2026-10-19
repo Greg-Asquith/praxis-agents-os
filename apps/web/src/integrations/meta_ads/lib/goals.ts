@@ -99,6 +99,15 @@ export const ASSET_LABELS: Record<GoalAsset, string> = {
   app: "App",
 }
 
+export const STORE_LABELS: Record<string, string> = {
+  google_play: "Google Play",
+  app_store: "App Store",
+}
+export const STORE_OPTIONS = Object.entries(STORE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+
 export const CONVERSION_EVENT_LABELS: Record<string, string> = {
   PURCHASE: "Purchase",
   LEAD: "Lead",

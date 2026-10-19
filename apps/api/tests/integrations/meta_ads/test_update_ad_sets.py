@@ -25,6 +25,7 @@ from integrations.meta_ads.tools import update_ad_sets as tool_module
 from integrations.meta_ads.tools.schemas.ad_set_edits import (
     MetaAdsAdSetEdit,
     MetaAdsUpdateAdSetsOutput,
+    MetaAdsUpdateAdSetsRequest,
 )
 from integrations.meta_ads.tools.schemas.objects import MetaAdsObject
 from services.integrations.context.domain import ResolvedActiveContext
@@ -36,8 +37,28 @@ END = TODAY + timedelta(days=40)
 LATER = TODAY + timedelta(days=60)
 
 
+# Settings Meta takes as JSON and returns as objects.
+_JSON_FIELDS = frozenset(
+    {
+        "bid_constraints",
+        "promoted_object",
+        "attribution_spec",
+        "frequency_control_specs",
+        "pacing_type",
+        "adset_schedule",
+    }
+)
+
+
 class EditGraph(FakeGraph):
-    """Applies every posted ad set setting, the way Meta stores it."""
+    """Applies every posted ad set setting, the way Meta stores it, and lists one pixel."""
+
+    def handle(self, request):
+        edge = request.url.path.split("/")[-1]
+        if request.method == "GET" and edge in ("adspixels", "customconversions"):
+            rows = [{"id": "77", "name": "Shop pixel"}] if edge == "adspixels" else []
+            return httpx2.Response(200, json={"data": rows}, request=request)
+        return super().handle(request)
 
     def handle_post(self, request, object_id):
         response = super().handle_post(request, object_id)
@@ -45,7 +66,7 @@ class EditGraph(FakeGraph):
         if "execution_options" not in form and self.post.get(object_id, "apply") == "apply":
             item = self.objects[object_id]
             for key, value in form.items():
-                item[key] = json.loads(value) if key == "bid_constraints" else value
+                item[key] = json.loads(value) if key in _JSON_FIELDS else value
             if form.get("end_time") == "0":
                 del item["end_time"]
         return response
@@ -178,6 +199,81 @@ async def test_one_approval_extends_dates_lowers_a_cost_goal_and_caps_daily_spen
     assert pending.fields["requested"] == {"end_date": LATER.isoformat(), "bid_amount": "1200"}
 
 
+async def test_one_approval_changes_a_conversion_event_a_frequency_cap_and_ad_scheduling(
+    monkeypatch,
+):
+    graph = EditGraph(
+        [
+            obj("9", "campaign", status="ACTIVE", objective="OUTCOME_SALES"),
+            obj("6", "campaign", status="ACTIVE", objective="OUTCOME_AWARENESS"),
+            _ad_set(
+                "8",
+                bid_strategy="LOWEST_COST_WITHOUT_CAP",
+                bid_amount=None,
+                optimization_goal="OFFSITE_CONVERSIONS",
+                destination_type="WEBSITE",
+                promoted_object={"pixel_id": "77", "custom_event_type": "PURCHASE"},
+                campaign={"objective": "OUTCOME_SALES"},
+            ),
+            _ad_set(
+                "7",
+                campaign_id="6",
+                bid_strategy="LOWEST_COST_WITHOUT_CAP",
+                bid_amount=None,
+                optimization_goal="REACH",
+                promoted_object={"page_id": "55"},
+                campaign={"objective": "OUTCOME_AWARENESS"},
+            ),
+            _ad_set(
+                "4",
+                campaign_id="6",
+                daily_budget=None,
+                lifetime_budget="200000",
+                bid_strategy="LOWEST_COST_WITHOUT_CAP",
+                bid_amount=None,
+                optimization_goal="REACH",
+                campaign={"objective": "OUTCOME_AWARENESS"},
+            ),
+        ]
+    )
+    weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+    edits = [
+        _edit("8", conversion_event="ADD_TO_CART"),
+        _edit("7", frequency_cap={"max_impressions": 2, "every_days": 7}),
+        _edit("4", ad_schedule={"windows": [{"days": weekdays, "start_hour": 18, "end_hour": 22}]}),
+    ]
+    checks = {
+        "8": {"before": {"conversion_event": "PURCHASE"}},
+        "7": {"before": {"frequency_cap": None}},
+        "4": {"before": {"ad_schedule": None}},
+    }
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
+    ctx, _audit, _checkpoint = _tool_context(
+        monkeypatch, http, proposed=_proposed(*edits), checks=checks
+    )
+
+    async with http:
+        result = await tool_module.meta_ads_update_ad_sets(ctx, changes=edits)
+
+    MetaAdsUpdateAdSetsOutput.model_validate(result)
+    event, cap, schedule = graph.sent
+    assert json.loads(event["promoted_object"]) == {
+        "pixel_id": "77",
+        "custom_event_type": "ADD_TO_CART",
+    }
+    assert json.loads(cap["frequency_control_specs"]) == [
+        {"event": "IMPRESSIONS", "interval_days": 7, "max_frequency": 2}
+    ]
+    assert json.loads(schedule["pacing_type"]) == ["day_parting"]
+    assert json.loads(schedule["adset_schedule"]) == [
+        {"start_minute": 1080, "end_minute": 1320, "days": [1, 2, 3, 4, 5], "timezone_type": "USER"}
+    ]
+    # Each setting reads back as Meta stores it and matches what was asked for.
+    rows = result["results"][0]["data"]["ad_sets"]
+    assert [row["outcome"] for row in rows] == ["updated", "updated", "updated"]
+    assert rows[0]["changes"][0]["after"] == "ADD_TO_CART"
+
+
 async def test_a_dry_run_rejection_sends_nothing_and_keeps_metas_reason(monkeypatch):
     graph = EditGraph(
         [obj("9", "campaign", status="ACTIVE"), _ad_set("8")], post={"8": "reject_dry_run"}
@@ -275,6 +371,21 @@ async def test_an_ambiguous_send_is_not_retried_and_a_disagreeing_read_back_fail
     assert dict(unchanged.effects[0].fields)["after.bid_amount"] == "15"
 
 
+def test_the_card_can_swap_the_event_for_a_custom_conversion_but_not_add_a_setting():
+    proposed = _proposed(_edit("8", conversion_event="PURCHASE"))
+
+    tool_module._require_proposed(
+        proposed, MetaAdsUpdateAdSetsRequest(changes=[_edit("8", custom_conversion_id="44")])
+    )
+    with pytest.raises(ModelRetry, match="added after approval"):
+        tool_module._require_proposed(
+            proposed,
+            MetaAdsUpdateAdSetsRequest(
+                changes=[_edit("8", conversion_event="LEAD", name="Renamed")]
+            ),
+        )
+
+
 def _object(**fields) -> MetaAdsObject:
     defaults = {
         "id": "8",
@@ -333,6 +444,28 @@ def test_an_ad_set_in_a_legacy_advantage_shopping_campaign_is_refused():
     problems = _problems(_edit(name="Renamed"), _object(), campaign)
 
     assert problems and "copy it in Ads Manager" in problems[0]
+
+
+def test_a_frequency_cap_on_a_goal_other_than_reach_is_refused():
+    problems = _problems(
+        _edit(frequency_cap={"max_impressions": 2, "every_days": 7}), _object(), _object(id="9")
+    )
+
+    assert problems == ["Only reach and ThruPlay goals take a frequency cap."]
+
+
+def test_ad_scheduling_on_a_daily_budget_is_refused():
+    schedule = {"windows": [{"days": ["monday"], "start_hour": 9, "end_hour": 17}]}
+
+    problems = _problems(_edit(ad_schedule=schedule), _object(), _object(id="9"))
+
+    assert problems == ["Ad scheduling needs a lifetime budget."]
+
+
+def test_a_goal_outside_the_campaign_objective_is_refused():
+    problems = _problems(_edit(goal="reach"), _object(), _object(id="9"))
+
+    assert problems == ["The goal reach doesn't suit this ad set's campaign objective."]
 
 
 async def test_the_card_notes_learning_and_the_ad_bids_a_new_bid_replaces():
