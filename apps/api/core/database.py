@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import event, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -197,6 +198,47 @@ async def inherit_session_tenant_context(
         workspace_id=source.info.get(SESSION_WORKSPACE_ID_KEY),
         user_id=source.info.get(SESSION_USER_ID_KEY),
     )
+
+
+@asynccontextmanager
+async def tenant_context(
+    session: AsyncSession,
+    *,
+    workspace_id: UUID | None = None,
+    user_id: UUID | None = None,
+) -> AsyncGenerator[None]:
+    """Preserves tenant context, optionally switching workspace or user IDs.
+
+    Missing prior IDs restore to the nil UUID so RLS continues to deny access.
+    The caller retains ownership of the transaction and any rollback.
+    """
+    previous_workspace_id = session.info.get(SESSION_WORKSPACE_ID_KEY) or UUID(int=0)
+    previous_user_id = session.info.get(SESSION_USER_ID_KEY) or UUID(int=0)
+    session.info[SESSION_WORKSPACE_ID_KEY] = previous_workspace_id
+    session.info[SESSION_USER_ID_KEY] = previous_user_id
+    transaction_failed = False
+    try:
+        # Lazy savepoints must start under the caller's context before switching.
+        await session.connection()
+        await set_session_tenant_context(
+            session,
+            workspace_id=workspace_id or previous_workspace_id,
+            user_id=user_id or previous_user_id,
+        )
+        yield
+    except DBAPIError:
+        transaction_failed = True
+        raise
+    finally:
+        session.info[SESSION_WORKSPACE_ID_KEY] = previous_workspace_id
+        session.info[SESSION_USER_ID_KEY] = previous_user_id
+        # A database failure needs rollback before the connection can execute SQL.
+        if session.is_active and not transaction_failed:
+            await set_session_tenant_context(
+                session,
+                workspace_id=previous_workspace_id,
+                user_id=previous_user_id,
+            )
 
 
 async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]:

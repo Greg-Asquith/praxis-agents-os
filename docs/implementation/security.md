@@ -37,6 +37,10 @@ The following contracts apply in this area:
   OAuth matches a provider-verified email (Google, GitHub's verified-email
   result, or Microsoft UPN), while password registration requires the raw
   invitation token. Full OAuth sign-in auto-accepts matching invitations.
+- Invitation acceptance writes its workspace audit event under the invited
+  workspace's tenant context, then restores the caller's context. Membership
+  and audit commit together. An audit failure rolls back acceptance; automatic
+  sign-in acceptance skips that invitation and continues with the others.
 - Creating an invitation for the same workspace and email revokes an expired,
   unaccepted invitation before issuing a fresh link. Both operations share a
   transaction and retain their audit records. The old link stays invalid.

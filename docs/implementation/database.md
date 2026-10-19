@@ -25,6 +25,11 @@ The following contracts apply in this area:
   tenant job handlers must establish it before reading protected rows. New
   background entrypoints must either set this context or deliberately use a
   maintenance session.
+- Cross-workspace operations use `core.database.tenant_context` for temporary
+  workspace and user context. It restores the caller's IDs on success or
+  failure. Missing prior IDs restore to the nil UUID, preserving fail-closed
+  reads in the current and subsequent transactions. Callers own transaction
+  commit and rollback.
 - New workspace-confidential tables must enable and force RLS in the same
   migration that creates them, retain explicit application-layer tenant
   predicates, and be added to `tests/security/test_workspace_rls.py`.
