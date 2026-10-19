@@ -128,7 +128,7 @@ The core platform is wired end to end (API, worker, and UI):
   ads into other ad sets, turn objects on or off, change budgets, schedule
   budget increases for busy periods, and change ad set names, schedules,
   bids, spend limits, EU names, goals, conversion events, attribution,
-  frequency caps, and ad scheduling. They
+  frequency caps, ad scheduling, and who the ad sets reach. They
   can also build a new campaign with up to 10 ad sets and 50 ads in one
   approval, and turn it on once everything is built and confirmed.
   Search Console connections discover verified properties for active context;

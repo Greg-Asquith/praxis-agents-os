@@ -17,6 +17,17 @@ from .list_activities import list_activities
 from .list_objects import list_objects
 
 LEARNING_NOTE = "This restarts learning. Results may swing for a few days."
+TARGETING_REVIEW_NOTE = "Meta may review this ad set's ads again before they reach new people."
+EU_DEFAULTS_NOTE = (
+    "This ad set now reaches the EU, so Meta shows the ad account's default payer and "
+    "beneficiary with its ads."
+)
+STATED_ADVANTAGE_NOTE = (
+    "Advantage+ audience is sent as {state}, because Meta needs it stated for housing, "
+    "employment, and financial ads."
+)
+# Below this many people, Meta's estimate is narrow enough to limit delivery.
+NARROW_AUDIENCE = 100_000
 # Meta's guidance is to change bids and budgets no more than 2 to 3 times a day.
 DAILY_CHANGE_LIMIT = 3
 
@@ -192,3 +203,9 @@ def minimum_spend_note(
         f"The minimum is more than this ad set's even share of the campaign budget, about "
         f"{share} {currency}, so other ad sets may get less."
     )
+
+
+def narrow_audience_note(lower: int | None, upper: int | None) -> str | None:
+    if lower is None or upper is None or upper >= NARROW_AUDIENCE:
+        return None
+    return f"Meta estimates {lower:,} to {upper:,} people, which may limit delivery."

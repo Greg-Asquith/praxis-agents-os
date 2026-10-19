@@ -19,6 +19,7 @@ from .search_targeting import DEFINITION as SEARCH_TARGETING
 from .update_ad_sets import DEFINITION as UPDATE_AD_SETS
 from .update_budgets import DEFINITION as UPDATE_BUDGETS
 from .update_status import DEFINITION as UPDATE_STATUS
+from .update_targeting import DEFINITION as UPDATE_TARGETING
 from .upload_media import DEFINITION as UPLOAD_MEDIA
 
 TOOL_DEFINITIONS = (
@@ -34,6 +35,7 @@ TOOL_DEFINITIONS = (
     UPDATE_BUDGETS,
     SCHEDULE_BUDGET_INCREASES,
     UPDATE_AD_SETS,
+    UPDATE_TARGETING,
     UPLOAD_MEDIA,
     CREATE_CAMPAIGN,
     CREATE_AD_SET,

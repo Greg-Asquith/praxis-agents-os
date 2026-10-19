@@ -777,8 +777,9 @@ checked against a live account; see
 `meta_ads_update_ad_sets` changes the settings of up to 50 existing ad sets in
 one approval. Each entry names one ad set and only the settings that change;
 an omitted setting stays as it is. Status stays with `meta_ads_update_status`,
-budget amounts with `meta_ads_update_budgets`. Targeting and placement edits
-are pending.
+budget amounts with `meta_ads_update_budgets`, and targeting with
+`meta_ads_update_targeting` (see [Editing targeting](#editing-targeting)).
+Placement edits are pending.
 
 | Setting | Meta field |
 | --- | --- |
@@ -925,6 +926,118 @@ against a live account. Meta's dry run is the backstop until then.
 Incremental attribution (`is_incremental_attribution_enabled`) is pending:
 reading an unconfirmed field would fail every ad set read. See
 [Live qualification record](#live-qualification-record).
+
+### Editing targeting
+
+`meta_ads_update_targeting` changes who up to 20 existing ad sets reach, in
+one approval. The agent describes each change as additions and removals,
+never as a whole targeting spec:
+
+| Argument | What it changes |
+| --- | --- |
+| `add_locations`, `remove_locations`, `add_excluded_locations`, `remove_excluded_locations` | Places in `geo_locations` or `excluded_geo_locations`; additions take places from `meta_ads_search_targeting`, removals take `{kind, key}` |
+| `location_types` (`home_or_recent` or `home`) | `geo_locations.location_types` |
+| `age_min`, `age_max` (13 to 65; `age_max: "none"` for 65+) | `age_min`, `age_max` |
+| `genders` (`all`, `men`, or `women`) | `genders` |
+| `languages` (locale keys, or `all`) | `locales`, replaced whole |
+| `detailed` (groups, or `none`), or `add_detailed_items` (`group` 1 to 5, one past the last starts a group) and `remove_detailed_items` (keys) | `flexible_spec` |
+| `add_audiences`, `remove_audiences`, `add_excluded_audiences`, `remove_excluded_audiences` | `custom_audiences`, `excluded_custom_audiences` |
+| `advantage_audience` | `targeting_automation.advantage_audience` |
+| `eu_payer`, `eu_beneficiary` | `dsa_payor`, `dsa_beneficiary` |
+
+Adding something already there, or removing something that isn't, is an
+error, which checks the agent's picture of the ad set. Audiences must come
+from the ad set's ad account and be listed by its `customaudiences` edge.
+
+`POST /{adset_id}` with `targeting` replaces the whole spec, so the tool
+reads it and writes it back whole. `operations/targeting_reader.py` maps
+the spec into the typed draft from [The targeting draft](#the-targeting-draft),
+section by section. Each section owns some spec keys: locations
+(`geo_locations`), excluded locations, ages, genders, languages, detailed
+targeting, audiences, excluded audiences, and Advantage+ audience. A
+section holding a shape the draft can't express, such as a pin
+(`custom_locations`), a market, an excluded `location_types`, a city radius
+outside the draft's bounds, or a `flexible_spec` group with job titles, is
+unmodelled. `write_targeting` writes only the changed sections from the
+draft. Every other key, including placements and keys Praxis doesn't model
+at all, goes back exactly as Meta returned it. A change to an unmodelled
+section is refused before approval, naming what it holds; changes to other
+sections of the same ad set go ahead.
+
+`operations/edit_targeting.py` applies the operations and checks:
+
+- Archived and deleted ad sets, and ad sets in legacy Advantage+ shopping or
+  app campaigns, are refused.
+- `targeting_problems` runs on the draft after the change against the
+  campaign's special ad categories. Only problems the change introduces
+  block it. Turning Advantage+ audience off on a special-category ad set
+  is refused, and when such an ad set's spec doesn't state the flag, the
+  change states it, with a note.
+- An ad set that newly reaches the EU needs `eu_payer` and
+  `eu_beneficiary` in the same entry, unless it already has both or the
+  account has defaults (`default_dsa_payor` and `default_dsa_beneficiary`).
+  Names for an ad set that doesn't reach the EU are refused.
+- Instagram `explore` and Messenger `story`, which v26 rejects or drops on
+  update, are removed from the spec before any write, with a note. An ad
+  set left with no positions on a platform it uses is refused.
+
+The tool works like [Editing ad sets](#editing-ad-sets), through
+`update_fields`:
+
+1. Approval display re-reads each ad set, its campaign, its full spec
+   (`act_{id}/adsets?fields=id,targeting`), and the audiences it uses or
+   adds, applies the change, and dry-runs the whole spec with
+   `execution_options=["validate_only"]`. Under `_checks` by ad set ID it
+   adds the draft before and after, each section's fingerprint, the
+   unmodelled sections, the problems, and notes: "This restarts learning"
+   when the ad set has `learning_status`, a possible ad review, EU defaults
+   in use, and Meta's estimate before and after from `reachestimate` with
+   the whole spec. Estimates share a 20-second budget; past it, the card
+   says so. An estimate under 100,000 people adds a note that it may limit
+   delivery. `requested` is the entry as proposed.
+2. The card shows one row per ad set, one open at a time. An open row
+   shows Meta's estimated audience with the change, its percentage move,
+   and the estimate now, then the targeting in rows laid out like the
+   Create Ad Set card: **Locations**, **Age and Gender**, **Interests**,
+   **Audiences**, **Widen Audience**, and **EU Transparency**, each with a
+   "Current Setting" line. Places and audiences are fully editable: the
+   operator removes any place or audience with its chip, undoes a removal
+   with **Keep**, restores a dropped proposal with **Restore**, and adds or
+   excludes more through the same location and audience searches as Create
+   Ad Set. A list Praxis can't model, such as one with pins, shows a note
+   instead. Proposed interest and language changes can be dropped and
+   restored; proposed ages, genders, location types, Advantage+ audience,
+   and EU names are editable with the Create Ad Set controls
+   (`lib/targeting-edit.ts` shares their options). A problem blocks
+   approval only while the entry matches `requested`.
+3. After approval, the tool refuses any ad set, interest change, or setting
+   the agent didn't propose; places and audiences may differ, because the
+   card edits them and the checks that follow cover them. It refuses the run while the account has used 75% or
+   more of Meta's hourly request allowance, then reads, checks, and
+   dry-runs again. Any problem stops the account before anything is sent.
+4. An ad set whose changed sections now differ from the fingerprints on the
+   approved card fails with `CHANGED_SINCE_APPROVAL` and isn't sent.
+5. Pending evidence records each ad set's ID, name, changed sections,
+   operation counts, how EU names were given, and each section before and
+   requested as keys, never audience or interest names.
+6. A checkpoint precedes each `POST /{adset_id}`, sent once, in order,
+   without retry.
+7. The tool reads each spec back and compares the changed sections by keys
+   (`section_values`). A disagreeing section fails the ad set with
+   `SETTING_NOT_CONFIRMED`; a lost reply or failed read is `unverified`.
+
+Each result row has the draft before and as requested, each changed
+section's keys before, requested, and read back, and the outcome. The tool
+has a 300-second timeout, supports Code Mode, and is listed in the spend
+policy test. Placement and inventory filter edits are pending.
+
+Whether `targeting` on update replaces the whole spec, the read shapes of
+`zips`, `regions`, and `flexible_spec`, whether Meta echoes
+`location_types` in `excluded_geo_locations`, whether a targeting change
+sends ads back to review, `reachestimate` latency with a whole spec, the
+explicit Advantage+ audience rule on updates, and an update to an ad set
+that still reads back with `explore` haven't been checked against a live
+account. Meta's dry run is the backstop until then.
 
 ### Uploading media
 
@@ -1817,6 +1930,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Budget increases | `capabilities` containing `CAN_USE_BUDGET_SCHEDULING_API`; `GET /{id}/budget_schedules` field shapes (`time_start` format, `budget_value` units); `POST` reply with `id`; whether the edge accepts `validate_only`; what Meta stores for `MULTIPLIER`; whether Meta rejects overlapping periods; whether a high-demand period can be deleted |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
 | Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; a goal and a promoted object change on a delivered ad set; attribution windows per goal, the engaged-view write value, and a change after delivery; `frequency_control_specs=[]` removing a cap; `adset_schedule` read-back; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
+| Targeting edits | That `targeting` on `POST /{adset_id}` replaces the whole spec; `zips`, `regions`, `cities`, and `flexible_spec` read shapes against the write shapes; `location_types` in `excluded_geo_locations`; whether a targeting change sends ads to review; `reachestimate` latency with a whole spec; `ADS_TARGETING__REQUIRE_EXPLICIT_ADVANTAGE_AUDIENCE_FLAG` on updates; an update to an ad set that reads back with Instagram `explore` |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |

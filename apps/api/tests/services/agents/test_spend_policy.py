@@ -36,6 +36,9 @@ from integrations.meta_ads.tools.update_ad_sets import (
 )
 from integrations.meta_ads.tools.update_budgets import DEFINITION as META_ADS_BUDGETS_DEFINITION
 from integrations.meta_ads.tools.update_status import DEFINITION as META_ADS_STATUS_DEFINITION
+from integrations.meta_ads.tools.update_targeting import (
+    DEFINITION as META_ADS_UPDATE_TARGETING_DEFINITION,
+)
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.utils import validate_tool_configuration
@@ -56,6 +59,7 @@ from services.agents.utils import validate_tool_configuration
         META_ADS_CREATE_CAMPAIGN_DEFINITION,
         META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
         META_ADS_UPDATE_AD_SETS_DEFINITION,
+        META_ADS_UPDATE_TARGETING_DEFINITION,
         META_ADS_SCHEDULE_BUDGET_INCREASES_DEFINITION,
     ],
 )

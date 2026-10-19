@@ -150,6 +150,20 @@ def _special_category_problems(targeting: MetaAdsTargeting) -> list[str]:
     return problems
 
 
+def targeting_countries(targeting: MetaAdsTargeting) -> set[str | None]:
+    """Returns the country of every targeted place, for rules such as the EU's."""
+    countries = {
+        location.key if location.kind == "country" else location.country_code
+        for location in targeting.locations
+    }
+    countries.update(
+        location.key.split(":", 1)[0]
+        for location in targeting.locations
+        if location.kind == "postcode"
+    )
+    return countries
+
+
 def targeting_spec(targeting: MetaAdsTargeting) -> dict[str, Any]:
     """Maps the typed draft to Meta's targeting spec, always stating Advantage+ audience."""
     geo = _geo_locations(targeting.locations)

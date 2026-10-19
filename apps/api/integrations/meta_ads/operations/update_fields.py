@@ -3,8 +3,9 @@
 """Change settings on existing campaigns or ad sets, one object at a time, then read each back."""
 
 import asyncio
+import contextlib
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -32,6 +33,8 @@ from .mutations import (
 type MetaAdsEditObjectType = Literal["campaign", "adset"]
 # Each setting's value as the edit tools name it; None means not set.
 type SettingValues = Mapping[str, str | None]
+# Reads the settings of objects by ID, for tools whose settings MetaAdsObject doesn't hold.
+type ReadSettings = Callable[[Sequence[str]], Awaitable[Mapping[str, SettingValues]]]
 
 STALE_CODE = "CHANGED_SINCE_APPROVAL"
 _NOT_CONFIRMED = "Meta Ads accepted the change, but {settings} still shows a different value."
@@ -107,21 +110,25 @@ async def update_fields(
     account_id: str,
     currency: str,
     changes: Sequence[FieldChange],
-    values: Callable[[MetaAdsObject], SettingValues],
     action: str,
     group_key: str,
     operation: str,
+    values: Callable[[MetaAdsObject], SettingValues] | None = None,
+    read: ReadSettings | None = None,
 ) -> MetaAdsMutationLedger:
     """Sends each change once, in order, then verifies every accepted one by reading it back.
 
     A checkpoint marks each object before its change is sent, so recovery knows which
-    objects might have changed. `values` reads an object's settings for the comparison.
-    Objects already at the requested values are skipped; refused ones are never sent.
+    objects might have changed. `values` reads an object's settings for the comparison, or
+    `read` reads them by ID instead. Objects already at the requested values are skipped;
+    refused ones are never sent.
 
     Raises:
         asyncio.CancelledError: With a `ledger` attribute that marks the change in flight
             and any unread accepted change unverified, and later changes as not sent.
     """
+    if (values is None) == (read is None):
+        raise ValueError("Read settings back through either values or read")
     accepted: list[FieldChange] = []
     parents: dict[str, MetaAdsMutationParent] = {}
     for index, change in enumerate(changes):
@@ -156,26 +163,46 @@ async def update_fields(
                 parents[pending.object_id] = not_dispatched_parent(
                     pending.object_id, _requested_fields(pending)
                 )
-            exc.ledger = _ledger(action, changes, parents, accepted, {}, values)
+            exc.ledger = _ledger(action, changes, parents, accepted, {})
             raise
         if effect is None:
             accepted.append(change)
         else:
             parents[change.object_id] = submitted_parent(change.object_id, effect)
 
-    after: dict[str, MetaAdsObject] = {}
+    after: dict[str, SettingValues] = {}
+    try:
+        # A failed read leaves the objects it didn't return unverified.
+        if values is not None:
+            await _read_objects(client, account_id, currency, accepted, values, after)
+        elif read is not None and accepted:
+            with contextlib.suppress(Exception):
+                after.update(await read([change.object_id for change in accepted]))
+    except asyncio.CancelledError as exc:
+        exc.ledger = _ledger(action, changes, parents, accepted, after)
+        raise
+    return _ledger(action, changes, parents, accepted, after)
+
+
+async def _read_objects(
+    client: MetaAdsClient,
+    account_id: str,
+    currency: str,
+    accepted: Sequence[FieldChange],
+    values: Callable[[MetaAdsObject], SettingValues],
+    after: dict[str, SettingValues],
+) -> None:
+    objects: dict[str, MetaAdsObject] = {}
     object_ids: dict[MetaAdsEditObjectType, list[str]] = {"campaign": [], "adset": []}
     for change in accepted:
         object_ids[change.object_type].append(change.object_id)
     try:
-        # A failed read leaves the objects it didn't return unverified.
         await read_back(
-            client, account_id=account_id, currency=currency, object_ids=object_ids, after=after
+            client, account_id=account_id, currency=currency, object_ids=object_ids, after=objects
         )
-    except asyncio.CancelledError as exc:
-        exc.ledger = _ledger(action, changes, parents, accepted, after, values)
-        raise
-    return _ledger(action, changes, parents, accepted, after, values)
+    finally:
+        # read_back fills objects as each read returns, so a cancellation keeps them.
+        after.update((key, values(item)) for key, item in objects.items())
 
 
 def _ledger(
@@ -183,14 +210,11 @@ def _ledger(
     changes: Sequence[FieldChange],
     parents: dict[str, MetaAdsMutationParent],
     accepted: Sequence[FieldChange],
-    after: Mapping[str, MetaAdsObject],
-    values: Callable[[MetaAdsObject], SettingValues],
+    after: Mapping[str, SettingValues],
 ) -> MetaAdsMutationLedger:
     for change in accepted:
-        read = after.get(change.object_id)
         parents[change.object_id] = submitted_parent(
-            change.object_id,
-            _verified_effect(change, values(read) if read is not None else None),
+            change.object_id, _verified_effect(change, after.get(change.object_id))
         )
     return MetaAdsMutationLedger(
         action=action, parents=tuple(parents[change.object_id] for change in changes)

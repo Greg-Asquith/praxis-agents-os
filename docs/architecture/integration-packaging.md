@@ -690,11 +690,14 @@ text returns as untrusted-content nodes. `meta_ads_search_targeting` and
 an audience resolver for the draft's audiences.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
 `meta_ads_schedule_budget_increases`, `meta_ads_update_ad_sets`,
+`meta_ads_update_targeting`,
 `meta_ads_upload_media`, `meta_ads_create_campaign`, `meta_ads_create_ad_set`,
 `meta_ads_create_ads`, `meta_ads_copy_ads`, and `meta_ads_launch_campaign`
 write through the shared write
 presenter and the provider's mutation ledger. Campaigns and ad sets are
-always created paused. Ad creation edits its nested ads through a
+always created paused. Targeting edits take additions and removals, never a
+whole spec: Meta replaces the spec on update, so the tool writes back only
+the changed sections and keeps every key Praxis doesn't model. Ad creation edits its nested ads through a
 `structured` approval field and adds Page, Instagram account, media, and post
 resolvers. Ad set creation adds pixel and app resolvers and edits its budget
 and targeting through `structured` fields. Campaign creation takes its

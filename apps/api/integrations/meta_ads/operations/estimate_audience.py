@@ -3,6 +3,7 @@
 """Read Meta's estimated audience size for a targeting draft in one ad account."""
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from services.integrations.http import IntegrationRequestPolicy
@@ -21,10 +22,17 @@ _NOT_READY = "Meta's estimate isn't final yet, so the range may change."
 async def estimate_audience(
     client: MetaAdsClient, *, account_id: str, targeting: MetaAdsTargeting
 ) -> MetaAdsAudienceEstimateData:
+    return await estimate_spec(client, account_id=account_id, spec=targeting_spec(targeting))
+
+
+async def estimate_spec(
+    client: MetaAdsClient, *, account_id: str, spec: Mapping[str, Any]
+) -> MetaAdsAudienceEstimateData:
+    """Reads Meta's estimate for a whole targeting spec, such as an existing ad set's."""
     ensure_account_available(account_id, operation=_OPERATION)
     payload = await client.graph_get(
         f"{ad_account_path(account_id)}/reachestimate",
-        params={"targeting_spec": json.dumps(targeting_spec(targeting))},
+        params={"targeting_spec": json.dumps(spec)},
         operation=_OPERATION,
         policy=IntegrationRequestPolicy.READ,
         usage_account_id=account_id,

@@ -41,10 +41,20 @@ function who(targeting: Record<string, unknown>): string {
   return `${people} aged ${String(min)} to ${max === null ? "65+" : String(max)}`
 }
 
+const REGIONS = new Intl.DisplayNames(["en"], { type: "region" })
+
+/** A place's name; Meta reads countries back as bare codes, so those are named here. */
+export function placeName(location: Record<string, unknown>): string {
+  const key = location["key"]
+  if (location["kind"] === "country" && !location["name"] && typeof key === "string")
+    return /^[A-Z]{2}$/.test(key) ? (REGIONS.of(key) ?? key) : key
+  return itemName(location)
+}
+
 function places(value: unknown): string {
   return LIST.format(
     items(value).map((location) => {
-      const name = itemName(location)
+      const name = placeName(location)
       const unit = UNITS[String(location["radius_unit"])]
       return typeof location["radius"] === "number" && unit
         ? `${name} (+${String(location["radius"])} ${unit})`

@@ -20,11 +20,12 @@ import { metaAdsScheduleBudgetIncreasesPresenter } from "@/integrations/meta_ads
 import { metaAdsUpdateAdSetsPresenter } from "@/integrations/meta_ads/presenters/update-ad-sets"
 import { metaAdsUpdateBudgetsPresenter } from "@/integrations/meta_ads/presenters/update-budgets"
 import { metaAdsUpdateStatusPresenter } from "@/integrations/meta_ads/presenters/update-status"
+import { metaAdsUpdateTargetingPresenter } from "@/integrations/meta_ads/presenters/update-targeting"
 import { metaAdsUploadMediaPresenter } from "@/integrations/meta_ads/presenters/upload-media"
 
 export default {
   catalogDescription:
-    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, find targeting options and estimate audience sizes, and, with your approval, upload images and videos, create paused campaigns, create paused ad sets in existing campaigns, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, launch a whole campaign with its ad sets and ads in one approval, turn campaigns, ad sets, and ads on or off, change budgets, schedule budget increases for busy periods such as Black Friday, and change ad set names, schedules, bids, spend limits, and EU payer and beneficiary names.",
+    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, find targeting options and estimate audience sizes, and, with your approval, upload images and videos, create paused campaigns, create paused ad sets in existing campaigns, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, launch a whole campaign with its ad sets and ads in one approval, turn campaigns, ad sets, and ads on or off, change budgets, schedule budget increases for busy periods such as Black Friday, change ad set names, schedules, bids, spend limits, and EU payer and beneficiary names, and change who ad sets reach by adding or removing locations, ages, genders, languages, interests, and audiences.",
   ConnectHelp: MetaAdsConnectHelp,
   credentialLabel: "Access token",
   Logo: MetaAdsLogo,
@@ -42,6 +43,7 @@ export default {
     metaAdsUpdateBudgetsPresenter,
     metaAdsScheduleBudgetIncreasesPresenter,
     metaAdsUpdateAdSetsPresenter,
+    metaAdsUpdateTargetingPresenter,
     metaAdsUploadMediaPresenter,
     metaAdsCreateCampaignPresenter,
     metaAdsCreateAdSetPresenter,

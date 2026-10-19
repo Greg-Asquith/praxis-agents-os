@@ -182,6 +182,19 @@ minor release. Patch releases contain backward-compatible fixes only.
   values Meta reads back.
   Ad set creation now accepts daily spend limits only under a campaign daily
   budget.
+- Meta Ads targeting edits: `meta_ads_update_targeting` changes who up to 20
+  ad sets reach in one approval, as additions and removals of locations,
+  excluded locations, audiences, and detailed targeting, and new ages,
+  genders, languages, or Advantage+ audience. The card shows each ad set's
+  targeting in the same rows as the Create Ad Set card, with Meta's
+  estimated audience before and after. The operator can add, exclude, or
+  remove any place or audience through search, and drop or edit every other
+  proposed change. Settings Praxis doesn't model, such as pin
+  locations, stay as they are, and a change that would touch them is
+  refused. An ad set that newly reaches the EU needs its payer and
+  beneficiary. Meta checks every change first, an ad set whose targeting
+  changed after approval isn't sent, and each result shows the targeting
+  Meta reads back.
 - Meta Ads budget increases: `meta_ads_schedule_budget_increases` raises a
   campaign or ad set daily budget during up to 10 high-demand periods, such
   as a Black Friday weekend, in one approval. Each increase is an amount or

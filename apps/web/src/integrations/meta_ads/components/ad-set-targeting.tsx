@@ -12,11 +12,15 @@ import {
   addAudience,
   addInterest,
   addLocation,
+  AGE_OPTIONS,
   detailedGroups,
+  GENDER_OPTIONS,
+  MAX_AGE_OPTIONS,
   itemName,
   removeDetailed,
   removeItem,
   targetingItems,
+  WIDEN_AUDIENCE,
 } from "@/integrations/meta_ads/lib/targeting-edit"
 import { TARGETING_KIND_LABELS } from "@/integrations/meta_ads/lib/targeting"
 
@@ -27,17 +31,6 @@ type TargetingProps = {
 }
 
 const TOOL = "meta_ads_create_ad_set"
-const AGES = Array.from({ length: 53 }, (_, index) => {
-  const age = String(index + 13)
-  return { value: age, label: age }
-})
-const MAX_AGES = [{ value: "65+", label: "65+" }, ...AGES]
-const GENDER_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "men", label: "Men" },
-  { value: "women", label: "Women" },
-]
-
 function chipItems(
   items: Record<string, unknown>[],
   disabled: boolean,
@@ -117,7 +110,7 @@ export function AdSetPeople({ args, disabled, onTargeting }: TargetingProps) {
           onChange={(age) => {
             onTargeting({ ...targeting, age_min: Number(age), age_max: max })
           }}
-          options={AGES}
+          options={AGE_OPTIONS}
           value={String(min)}
         />
         <SelectField
@@ -126,7 +119,7 @@ export function AdSetPeople({ args, disabled, onTargeting }: TargetingProps) {
           onChange={(age) => {
             onTargeting({ ...targeting, age_min: min, age_max: age === "65+" ? null : Number(age) })
           }}
-          options={MAX_AGES}
+          options={MAX_AGE_OPTIONS}
           value={max === null ? "65+" : String(max)}
         />
       </div>
@@ -215,9 +208,9 @@ export function AdSetInterests({ args, disabled, onTargeting }: TargetingProps) 
       ) : null}
       <SwitchField
         checked={targeting["advantage_audience"] !== false}
-        description="Meta may show the ads to people outside your interests, ages, and genders when it expects better results."
+        description={WIDEN_AUDIENCE.description}
         disabled={disabled}
-        label="Let Meta Widen the Audience"
+        label={WIDEN_AUDIENCE.label}
         onChange={(on) => {
           onTargeting({ ...targeting, advantage_audience: on })
         }}

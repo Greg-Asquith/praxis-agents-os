@@ -28,7 +28,7 @@ from ..tools.schemas.budgets import BID_STRATEGIES
 from ..tools.schemas.objects import CLOSED_STATUSES
 from .create_objects import MetaAdsCreateEdge, MetaCreateLookup
 from .object_run import ObjectRun, create_and_read_back
-from .targeting import targeting_problems, targeting_spec
+from .targeting import targeting_countries, targeting_problems, targeting_spec
 from .values import (
     STORE_HOSTS,
     bounded_string,
@@ -58,7 +58,7 @@ _EU_COUNTRIES = frozenset(
 )
 BID_AMOUNT_STRATEGIES = frozenset({"COST_CAP", "LOWEST_COST_WITH_BID_CAP"})
 LEGACY_ADVANTAGE_TYPES = frozenset({"AUTOMATED_SHOPPING_ADS", "SMART_APP_PROMOTION"})
-_EU_NAMES_MISSING = (
+EU_NAMES_MISSING = (
     "This ad set reaches people in the EU, so Meta needs who pays for the ads and who they "
     "benefit, and this ad account has no defaults. Ask the operator for eu_payer and "
     "eu_beneficiary; Meta shows both publicly in its ad library."
@@ -177,16 +177,7 @@ def bid_problem(strategy: str | None, *, bid_amount: bool, min_roas: bool) -> st
 
 
 def reaches_eu(request: MetaAdsAdSetSettings) -> bool:
-    countries = {
-        location.key if location.kind == "country" else location.country_code
-        for location in request.targeting.locations
-    }
-    countries.update(
-        location.key.split(":", 1)[0]
-        for location in request.targeting.locations
-        if location.kind == "postcode"
-    )
-    return includes_eu(countries)
+    return includes_eu(targeting_countries(request.targeting))
 
 
 def includes_eu(countries: Iterable[str | None]) -> bool:
@@ -266,7 +257,7 @@ def eu_transparency(request: MetaAdsAdSetSettings, account: AdSetAccount) -> Met
     if not (request.eu_payer or account.dsa_payor) or not (
         request.eu_beneficiary or account.dsa_beneficiary
     ):
-        raise ValueError(_EU_NAMES_MISSING)
+        raise ValueError(EU_NAMES_MISSING)
     return "sent" if request.eu_payer and request.eu_beneficiary else "account_defaults"
 
 

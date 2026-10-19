@@ -8,6 +8,23 @@ type LocationField = "locations" | "excluded_locations"
 type AudienceField = "audiences" | "excluded_audiences"
 type ListField = LocationField | AudienceField
 
+// Age, gender, and audience-widening choices, shared by the create and edit cards.
+export const AGE_OPTIONS = Array.from({ length: 53 }, (_, index) => {
+  const age = String(index + 13)
+  return { value: age, label: age }
+})
+export const MAX_AGE_OPTIONS = [{ value: "65+", label: "65+" }, ...AGE_OPTIONS]
+export const GENDER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "men", label: "Men" },
+  { value: "women", label: "Women" },
+]
+export const WIDEN_AUDIENCE = {
+  label: "Let Meta Widen the Audience",
+  description:
+    "Meta may show the ads to people outside your interests, ages, and genders when it expects better results.",
+}
+
 export function targetingItems(value: unknown): TargetingItem[] {
   return Array.isArray(value) ? value.filter(isRecord) : []
 }
