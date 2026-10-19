@@ -182,6 +182,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   values Meta reads back.
   Ad set creation now accepts daily spend limits only under a campaign daily
   budget.
+- Meta Ads ad edits: `meta_ads_update_ads` renames up to 50 ads, and sets or
+  removes their own start and end times in sales and app promotion
+  campaigns, in one approval. Times stay inside the ad set's schedule. Meta
+  checks every change first, an ad that changed after approval isn't sent,
+  and each result shows the values Meta reads back.
 - Meta Ads targeting edits: `meta_ads_update_targeting` changes who up to 20
   ad sets reach in one approval, as additions and removals of locations,
   excluded locations, audiences, and detailed targeting, and new ages,

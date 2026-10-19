@@ -17,6 +17,7 @@ from .run_insights import DEFINITION as RUN_INSIGHTS
 from .schedule_budget_increases import DEFINITION as SCHEDULE_BUDGET_INCREASES
 from .search_targeting import DEFINITION as SEARCH_TARGETING
 from .update_ad_sets import DEFINITION as UPDATE_AD_SETS
+from .update_ads import DEFINITION as UPDATE_ADS
 from .update_budgets import DEFINITION as UPDATE_BUDGETS
 from .update_status import DEFINITION as UPDATE_STATUS
 from .update_targeting import DEFINITION as UPDATE_TARGETING
@@ -36,6 +37,7 @@ TOOL_DEFINITIONS = (
     SCHEDULE_BUDGET_INCREASES,
     UPDATE_AD_SETS,
     UPDATE_TARGETING,
+    UPDATE_ADS,
     UPLOAD_MEDIA,
     CREATE_CAMPAIGN,
     CREATE_AD_SET,

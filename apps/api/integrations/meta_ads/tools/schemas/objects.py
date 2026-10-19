@@ -121,9 +121,11 @@ class MetaAdsObject(MetaAdsStrictModel):
     ad_schedule: MetaAdsAdSchedule | None = None
     # Campaigns only: set for legacy Advantage+ shopping and app campaigns.
     smart_promotion_type: MetaAdsText | None = None
-    # Ads only: why Meta's review rejected the ad, and what stops it delivering.
+    # Ads only: start_time and end_time are the ad's own schedule, null when it follows its ad
+    # set's. Why Meta's review rejected the ad, what stops it delivering, and its creative.
     review_reasons: list[MetaAdsText] | None = Field(default=None, max_length=5)
     issues: list[MetaAdsText] | None = Field(default=None, max_length=5)
+    creative_id: MetaAdsId | None = None
 
 
 class MetaAdsObjectsData(MetaAdsStrictModel):

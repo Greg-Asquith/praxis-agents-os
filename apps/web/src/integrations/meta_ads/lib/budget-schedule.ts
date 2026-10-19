@@ -138,6 +138,11 @@ function parseCheck(value: unknown): ScheduleCheck | null {
   }
 }
 
+/** True for a real local YYYY-MM-DDTHH:MM time. */
+export function isLocalTime(value: string): boolean {
+  return minutes(value) !== null
+}
+
 /** Minutes since the epoch for a local YYYY-MM-DDTHH:MM time, read as if it were UTC. */
 function minutes(value: string): number | null {
   const match = LOCAL_TIME.exec(value)

@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/update_fields.py
 
-"""Change settings on existing campaigns or ad sets, one object at a time, then read each back."""
+"""Change settings on existing campaigns, ad sets, or ads, one at a time, then read each back."""
 
 import asyncio
 import contextlib
@@ -30,7 +30,7 @@ from .mutations import (
     submitted_parent,
 )
 
-type MetaAdsEditObjectType = Literal["campaign", "adset"]
+type MetaAdsEditObjectType = Literal["campaign", "adset", "ad"]
 # Each setting's value as the edit tools name it; None means not set.
 type SettingValues = Mapping[str, str | None]
 # Reads the settings of objects by ID, for tools whose settings MetaAdsObject doesn't hold.
@@ -193,7 +193,7 @@ async def _read_objects(
     after: dict[str, SettingValues],
 ) -> None:
     objects: dict[str, MetaAdsObject] = {}
-    object_ids: dict[MetaAdsEditObjectType, list[str]] = {"campaign": [], "adset": []}
+    object_ids: dict[MetaAdsEditObjectType, list[str]] = {"campaign": [], "adset": [], "ad": []}
     for change in accepted:
         object_ids[change.object_type].append(change.object_id)
     try:

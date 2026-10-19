@@ -34,6 +34,7 @@ from integrations.meta_ads.tools.schedule_budget_increases import (
 from integrations.meta_ads.tools.update_ad_sets import (
     DEFINITION as META_ADS_UPDATE_AD_SETS_DEFINITION,
 )
+from integrations.meta_ads.tools.update_ads import DEFINITION as META_ADS_UPDATE_ADS_DEFINITION
 from integrations.meta_ads.tools.update_budgets import DEFINITION as META_ADS_BUDGETS_DEFINITION
 from integrations.meta_ads.tools.update_status import DEFINITION as META_ADS_STATUS_DEFINITION
 from integrations.meta_ads.tools.update_targeting import (
@@ -60,6 +61,7 @@ from services.agents.utils import validate_tool_configuration
         META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
         META_ADS_UPDATE_AD_SETS_DEFINITION,
         META_ADS_UPDATE_TARGETING_DEFINITION,
+        META_ADS_UPDATE_ADS_DEFINITION,
         META_ADS_SCHEDULE_BUDGET_INCREASES_DEFINITION,
     ],
 )

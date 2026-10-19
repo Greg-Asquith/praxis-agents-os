@@ -48,9 +48,15 @@ _OPERATION = "list_objects"
 _FIELDS = {
     "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled,smart_promotion_type",
     "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,bid_constraints,daily_budget,lifetime_budget,budget_remaining,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,dsa_payor,dsa_beneficiary,learning_stage_info,attribution_spec,frequency_control_specs,pacing_type,adset_schedule,targeting{geo_locations,publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
-    "ad": "id,name,status,effective_status,campaign_id,adset_id,bid_amount,ad_review_feedback,issues_info",
+    "ad": "id,name,status,effective_status,campaign_id,adset_id,bid_amount,ad_review_feedback,issues_info,creative{id},ad_schedule_start_time,ad_schedule_end_time",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
+# An ad's own start and end times; without them it runs on its ad set's schedule.
+_SCHEDULE_FIELDS = {
+    "campaign": ("start_time", "stop_time"),
+    "adset": ("start_time", "end_time"),
+    "ad": ("ad_schedule_start_time", "ad_schedule_end_time"),
+}
 _PLACEMENT_PLATFORMS = ("facebook", "instagram", "audience_network", "messenger", "threads")
 _PROMOTED_IDS = ("page_id", "pixel_id", "application_id", "custom_conversion_id")
 _SPEND_CONTROLS = {
@@ -163,11 +169,11 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
     campaign = _mapping(raw.get("campaign"))
     if object_type == "adset":
         values["objective"] = bounded_string(campaign.get("objective"), operation=_OPERATION)
-    end_field = "stop_time" if object_type == "campaign" else "end_time"
+    start_field, end_field = _SCHEDULE_FIELDS[object_type]
     return MetaAdsObject(
         id=raw.get("id"),
         **values,
-        start_time=iso_datetime(raw.get("start_time"), operation=_OPERATION),
+        start_time=iso_datetime(raw.get(start_field), operation=_OPERATION),
         end_time=iso_datetime(raw.get(end_field), operation=_OPERATION),
         campaign_id=raw.get("campaign_id"),
         adset_id=raw.get("adset_id"),
@@ -186,6 +192,7 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         else None,
         review_reasons=review_reasons(raw) if object_type == "ad" else None,
         issues=issue_summaries(raw) if object_type == "ad" else None,
+        creative_id=_mapping(raw.get("creative")).get("id") if object_type == "ad" else None,
         smart_promotion_type=bounded_string(raw.get("smart_promotion_type"), operation=_OPERATION)
         if object_type == "campaign"
         else None,

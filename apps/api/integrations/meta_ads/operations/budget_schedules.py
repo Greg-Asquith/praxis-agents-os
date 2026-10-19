@@ -32,7 +32,7 @@ _OPERATION = "schedule_budget_increases"
 _READ_OPERATION = "read_budget_schedules"
 _CAPABILITY = "CAN_USE_BUDGET_SCHEDULING_API"
 _PERIOD_FIELDS = "id,budget_value,budget_value_type,time_start,time_end"
-_LOCAL_FORMAT = "%Y-%m-%dT%H:%M"
+LOCAL_FORMAT = "%Y-%m-%dT%H:%M"
 _MIN_LENGTH = timedelta(hours=3)
 # During a period the daily budget plus the increase can be at most this multiple of it.
 _MAX_MULTIPLE = 8
@@ -153,7 +153,7 @@ def _meta_time(value: Any) -> datetime:
 
 def local_time(value: datetime, zone: ZoneInfo) -> str:
     """Formats a time as YYYY-MM-DDTHH:MM in the ad account's time zone."""
-    return value.astimezone(zone).strftime(_LOCAL_FORMAT)
+    return value.astimezone(zone).strftime(LOCAL_FORMAT)
 
 
 def review_periods(
@@ -194,8 +194,8 @@ def _plan(
     now: datetime,
 ) -> tuple[MetaAdsPlannedPeriod | None, str | None]:
     try:
-        start = datetime.strptime(period.start, _LOCAL_FORMAT).replace(tzinfo=zone)
-        end = datetime.strptime(period.end, _LOCAL_FORMAT).replace(tzinfo=zone)
+        start = datetime.strptime(period.start, LOCAL_FORMAT).replace(tzinfo=zone)
+        end = datetime.strptime(period.end, LOCAL_FORMAT).replace(tzinfo=zone)
     except ValueError:
         return None, "Use a real date and time for the start and end."
     if start <= now:

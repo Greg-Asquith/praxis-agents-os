@@ -351,7 +351,10 @@ view, and engaged-view windows from `attribution_spec`), `frequency_cap`
 (from `adset_schedule`, only while `pacing_type` includes `day_parting`).
 Each is null when Meta returns none or a value Praxis can't read. Campaigns
 carry `smart_promotion_type`, which marks legacy Advantage+ shopping and app campaigns. Ads carry
-`bid_amount` when an ad has its own bid.
+`bid_amount` when an ad has its own bid, `creative_id` from `creative{id}`, and
+their own schedule as `start_time` and `end_time` (Meta's
+`ad_schedule_start_time` and `ad_schedule_end_time`), null when the ad follows
+its ad set's schedule.
 
 The provider operation also reads exact object IDs in any status, still through
 the selected account's edge. Writes use it to read state before and after a
@@ -925,6 +928,73 @@ refuse updates, and the time for 50 ad sets in sequence haven't been checked
 against a live account. Meta's dry run is the backstop until then.
 Incremental attribution (`is_incremental_attribution_enabled`) is pending:
 reading an unconfirmed field would fail every ad set read. See
+[Live qualification record](#live-qualification-record).
+
+### Editing ads
+
+`meta_ads_update_ads` renames up to 50 existing ads, and sets or removes
+their own start and end times, in one approval. Each entry names one ad and
+only the settings that change. Status stays with `meta_ads_update_status`
+and ad set dates with `meta_ads_update_ad_sets`. Changing what an ad says or
+shows is pending.
+
+| Setting | Meta field |
+| --- | --- |
+| `name` | `name` |
+| `start_at`, `end_at` (`YYYY-MM-DDTHH:MM` in the account's time zone, or `none`) | `ad_schedule_start_time`, `ad_schedule_end_time` as ISO 8601 with the account's offset; `none` sends an empty value |
+
+`operations/edit_ad.py` holds the rules, checked against the ad and its ad
+set as they are now:
+
+- Archived and deleted ads take only a new name.
+- Ad times need a sales or app promotion campaign (`OUTCOME_SALES` or
+  `OUTCOME_APP_PROMOTION`, read from the ad set), because Meta offers them
+  only there.
+- A new start can't be in the past and a new end must be in the future. The
+  end must come after the start, compared on the values after the change.
+- A new start can't be before the ad set starts, and a new end can't be
+  after the ad set ends.
+
+The tool works like [Editing ad sets](#editing-ad-sets), through
+`update_fields`:
+
+1. Approval display re-reads each ad and its ad set, applies the rules, and
+   dry-runs each change that passes and isn't already set. `_checks`, by ad
+   ID, holds each setting's current value (`before`), the values checked
+   (`requested`), the problems, the account's `time_zone`, and the ad set's
+   start and end as local times (`ad_set_schedule`).
+2. The card opens with the "Changes take effect straight away" banner, which
+   names the account's time zone, then one row per ad, laid out like the
+   Edit Ad Sets card: each new value with its current setting under it, the
+   name across both columns. Times are optional fields, as End Date is on
+   Edit Ad Sets: emptying one sends `none`. An "Ad Set Runs" line shows the
+   ad set's schedule the times must fit. Every value is editable, an ad can
+   be switched off, and a problem blocks approval only while the card shows
+   the values it was found for.
+3. After approval, the tool refuses any ad or setting the agent didn't
+   propose, and refuses the run while the account has used 75% or more of
+   Meta's hourly request allowance. It reads and checks every ad again and
+   dry-runs again; any problem stops the account before anything is sent.
+4. An ad whose changed settings differ from the approved card's `before`
+   values fails with `CHANGED_SINCE_APPROVAL`. Ads already at the requested
+   values are skipped as `already_set`.
+5. Pending evidence records each ad's ID, name, and the before and requested
+   values, with names as approved because ad names are public.
+6. A checkpoint records each ad ID before its single `POST /{ad_id}`, sent
+   in order without retry.
+7. The tool reads the changed ads again. An ad is `updated` only when every
+   changed setting reads back as requested, with times compared to the
+   minute in the account's time zone.
+
+Each result row has the ad, its settings with `before`, `requested`, and
+read-back `after` values, and the outcome; the result carries the account's
+`time_zone`. The tool has a 300-second timeout, supports Code Mode, and is
+listed in the spend policy test.
+
+Whether an empty value removes an ad's own time, the time zone Meta applies
+and reads back, the minimum length, edits after an ad starts, and whether
+ads in legacy Advantage+ campaigns accept updates haven't been checked
+against a live account. Meta's dry run is the backstop until then. See
 [Live qualification record](#live-qualification-record).
 
 ### Editing targeting
@@ -1930,6 +2000,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Budget increases | `capabilities` containing `CAN_USE_BUDGET_SCHEDULING_API`; `GET /{id}/budget_schedules` field shapes (`time_start` format, `budget_value` units); `POST` reply with `id`; whether the edge accepts `validate_only`; what Meta stores for `MULTIPLIER`; whether Meta rejects overlapping periods; whether a high-demand period can be deleted |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
 | Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; a goal and a promoted object change on a delivered ad set; attribution windows per goal, the engaged-view write value, and a change after delivery; `frequency_control_specs=[]` removing a cap; `adset_schedule` read-back; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
+| Ad edits | `validate_only` on an ad update; `ad_schedule_start_time` and `ad_schedule_end_time` read-back shape and time zone; an empty value removing an ad's own time; minimum length and edits after the ad starts; whether ads in legacy Advantage+ campaigns accept a rename |
 | Targeting edits | That `targeting` on `POST /{adset_id}` replaces the whole spec; `zips`, `regions`, `cities`, and `flexible_spec` read shapes against the write shapes; `location_types` in `excluded_geo_locations`; whether a targeting change sends ads to review; `reachestimate` latency with a whole spec; `ADS_TARGETING__REQUIRE_EXPLICIT_ADVANTAGE_AUDIENCE_FLAG` on updates; an update to an ad set that reads back with Instagram `explore` |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
