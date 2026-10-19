@@ -119,7 +119,7 @@ export function TextField({
   label: string
   onChange: (value: string) => void
   placeholder?: string
-  type?: "text" | "date"
+  type?: "text" | "date" | "datetime-local"
   value: string
 }) {
   return (

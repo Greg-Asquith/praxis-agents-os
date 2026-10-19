@@ -28,6 +28,9 @@ from integrations.meta_ads.tools.create_campaign import (
 from integrations.meta_ads.tools.launch_campaign import (
     DEFINITION as META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
 )
+from integrations.meta_ads.tools.schedule_budget_increases import (
+    DEFINITION as META_ADS_SCHEDULE_BUDGET_INCREASES_DEFINITION,
+)
 from integrations.meta_ads.tools.update_ad_sets import (
     DEFINITION as META_ADS_UPDATE_AD_SETS_DEFINITION,
 )
@@ -53,6 +56,7 @@ from services.agents.utils import validate_tool_configuration
         META_ADS_CREATE_CAMPAIGN_DEFINITION,
         META_ADS_LAUNCH_CAMPAIGN_DEFINITION,
         META_ADS_UPDATE_AD_SETS_DEFINITION,
+        META_ADS_SCHEDULE_BUDGET_INCREASES_DEFINITION,
     ],
 )
 def test_spend_policy_is_approval_only(monkeypatch, definition) -> None:

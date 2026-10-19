@@ -7,6 +7,7 @@ export type OutcomeKind = "applied" | "skipped" | "failed" | "unverified"
 const OUTCOMES = {
   updated: ["applied", "Updated"],
   created: ["applied", "Created"],
+  added: ["applied", "Added"],
   copied: ["applied", "Copied"],
   uploaded: ["applied", "Uploaded"],
   processing: ["applied", "Processing"],

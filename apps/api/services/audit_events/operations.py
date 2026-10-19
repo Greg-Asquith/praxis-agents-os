@@ -53,8 +53,9 @@ async def record_operation_audit_event(
     ``summary`` overrides the generic actor/action/target line when the
     action alone would misdescribe the outcome.
 
-    Sharing transitions use this strict writer so visibility and audit commit
-    together. Routine operations use the savepoint-protected safe writer.
+    Sharing transitions and invitation acceptance use this strict writer so
+    permissions and audit commit together. Routine operations use the
+    savepoint-protected safe writer.
     """
 
     request_context = request_audit_context(request)

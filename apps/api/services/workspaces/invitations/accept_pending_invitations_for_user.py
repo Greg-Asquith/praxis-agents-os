@@ -6,9 +6,10 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import tenant_context
 from models.user import User
 from models.workspace import WorkspaceInvitation
 from services.workspaces.invitations.accept_invitation_utils import (
@@ -44,26 +45,31 @@ async def accept_pending_invitations_for_user(
     invitations = result.scalars().all()
 
     accepted_count = 0
-    for invitation in invitations:
-        try:
-            async with db.begin_nested():
-                await accept_invitation(
-                    db,
-                    actor=user,
-                    invitation=invitation,
-                    request=request,
+    async with tenant_context(db):
+        for invitation in invitations:
+            # Savepoint rollback expires the invitation's ORM attributes.
+            failure_context = {
+                "invitation_id": str(invitation.id),
+                "user_id": str(user.id),
+                "workspace_id": str(invitation.workspace_id),
+            }
+            try:
+                async with db.begin_nested():
+                    await accept_invitation(
+                        db,
+                        actor=user,
+                        invitation=invitation,
+                        request=request,
+                    )
+            except Exception:
+                logger.warning(
+                    "Skipping pending workspace invitation after acceptance failure",
+                    exc_info=True,
+                    extra=failure_context,
                 )
-        except Exception:
-            logger.warning(
-                "Skipping pending workspace invitation after acceptance failure",
-                exc_info=True,
-                extra={
-                    "invitation_id": str(invitation.id),
-                    "user_id": str(user.id),
-                    "workspace_id": str(invitation.workspace_id),
-                },
-            )
-            continue
-        accepted_count += 1
+                if inspect(user).expired_attributes:
+                    await db.refresh(user)
+                continue
+            accepted_count += 1
 
     return accepted_count

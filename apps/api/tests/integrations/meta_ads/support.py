@@ -101,8 +101,10 @@ GRAPH_EDGES = {"campaigns": "campaign", "adsets": "adset", "ads": "ad"}
 class FakeGraph:
     """Serves the account, its edges, and its history from memory, and applies posted changes."""
 
-    def __init__(self, objects, *, post=None, account=None, activities=None):
+    def __init__(self, objects, *, post=None, account=None, activities=None, schedules=None):
         self.objects = {item["id"]: {"status": "PAUSED", **item} for item in objects}
+        # High-demand periods by campaign or ad set ID.
+        self.schedules: dict[str, list[dict]] = schedules or {}
         self.post = post or {}
         self.account = {"currency": "EUR", "account_status": 1, **(account or {})}
         self.activities = activities or []
@@ -112,6 +114,8 @@ class FakeGraph:
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         path = request.url.path.split("/")[2:]
+        if path[1:] == ["budget_schedules"]:
+            return self.handle_schedule(request, path[0])
         if request.method == "POST":
             return self.handle_post(request, path[0])
         if len(path) == 1:
@@ -149,6 +153,29 @@ class FakeGraph:
                     self.objects[object_id][key] = form[key]
             self.hold_children()
         return httpx2.Response(200, json={"success": True}, request=request)
+
+    def handle_schedule(self, request: httpx2.Request, object_id: str) -> httpx2.Response:
+        periods = self.schedules.setdefault(object_id, [])
+        if request.method == "GET":
+            return httpx2.Response(200, json={"data": periods}, request=request)
+        form = dict(parse_qsl(request.content.decode()))
+        self.posts.append(object_id)
+        self.sent.append(form)
+        behaviour = self.post.get(object_id, "apply")
+        if behaviour == "timeout":
+            raise httpx2.ReadTimeout("lost", request=request)
+        period_id = str(9000 + len(self.sent))
+        end = int(form["time_end"]) + (3600 if behaviour == "shift_end" else 0)
+        periods.append(
+            {
+                "id": period_id,
+                "budget_value": int(form["budget_value"]),
+                "budget_value_type": form["budget_value_type"],
+                "time_start": int(form["time_start"]),
+                "time_end": end,
+            }
+        )
+        return httpx2.Response(200, json={"id": period_id}, request=request)
 
     def hold_children(self):
         """Shows a parent that is off as the delivery status of its children that are on."""

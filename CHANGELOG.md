@@ -182,6 +182,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   values Meta reads back.
   Ad set creation now accepts daily spend limits only under a campaign daily
   budget.
+- Meta Ads budget increases: `meta_ads_schedule_budget_increases` raises a
+  campaign or ad set daily budget during up to 10 high-demand periods, such
+  as a Black Friday weekend, in one approval. Each increase is an amount or
+  a percentage of today's daily budget. The card shows the periods already
+  scheduled and the highest daily budget, and every period's times and
+  increase can be edited. Meta's period rules are checked before approval,
+  and each result shows the periods Meta reads back.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

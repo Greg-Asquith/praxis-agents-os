@@ -9,12 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.database import tenant_context
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError
 from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership
-from services.audit_events import AuditAction, AuditResourceType
-from services.audit_events.workspace_events import record_workspace_audit_event
+from services.audit_events import AuditAction, AuditActorType, AuditResourceType
+from services.audit_events.operations import record_operation_audit_event
 from services.security import SecurityEventType
 from services.workspaces.schemas import (
     WorkspaceInvitationAcceptResponse,
@@ -158,25 +159,29 @@ async def accept_invitation(
         status = "accepted"
         message = "Invitation accepted"
 
-    await record_workspace_audit_event(
-        db,
-        request=request,
-        workspace_id=workspace.id,
-        action=AuditAction.UPDATE,
-        resource_type=AuditResourceType.INVITATION,
-        resource_id=invitation.id,
-        actor=actor,
-        details={
-            "email": invitation.email,
-            "role": invitation.role,
-            "status": status,
-            "membership_id": str(membership.id),
-            "identity_proof": "invitation_token"
-            if invitation_token_verified
-            else "verified_identity",
-            "verified_identity_id": str(verified_identity.id) if verified_identity else None,
-        },
-    )
+    async with tenant_context(db, workspace_id=workspace.id, user_id=actor.id):
+        await record_operation_audit_event(
+            db,
+            request=request,
+            workspace_id=workspace.id,
+            action=AuditAction.UPDATE,
+            resource_type=AuditResourceType.INVITATION,
+            resource_id=invitation.id,
+            actor_type=AuditActorType.USER,
+            actor_id=actor.id,
+            actor_display=actor.email,
+            requested_by_user_id=actor.id,
+            details={
+                "email": invitation.email,
+                "role": invitation.role,
+                "status": status,
+                "membership_id": str(membership.id),
+                "identity_proof": "invitation_token"
+                if invitation_token_verified
+                else "verified_identity",
+                "verified_identity_id": str(verified_identity.id) if verified_identity else None,
+            },
+        )
     if request is not None:
         await record_workspace_security_event(
             db=db,

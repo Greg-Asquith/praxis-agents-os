@@ -703,6 +703,75 @@ The dry-run reply, Meta's minimum-budget and lifetime-spend errors, and the
 behaviour that hasn't been checked against a live account; see
 [Live qualification record](#live-qualification-record).
 
+### Scheduling budget increases
+
+`meta_ads_schedule_budget_increases` raises the daily budget of one campaign
+or ad set during up to 10 high-demand periods in one approval, such as a
+Black Friday weekend. Meta calls these budget schedules. The call names
+`campaign` when the campaign holds a daily budget, or `ad_set` when the ad
+set holds its own daily budget, and lists `periods`. Each period has `start`
+and `end` as `YYYY-MM-DDTHH:MM` in the ad account's time zone, and either
+`increase_amount` in the account currency or `increase_percent` (1 to 700)
+of today's daily budget. The rules are as follows:
+
+- The object must hold a daily budget. A lifetime budget, an ad set that
+  spends from its campaign's budget, a campaign whose ad sets hold their own
+  budgets, and archived or deleted objects are rejected, naming the level to
+  use instead.
+- The ad account's `capabilities` must include
+  `CAN_USE_BUDGET_SCHEDULING_API`; otherwise the tool says to add the
+  increases in Ads Manager.
+- Each period starts in the future, lasts at least 3 hours, and overlaps no
+  other new or existing period.
+- The daily budget plus the increase is at most 8 times the daily budget.
+- The object holds at most 50 periods, counting the ones it already has.
+
+A percentage becomes a fixed amount of today's daily budget, rounded down to
+whole minor units, and the tool always sends `budget_value_type=ABSOLUTE`
+with `budget_value` in minor units. Meta's `MULTIPLIER` encoding isn't
+documented, so the tool doesn't send it. A later change to the daily budget
+doesn't change an increase that was given as a percentage.
+
+The tool works as follows:
+
+1. Approval display re-reads the reference and the object, reads the account
+   capability, reads the object's periods with
+   `GET /{id}/budget_schedules`, and applies the rules. The card shows the
+   daily budget, the highest daily budget during the new periods, the
+   periods already scheduled, one row per proposed period with its times,
+   increase, and any problem, and a Now/After strip of existing and new
+   periods. The operator can edit each period's times and increase, switch
+   between a fixed amount and a percentage, or switch a period off and back
+   on (`periods` is an editable `structured` field). Periods have no ID, so
+   the card matches the edited list to the proposal by order. The card
+   checks edited periods with the same rules, and the server checks them
+   again.
+2. After approval, the tool refuses a different target or more periods than
+   the agent proposed, compared with `proposed_args`. It reads everything
+   again, and stops before anything is sent if any rule fails, if the card
+   couldn't check the budget, or if the daily budget differs from the one
+   the card showed.
+3. Pending evidence records each period's start and end with their offset,
+   the daily budget, the increase amount, any percentage, and the currency.
+4. The tool sends one `POST /{id}/budget_schedules` per period, in time
+   order, with `time_start` and `time_end` as Unix seconds. Each post adds a
+   period, so the tool never retries one. A reply without a numeric `id` is
+   `unverified`.
+5. The tool reads the periods back. A period is `added` only when the ID
+   Meta returned shows the same times and amount. A different period, a
+   missing one, or a failed read-back leaves it `unverified`.
+
+The result names the object, its daily budget, the time zone, and each
+period's local times, increase, and outcome. The tool has a 120-second
+timeout, supports Code Mode, and is listed in the spend policy test.
+
+Removing or changing a period is pending: Meta documents no update or delete
+call for a high-demand period, so the description sends the operator to Ads
+Manager. Whether Meta accepts `validate_only` on the edge, the units of
+`budget_value`, and the read shape are documented behaviour that hasn't been
+checked against a live account; see
+[Live qualification record](#live-qualification-record).
+
 ### Editing ad sets
 
 `meta_ads_update_ad_sets` changes the settings of up to 50 existing ad sets in
@@ -1745,6 +1814,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | API tier | Initial tier and the dashboard's Full access request prerequisites |
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
 | Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
+| Budget increases | `capabilities` containing `CAN_USE_BUDGET_SCHEDULING_API`; `GET /{id}/budget_schedules` field shapes (`time_start` format, `budget_value` units); `POST` reply with `id`; whether the edge accepts `validate_only`; what Meta stores for `MULTIPLIER`; whether Meta rejects overlapping periods; whether a high-demand period can be deleted |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
 | Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; a goal and a promoted object change on a delivered ad set; attribution windows per goal, the engaged-view write value, and a change after delivery; `frequency_control_specs=[]` removing a cap; `adset_schedule` read-back; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
