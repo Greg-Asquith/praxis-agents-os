@@ -111,6 +111,8 @@ _LIST_OPERATIONS = (
     "add_excluded_audiences",
     "remove_excluded_audiences",
 )
+# Fields the approval comparison doesn't treat as settings.
+_NOT_SETTINGS = frozenset({*_LIST_OPERATIONS, "ad_set", "add_detailed_items"})
 
 type _Key = tuple[str, str]
 
@@ -134,11 +136,11 @@ class _Review:
 
     @property
     def before(self) -> SettingValues:
-        return _values(self, before=True)
+        return self._section_values(before=True)
 
     @property
     def requested(self) -> SettingValues:
-        return _values(self, before=False)
+        return self._section_values(before=False)
 
     @property
     def body(self) -> dict[str, str]:
@@ -151,13 +153,11 @@ class _Review:
             body["dsa_beneficiary"] = self.edit.eu_beneficiary
         return body
 
-
-def _values(review: _Review, *, before: bool) -> SettingValues:
-    change = review.change
-    if change is None:
-        return {}
-    values = section_values(change.before if before else change.after)
-    return {section: values[section] for section in change.sections}
+    def _section_values(self, *, before: bool) -> SettingValues:
+        if self.change is None:
+            return {}
+        values = section_values(self.change.before if before else self.change.after)
+        return {section: values[section] for section in self.change.sections}
 
 
 async def meta_ads_update_targeting(
@@ -245,8 +245,10 @@ def _key(reference: MetaAdsAdSetReference) -> _Key:
 
 
 def _require_proposed(proposed: Mapping[str, Any], request: MetaAdsUpdateTargetingRequest) -> None:
-    """The card can change values, drop changes or ad sets, and add or remove places and
-    audiences, but never add an ad set or any other change."""
+    """Refuses an ad set, interest change, or setting the agent didn't propose.
+
+    The card can change values, drop changes or ad sets, and add or remove places and audiences.
+    """
     try:
         original = MetaAdsUpdateTargetingRequest.model_validate(proposed).changes
     except ValidationError:
@@ -268,10 +270,11 @@ def _proposal(edit: MetaAdsTargetingEdit) -> set[tuple[str, ...]]:
         items.add(("remove_detailed_items", item))
     if edit.add_detailed_items is not None:
         items.update(("add_detailed_items", item.key) for item in edit.add_detailed_items.items)
-    for name in MetaAdsTargetingEdit.model_fields:
-        value = getattr(edit, name)
-        if name not in (*_LIST_OPERATIONS, "ad_set", "add_detailed_items") and value is not None:
-            items.add((name,))
+    items.update(
+        (name,)
+        for name in MetaAdsTargetingEdit.model_fields
+        if name not in _NOT_SETTINGS and getattr(edit, name) is not None
+    )
     return items
 
 

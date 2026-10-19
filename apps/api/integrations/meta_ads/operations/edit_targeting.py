@@ -105,12 +105,13 @@ def edit_targeting(
         change.problems.append(exc.errors()[0]["msg"].removeprefix("Value error, "))
         return change
     change.problems.extend(_rule_problems(edit, change, special_category=special_category))
-    change.spec = write_targeting(read, change.after, edit.sections)
+    sections: tuple[MetaAdsTargetingSection, ...] = edit.sections
     if special_category and not _states_advantage(read.spec):
         # v26 needs Advantage+ audience stated on these ad sets once their targeting changes.
-        change.spec = write_targeting(read, change.after, (*edit.sections, "advantage_audience"))
+        sections = (*sections, "advantage_audience")
         state = "on" if change.after.advantage_audience else "off"
         change.notes.append(STATED_ADVANTAGE_NOTE.format(state=state))
+    change.spec = write_targeting(read, change.after, sections)
     change.problems.extend(_drop_retired_positions(change.spec, change.notes))
     reaches_eu = (
         includes_eu(targeting_countries(change.after))
@@ -134,15 +135,15 @@ def edit_targeting(
 def _apply(edit: MetaAdsTargetingEdit, fields: dict[str, Any]) -> list[str]:
     """Applies each operation to the draft fields, refusing ones that contradict them."""
     problems = [
-        *_add_places(fields, "locations", edit.add_locations, edit.remove_locations),
-        *_add_places(
+        *_edit_list(fields, "locations", edit.add_locations, edit.remove_locations),
+        *_edit_list(
             fields,
             "excluded_locations",
             edit.add_excluded_locations,
             edit.remove_excluded_locations,
         ),
-        *_add_audiences(fields, "audiences", edit.add_audiences, edit.remove_audiences),
-        *_add_audiences(
+        *_edit_list(fields, "audiences", edit.add_audiences, edit.remove_audiences),
+        *_edit_list(
             fields,
             "excluded_audiences",
             edit.add_excluded_audiences,
@@ -160,55 +161,44 @@ def _apply(edit: MetaAdsTargetingEdit, fields: dict[str, Any]) -> list[str]:
     return problems
 
 
-def _add_places(
+def _edit_list(
     fields: dict[str, Any],
     name: str,
-    added: Sequence[MetaAdsLocation],
-    removed: Sequence[MetaAdsLocationKey],
+    added: Sequence[MetaAdsLocation] | Sequence[MetaAdsAudienceReference],
+    removed: Sequence[MetaAdsLocationKey] | Sequence[MetaAdsAudienceReference],
 ) -> list[str]:
+    """Removes then adds places or audiences, refusing ones that contradict the list."""
     current: list[dict[str, Any]] = fields[name]
-    keys = {(item["kind"], item["key"]) for item in current}
-    noun = "excluded" if name == "excluded_locations" else "targeted"
+    keys = {_identity(item) for item in current}
+    noun = "excluded" if name.startswith("excluded") else "targeted"
     problems = [
-        f"{item.name or item.key} isn't {noun}, so it can't be removed."
+        f"{_label(item)} isn't {noun}, so it can't be removed."
         for item in removed
-        if (item.kind, item.key) not in keys
+        if _identity(item.model_dump()) not in keys
     ]
-    gone = {(item.kind, item.key) for item in removed}
-    # Removing and adding the same place replaces it, such as a city with a new radius.
+    gone = {_identity(item.model_dump()) for item in removed}
+    # Removing and adding the same item replaces it, such as a city with a new radius.
     problems.extend(
-        f"{item.name or item.key} is already {noun}."
+        f"{_label(item)} is already {noun}."
         for item in added
-        if (item.kind, item.key) in keys - gone
+        if _identity(item.model_dump()) in keys - gone
     )
     fields[name] = [
-        *(item for item in current if (item["kind"], item["key"]) not in gone),
+        *(item for item in current if _identity(item) not in gone),
         *(item.model_dump() for item in added),
     ]
     return problems
 
 
-def _add_audiences(
-    fields: dict[str, Any],
-    name: str,
-    added: Sequence[MetaAdsAudienceReference],
-    removed: Sequence[MetaAdsAudienceReference],
-) -> list[str]:
-    current: list[dict[str, Any]] = fields[name]
-    ids = {item["audience_id"] for item in current}
-    noun = "excluded" if name == "excluded_audiences" else "targeted"
-    problems = [
-        f"{item.label} isn't {noun}, so it can't be removed."
-        for item in removed
-        if item.audience_id not in ids
-    ]
-    problems.extend(f"{item.label} is already {noun}." for item in added if item.audience_id in ids)
-    gone = {item.audience_id for item in removed}
-    fields[name] = [
-        *(item for item in current if item["audience_id"] not in gone),
-        *(item.model_dump() for item in added),
-    ]
-    return problems
+def _identity(item: dict[str, Any]) -> tuple[str, ...]:
+    """Identifies an audience by ID and a place by kind and key."""
+    return (item["audience_id"],) if "audience_id" in item else (item["kind"], item["key"])
+
+
+def _label(item: MetaAdsLocation | MetaAdsLocationKey | MetaAdsAudienceReference) -> str:
+    if isinstance(item, MetaAdsAudienceReference):
+        return item.label
+    return item.name or item.key
 
 
 def _detailed(edit: MetaAdsTargetingEdit, fields: dict[str, Any]) -> list[str]:

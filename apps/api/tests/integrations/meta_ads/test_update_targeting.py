@@ -264,22 +264,22 @@ def test_reading_and_rewriting_every_modelled_section_gives_the_same_spec():
 
 
 @pytest.mark.parametrize(
-    ("changes", "categories", "account", "problem"),
+    ("changes", "special_category", "problem"),
     [
-        ({"remove_locations": [{"kind": "country", "key": "IE"}]}, [], {}, "IE isn't targeted"),
-        ({"genders": "women"}, ["HOUSING"], {}, "can't target by gender"),
-        ({"add_locations": [_FRANCE]}, [], {}, "eu_payer and eu_beneficiary"),
+        ({"remove_locations": [{"kind": "country", "key": "IE"}]}, False, "IE isn't targeted"),
+        ({"genders": "women"}, True, "can't target by gender"),
+        ({"add_locations": [_FRANCE]}, False, "eu_payer and eu_beneficiary"),
     ],
 )
-def test_changes_meta_would_refuse_are_named_before_approval(changes, categories, account, problem):
+def test_changes_meta_would_refuse_are_named_before_approval(changes, special_category, problem):
     spec = {"geo_locations": {"countries": ["GB"]}, "age_min": 18}
     change = edit_targeting(
         _edit("8", **changes),
         read_targeting(spec, account_id="123"),
-        special_category=bool(categories),
+        special_category=special_category,
         reached_eu=False,
         has_eu_names=False,
-        eu_defaults=bool(account),
+        eu_defaults=False,
     )
 
     assert any(problem in item for item in change.problems)

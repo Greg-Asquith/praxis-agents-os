@@ -1,10 +1,10 @@
 // apps/web/src/integrations/meta_ads/lib/targeting-edits.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { formatAudienceRange } from "@/integrations/meta_ads/lib/targeting"
+import { formatAudienceRange, TARGETING_KIND_LABELS } from "@/integrations/meta_ads/lib/targeting"
 import { itemName, targetingItems } from "@/integrations/meta_ads/lib/targeting-edit"
 import { placeName } from "@/integrations/meta_ads/lib/targeting-sentence"
-import { formatPercentageChange } from "@/lib/format"
+import { formatPercentageChange, humanizeKey } from "@/lib/format"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray } from "@/lib/guards"
 
 type Targeting = Record<string, unknown>
@@ -33,15 +33,17 @@ const LIST_FIELDS = Object.keys(LISTS) as ListField[]
 // Interest and language changes the card can drop and restore, but not add to.
 type ChipKind = "add_detailed_items" | "remove_detailed_items" | "languages" | "detailed"
 
-/** Settings the card edits in place, when the agent proposed them. */
-export type ValueKey =
-  | "location_types"
-  | "age_min"
-  | "age_max"
-  | "genders"
-  | "advantage_audience"
-  | "eu_payer"
-  | "eu_beneficiary"
+// Settings the card edits in place, when the agent proposed them.
+const VALUE_KEYS = [
+  "location_types",
+  "age_min",
+  "age_max",
+  "genders",
+  "advantage_audience",
+  "eu_payer",
+  "eu_beneficiary",
+] as const
+export type ValueKey = (typeof VALUE_KEYS)[number]
 export type EditValue = string | number | boolean
 
 type Estimate = { lower: number; upper: number } | null
@@ -186,18 +188,9 @@ function itemLabel(field: ListField, item: Item): string {
   return isNonEmptyString(item["label"]) ? item["label"] : itemName(item)
 }
 
-const PLACE_KINDS: Record<string, string> = {
-  country: "Country",
-  region: "Region",
-  city: "City",
-  postcode: "Postcode",
-}
-
 function itemDetail(field: ListField, item: Item): string | null {
-  if (LISTS[field].place) return PLACE_KINDS[String(item["kind"])] ?? null
-  return typeof item["subtype"] === "string" && item["subtype"]
-    ? item["subtype"].charAt(0).toUpperCase() + item["subtype"].slice(1).replaceAll("_", " ")
-    : null
+  if (LISTS[field].place) return TARGETING_KIND_LABELS[String(item["kind"])] ?? null
+  return isNonEmptyString(item["subtype"]) ? humanizeKey(item["subtype"]) : null
 }
 
 function listItem(field: ListField, item: Item, added: boolean): ListItem {
@@ -434,15 +427,7 @@ function withChip(row: TargetingEditRow, toggled: TargetingChip): Entry {
 /** The settings the agent proposed that the card edits in place, as the entry holds them. */
 export function editValues(edit: TargetingEdit): Partial<Record<ValueKey, EditValue>> {
   const values: Partial<Record<ValueKey, EditValue>> = {}
-  for (const key of [
-    "location_types",
-    "age_min",
-    "age_max",
-    "genders",
-    "advantage_audience",
-    "eu_payer",
-    "eu_beneficiary",
-  ] as const) {
+  for (const key of VALUE_KEYS) {
     const value = edit.raw[key]
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
       values[key] = value
@@ -518,16 +503,16 @@ export function editSummary(row: TargetingEditRow): string {
   return parts.join(" · ")
 }
 
+// An omitted value and an empty list both leave the setting as it is.
+function isUnset(value: unknown): boolean {
+  return value === null || value === undefined || (Array.isArray(value) && value.length === 0)
+}
+
 /** True when the entry still makes at least one change. */
 function hasChange(raw: Entry): boolean {
   return Object.entries(raw).some(
     ([key, value]) =>
-      key !== "ad_set" &&
-      key !== "eu_payer" &&
-      key !== "eu_beneficiary" &&
-      value !== null &&
-      value !== undefined &&
-      !(Array.isArray(value) && value.length === 0)
+      key !== "ad_set" && key !== "eu_payer" && key !== "eu_beneficiary" && !isUnset(value)
   )
 }
 
@@ -537,10 +522,7 @@ function comparable(value: unknown): unknown {
   if (!isRecord(value)) return value
   return Object.fromEntries(
     Object.keys(value)
-      .filter((key) => {
-        const item = value[key]
-        return item !== null && item !== undefined && !(Array.isArray(item) && item.length === 0)
-      })
+      .filter((key) => !isUnset(value[key]))
       .sort()
       .map((key) => [key, comparable(value[key])])
   )

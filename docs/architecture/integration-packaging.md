@@ -697,9 +697,9 @@ write through the shared write
 presenter and the provider's mutation ledger. Campaigns and ad sets are
 always created paused. Targeting edits take additions and removals, never a
 whole spec: Meta replaces the spec on update, so the tool writes back only
-the changed sections and keeps every key Praxis doesn't model. Ad creation edits its nested ads through a
-`structured` approval field and adds Page, Instagram account, media, and post
-resolvers. Ad set creation adds pixel and app resolvers and edits its budget
+the changed sections and keeps every key Praxis doesn't model. Ad creation
+edits its nested ads through a `structured` approval field and adds Page,
+Instagram account, media, and post resolvers. Ad set creation adds pixel and app resolvers and edits its budget
 and targeting through `structured` fields. Campaign creation takes its
 account from the one writable selected account and edits its budget through
 a `structured` field. Launching composes the three create operations in one

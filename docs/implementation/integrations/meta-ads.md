@@ -1012,9 +1012,9 @@ The tool works like [Editing ad sets](#editing-ad-sets), through
    approval only while the entry matches `requested`.
 3. After approval, the tool refuses any ad set, interest change, or setting
    the agent didn't propose; places and audiences may differ, because the
-   card edits them and the checks that follow cover them. It refuses the run while the account has used 75% or
-   more of Meta's hourly request allowance, then reads, checks, and
-   dry-runs again. Any problem stops the account before anything is sent.
+   card edits them and the checks that follow cover them. It refuses the
+   run while the account has used 75% or more of Meta's hourly request
+   allowance, then reads, checks, and dry-runs again. Any problem stops the account before anything is sent.
 4. An ad set whose changed sections now differ from the fingerprints on the
    approved card fails with `CHANGED_SINCE_APPROVAL` and isn't sent.
 5. Pending evidence records each ad set's ID, name, changed sections,

@@ -27,7 +27,7 @@ STATED_ADVANTAGE_NOTE = (
     "employment, and financial ads."
 )
 # Below this many people, Meta's estimate is narrow enough to limit delivery.
-NARROW_AUDIENCE = 100_000
+_NARROW_AUDIENCE = 100_000
 # Meta's guidance is to change bids and budgets no more than 2 to 3 times a day.
 DAILY_CHANGE_LIMIT = 3
 
@@ -205,7 +205,8 @@ def minimum_spend_note(
     )
 
 
-def narrow_audience_note(lower: int | None, upper: int | None) -> str | None:
-    if lower is None or upper is None or upper >= NARROW_AUDIENCE:
+def narrow_audience_note(lower: int, upper: int) -> str | None:
+    """Returns a note when Meta's estimate is small enough to limit delivery, or None."""
+    if upper >= _NARROW_AUDIENCE:
         return None
     return f"Meta estimates {lower:,} to {upper:,} people, which may limit delivery."

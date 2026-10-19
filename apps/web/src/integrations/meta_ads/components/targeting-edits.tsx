@@ -405,7 +405,7 @@ function ListEditor({
   )
 }
 
-function UndoLine({
+function UndoLine<T extends { id: string; label: string }>({
   action,
   disabled,
   items,
@@ -414,8 +414,8 @@ function UndoLine({
 }: {
   action: string
   disabled: boolean
-  items: ReturnType<typeof listState>["removing"]
-  onUndo: (item: ReturnType<typeof listState>["removing"][number]) => void
+  items: readonly T[]
+  onUndo: (item: T) => void
   title: string
 }) {
   if (items.length === 0) return null
@@ -528,16 +528,9 @@ function InterestChips({
       <UndoLine
         action="Restore"
         disabled={disabled}
-        items={dropped.map((chip) => ({
-          id: `${chip.kind}:${chip.id}`,
-          label: chip.label,
-          detail: null,
-          added: false,
-          item: { chip },
-        }))}
+        items={dropped.map((chip) => ({ id: `${chip.kind}:${chip.id}`, label: chip.label, chip }))}
         onUndo={(item) => {
-          const chip = dropped.find((candidate) => `${candidate.kind}:${candidate.id}` === item.id)
-          if (chip) onToggle(chip)
+          onToggle(item.chip)
         }}
         title="Left Out"
       />
