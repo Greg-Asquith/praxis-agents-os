@@ -41,7 +41,7 @@ EXPOSE 8080
 CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "8080"]
 
 # --- Production: non-root nginx serving the static bundle ---
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS production
+FROM nginxinc/nginx-unprivileged:1.30-alpine AS production
 
 ENV PORT=8080
 

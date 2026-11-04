@@ -53,9 +53,10 @@ APPROVAL_INSTRUCTIONS = """\
 - Acknowledge the decision. If the user gave a reason, act on it or ask a clarifying question. If they gave no reason, ask whether they want an alternative.
 """
 
-FILE_LINK_INSTRUCTIONS = """\
-## Workspace Links
+FORMATTING_INSTRUCTIONS = """\
+## Response Formatting
 
+The application renders replies as GitHub-flavored Markdown. Present tabular data as Markdown tables, never as ASCII-art tables or tables inside code blocks. Use code blocks only for code, commands, or raw data the user will copy.
 When a tool result includes a file reference, link that file in user-facing Markdown as `[label](/files?fileId=<entity_id>)`. The application turns this exact internal URL into an authenticated download. Never present text such as "Download the file" unless it has a real Markdown link target.
 When a tool result includes an artifact reference, link that artifact as `[label](/artifacts/<entity_id>)`. Keep artifact IDs out of File link targets.
 """
@@ -170,7 +171,7 @@ def runtime_prompt_blocks(
             budget=settings.AGENT_PROMPT_PLANNING_BUDGET,
         ),
         PromptBlock("approvals", APPROVAL_INSTRUCTIONS),
-        PromptBlock("file_links", FILE_LINK_INSTRUCTIONS),
+        PromptBlock("formatting", FORMATTING_INSTRUCTIONS),
         PromptBlock(
             "delegation",
             DELEGATION_INSTRUCTIONS if include_delegation else "",

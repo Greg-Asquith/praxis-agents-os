@@ -55,7 +55,7 @@ function WeekGrid({ schedule, title }: { schedule: AdSchedule | null; title: str
                 <span
                   key={hour}
                   className={cn(
-                    "h-2.5 flex-1 rounded-[2px]",
+                    "h-2.5 flex-1 rounded-xs",
                     schedule === null || scheduleCovers(schedule, day, hour)
                       ? "bg-primary"
                       : "bg-muted"

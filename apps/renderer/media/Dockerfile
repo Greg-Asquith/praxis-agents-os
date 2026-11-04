@@ -2,7 +2,7 @@
 # Build from apps/renderer/: docker build -f media/Dockerfile .
 
 # --- ffmpeg: pinned source, only what the operations use, no network protocols ---
-FROM python:3.12.10-slim AS ffmpeg
+FROM python:3.12.16-slim-trixie AS ffmpeg
 
 ARG FFMPEG_VERSION=9.0.2
 ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
@@ -55,7 +55,7 @@ RUN set -eu; mkdir -p /opt/fonts; grep -v '^#' /tmp/fonts.lock | while read -r h
     done
 
 # --- Runtime: driver, ffmpeg, and OpenCV for face detection; non-root, no application secrets ---
-FROM python:3.12.10-slim AS runtime
+FROM python:3.12.16-slim-trixie AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

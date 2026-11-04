@@ -26,7 +26,7 @@ networks:
 
 services:
   init:
-    image: python:3.12.10-slim
+    image: python:3.12.16-slim-trixie
     command:
       - python
       - /workspace/apps/api/bin/bootstrap_local_env.py

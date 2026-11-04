@@ -247,13 +247,13 @@ function Timeline({ timeline }: { timeline: ScheduleTimeline }) {
           <span className="text-muted-foreground w-10 text-xs font-medium">{title}</span>
           <div
             aria-label={`${title}: ${String(bars.length)} ${pluralize(bars.length, "period")} from ${timeline.from} to ${timeline.to}`}
-            className="bg-muted relative h-2.5 flex-1 rounded-[2px]"
+            className="bg-muted relative h-2.5 flex-1 rounded-xs"
             role="img"
           >
             {bars.map((bar) => (
               <span
                 key={`${String(bar.left)}-${String(bar.width)}-${bar.tone}`}
-                className={cn("absolute inset-y-0 rounded-[2px]", BAR_TONES[bar.tone])}
+                className={cn("absolute inset-y-0 rounded-xs", BAR_TONES[bar.tone])}
                 style={{ left: `${String(bar.left)}%`, width: `max(2px, ${String(bar.width)}%)` }}
               />
             ))}
@@ -276,7 +276,7 @@ function Timeline({ timeline }: { timeline: ScheduleTimeline }) {
 function Legend({ children, tone }: { children: string; tone: keyof typeof BAR_TONES }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span aria-hidden="true" className={cn("size-2.5 rounded-[2px]", BAR_TONES[tone])} />
+      <span aria-hidden="true" className={cn("size-2.5 rounded-xs", BAR_TONES[tone])} />
       {children}
     </span>
   )

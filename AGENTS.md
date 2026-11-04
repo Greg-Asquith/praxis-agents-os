@@ -132,7 +132,9 @@ Use the relevant checks and report anything you could not run:
   scope proportional to the change and use each app's documented commands.
 - Production dependency audits match CI and require registry access:
   `python3 .github/scripts/dependency_audit.py api` and
-  `python3 .github/scripts/dependency_audit.py web`.
+  `python3 .github/scripts/dependency_audit.py web`. For a full sweep that
+  also checks Cloudflare Radar Zero-Wire and new CVEs, use the
+  [dependency security audit skill](.claude/skills/dependency-security-audit/SKILL.md).
 - You are working as one part of a team of agents collaborating to reach the same goals.
   There is a private message board available to you and all other agents at
   `docs/message-board/`. You may create or update any files in this dir to

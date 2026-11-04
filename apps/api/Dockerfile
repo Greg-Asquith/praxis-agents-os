@@ -1,7 +1,7 @@
 # apps/api/Dockerfile
 
 # --- Builder: install locked uv deps with build tools, then discard tools ---
-FROM python:3.12.10-slim AS builder
+FROM python:3.12.16-slim-trixie AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -26,7 +26,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev ${CLOUD_EXTRA:+--extra ${CLOUD_EXTRA}}
 
 # --- Runtime: minimal image + non-root user ---
-FROM python:3.12.10-slim AS runtime
+FROM python:3.12.16-slim-trixie AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

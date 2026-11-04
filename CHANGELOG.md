@@ -288,6 +288,15 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- The API and media renderer images move from `python:3.12.10-slim`, last
+  rebuilt in May 2025, to `python:3.12.16-slim-trixie`. This picks up the
+  Python 3.12.11 to 3.12.16 security fixes, including the Expat parser used
+  for uploaded documents, and current Debian 13 system libraries.
+- The web image moves from the unmaintained nginx 1.27 branch to 1.30.6,
+  which fixes the October 2026 nginx advisories.
+- Authlib 1.9.4, joserfc 1.8.0, pyasn1 0.6.5, and dnspython 2.9.2 clear the
+  production dependency audit. None of the affected code paths is reachable
+  from Praxis.
 - Pydantic AI 2.50 keeps instructions, exceptions, and output templates out of
   agent spans when trace content is disabled (GHSA-4x9p-g9wm-8q7f). Provider
   SDKs and model pricing data update with it.
