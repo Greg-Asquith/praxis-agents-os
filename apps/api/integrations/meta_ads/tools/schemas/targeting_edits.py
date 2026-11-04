@@ -16,11 +16,13 @@ from ...operations.targeting import (
     MetaAdsTargetingKey,
 )
 from ...operations.targeting_reader import (
+    TARGETING_SECTIONS,
+    MetaAdsInventoryFilter,
     MetaAdsTargetingRead,
     MetaAdsTargetingSection,
 )
 from ...references import MetaAdsAdSetReference, MetaAdsAudienceReference
-from .ad_sets import MetaAdsEuName
+from .ad_sets import MetaAdsAdSetPlacements, MetaAdsEuName, MetaAdsPlatform, MetaAdsPosition
 
 MAX_TARGETING_EDITS = 20
 _MAX_ITEMS = 50
@@ -90,11 +92,21 @@ class MetaAdsTargetingEdit(MetaAdsStrictModel):
     advantage_audience: bool | None = None
     eu_payer: MetaAdsEuName | None = None
     eu_beneficiary: MetaAdsEuName | None = None
+    placements: MetaAdsAdSetPlacements | None = Field(
+        default=None, description="Replaces the placements: automatic, or manual positions."
+    )
+    remove_platforms: list[MetaAdsPlatform] = Field(default_factory=list, max_length=5)
+    remove_positions: list[MetaAdsPosition] = Field(default_factory=list, max_length=17)
+    inventory_filter: MetaAdsInventoryFilter | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         if not self.sections:
             raise ValueError("Set at least one targeting change for each ad set.")
+        if self.placements is not None and (self.remove_platforms or self.remove_positions):
+            raise ValueError("Replace placements or remove platforms and positions, not both.")
+        if self.inventory_filter == MetaAdsInventoryFilter():
+            raise ValueError("Set the inventory filter for facebook, audience_network, or both.")
         if self.detailed is not None and (self.add_detailed_items or self.remove_detailed_items):
             raise ValueError("Replace detailed groups or add and remove items, not both.")
         audiences = (
@@ -126,6 +138,9 @@ class MetaAdsTargetingEdit(MetaAdsStrictModel):
                 self.add_excluded_audiences or self.remove_excluded_audiences
             ),
             "advantage_audience": self.advantage_audience is not None,
+            "placements": self.placements is not None
+            or bool(self.remove_platforms or self.remove_positions),
+            "inventory_filter": self.inventory_filter is not None,
         }
         return tuple(section for section, value in changed.items() if value)
 
@@ -161,7 +176,7 @@ class MetaAdsTargetingEditOutcome(MetaAdsStrictModel):
     # Who the ad set reached before, and who it reaches with the change.
     before: MetaAdsTargetingRead
     requested: MetaAdsTargetingRead
-    changes: list[MetaAdsTargetingSectionChange] = Field(max_length=9)
+    changes: list[MetaAdsTargetingSectionChange] = Field(max_length=len(TARGETING_SECTIONS))
     outcome: Literal["updated", "already_set", "failed", "unverified"]
     error_code: str | None = Field(default=None, max_length=100)
     message: str | None = Field(default=None, max_length=1000)

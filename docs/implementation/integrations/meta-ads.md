@@ -326,6 +326,8 @@ Ad sets also carry what ad creation validates before approval:
 - `objective`, read from the parent campaign.
 - `destination_type` and `promoted_object` (Page, pixel, application, custom
   conversion, custom event type, and the app's store page).
+- Campaigns carry `advantage_state` from `advantage_state_info`, such as
+  `ADVANTAGE_PLUS_SALES` or `DISABLED`.
 - `placements`: `automatic` when targeting names no publisher platform,
   otherwise `manual` with entries such as `facebook` (every position on that
   platform) or `instagram:story`. Null when Meta returns no targeting, because
@@ -999,8 +1001,8 @@ against a live account. Meta's dry run is the backstop until then. See
 
 ### Editing targeting
 
-`meta_ads_update_targeting` changes who up to 20 existing ad sets reach, in
-one approval. The agent describes each change as additions and removals,
+`meta_ads_update_targeting` changes who up to 20 existing ad sets reach, and
+where their ads show, in one approval. The agent describes each change as additions and removals,
 never as a whole targeting spec:
 
 | Argument | What it changes |
@@ -1014,6 +1016,8 @@ never as a whole targeting spec:
 | `add_audiences`, `remove_audiences`, `add_excluded_audiences`, `remove_excluded_audiences` | `custom_audiences`, `excluded_custom_audiences` |
 | `advantage_audience` | `targeting_automation.advantage_audience` |
 | `eu_payer`, `eu_beneficiary` | `dsa_payor`, `dsa_beneficiary` |
+| `placements` (`automatic`, or `manual` with `positions` and `devices`), or `remove_platforms` and `remove_positions` | `publisher_platforms`, the `*_positions` lists, and `device_platforms`; removals from automatic placements start from every position Praxis offers |
+| `inventory_filter` (`facebook` and `audience_network`: `expanded`, `moderate`, or `limited`) | `brand_safety_content_filter_levels` as `FACEBOOK_` or `AN_` with `RELAXED`, `STANDARD`, or `STRICT` |
 
 Adding something already there, or removing something that isn't, is an
 error, which checks the agent's picture of the ad set. Audiences must come
@@ -1024,13 +1028,18 @@ reads it and writes it back whole. `operations/targeting_reader.py` maps
 the spec into the typed draft from [The targeting draft](#the-targeting-draft),
 section by section. Each section owns some spec keys: locations
 (`geo_locations`), excluded locations, ages, genders, languages, detailed
-targeting, audiences, excluded audiences, and Advantage+ audience. A
+targeting, audiences, excluded audiences, Advantage+ audience, placements,
+and inventory filter. A
 section holding a shape the draft can't express, such as a pin
 (`custom_locations`), a market, an excluded `location_types`, a city radius
-outside the draft's bounds, or a `flexible_spec` group with job titles, is
-unmodelled. `write_targeting` writes only the changed sections from the
-draft. Every other key, including placements and keys Praxis doesn't model
-at all, goes back exactly as Meta returned it. A change to an unmodelled
+outside the draft's bounds, a `flexible_spec` group with job titles, a
+position outside the Create Ad Set list (such as Facebook `video_feeds`), a
+`*_positions` key for another platform, or automatic placements limited to
+one device, is unmodelled. A platform without a positions list reads as all
+of its positions. `write_targeting` writes only the changed sections from
+the draft, and placements only when they differ from the ones read, so an
+unchanged platform keeps Meta's form. Every other key, including keys
+Praxis doesn't model at all, goes back exactly as Meta returned it. A change to an unmodelled
 section is refused before approval, naming what it holds; changes to other
 sections of the same ad set go ahead.
 
@@ -1050,6 +1059,18 @@ sections of the same ad set go ahead.
 - Instagram `explore` and Messenger `story`, which v26 rejects or drops on
   update, are removed from the spec before any write, with a note. An ad
   set left with no positions on a platform it uses is refused.
+- Removing a platform or position the ad set doesn't show ads on, or every
+  placement, is refused. Switching from automatic to manual placements adds
+  "Manual placements usually cost more and stop this campaign qualifying as
+  Advantage+" when the campaign's `advantage_state` isn't `DISABLED`;
+  switching to automatic notes that ads without a vertical version may show
+  cropped.
+- An Audience Network inventory filter on an ad set without Audience
+  Network placements is refused. The tool reads the ad account's
+  `brand_safety_content_filter_levels`, and a level looser than the
+  account's is refused with "The ad account's inventory filter is stricter;
+  change it in Brand Safety settings". When that read fails, Meta's dry run
+  is the check.
 
 The tool works like [Editing ad sets](#editing-ad-sets), through
 `update_fields`:
@@ -1069,8 +1090,13 @@ The tool works like [Editing ad sets](#editing-ad-sets), through
    shows Meta's estimated audience with the change, its percentage move,
    and the estimate now, then the targeting in rows laid out like the
    Create Ad Set card: **Locations**, **Age and Gender**, **Interests**,
-   **Audiences**, **Widen Audience**, and **EU Transparency**, each with a
-   "Current Setting" line. Places and audiences are fully editable: the
+   **Audiences**, **Widen Audience**, **Placements**, and **EU
+   Transparency**, each with a "Current Setting" line. **Placements** shows
+   only for a proposed placement or filter change. Its summary is the
+   **Where** sentence, ending with the inventory filter ("Moderate inventory
+   filter"); proposed placements are editable with the Create Ad Set
+   placement controls, which send them as one `placements` value, and
+   proposed filters with a level picker. Places and audiences are fully editable: the
    operator removes any place or audience with its chip, undoes a removal
    with **Keep**, restores a dropped proposal with **Restore**, and adds or
    excludes more through the same location and audience searches as Create
@@ -1081,7 +1107,8 @@ The tool works like [Editing ad sets](#editing-ad-sets), through
    (`lib/targeting-edit.ts` shares their options). A problem blocks
    approval only while the entry matches `requested`.
 3. After approval, the tool refuses any ad set, interest change, or setting
-   the agent didn't propose; places and audiences may differ, because the
+   the agent didn't propose (`placements`, `remove_platforms`, and
+   `remove_positions` count as one setting); places and audiences may differ, because the
    card edits them and the checks that follow cover them. It refuses the
    run while the account has used 75% or more of Meta's hourly request
    allowance, then reads, checks, and dry-runs again. Any problem stops the account before anything is sent.
@@ -1099,15 +1126,17 @@ The tool works like [Editing ad sets](#editing-ad-sets), through
 Each result row has the draft before and as requested, each changed
 section's keys before, requested, and read back, and the outcome. The tool
 has a 300-second timeout, supports Code Mode, and is listed in the spend
-policy test. Placement and inventory filter edits are pending.
+policy test.
 
 Whether `targeting` on update replaces the whole spec, the read shapes of
 `zips`, `regions`, and `flexible_spec`, whether Meta echoes
 `location_types` in `excluded_geo_locations`, whether a targeting change
 sends ads back to review, `reachestimate` latency with a whole spec, the
-explicit Advantage+ audience rule on updates, and an update to an ad set
-that still reads back with `explore` haven't been checked against a live
-account. Meta's dry run is the backstop until then.
+explicit Advantage+ audience rule on updates, an update to an ad set
+that still reads back with `explore`, the inventory filter values, the ad
+account's `brand_safety_content_filter_levels` read, whether a stricter ad
+set filter is accepted, and whether Meta reads placements back as sent
+haven't been checked against a live account. Meta's dry run is the backstop until then.
 
 ### Uploading media
 

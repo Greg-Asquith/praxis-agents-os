@@ -26,6 +26,13 @@ STATED_ADVANTAGE_NOTE = (
     "Advantage+ audience is sent as {state}, because Meta needs it stated for housing, "
     "employment, and financial ads."
 )
+MANUAL_PLACEMENTS_NOTE = (
+    "Manual placements can cost more and stop this campaign qualifying as Advantage+."
+)
+AUTOMATIC_PLACEMENTS_NOTE = (
+    "Automatic placements include Stories and Reels, so ads without a vertical version may "
+    "show cropped."
+)
 # Below this many people, Meta's estimate is narrow enough to limit delivery.
 _NARROW_AUDIENCE = 100_000
 # Meta's guidance is to change bids and budgets no more than 2 to 3 times a day.

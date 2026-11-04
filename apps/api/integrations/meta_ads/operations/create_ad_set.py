@@ -336,7 +336,7 @@ def plan_ad_set(
     """
     row = GOALS[request.goal]
     targeting = targeting_spec(request.targeting)
-    targeting.update(_placements(request.placements))
+    targeting.update(placement_spec(request.placements))
     body = {
         "name": request.name,
         "status": status.upper(),
@@ -390,8 +390,8 @@ def planned_ad_set(request: MetaAdsAdSetSettings) -> PlannedAdSet:
     )
 
 
-def _placements(placements: MetaAdsAdSetPlacements) -> dict[str, Any]:
-    # No placement fields means Meta's automatic placements.
+def placement_spec(placements: MetaAdsAdSetPlacements) -> dict[str, Any]:
+    """Maps placements to Meta's targeting keys; automatic placements set none."""
     if placements.mode == "automatic":
         return {}
     spec: dict[str, Any] = {}

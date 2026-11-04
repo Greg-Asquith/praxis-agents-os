@@ -52,7 +52,9 @@ from ..operations.list_assets import read_audience_references
 from ..operations.list_objects import read_objects_by_id
 from ..operations.mutations import MetaAdsMutationLedger
 from ..operations.targeting_reader import (
+    MetaAdsInventoryFilter,
     MetaAdsReadTargeting,
+    read_inventory_filter,
     read_targeting,
     read_targeting_specs,
     section_fingerprints,
@@ -110,6 +112,8 @@ _LIST_OPERATIONS = (
     "remove_audiences",
     "add_excluded_audiences",
     "remove_excluded_audiences",
+    "remove_platforms",
+    "remove_positions",
 )
 # Fields the approval comparison doesn't treat as settings.
 _NOT_SETTINGS = frozenset({*_LIST_OPERATIONS, "ad_set", "add_detailed_items"})
@@ -125,6 +129,8 @@ class _Review:
     ad_set: MetaAdsObject
     # Housing, employment, and financial campaigns limit targeting.
     special_category: bool = False
+    # Whether the campaign qualifies as Advantage+ now.
+    advantage_campaign: bool = False
     read: MetaAdsReadTargeting | None = None
     change: MetaAdsTargetingChange | None = None
     problems: list[str] = field(default_factory=list)
@@ -275,6 +281,9 @@ def _proposal(edit: MetaAdsTargetingEdit) -> set[tuple[str, ...]]:
         for name in MetaAdsTargetingEdit.model_fields
         if name not in _NOT_SETTINGS and getattr(edit, name) is not None
     )
+    # The card edits removals as whole placements, so they're one setting.
+    if edit.remove_platforms or edit.remove_positions:
+        items.add(("placements",))
     return items
 
 
@@ -306,14 +315,29 @@ async def _review_account(
     eu_defaults = any("locations" in edit.sections for edit in edits) and await _has_eu_defaults(
         client, account_id
     )
+    account_filter = (
+        await _account_filter(client, account_id)
+        if any(edit.inventory_filter is not None for edit in edits)
+        else None
+    )
     reviews: list[_Review] = []
     for edit in edits:
         review = _Review(edit=edit, ad_set=ad_sets[edit.ad_set.adset_id])
         campaign = campaigns.get(review.ad_set.campaign_id or "")
         review.special_category = campaign is not None and special_category(campaign)
+        review.advantage_campaign = campaign is not None and campaign.advantage_state not in (
+            None,
+            "DISABLED",
+        )
         review.problems.extend(_ad_set_problems(review, campaign, specs, audiences))
         if not review.problems:
-            _apply(review, specs[review.ad_set.id], audiences, eu_defaults=eu_defaults)
+            _apply(
+                review,
+                specs[review.ad_set.id],
+                audiences,
+                eu_defaults=eu_defaults,
+                account_filter=account_filter,
+            )
         reviews.append(review)
     for review in reviews:
         if review.problems or review.requested == review.before:
@@ -359,6 +383,7 @@ def _apply(
     audiences: Mapping[str, MetaAdsAudienceReference],
     *,
     eu_defaults: bool,
+    account_filter: MetaAdsInventoryFilter | None,
 ) -> None:
     ad_set = review.ad_set
     review.read = read_targeting(
@@ -371,6 +396,8 @@ def _apply(
         reached_eu=includes_eu(ad_set.countries or ()),
         has_eu_names=bool(ad_set.eu_payer and ad_set.eu_beneficiary),
         eu_defaults=eu_defaults,
+        advantage_campaign=review.advantage_campaign,
+        account_filter=account_filter,
     )
     review.problems.extend(review.change.problems)
     review.notes.extend(review.change.notes)
@@ -421,6 +448,23 @@ async def _has_eu_defaults(client: MetaAdsClient, account_id: str) -> bool:
         isinstance(raw.get(key), str) and raw[key].strip()
         for key in ("default_dsa_payor", "default_dsa_beneficiary")
     )
+
+
+async def _account_filter(client: MetaAdsClient, account_id: str) -> MetaAdsInventoryFilter | None:
+    """Reads the ad account's inventory filter; None when it can't be read (step 0)."""
+    ensure_account_available(account_id, operation=_OPERATION)
+    try:
+        raw = await client.graph_get(
+            ad_account_path(account_id),
+            params={"fields": "brand_safety_content_filter_levels"},
+            operation=_OPERATION,
+            policy=IntegrationRequestPolicy.READ,
+            usage_account_id=account_id,
+        )
+    except IntegrationError:
+        # Meta's dry run still refuses a filter looser than the account's.
+        return None
+    return read_inventory_filter(raw.get("brand_safety_content_filter_levels"))
 
 
 async def _add_notes(client: MetaAdsClient, account_id: str, reviews: Sequence[_Review]) -> None:
@@ -646,9 +690,9 @@ DEFINITION = RuntimeToolDefinition(
     name="meta_ads_update_targeting",
     function=meta_ads_update_targeting,
     description=(
-        "Change who existing Meta ad sets reach, up to 20 per call, in one approval. Each entry "
-        "names one ad set from meta_ads_list_objects and only what changes, as additions and "
-        "removals; the tool never takes a whole targeting spec. add_locations and "
+        "Change who existing Meta ad sets reach and where their ads show, up to 20 per call, "
+        "in one approval. Each entry names one ad set from meta_ads_list_objects and only "
+        "what changes, as additions and removals; the tool never takes a whole targeting spec. add_locations and "
         "add_excluded_locations take places from meta_ads_search_targeting; remove_locations "
         "and remove_excluded_locations take kind and key of places the ad set already has. "
         "location_types home_or_recent or home; age_min and age_max (13 to 65, age_max none "
@@ -659,12 +703,17 @@ DEFINITION = RuntimeToolDefinition(
         "add_excluded_audiences, and remove_excluded_audiences take audiences from "
         "meta_ads_list_assets in the ad set's ad account; advantage_audience on or off; "
         "eu_payer and eu_beneficiary when an ad set newly reaches the EU and the account has "
-        "no defaults. Adding something already there, or removing something that isn't, is "
+        "no defaults. placements replaces where ads show: mode automatic, or manual with "
+        "positions and devices; remove_platforms (such as audience_network) and "
+        "remove_positions take placements away, starting from every position when the ad "
+        "set is automatic. inventory_filter sets facebook (Facebook and Instagram) and "
+        "audience_network to expanded, moderate, or limited; it can't be looser than the ad "
+        "account's. Adding something already there, or removing something that isn't, is "
         "an error. Settings Praxis doesn't model, such as pin locations, stay as they are, "
-        "and a change to a section that holds them is refused. Placements aren't changed "
-        "here. The card shows who each ad set reaches before and after, with Meta's audience "
-        "estimates; Meta checks every change before any is made, and each result reports "
-        "the targeting Meta shows after the change."
+        "and a change to a section that holds them is refused. The card shows who each ad "
+        "set reaches and where before and after, with Meta's audience estimates; Meta checks "
+        "every change before any is made, and each result reports the targeting Meta shows "
+        "after the change."
     ),
     provider="meta_ads",
     label="Update Meta Ad Set Targeting",
@@ -688,7 +737,7 @@ DEFINITION = RuntimeToolDefinition(
         completed_label="Updated Meta Ad Set Targeting",
         failed_label="Couldn't Update Meta Ad Set Targeting",
         approval_title="Change Meta Ad Set Targeting",
-        approval_prompt="The agent wants to change who these Meta ad sets reach.",
+        approval_prompt="The agent wants to change who these Meta ad sets reach and where.",
         approve_label="Approve & Update",
         arg_fields=(
             ToolFieldPresentation(

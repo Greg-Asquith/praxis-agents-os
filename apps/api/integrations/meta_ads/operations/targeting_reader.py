@@ -18,7 +18,10 @@ from pydantic import Field, ValidationError
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
+from ..models import MetaAdsStrictModel
 from ..references import MetaAdsAudienceReference
+from ..tools.schemas.ad_sets import MetaAdsAdSetPlacements, MetaAdsPlatform, MetaAdsPosition
+from .create_ad_set import placement_spec
 from .paging import read_pages
 from .targeting import (
     DEMOGRAPHIC_CATEGORIES,
@@ -38,7 +41,11 @@ type MetaAdsTargetingSection = Literal[
     "audiences",
     "excluded_audiences",
     "advantage_audience",
+    "placements",
+    "inventory_filter",
 ]
+type MetaAdsInventoryLevel = Literal["expanded", "moderate", "limited"]
+_PLATFORMS: tuple[MetaAdsPlatform, ...] = get_args(MetaAdsPlatform.__value__)
 TARGETING_SECTIONS: tuple[MetaAdsTargetingSection, ...] = get_args(
     MetaAdsTargetingSection.__value__
 )
@@ -52,6 +59,12 @@ SECTION_KEYS: dict[MetaAdsTargetingSection, tuple[str, ...]] = {
     "audiences": ("custom_audiences",),
     "excluded_audiences": ("excluded_custom_audiences",),
     "advantage_audience": ("targeting_automation",),
+    "placements": (
+        "publisher_platforms",
+        *(f"{platform}_positions" for platform in _PLATFORMS),
+        "device_platforms",
+    ),
+    "inventory_filter": ("brand_safety_content_filter_levels",),
 }
 _FIELD_SECTIONS: dict[str, MetaAdsTargetingSection] = {
     "locations": "locations",
@@ -65,6 +78,8 @@ _FIELD_SECTIONS: dict[str, MetaAdsTargetingSection] = {
     "audiences": "audiences",
     "excluded_audiences": "excluded_audiences",
     "advantage_audience": "advantage_audience",
+    "placements": "placements",
+    "inventory_filter": "inventory_filter",
 }
 _OPERATION = "update_targeting"
 _GEO_EDGES = {"regions": "region", "cities": "city", "zips": "postcode"}
@@ -78,6 +93,22 @@ _DETAILED_KINDS = {"interests": "interest", "behaviors": "behavior"}
 # Detailed targeting outside flexible_spec, which Meta treats as one more required group.
 _LOOSE_DETAILED = frozenset({*_DETAILED_KINDS, *DEMOGRAPHIC_CATEGORIES})
 _GENDERS = {(): "all", (1, 2): "all", (1,): "men", (2,): "women"}
+POSITIONS: tuple[MetaAdsPosition, ...] = get_args(MetaAdsPosition.__value__)
+# Positions v26 rejects or drops on update, which an older ad set can still read back with.
+RETIRED_POSITIONS = {
+    "instagram:explore": "Meta no longer offers Instagram Explore; it's removed from this ad set.",
+    "messenger:story": "Meta no longer offers Messenger stories; they're removed from this ad set.",
+}
+_DEVICES = {("desktop", "mobile"): "all", ("mobile",): "mobile", ("desktop",): "desktop"}
+# Inventory filter values by platform prefix and level suffix, such as AN_STRICT (step 0).
+_FILTER_PLATFORMS = {"FACEBOOK": "facebook", "AN": "audience_network"}
+_FILTER_LEVELS: dict[str, MetaAdsInventoryLevel] = {
+    "RELAXED": "expanded",
+    "STANDARD": "moderate",
+    "STRICT": "limited",
+}
+_FILTER_PREFIXES = {value: key for key, value in _FILTER_PLATFORMS.items()}
+_FILTER_SUFFIXES = {value: key for key, value in _FILTER_LEVELS.items()}
 _UNMODELLED = {
     "locations": "pins, markets, or other places Praxis can't change",
     "excluded_locations": "pins, markets, or other places Praxis can't change",
@@ -88,13 +119,26 @@ _UNMODELLED = {
     "audiences": "audiences Praxis can't change",
     "excluded_audiences": "audiences Praxis can't change",
     "advantage_audience": "an Advantage+ audience setting Praxis can't change",
+    "placements": "placements Praxis can't change",
+    "inventory_filter": "an inventory filter Praxis can't change",
 }
+
+
+class MetaAdsInventoryFilter(MetaAdsStrictModel):
+    """How cautious Meta is about the content shown beside ads; null follows the ad account."""
+
+    facebook: MetaAdsInventoryLevel | None = Field(
+        default=None, description="Facebook and Instagram."
+    )
+    audience_network: MetaAdsInventoryLevel | None = None
 
 
 class MetaAdsTargetingRead(MetaAdsTargeting):
     """A draft read from an existing ad set, whose places may all be ones Praxis doesn't model."""
 
     locations: list[MetaAdsLocation] = Field(default_factory=list, max_length=200)
+    placements: MetaAdsAdSetPlacements = Field(default_factory=MetaAdsAdSetPlacements)
+    inventory_filter: MetaAdsInventoryFilter = Field(default_factory=MetaAdsInventoryFilter)
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +214,11 @@ def read_targeting(
             ),
         ),
         ("advantage_audience", lambda: _read_advantage(spec.get("targeting_automation"))),
+        ("placements", lambda: _read_placements(spec)),
+        (
+            "inventory_filter",
+            lambda: _read_inventory(spec.get("brand_safety_content_filter_levels")),
+        ),
     )
     for section, reader in readers:
         values = reader()
@@ -336,14 +385,74 @@ def _read_advantage(value: Any) -> dict[str, Any] | None:
     return {"advantage_audience": flag == 1}
 
 
+def _read_placements(spec: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Reads placements; positions outside the closed set, or retired ones alone, are unmodelled."""
+    keys = SECTION_KEYS["placements"]
+    if any(key.endswith("_positions") and key not in keys for key in spec):
+        return None
+    devices_value = spec.get("device_platforms") or ["desktop", "mobile"]
+    if not isinstance(devices_value, list):
+        return None
+    devices = _DEVICES.get(tuple(sorted(devices_value)))
+    platforms = spec.get("publisher_platforms") or []
+    if not isinstance(platforms, list) or devices is None:
+        return None
+    named = {key: spec.get(f"{key}_positions") for key in _PLATFORMS}
+    if not platforms:
+        # No platforms means Meta's automatic placements, which can't limit devices.
+        return None if devices != "all" or any(named.values()) else {}
+    if any(value and key not in platforms for key, value in named.items()):
+        return None
+    positions: list[str] = []
+    for platform in platforms:
+        if platform not in named:
+            return None
+        listed = named[platform]
+        if not listed:
+            # A platform without positions shows ads in all of them.
+            positions.extend(item for item in POSITIONS if item.startswith(f"{platform}:"))
+            continue
+        if not isinstance(listed, list):
+            return None
+        kept = [f"{platform}:{item}" for item in listed]
+        kept = [item for item in kept if item not in RETIRED_POSITIONS]
+        if not kept or any(item not in POSITIONS for item in kept):
+            return None
+        positions.extend(kept)
+    return {"placements": {"mode": "manual", "positions": positions, "devices": devices}}
+
+
+def read_inventory_filter(value: Any) -> MetaAdsInventoryFilter | None:
+    """Reads Meta's inventory filter levels, or None for a shape Praxis can't express."""
+    read = _read_inventory(value)
+    if read is None:
+        return None
+    return MetaAdsInventoryFilter.model_validate(read.get("inventory_filter", {}))
+
+
+def _read_inventory(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return {}
+    if not isinstance(value, list):
+        return None
+    levels: dict[str, str] = {}
+    for item in value:
+        prefix, _, level = item.partition("_") if isinstance(item, str) else ("", "", "")
+        platform = _FILTER_PLATFORMS.get(prefix)
+        if platform is None or level not in _FILTER_LEVELS or platform in levels:
+            return None
+        levels[platform] = _FILTER_LEVELS[level]
+    return {"inventory_filter": levels} if levels else {}
+
+
 def write_targeting(
     read: MetaAdsReadTargeting,
-    draft: MetaAdsTargeting,
+    draft: MetaAdsTargetingRead,
     touched: Iterable[MetaAdsTargetingSection],
 ) -> dict[str, Any]:
     """Writes the touched sections from `draft` over the spec as read, keeping every other key."""
     spec = copy.deepcopy(read.spec)
-    built = targeting_spec(draft)
+    built = _built(draft)
     for section in touched:
         if section == "advantage_audience":
             automation = spec.get("targeting_automation")
@@ -352,11 +461,25 @@ def write_targeting(
                 **built["targeting_automation"],
             }
             continue
+        if section == "placements" and draft.placements == read.draft.placements:
+            # Unchanged placements keep Meta's form, such as a platform without positions.
+            continue
         for key in SECTION_KEYS[section]:
             spec.pop(key, None)
             if key in built:
                 spec[key] = built[key]
     return spec
+
+
+def _built(draft: MetaAdsTargetingRead) -> dict[str, Any]:
+    """The whole spec the draft describes, placements and inventory filter included."""
+    built = {**targeting_spec(draft), **placement_spec(draft.placements)}
+    if levels := draft.inventory_filter.model_dump(exclude_none=True):
+        built["brand_safety_content_filter_levels"] = [
+            f"{_FILTER_PREFIXES[platform]}_{_FILTER_SUFFIXES[level]}"
+            for platform, level in levels.items()
+        ]
+    return built
 
 
 def section_fingerprints(spec: Mapping[str, Any]) -> dict[MetaAdsTargetingSection, str]:
@@ -369,8 +492,9 @@ def section_fingerprints(spec: Mapping[str, Any]) -> dict[MetaAdsTargetingSectio
     }
 
 
-def section_values(draft: MetaAdsTargeting) -> dict[MetaAdsTargetingSection, str]:
+def section_values(draft: MetaAdsTargetingRead) -> dict[MetaAdsTargetingSection, str]:
     """Describes each section by keys only, in a stable order, for evidence and read-back checks."""
+    placements, levels = draft.placements, draft.inventory_filter
     return {
         "locations": f"{_places(draft.locations)}; {draft.location_types}",
         "excluded_locations": _places(draft.excluded_locations),
@@ -387,6 +511,11 @@ def section_values(draft: MetaAdsTargeting) -> dict[MetaAdsTargetingSection, str
         )
         or "none",
         "advantage_audience": "on" if draft.advantage_audience else "off",
+        "placements": "automatic"
+        if placements.mode == "automatic"
+        else f"{','.join(sorted(placements.positions))}; {placements.devices}",
+        "inventory_filter": f"facebook:{levels.facebook or 'account'},"
+        f"audience_network:{levels.audience_network or 'account'}",
     }
 
 

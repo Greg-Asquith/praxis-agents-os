@@ -6,6 +6,7 @@ import type { ReactNode } from "react"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { AdSetPlacements } from "@/integrations/meta_ads/components/ad-set-placements"
 import {
   Chip,
   ChoiceCards,
@@ -32,6 +33,7 @@ import {
   addedByOperator,
   afterEstimate,
   audiencesText,
+  changesPlacements,
   currentProblems,
   editSummary,
   editTargeting,
@@ -39,19 +41,26 @@ import {
   entryProblem,
   estimateChange,
   estimateText,
+  FILTER_OPTIONS,
+  FILTER_PLATFORMS,
+  filterEdits,
   interestsText,
   listHas,
   listState,
   peopleText,
+  placementsOf,
   placesText,
   RESULT_SECTIONS,
   targetingAfter,
   targetingEditRows,
   targetingNotes,
   targetingWarnings,
+  whereText,
   widenText,
+  withFilter,
   withItem,
   withoutItem,
+  withPlacements,
   type ListField,
   type TargetingChip,
   type TargetingEditArgs,
@@ -254,6 +263,7 @@ function Sections({ disabled, edit, row }: SectionProps) {
           <CurrentSetting>{widenText(before)}</CurrentSetting>
         </SettingRow>
       ) : null}
+      <WhereRow disabled={disabled} row={row} set={set} />
       {"eu_payer" in values || "eu_beneficiary" in values ? (
         <SettingRow
           rowKey="eu"
@@ -278,6 +288,61 @@ function Sections({ disabled, edit, row }: SectionProps) {
         </SettingRow>
       ) : null}
     </SettingRows>
+  )
+}
+
+/** Placements and inventory filter, shown only when the agent proposed changing them. */
+function WhereRow({
+  disabled,
+  row,
+  set,
+}: {
+  disabled: boolean
+  row: TargetingEditRow
+  set: (change: TargetingEditChange) => void
+}) {
+  const adSet = row.edit
+  const placements = changesPlacements(row.proposed.raw)
+  const filters = FILTER_PLATFORMS.filter(({ key }) => key in filterEdits(row.proposed.raw))
+  if (!placements && filters.length === 0) return null
+  const before = adSet.check?.before ?? {}
+  const after = targetingAfter(before, adSet.raw)
+  const levels = filterEdits(adSet.raw)
+  const kept = adSet.check?.unmodelled["placements"]
+  return (
+    <SettingRow rowKey="where" summary={whereText(after)} title="Placements">
+      {placements && kept ? (
+        <p className="text-foreground/75 text-sm">
+          This ad set's placements include {kept}, so change them in Ads Manager.
+        </p>
+      ) : null}
+      {placements && !kept ? (
+        <AdSetPlacements
+          disabled={disabled}
+          onChange={(value) => {
+            set({ entry: withPlacements(adSet.raw, value) })
+          }}
+          placements={placementsOf(after)}
+        />
+      ) : null}
+      {filters.length > 0 ? (
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          {filters.map(({ key, label }) => (
+            <SelectField
+              key={key}
+              disabled={disabled}
+              label={`${label} Inventory Filter`}
+              onChange={(level) => {
+                set({ entry: withFilter(adSet.raw, key, level) })
+              }}
+              options={FILTER_OPTIONS}
+              value={levels[key] ?? null}
+            />
+          ))}
+        </div>
+      ) : null}
+      <CurrentSetting>{whereText(before)}</CurrentSetting>
+    </SettingRow>
   )
 }
 

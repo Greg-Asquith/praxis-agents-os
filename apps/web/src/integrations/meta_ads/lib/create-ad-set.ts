@@ -86,6 +86,9 @@ const POSITION_LABELS = new Map<string, string>(
     group.positions.map(([key, label]) => [key, `${group.label} ${label}`] as const)
   )
 )
+export const ALL_POSITIONS: string[] = PLACEMENT_GROUPS.flatMap((group) =>
+  group.positions.map(([key]) => key)
+)
 export const DEFAULT_POSITIONS = ["facebook:feed", "instagram:stream"]
 
 export type Placements = { mode: "automatic" | "manual"; positions: string[]; devices: string }
@@ -273,7 +276,7 @@ function placementLabel(position: string): string {
   return POSITION_LABELS.get(position) ?? position
 }
 
-function placementSummary(placements: Placements): string {
+export function placementSummary(placements: Placements): string {
   if (placements.mode === "automatic") return "Automatic: Meta shows the ads where they cost less"
   const labels = placements.positions.map(placementLabel)
   return `${String(labels.length)} places: ${LIST.format(labels)}`

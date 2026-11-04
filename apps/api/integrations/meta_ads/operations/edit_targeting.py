@@ -11,7 +11,12 @@ from pydantic import ValidationError
 from ..references import MetaAdsAudienceReference
 from ..tools.schemas.targeting_edits import MetaAdsLocationKey, MetaAdsTargetingEdit
 from .create_ad_set import EU_NAMES_MISSING, includes_eu
-from .edit_impact import EU_DEFAULTS_NOTE, STATED_ADVANTAGE_NOTE
+from .edit_impact import (
+    AUTOMATIC_PLACEMENTS_NOTE,
+    EU_DEFAULTS_NOTE,
+    MANUAL_PLACEMENTS_NOTE,
+    STATED_ADVANTAGE_NOTE,
+)
 from .targeting import (
     MetaAdsDetailedItem,
     MetaAdsLocation,
@@ -19,6 +24,9 @@ from .targeting import (
     targeting_problems,
 )
 from .targeting_reader import (
+    POSITIONS,
+    RETIRED_POSITIONS,
+    MetaAdsInventoryFilter,
     MetaAdsReadTargeting,
     MetaAdsTargetingRead,
     MetaAdsTargetingSection,
@@ -27,17 +35,6 @@ from .targeting_reader import (
 
 type MetaAdsEuNames = Literal["not_needed", "sent", "account_defaults"]
 
-# Positions v26 rejects or drops on update, which an older ad set can still read back with.
-_RETIRED_POSITIONS = {
-    "instagram": (
-        "explore",
-        "Meta no longer offers Instagram Explore; it's removed from this ad set.",
-    ),
-    "messenger": (
-        "story",
-        "Meta no longer offers Messenger stories; they're removed from this ad set.",
-    ),
-}
 _RETIRED_ONLY = (
     "This ad set shows ads only in placements Meta no longer offers. Change its placements in "
     "Ads Manager first."
@@ -52,7 +49,20 @@ _SECTION_NAMES: dict[MetaAdsTargetingSection, str] = {
     "audiences": "audiences",
     "excluded_audiences": "excluded audiences",
     "advantage_audience": "Advantage+ audience",
+    "placements": "placements",
+    "inventory_filter": "inventory filter",
 }
+_PLATFORM_NAMES = {
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "audience_network": "Audience Network",
+    "messenger": "Messenger",
+    "threads": "Threads",
+}
+_FILTER_RANKS = {"expanded": 0, "moderate": 1, "limited": 2}
+_FILTER_LOOSER = (
+    "The ad account's inventory filter is stricter; change it in Brand Safety settings."
+)
 
 
 @dataclass
@@ -76,12 +86,15 @@ def edit_targeting(
     reached_eu: bool,
     has_eu_names: bool,
     eu_defaults: bool,
+    advantage_campaign: bool = False,
+    account_filter: MetaAdsInventoryFilter | None = None,
 ) -> MetaAdsTargetingChange:
     """Applies the edit to the read draft and builds the whole spec to send.
 
     `reached_eu` says whether the ad set reaches the EU before the edit, `has_eu_names` whether
     it already names its EU payer and beneficiary, and `eu_defaults` whether the ad account has
-    defaults for both.
+    defaults for both. `advantage_campaign` says whether the campaign qualifies as Advantage+
+    now, and `account_filter` is the ad account's inventory filter, when it could be read.
     """
     before = read.draft
     change = MetaAdsTargetingChange(
@@ -105,6 +118,8 @@ def edit_targeting(
         change.problems.append(exc.errors()[0]["msg"].removeprefix("Value error, "))
         return change
     change.problems.extend(_rule_problems(edit, change, special_category=special_category))
+    change.problems.extend(_filter_problems(edit, change.after, account_filter))
+    change.notes.extend(_placement_notes(change, advantage_campaign=advantage_campaign))
     sections: tuple[MetaAdsTargetingSection, ...] = edit.sections
     if special_category and not _states_advantage(read.spec):
         # v26 needs Advantage+ audience stated on these ad sets once their targeting changes.
@@ -158,6 +173,46 @@ def _apply(edit: MetaAdsTargetingEdit, fields: dict[str, Any]) -> list[str]:
         fields["age_max"] = None if edit.age_max == "none" else edit.age_max
     if edit.languages is not None:
         fields["languages"] = [] if edit.languages == "all" else list(edit.languages)
+    if edit.inventory_filter is not None:
+        fields["inventory_filter"] = {
+            **fields["inventory_filter"],
+            **edit.inventory_filter.model_dump(exclude_none=True),
+        }
+    return [*problems, *_placements(edit, fields)]
+
+
+def _placements(edit: MetaAdsTargetingEdit, fields: dict[str, Any]) -> list[str]:
+    """Replaces placements, or removes platforms and positions from the ones the ad set has.
+
+    Removing from automatic placements starts from every position Meta offers.
+    """
+    if edit.placements is not None:
+        fields["placements"] = edit.placements.model_dump()
+        return []
+    if not (edit.remove_platforms or edit.remove_positions):
+        return []
+    current = fields["placements"]
+    positions = current["positions"] if current["mode"] == "manual" else list(POSITIONS)
+    platforms = {position.split(":")[0] for position in positions}
+    problems = [
+        f"This ad set doesn't show ads on {_PLATFORM_NAMES[platform]}, so it can't be removed."
+        for platform in edit.remove_platforms
+        if platform not in platforms
+    ]
+    problems.extend(
+        f"{position} isn't one of this ad set's placements, so it can't be removed."
+        for position in edit.remove_positions
+        if position not in positions
+    )
+    kept = [
+        position
+        for position in positions
+        if position.split(":")[0] not in edit.remove_platforms
+        and position not in edit.remove_positions
+    ]
+    if not kept:
+        problems.append("Keep at least one placement.")
+    fields["placements"] = {"mode": "manual", "positions": kept, "devices": current["devices"]}
     return problems
 
 
@@ -267,6 +322,43 @@ def _rule_problems(
     return problems
 
 
+def _filter_problems(
+    edit: MetaAdsTargetingEdit,
+    after: MetaAdsTargetingRead,
+    account_filter: MetaAdsInventoryFilter | None,
+) -> list[str]:
+    """Refuses an Audience Network filter it can't use, or one looser than the account's."""
+    if edit.inventory_filter is None:
+        return []
+    problems: list[str] = []
+    placements = after.placements
+    if (
+        edit.inventory_filter.audience_network is not None
+        and placements.mode == "manual"
+        and not any(item.startswith("audience_network:") for item in placements.positions)
+    ):
+        problems.append(
+            "This ad set doesn't show ads on Audience Network, so leave its inventory filter out."
+        )
+    for platform, level in edit.inventory_filter.model_dump(exclude_none=True).items():
+        floor = getattr(account_filter, platform, None) if account_filter else None
+        if floor is not None and _FILTER_RANKS[level] < _FILTER_RANKS[floor]:
+            problems.append(_FILTER_LOOSER)
+            break
+    return problems
+
+
+def _placement_notes(change: MetaAdsTargetingChange, *, advantage_campaign: bool) -> list[str]:
+    if "placements" not in change.sections:
+        return []
+    before, after = change.before.placements.mode, change.after.placements.mode
+    if before == "automatic" and after == "manual" and advantage_campaign:
+        return [MANUAL_PLACEMENTS_NOTE]
+    if before == "manual" and after == "automatic":
+        return [AUTOMATIC_PLACEMENTS_NOTE]
+    return []
+
+
 def _states_advantage(spec: dict[str, Any]) -> bool:
     automation = spec.get("targeting_automation")
     return isinstance(automation, dict) and "advantage_audience" in automation
@@ -275,7 +367,8 @@ def _states_advantage(spec: dict[str, Any]) -> bool:
 def _drop_retired_positions(spec: dict[str, Any], notes: list[str]) -> list[str]:
     """Removes positions v26 refuses from the spec, noting each; refuses a platform left empty."""
     platforms = spec.get("publisher_platforms")
-    for platform, (position, note) in _RETIRED_POSITIONS.items():
+    for retired, note in RETIRED_POSITIONS.items():
+        platform, position = retired.split(":")
         key = f"{platform}_positions"
         positions = spec.get(key)
         if not isinstance(positions, list) or position not in positions:

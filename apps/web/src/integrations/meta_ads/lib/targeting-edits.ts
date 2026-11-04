@@ -1,6 +1,11 @@
 // apps/web/src/integrations/meta_ads/lib/targeting-edits.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import {
+  ALL_POSITIONS,
+  placementSummary,
+  type Placements,
+} from "@/integrations/meta_ads/lib/create-ad-set"
 import { formatAudienceRange, TARGETING_KIND_LABELS } from "@/integrations/meta_ads/lib/targeting"
 import { itemName, targetingItems } from "@/integrations/meta_ads/lib/targeting-edit"
 import { placeName } from "@/integrations/meta_ads/lib/targeting-sentence"
@@ -277,6 +282,73 @@ function removalOf(field: ListField, item: Item): Item {
   return { kind: item["kind"], key: item["key"], name: placeName(item) }
 }
 
+// Placement changes, which the card edits as one setting.
+const PLACEMENT_KEYS = ["placements", "remove_platforms", "remove_positions"] as const
+type FilterPlatform = "facebook" | "audience_network"
+export const FILTER_PLATFORMS: { key: FilterPlatform; label: string }[] = [
+  { key: "facebook", label: "Facebook and Instagram" },
+  { key: "audience_network", label: "Audience Network" },
+]
+export const FILTER_OPTIONS = [
+  { value: "expanded", label: "Expanded" },
+  { value: "moderate", label: "Moderate" },
+  { value: "limited", label: "Limited" },
+]
+
+export function placementsOf(targeting: Targeting): Placements {
+  const value = isRecord(targeting["placements"]) ? targeting["placements"] : {}
+  return {
+    mode: value["mode"] === "manual" ? "manual" : "automatic",
+    positions: isStringArray(value["positions"]) ? value["positions"] : [],
+    devices: typeof value["devices"] === "string" ? value["devices"] : "all",
+  }
+}
+
+/** True when the entry changes placements, as a replacement or removals. */
+export function changesPlacements(raw: Entry): boolean {
+  return PLACEMENT_KEYS.some((key) => !isUnset(raw[key]))
+}
+
+/** The inventory filter levels the entry sets, by platform. */
+export function filterEdits(raw: Entry): Partial<Record<FilterPlatform, string>> {
+  const value = isRecord(raw["inventory_filter"]) ? raw["inventory_filter"] : {}
+  const levels: Partial<Record<FilterPlatform, string>> = {}
+  for (const { key } of FILTER_PLATFORMS)
+    if (typeof value[key] === "string") levels[key] = value[key]
+  return levels
+}
+
+function placementsAfter(before: Targeting, raw: Entry): Placements {
+  if (isRecord(raw["placements"])) return placementsOf({ placements: raw["placements"] })
+  const current = placementsOf(before)
+  const platforms = isStringArray(raw["remove_platforms"]) ? raw["remove_platforms"] : []
+  const positions = isStringArray(raw["remove_positions"]) ? raw["remove_positions"] : []
+  if (platforms.length === 0 && positions.length === 0) return current
+  // Removing from automatic placements starts from every position Meta offers.
+  const start = current.mode === "manual" ? current.positions : ALL_POSITIONS
+  return {
+    mode: "manual",
+    positions: start.filter(
+      (item) => !positions.includes(item) && !platforms.includes(item.split(":")[0] ?? "")
+    ),
+    devices: current.devices,
+  }
+}
+
+/** The entry with placements replaced, dropping removals the card now states whole. */
+export function withPlacements(entry: Entry, placements: Placements): Entry {
+  return {
+    ...entry,
+    placements: placements.mode === "automatic" ? { mode: "automatic" } : placements,
+    remove_platforms: [],
+    remove_positions: [],
+  }
+}
+
+export function withFilter(entry: Entry, platform: FilterPlatform, level: string): Entry {
+  return { ...entry, inventory_filter: { ...filterEdits(entry), [platform]: level } }
+}
+
 /** Who the ad set reaches once the entry applies to the targeting it has now. */
 export function targetingAfter(before: Targeting, raw: Entry): Targeting {
   const after: Targeting = { ...before }
@@ -295,6 +367,9 @@ export function targetingAfter(before: Targeting, raw: Entry): Targeting {
     after["age_max"] = raw["age_max"] === "none" ? null : raw["age_max"]
   if (Array.isArray(raw["languages"])) after["languages"] = raw["languages"]
   if (raw["languages"] === "all") after["languages"] = []
+  after["placements"] = placementsAfter(before, raw)
+  const levels = isRecord(before["inventory_filter"]) ? before["inventory_filter"] : {}
+  after["inventory_filter"] = { ...levels, ...filterEdits(raw) }
   return after
 }
 
@@ -471,6 +546,25 @@ export function audiencesText(targeting: Targeting): string {
   return outside ? `${inside} · Not in ${outside}` : inside
 }
 
+const FILTER_WORDS: Record<string, string> = {
+  expanded: "Expanded",
+  moderate: "Moderate",
+  limited: "Limited",
+}
+
+function filterText(targeting: Targeting): string {
+  const levels = isRecord(targeting["inventory_filter"]) ? targeting["inventory_filter"] : {}
+  const facebook = FILTER_WORDS[String(levels["facebook"])]
+  const network = FILTER_WORDS[String(levels["audience_network"])]
+  const main = facebook ? `${facebook} inventory filter` : "Ad account's inventory filter"
+  return network && network !== facebook ? `${main} · Audience Network ${network}` : main
+}
+
+/** Where the ad set's ads show, ending with its inventory filter. */
+export function whereText(targeting: Targeting): string {
+  return `${placementSummary(placementsOf(targeting))} · ${filterText(targeting)}`
+}
+
 export function widenText(targeting: Targeting): string {
   return targeting["advantage_audience"] === false ? "Off" : "On"
 }
@@ -500,6 +594,9 @@ export function editSummary(row: TargetingEditRow): string {
   const chips = row.chips.filter((chip) => chip.included)
   if (chips.length > 0) parts.push(`Interests: ${chips.map((chip) => chip.label).join(", ")}`)
   if ("advantage_audience" in values) parts.push(`Widen Audience: ${widenText(after)}`)
+  if (changesPlacements(row.edit.raw))
+    parts.push(`Placements: ${placementSummary(placementsOf(after))}`)
+  if (Object.keys(filterEdits(row.edit.raw)).length > 0) parts.push(filterText(after))
   return parts.join(" · ")
 }
 
@@ -565,6 +662,9 @@ export function entryProblem(edit: TargetingEdit): string | null {
   const after = targetingAfter(edit.check?.before ?? {}, edit.raw)
   if (edit.check?.before && targetingItems(after["locations"]).length === 0)
     return "Keep at least one place."
+  const placements = placementsOf(after)
+  if (placements.mode === "manual" && placements.positions.length === 0)
+    return "Choose at least one placement."
   const { age_min: min, age_max: max } = after
   if (typeof min === "number" && typeof max === "number" && max < min)
     return "Set the maximum age at or above the minimum."
@@ -618,6 +718,8 @@ export const RESULT_SECTIONS: Record<string, { title: string; text: (t: Targetin
   audiences: { title: "Audiences", text: audiencesText },
   excluded_audiences: { title: "Audiences", text: audiencesText },
   advantage_audience: { title: "Widen Audience", text: widenText },
+  placements: { title: "Placements", text: (t) => placementSummary(placementsOf(t)) },
+  inventory_filter: { title: "Inventory Filter", text: filterText },
 }
 const SECTION_KEYS: ReadonlySet<string> = new Set(Object.keys(RESULT_SECTIONS))
 

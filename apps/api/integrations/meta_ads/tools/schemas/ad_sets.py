@@ -47,6 +47,7 @@ type MetaAdsPosition = Literal[
     "messenger:messenger_home",
     "threads:threads_stream",
 ]
+type MetaAdsPlatform = Literal["facebook", "instagram", "audience_network", "messenger", "threads"]
 
 
 def _roas(value: str) -> str:

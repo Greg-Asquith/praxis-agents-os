@@ -2,14 +2,17 @@
 
 import { describe, expect, it } from "vitest"
 
+import { ALL_POSITIONS } from "@/integrations/meta_ads/lib/create-ad-set"
 import {
   currentProblems,
   listState,
   parseTargetingEditArgs,
   targetingAfter,
   targetingEditRows,
+  whereText,
   withItem,
   withoutItem,
+  withPlacements,
   type TargetingEditArgs,
 } from "@/integrations/meta_ads/lib/targeting-edits"
 import { metaAdsUpdateTargetingPresenter } from "@/integrations/meta_ads/presenters/update-targeting"
@@ -73,6 +76,19 @@ describe("Meta Ads targeting edits", () => {
 
     expect(after["locations"]).toEqual([...before.locations, ireland])
     expect(after["audiences"]).toEqual([])
+  })
+
+  it("removes Audience Network from automatic placements, and the card can restate them", () => {
+    const removal = { remove_platforms: ["audience_network"] }
+    const after = targetingAfter(before, removal)
+
+    expect(after["placements"]).toEqual({
+      mode: "manual",
+      positions: ALL_POSITIONS.filter((item) => !item.startsWith("audience_network:")),
+      devices: "all",
+    })
+    const restated = withPlacements(removal, { mode: "automatic", positions: [], devices: "all" })
+    expect(whereText(targetingAfter(before, restated))).toMatch(/^Automatic/)
   })
 
   it("lets the operator remove and add places, and undoing returns to Meta's checks", () => {

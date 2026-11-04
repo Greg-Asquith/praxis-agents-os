@@ -16,7 +16,9 @@ from pydantic_ai import ModelRetry
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.operations.edit_targeting import edit_targeting
 from integrations.meta_ads.operations.targeting_reader import (
+    POSITIONS,
     TARGETING_SECTIONS,
+    MetaAdsInventoryFilter,
     read_targeting,
     section_fingerprints,
     write_targeting,
@@ -305,6 +307,72 @@ def test_retired_placements_are_dropped_with_a_note_before_any_write():
     assert change.problems == []
     assert change.spec["instagram_positions"] == ["stream"]
     assert any("Instagram Explore" in note for note in change.notes)
+
+
+async def test_one_approval_drops_audience_network_and_tightens_another_inventory_filter(
+    monkeypatch,
+):
+    graph = _graph(
+        _ad_set("8"),
+        _ad_set("7"),
+        account={"brand_safety_content_filter_levels": ["FACEBOOK_STANDARD"]},
+    )
+    edits = [
+        _edit("8", remove_platforms=["audience_network"]),
+        _edit("7", inventory_filter={"facebook": "limited"}),
+    ]
+
+    result, _audit = await _run(monkeypatch, graph, *edits)
+
+    automatic, filtered = graph.objects["8"]["targeting"], graph.objects["7"]["targeting"]
+    assert "audience_network" not in automatic["publisher_platforms"]
+    sent = {
+        f"{platform}:{position}"
+        for platform in automatic["publisher_platforms"]
+        for position in automatic[f"{platform}_positions"]
+    }
+    assert sent == {item for item in POSITIONS if not item.startswith("audience_network:")}
+    assert filtered["brand_safety_content_filter_levels"] == ["FACEBOOK_STRICT"]
+    rows = result["results"][0]["data"]["ad_sets"]
+    assert [row["outcome"] for row in rows] == ["updated", "updated"]
+
+
+def test_a_position_outside_the_closed_set_blocks_placement_edits_only():
+    spec = {
+        "geo_locations": {"countries": ["GB"]},
+        "age_min": 18,
+        "publisher_platforms": ["facebook"],
+        "facebook_positions": ["feed", "video_feeds"],
+    }
+    read = read_targeting(spec, account_id="123")
+
+    def problems(**changes):
+        return edit_targeting(
+            _edit("8", **changes),
+            read,
+            special_category=False,
+            reached_eu=False,
+            has_eu_names=False,
+            eu_defaults=False,
+        ).problems
+
+    assert any("placements include" in item for item in problems(remove_platforms=["facebook"]))
+    assert problems(age_min=30) == []
+
+
+def test_an_inventory_filter_looser_than_the_ad_accounts_is_refused():
+    spec = {"geo_locations": {"countries": ["GB"]}, "age_min": 18}
+    change = edit_targeting(
+        _edit("8", inventory_filter={"facebook": "expanded"}),
+        read_targeting(spec, account_id="123"),
+        special_category=False,
+        reached_eu=False,
+        has_eu_names=False,
+        eu_defaults=False,
+        account_filter=MetaAdsInventoryFilter(facebook="moderate"),
+    )
+
+    assert any("account's inventory filter is stricter" in item for item in change.problems)
 
 
 def test_the_card_can_add_places_and_audiences_but_no_other_change():

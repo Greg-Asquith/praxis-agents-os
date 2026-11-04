@@ -199,7 +199,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   refused. An ad set that newly reaches the EU needs its payer and
   beneficiary. Meta checks every change first, an ad set whose targeting
   changed after approval isn't sent, and each result shows the targeting
-  Meta reads back.
+  Meta reads back. The same tool changes placements, as automatic, chosen
+  positions and devices, or platforms and positions to remove, such as
+  dropping Audience Network, and sets the Facebook and Audience Network
+  inventory filters. A filter looser than the ad account's is refused. The
+  card shows where each ad set's ads show before and after, and the
+  operator can change the proposed placements with the Create Ad Set
+  controls.
 - Meta Ads budget increases: `meta_ads_schedule_budget_increases` raises a
   campaign or ad set daily budget during up to 10 high-demand periods, such
   as a Black Friday weekend, in one approval. Each increase is an amount or
@@ -288,6 +294,15 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Integration tool contracts now look inside `type` aliases, so account and
   connection fields nested behind one are rejected, and scoped references
   behind one must have a provider resolver.
+- Pillow 13 fixes a heap overflow in JPEG decoding and denial-of-service bugs
+  in PNG EXIF and GIF comment parsing, all reachable from Meta ad previews.
+- certifi 2026.10.23 removes emSign root certificates whose intermediate keys
+  were compromised, so outbound provider calls no longer trust them.
+- DOMPurify 3.4.17 fixes sanitizer bypasses in the copy Mermaid uses for
+  diagrams. FastMCP 3.4.11 fixes skipped component authorization. Logfire 5.3
+  brings OpenTelemetry 1.45.1, which bounds `tracestate` parsing.
+- Vite 8.3, Vitest 4.1.12, Hono, undici, and fast-uri updates fix development
+  server and tooling advisories.
 
 ## [0.1.0] - 2026-07-28
 
