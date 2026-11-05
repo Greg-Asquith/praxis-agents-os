@@ -1194,9 +1194,11 @@ async def test_specialist_crossing_the_family_step_limit_uses_the_shared_grant(
         (await db.get(Agent, context.agent_id)).max_steps = 2
         await db.commit()
     reviewed_runs = []
+    digests = []
 
-    async def review(ctx) -> ProgressReview:
-        reviewed_runs.append(ctx.deps.run.id)
+    async def review(deps, digest) -> ProgressReview:
+        reviewed_runs.append(deps.run.id)
+        digests.append(digest.text)
         return ProgressReview(verdict="continue")
 
     monkeypatch.setattr("services.agents.runtime.progress_review.review.review_progress", review)
@@ -1208,4 +1210,7 @@ async def test_specialist_crossing_the_family_step_limit_uses_the_shared_grant(
     assert result.run.outcome == "success"
     [(child_run_id, _value)] = effects.calls
     assert reviewed_runs == [child_run_id, context.run_id]
+    # The specialist's review also describes the delegating run.
+    assert "## Delegating run" in digests[0]
+    assert "## Delegating run" not in digests[1]
     assert result.run.metadata_json[PROGRESS_REVIEWS_KEY]["granted"] == 4

@@ -12,6 +12,7 @@ from utils.content import ContentScope
 PURPOSE_AGENT_RUN = "agent_run"
 PURPOSE_CONVERSATION_NAMING = "conversation_naming"
 PURPOSE_HISTORY_SUMMARY = "history_summary"
+PURPOSE_RUN_REVIEW = "run_review"
 PURPOSE_KB_ANNOTATION = "kb_annotation"
 PURPOSE_CLASSIFICATION = "classification"
 PURPOSE_WEB_SEARCH = "web_search"
@@ -31,6 +32,7 @@ AI_USAGE_PURPOSES = (
     PURPOSE_AGENT_RUN,
     PURPOSE_CONVERSATION_NAMING,
     PURPOSE_HISTORY_SUMMARY,
+    PURPOSE_RUN_REVIEW,
     PURPOSE_KB_ANNOTATION,
     PURPOSE_CLASSIFICATION,
     PURPOSE_WEB_SEARCH,
@@ -53,6 +55,7 @@ type AIUsagePurpose = Literal[
     "agent_run",
     "conversation_naming",
     "history_summary",
+    "run_review",
     "kb_annotation",
     "classification",
     "web_search",

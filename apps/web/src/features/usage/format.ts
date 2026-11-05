@@ -9,6 +9,7 @@ type AIUsagePurpose =
   | "code_execution"
   | "conversation_naming"
   | "history_summary"
+  | "run_review"
   | "kb_annotation"
   | "web_search"
   | "web_fetch"
@@ -28,6 +29,7 @@ const AI_TYPE_LABEL_BY_PURPOSE = {
   code_execution: "Code execution",
   conversation_naming: "Conversation housekeeping",
   history_summary: "Conversation housekeeping",
+  run_review: "Progress checks",
   kb_annotation: "Document processing",
   web_search: "Web research",
   web_fetch: "Web research",

@@ -22,6 +22,27 @@ so loading them at import time slows every cold start, and a deployment should
 load only the providers it calls. The clean-process test in
 `tests/contract/test_entrypoint_imports.py` fails if startup loads any of them.
 
+### GPT-6.1 Terra
+
+The [model page](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
+[pricing page](https://developers.openai.com/api/docs/pricing), and
+[changelog](https://developers.openai.com/api/docs/changelog), checked on
+5 November 2026, list `gpt-6.1-terra` from 26 October 2026. It has a
+1,050,000-token context window, 922,000 maximum input tokens, 128,000 maximum
+output tokens, and a 1 June 2026 knowledge cutoff. It accepts text and images,
+returns text, and supports streaming, function calls, and structured output.
+Tool calls require Responses, which Praxis uses.
+
+For prompts up to 272,000 tokens, Terra costs $1 input, $0.05 cache read,
+$1.25 30-minute cache write, and $5 output per million tokens. Longer prompts
+use the same multipliers as GPT-6 Sol. Usage estimates use the base rates.
+
+Terra is an OpenAI **Standard** model listed after GPT-6 Luna, so Luna stays
+the Standard default. Terra accepts `none` to `max` reasoning efforts with
+`medium` as the default. Pydantic AI 2.54 has no Terra profile.
+`provider_model_profile` gives it the GPT-6 Sol profile, matching Pydantic AI
+2.66. Live access hasn't been checked with a Praxis key.
+
 ### Gemini 4 Argon
 
 The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
@@ -137,11 +158,12 @@ on 29 September 2026. Token prices use the same units as the table below:
 
 | Model and API ID | Context / maximum output | Input / cache read / cache write / output | Knowledge cutoff |
 | --- | --- | --- | --- |
-| [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview), `claude-sonnet-5-5` | 1,000,000 / 128,000 | $2 / $0.20 / $2.50 / $10 | June 2026 |
+| [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview), `claude-sonnet-5-5` | 1,000,000 / 128,000 | $2 / $0.10 / $2.50 / $10 | June 2026 |
 | [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), `gpt-6.1-sol` | 1,050,000 / 128,000 | $2 / $0.10 / $2.50 / $10 | 30 April 2026 |
 
 Both accept text and images, return text, and support streaming, tools, and
-structured output. Sonnet 5.5 uses the same Vertex ID as its API ID.
+structured output. Sonnet 5.5 uses the same Vertex ID as its API ID. Sonnet
+5.5 cache reads cost $0.20 until Anthropic cut them to $0.10 on 7 October 2026.
 
 Sonnet 5.5 shares Opus 5.5's request restrictions: adaptive thinking only,
 no forced tool choice, and thinking blocks bound to the model and
@@ -374,8 +396,9 @@ failures. Run failures persist and emit the same safe `model_rate_limited`
 message for HTTP 429, without provider bodies or project details.
 
 The API locks Pydantic AI, slim, evals, and graph to 2.54.0, with OpenAI
-3.19.2, Anthropic 1.13.0, and Google Gen AI 2.25.0. The manifest retains minimum
-version ranges. It explicitly selects Pydantic AI's `retries` extra and
+3.40.0, Anthropic 1.13.0, and Google Gen AI 2.25.0. The manifest retains minimum
+version ranges. It lists `openai>=3.26.0` directly, because progress reviews
+call the Decisions API through `client.decisions`. It explicitly selects Pydantic AI's `retries` extra and
 Tenacity because the transport imports their retry APIs. The `retries` extra
 still depends on legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients

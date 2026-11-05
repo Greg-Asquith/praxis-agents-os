@@ -256,6 +256,14 @@ def resolve_history_summary_model() -> ResolvedModel:
     return resolve_catalog_model(provider, model)
 
 
+def resolve_progress_review_model() -> ResolvedModel:
+    """Resolve the fixed model that reviews a run's progress at its step limit."""
+    provider = settings.AGENT_RUN_PROGRESS_REVIEW_PROVIDER
+    model = settings.AGENT_RUN_PROGRESS_REVIEW_MODEL
+    # Structured output can need one retry after an invalid verdict.
+    return resolve_catalog_model(provider, model, max_steps=2)
+
+
 def resolve_model_context_budget(resolved_model: ResolvedModel) -> ModelContextBudget:
     """Resolve calibrated context accounting for catalog and Azure deployment models."""
     if resolved_model.provider == PROVIDER_AZURE:

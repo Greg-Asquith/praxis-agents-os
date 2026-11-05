@@ -60,7 +60,8 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
         ),
         CheckConstraint(
             "purpose IN ("
-            "'agent_run', 'conversation_naming', 'history_summary', 'kb_annotation', "
+            "'agent_run', 'conversation_naming', 'history_summary', 'run_review', "
+            "'kb_annotation', "
             "'classification', 'web_search', 'web_fetch', 'image_generation', "
             "'code_execution', "
             "'video_understanding', 'video_generation', 'video_transcription', "

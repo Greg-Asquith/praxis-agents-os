@@ -6,8 +6,10 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import RunContext
 
 from services.agents.runtime.progress_review.verdict import ProgressReview
 
@@ -43,7 +45,9 @@ class RequestGrant:
     reviews: list[ProgressReviewEntry] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     # Set by the root run so a specialist's review is saved on the root run.
-    persist: Callable[[], Awaitable[None]] | None = field(default=None, repr=False)
+    persist: Callable[[UUID, int], Awaitable[None]] | None = field(default=None, repr=False)
+    # The root run's latest context, so a specialist's review can describe the delegating run.
+    root_context: RunContext[Any] | None = field(default=None, repr=False)
 
     @classmethod
     def restore(cls, metadata: Mapping[str, Any] | None) -> "RequestGrant":
@@ -57,10 +61,12 @@ class RequestGrant:
     def grants_used(self) -> int:
         return sum(1 for review in self.reviews if review.grants_steps)
 
-    def record(self, review: ProgressReview, *, requests: int, steps: int) -> None:
-        if review.grants_steps:
-            self.granted += steps
+    def record(self, review: ProgressReview, *, requests: int, steps: int) -> int:
+        """Adds the review and returns the requests it granted."""
+        granted = steps if review.grants_steps else 0
+        self.granted += granted
         self.reviews.append(ProgressReviewEntry(**review.model_dump(), requests=requests))
+        return granted
 
     def snapshot(self) -> dict[str, Any]:
         return SavedProgressReviews(granted=self.granted, reviews=self.reviews).model_dump(

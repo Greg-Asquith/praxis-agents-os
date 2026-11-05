@@ -15,6 +15,7 @@ from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.anthropic import anthropic_model_profile
 from pydantic_ai.profiles.google import google_model_profile
+from pydantic_ai.profiles.openai import openai_model_profile
 from pydantic_ai.retries import wait_retry_after
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -61,6 +62,9 @@ def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
             "thinking_always_enabled": True,
             "google_thinking_levels": frozenset({"MINIMAL", "MEDIUM", "HIGH"}),
         }
+    if provider == PROVIDER_OPENAI and model == "gpt-6.1-terra":
+        # Pydantic AI 2.66 gives Terra the same profile as GPT-6 Sol; 2.54 doesn't know Terra.
+        return openai_model_profile("gpt-6-sol")
     if provider == PROVIDER_ANTHROPIC and model == "claude-haiku-5-5":
         # Haiku 5.5 rejects budget thinking and sampling settings but accepts disabled thinking.
         return {

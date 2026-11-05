@@ -233,13 +233,17 @@ enforcement**. Values not marked _(enforced)_ are
 | Upload size             | existing `core/settings/files.py` keys: `MAX_FILE_SIZE_DOCUMENT` (100 MB), `MAX_FILE_SIZE_AGENT_FILE` (100 MB), `MAX_FILE_SIZE_AVATAR` (5 MB), `MAX_FILE_SIZE_ICON` (2 MB), `MAX_FILE_SIZE_IMAGE` (10 MB), `MAX_FILE_SIZE_VIDEO` (100 MB), `MAX_FILE_SIZE_SOURCE_VIDEO` (4 GiB, workspace uploads on GCS and S3, and renderer outputs copied into Files on any provider) _(enforced)_ |
 | Embedding budget        | 2 M tokens/month/workspace _(enforced)_                                                                                                                                                                                                               |
 | Job concurrency         | 4/workspace, observed at claim time; global cap = worker batch/concurrency settings _(counter and claim-seam enforcement in place)_                                                                                                                   |
-| Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts _(enforced)_                                                                                               |
+| Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts; progress reviews can extend `max_steps` up to a hard cap _(enforced)_ |
 | Artifact-share creation | 10/hour/workspace _(enforced)_                                                                                                                                                                                                                        |
 | Integration API retries | `Retry-After`-aware, bounded attempts _(enforced)_                                                                                                                                                                                                    |
 
 Delegation uses a shared cumulative usage counter and the intersection of parent,
 child, and saved run ceilings. Approval continuations can tighten saved ceilings
-but cannot widen them. A parent budget failure ends the root with
+but cannot widen them. The one exception is a progress review at the agent's
+`max_steps` limit: a reviewer model can grant another `max_steps` of model
+requests, up to `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS` times per run, and each
+grant is saved and audited on the root run. Schedule, token, tool-call, and
+time limits stay hard, and any reviewer failure pauses the run for a person. A parent budget failure ends the root with
 `budget_exhausted`; a stricter specialist-only ceiling can stop that specialist.
 Request limits count model requests, so an already-approved action from the last
 permitted request can settle. Token limits use observed usage and can overshoot

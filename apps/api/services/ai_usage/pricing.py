@@ -73,9 +73,11 @@ def _price(
     )
 
 
-# Standard OpenAI API rates as of 2026-08-13.
-# https://developers.openai.com/api/docs/models
+# Standard OpenAI API rates as of 2026-11-05, for prompts up to 272K tokens.
+# https://developers.openai.com/api/docs/pricing
 _OPENAI_PRICES = (
+    # https://developers.openai.com/api/docs/models/gpt-6.1-terra (2026-11-05).
+    _price("openai", "gpt-6.1-terra", date(2026, 10, 26), "1", "0.05", "1.25", "5"),
     # https://developers.openai.com/api/docs/models/gpt-6.1-sol (2026-09-29).
     _price("openai", "gpt-6.1-sol", date(2026, 9, 29), "2", "0.1", "2.5", "10"),
     # GPT-6 Sol and Luna model pages (2026-09-22), Standard processing.
@@ -105,6 +107,8 @@ _ANTHROPIC_PRICES = (
     # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-29).
     _price("anthropic", "claude-opus-5-5", date(2026, 9, 22), "4", "0.2", "5", "20"),
     _price("anthropic", "claude-sonnet-5-5", date(2026, 9, 28), "2", "0.2", "2.5", "10"),
+    # Cache reads cut to 0.05x input (release notes, 2026-10-07).
+    _price("anthropic", "claude-sonnet-5-5", date(2026, 10, 7), "2", "0.1", "2.5", "10"),
     # Prompts up to 100K tokens; longer prompts cost 5x and Vertex `eu` adds 10%.
     _price("anthropic", "claude-haiku-5-5", date(2026, 10, 7), "0.1", "0.01", "0.125", "0.5"),
     _price("anthropic", "claude-fable-5-1", date(2026, 9, 1), "10", "0.25", "12.5", "50"),

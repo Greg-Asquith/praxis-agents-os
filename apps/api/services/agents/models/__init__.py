@@ -17,6 +17,7 @@ from services.agents.models.resolution import (
     resolve_history_summary_model,
     resolve_model_context_budget,
     resolve_naming_model,
+    resolve_progress_review_model,
 )
 from services.agents.models.utils import provider_api_key, retrying_http_client
 from services.agents.models.vertex_clients import close_vertex_clients
@@ -36,5 +37,6 @@ __all__ = [
     "resolve_history_summary_model",
     "resolve_model_context_budget",
     "resolve_naming_model",
+    "resolve_progress_review_model",
     "retrying_http_client",
 ]

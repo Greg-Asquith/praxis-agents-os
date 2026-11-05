@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import replace
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from pydantic_ai import Agent, DeferredToolResults, RunContext
 from pydantic_ai.agent import AgentRunEvents
@@ -34,7 +35,7 @@ from services.agents.runtime.dispatch import record_native_tool_invocation_audit
 from services.agents.runtime.events import EventTranslationState, emit_agent_stream_event
 from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.progress_review.checkpoint import install_progress_review_checkpoint
-from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY
+from services.agents.runtime.progress_review.save_progress_review import save_progress_review
 from services.agents.runtime.sinks import EventSink
 
 CHECKPOINT_TIMEOUT = 3.0
@@ -105,17 +106,21 @@ async def consume_stream(
             return result
 
     if checkpoint_hooks is not None:
-        install_progress_review_checkpoint(checkpoint_hooks)
         grant = deps.execution_control.request_grant if deps.execution_control else None
+        install_progress_review_checkpoint(checkpoint_hooks, root_grant=grant)
         if grant is not None:
 
-            async def persist_progress_reviews() -> None:
+            async def persist_progress_reviews(
+                reviewed_run_id: UUID, requests_granted: int
+            ) -> None:
                 async with session_lock:
-                    run.metadata_json = {
-                        **(run.metadata_json or {}),
-                        PROGRESS_REVIEWS_KEY: grant.snapshot(),
-                    }
-                    await deps.db.commit()
+                    await save_progress_review(
+                        deps.db,
+                        root_run=run,
+                        grant=grant,
+                        reviewed_run_id=reviewed_run_id,
+                        requests_granted=requests_granted,
+                    )
 
             grant.persist = persist_progress_reviews
 

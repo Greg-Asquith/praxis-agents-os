@@ -25,10 +25,12 @@ billing-credit reconciliation are pending. See
 
 GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 have base rates effective from
 22 September 2026. Claude Sonnet 5.5 rates apply from 28 September 2026 and
-GPT-6.1 Sol rates from 29 September 2026. Claude Haiku 5.5 rates apply from
+GPT-6.1 Sol rates from 29 September 2026. From 7 October 2026, Claude Sonnet
+5.5 cache reads cost $0.10 instead of $0.20. Claude Haiku 5.5 rates apply from
 7 October 2026 at its Claude API rate for prompts up to 100,000 tokens; see
 [model providers](model-providers.md#claude-haiku-55) for its longer-prompt and
-Google Cloud `eu` rates. Claude Sonnet 5 stays at its launch
+Google Cloud `eu` rates. GPT-6.1 Terra rates apply from 26 October 2026; see
+[model providers](model-providers.md#gpt-61-terra). Claude Sonnet 5 stays at its launch
 rate because Anthropic cancelled the 1 September 2026 increase. Models removed
 from the catalogue keep their rates for past usage. Historical model rates
 retain their original effective dates. See
@@ -65,6 +67,10 @@ The following contracts apply in this area:
   Its aggregated text and image tokens remain unpriced because the ledger
   cannot separate their rates. Historical Gemini 3.1 Flash Image output
   estimates remain unchanged.
+- Progress reviews record under `run_review`, one row per reviewer call,
+  attributed to the run that reached its step limit. OpenAI Decisions rows
+  carry the reported input, cached, and output tokens and price at
+  `gpt-6-luna` token rates; Decisions-specific rates are pending.
 - Video helpers record under `video_understanding`, `video_generation`, or
   `video_transcription`, with tokens as the provider reports them. Video
   generation tools are pending, so no tool records `video_generation` rows.

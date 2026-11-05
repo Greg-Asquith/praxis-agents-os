@@ -133,6 +133,21 @@ class AgentRunSettingsMixin:
         le=120,
         description="Seconds a progress review may take before the run asks a person.",
     )
+    AGENT_RUN_PROGRESS_REVIEW_PROVIDER: str = Field(
+        default="openai",
+        description="Provider for the step-limit progress reviewer; openai uses the Decisions API.",
+    )
+    AGENT_RUN_PROGRESS_REVIEW_MODEL: str = Field(
+        default="gpt-6-luna",
+        description="Model for the step-limit progress reviewer.",
+    )
+    AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE: float = Field(
+        default=0.6,
+        ge=0,
+        le=1,
+        allow_inf_nan=False,
+        description="Decisions API confidence below which a progress review asks a person.",
+    )
     AGENT_TOOL_RESULT_MAX_CHARS: int | None = Field(
         default=16_000,
         gt=0,

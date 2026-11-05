@@ -109,7 +109,7 @@ async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
     "thinking,effort", [(None, None), (False, "none"), ("minimal", "low"), ("high", "high")]
 )
 async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort):
-    model_id = "gpt-6-sol"
+    model_id = "gpt-6.1-terra"
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     requests = []

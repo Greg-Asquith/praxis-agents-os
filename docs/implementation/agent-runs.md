@@ -229,8 +229,43 @@ Before a model request that would cross the run family's step ceiling, an
 A reviewer exception or a timeout (`AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS`,
 default 20) asks a person. After `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS`
 extensions (default 4, range 0 to 10), the run asks a person without calling
-the reviewer. The reviewer does not call a model yet, so every review
-currently asks a person.
+the reviewer.
+
+### The reviewer
+
+`runtime/progress_review/digest.py` builds a deterministic digest of at most
+12,000 characters:
+
+- the agent's name, an instructions excerpt, the task (the latest prompt from a
+  person, skipping steer messages), and any schedule completion criteria;
+- a ledger of the turn's tool calls with capped arguments, the outcome, and the
+  result size, but never the result body;
+- signals for identical repeated calls, a streak of failed calls, and steps
+  with no new tool call;
+- the agent's latest message.
+
+Untrusted values are collapsed to one line and wrapped in the shared untrusted
+frame. A long ledger keeps its first calls and its most recent ones. When a
+specialist reaches the limit, the digest also describes the delegating run.
+
+Environment settings choose the reviewer, like the other utility models:
+
+- `AGENT_RUN_PROGRESS_REVIEW_PROVIDER` (default `openai`) and
+  `AGENT_RUN_PROGRESS_REVIEW_MODEL` (default `gpt-6-luna`). The production
+  credentials check includes this provider.
+- Provider `openai` asks the OpenAI Decisions API one `choice` question over
+  the five verdicts. Decisions supports `gpt-6-luna` only and returns no text,
+  so the reason is the chosen verdict's description. A refusal, or a confidence
+  below `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6), asks a person.
+- Other providers, such as `anthropic` with `claude-haiku-5-5` or `google`
+  with `gemini-3.8-flash`, return a structured verdict, a reason, and optional
+  guidance of 300 characters at most.
+
+Steer messages start with fixed Praxis text, add the strongest signal, and
+append any reviewer guidance inside an untrusted frame. Each reviewer call
+records an `ai_usage_events` row with purpose `run_review`, attributed to the
+run that reached the limit. Each review writes one `agent_run` audit event on
+the root run with a system actor, the verdict, and the requests granted.
 
 One grant on the root run's execution control covers the whole run family.
 Every step-derived request ceiling, including each specialist's local and

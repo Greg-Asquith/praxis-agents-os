@@ -289,10 +289,11 @@ class LLMSettingsMixin:
     def validate_llm_provider_credentials(self):
         """Require credentials for the active providers in production.
 
-        Active providers back the default agent, conversation naming, or history
-        summarization. Local/development may run without keys; tests construct
-        settings without them. Registry membership is validated at resolution
-        time, not here, to keep settings free of service imports.
+        Active providers back the default agent, conversation naming, history
+        summarization, or progress reviews. Local/development may run without
+        keys; tests construct settings without them. Registry membership is
+        validated at resolution time, not here, to keep settings free of service
+        imports.
         """
         environment = getattr(self, "ENVIRONMENT", None)
         if environment != "production":
@@ -302,6 +303,7 @@ class LLMSettingsMixin:
             self.DEFAULT_MODEL_PROVIDER,
             self.CONVERSATION_NAMING_PROVIDER,
             self.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER,
+            self.AGENT_RUN_PROGRESS_REVIEW_PROVIDER,
         }
         missing = [
             requirement

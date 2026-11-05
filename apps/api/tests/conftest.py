@@ -115,6 +115,9 @@ def _direct_model_transports(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(settings, name, False)
     for name in ("ANTHROPIC_VERTEX_MODELS", "VERTEX_PARTNER_MODELS"):
         monkeypatch.setattr(settings, name, [])
+    # Reviews go through Pydantic AI, so ALLOW_MODEL_REQUESTS=False blocks live calls.
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_PROVIDER", "anthropic")
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_MODEL", "claude-haiku-5-5")
 
 
 @pytest.fixture(autouse=True)

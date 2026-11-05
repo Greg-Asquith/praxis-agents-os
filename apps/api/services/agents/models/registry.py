@@ -58,6 +58,16 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # https://developers.openai.com/api/docs/models/gpt-6.1-terra
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-6.1-terra",
+        display_name="GPT-6.1 Terra",
+        context_window=1_050_000,
+        model_type="standard",
+        supports_thinking=True,
+        supports_vision=True,
+    ),
     # Anthropic (Vertex IDs follow the Model Garden cards, checked 2026-09-04).
     # Model Garden: Claude Fable 5.1 on Google Cloud.
     ModelInfo(
