@@ -240,7 +240,7 @@ describe("agentStreamReducer", () => {
     expect(nextState).toBe(abortedState)
   })
 
-  it("keeps text and tool calls in arrival order while updating results in place", () => {
+  it("keeps text, tool calls, and progress checks in arrival order while updating results in place", () => {
     const beforeResult = reduceEvents([
       {
         event: "message.start",
@@ -265,9 +265,20 @@ describe("agentStreamReducer", () => {
         },
       },
       {
-        event: "message.start",
+        event: "progress.review",
         data: {
           ...eventWithSeq(4),
+          review_id: "review-1",
+          verdict: "continue",
+          reason: "Steady progress.",
+          steer_text: null,
+          review_number: 1,
+        },
+      },
+      {
+        event: "message.start",
+        data: {
+          ...eventWithSeq(5),
           message_id: "text-2",
           role: "assistant",
           channel: "text",
@@ -275,7 +286,7 @@ describe("agentStreamReducer", () => {
       },
       {
         event: "message.delta",
-        data: { ...eventWithSeq(5), message_id: "text-2", text: "Conclusion" },
+        data: { ...eventWithSeq(6), message_id: "text-2", text: "Conclusion" },
       },
     ])
     const sequenceBeforeResult = beforeResult.toolCalls["tool-1"]?.timelineSequence
@@ -284,7 +295,7 @@ describe("agentStreamReducer", () => {
         {
           event: "tool.result",
           data: {
-            ...eventWithSeq(6),
+            ...eventWithSeq(7),
             tool_call_id: "tool-1",
             name: "web_search",
             result: { answer: "Found it" },
@@ -295,10 +306,18 @@ describe("agentStreamReducer", () => {
     )
 
     expect(
-      selectLiveTimeline(afterResult.messages, Object.values(afterResult.toolCalls)).map((item) =>
-        item.kind === "text" ? `text:${item.message.id}` : `tool:${item.toolCall.tool_call_id}`
+      selectLiveTimeline(
+        afterResult.messages,
+        Object.values(afterResult.toolCalls),
+        afterResult.progressReviews
+      ).map((item) =>
+        item.kind === "text"
+          ? `text:${item.message.id}`
+          : item.kind === "tool"
+            ? `tool:${item.toolCall.tool_call_id}`
+            : `review:${item.review.id}`
       )
-    ).toEqual(["text:text-1", "tool:tool-1", "text:text-2"])
+    ).toEqual(["text:text-1", "tool:tool-1", "review:review-1", "text:text-2"])
     expect(afterResult.toolCalls["tool-1"]?.timelineSequence).toBe(sequenceBeforeResult)
     expect(afterResult.toolCalls["tool-1"]?.status).toBe("completed")
   })

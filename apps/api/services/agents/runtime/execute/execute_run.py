@@ -141,7 +141,9 @@ async def execute_run(
                 )
                 execution_control.phase = ExecutionPhase.EXECUTING
                 if execution_control.root is None:
-                    execution_control.request_grant = RequestGrant.restore(run.metadata_json)
+                    execution_control.request_grant = RequestGrant.restore(
+                        run.metadata_json, enabled=agent.progress_reviews_enabled
+                    )
                 heartbeat_task = asyncio.create_task(
                     heartbeat_agent_run_lease(
                         stop=heartbeat_stop,

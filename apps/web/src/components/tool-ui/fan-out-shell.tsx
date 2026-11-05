@@ -1,7 +1,7 @@
 // apps/web/src/components/tool-ui/fan-out-shell.tsx
 
 import type { ReactNode } from "react"
-import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
+import { AlertCircleIcon, ChevronRightIcon, CircleCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -254,27 +254,26 @@ export function FanOutSkeleton({
   summary?: string
   trailing?: ReactNode
 }) {
+  // Matches a collapsed ToolResultCard header so a running row doesn't jump when it settles.
   return (
-    <section aria-busy="true" aria-label={label} className="border-border rounded-lg border p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        {heading ? (
-          <div className="min-w-0">
-            <div className="text-sm font-medium">{heading}</div>
+    <section aria-busy="true" aria-label={label} className="border-border rounded-lg border">
+      <div className="flex min-h-12 min-w-0 items-center gap-2 p-1">
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-0.5">
+          <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            {heading ? (
+              <div className="text-sm font-medium">{heading}</div>
+            ) : (
+              <Skeleton className="h-4 w-36" />
+            )}
             {summary ? (
-              <p className="text-muted-foreground mt-0.5 truncate text-xs" title={summary}>
+              <p className="text-muted-foreground truncate text-xs" title={summary}>
                 {summary}
               </p>
             ) : null}
           </div>
-        ) : (
-          <Skeleton className="h-4 w-36" />
-        )}
-        {trailing ?? <Skeleton className="h-5 w-14 rounded-full" />}
-      </div>
-      <div className="grid gap-2">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-12 w-4/5" />
+        </div>
+        {trailing ?? <Skeleton className="mr-2 h-5 w-14 rounded-full" />}
       </div>
       <span className="sr-only">{label}</span>
     </section>

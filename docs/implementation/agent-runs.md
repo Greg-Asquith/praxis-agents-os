@@ -224,12 +224,19 @@ Before a model request that would cross the run family's step ceiling, an
   into the next model request through `RunContext.enqueue`.
 - `ask_person` changes nothing, so the request trips with outcome
   `budget_exhausted`. Completion evidence then includes
-  `progress_review: {verdict, reason, reviews_used}`.
+  `progress_review: {verdict, reason, reviews_used, limit_reached}`.
 
 A reviewer exception or a timeout (`AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS`,
 default 20) asks a person. After `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS`
 extensions (default 4, range 0 to 10), the run asks a person without calling
-the reviewer.
+the reviewer or recording a review, and the evidence sets `limit_reached`.
+A value of 0 turns reviews off for the whole platform.
+
+The agent's `progress_reviews_enabled` setting (default on) is in the agent
+form's Advanced section as **When It Reaches Its Step Limit**. When it's off,
+the step limit pauses for a person, with no review and no `progress_review`
+evidence. The root agent's setting covers the whole run family. Steps that
+were already granted stay in force when a continuation finds the setting off.
 
 ### The reviewer
 
@@ -262,6 +269,11 @@ Environment settings choose the reviewer, like the other utility models:
   with `gemini-3.8-flash`, return a structured verdict, a reason, and optional
   guidance of 300 characters at most.
 
+Reviewer calls don't use prompt caching, because each digest is unique and a
+cache write would never be read back. Decisions requests set
+`prompt_cache_options.mode` to `explicit` with no breakpoints, and structured
+reviewers override the agent default with `cache: False`.
+
 Steer messages start with fixed Praxis text, add the strongest signal, and
 append any reviewer guidance inside an untrusted frame. Each reviewer call
 records an `ai_usage_events` row with purpose `run_review`, attributed to the
@@ -274,8 +286,33 @@ inherited ceiling, adds the live grant, because specialists count against the
 shared cumulative usage. A specialist whose own `max_steps` is stricter still
 trips locally without a review. A lock serialises reviews.
 
+### Reviews in the conversation
+
+Each review writes a transcript row in the conversation of the run that
+reached the limit, so a specialist's review appears in its own conversation.
+The row has role `system`, metadata source `progress_review`, and one
+`progress-review` part with the verdict, reason, steer text, and review
+number. History loaders read Pydantic AI rows only, so models never see it.
+The root run's stream also sends a `progress.review` event with the row's ID,
+so the live row and the saved row are the same item. Specialists stream to a
+null sink, so their reviews appear when the conversation reloads.
+
+A steer request carries `metadata.progress_review_steer`, which Pydantic AI
+doesn't send to the model. The digest skips these requests when it finds the
+task, and the web app hides them, because the review row shows the steer
+text. Shared viewers get the review parts and the marker, but not the steer
+prompt.
+
+When a review asks a person, **Paused to Check In** shows the reviewer's
+reason. When `limit_reached` is set, it says how many times the run was checked
+and asks the person to reply **Continue**. Schedule run reads include
+`progress_reviews`, the review count, and run history shows "Checked N times"
+next to the outcome.
+
+### Saved review state
+
 Each review is saved in root run metadata under `progress_reviews`, with the
-granted total and at most one entry per grant plus the final hand-back.
+granted total and at most one entry per grant plus a reviewer's hand-back.
 Continuations restore it, so an approval resume keeps its granted steps.
 This is the one, evidenced exception to the rule below that saved ceilings
 never widen: the saved `effective_usage_limits` snapshot keeps the base step

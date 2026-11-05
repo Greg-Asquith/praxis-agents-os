@@ -19,6 +19,7 @@ export type RunInterruptionOutcome = {
   actionsTruncated: boolean
   uncertainActions?: { id: string; toolName: string }[]
   childConversations?: string[]
+  reviewReason?: string
 }
 
 export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOutcome | null {
@@ -33,11 +34,20 @@ export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOut
   }
   if (run?.status !== "failed") return null
   if (run.outcome === "budget_exhausted") {
+    const review = run.completion_json?.["progress_review"]
+    const reviewsUsed = isRecord(review) ? review["reviews_used"] : null
+    const reason = isRecord(review) ? review["reason"] : null
+    const limitReached =
+      isRecord(review) && review["limit_reached"] === true && isUsageCount(reviewsUsed)
     return {
       kind: "budget_exhausted",
       title: "Paused to Check In",
-      message:
-        "The agent took on a lot in one go, so it paused here. Reply “Continue” to pick up where it left off, or add instructions to steer it.",
+      message: limitReached
+        ? `It has been checked ${reviewsUsed === 1 ? "once" : `${String(reviewsUsed)} times`} and is still going. Reply “Continue” to let it carry on.`
+        : "The agent took on a lot in one go, so it paused here. Reply “Continue” to pick up where it left off, or add instructions to steer it.",
+      ...(!limitReached && typeof reason === "string" && reason.trim()
+        ? { reviewReason: reason }
+        : {}),
       ...recoveryEvidence(run.completion_json?.["recovery"]),
     }
   }

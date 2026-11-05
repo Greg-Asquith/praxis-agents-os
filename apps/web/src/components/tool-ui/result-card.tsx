@@ -76,7 +76,14 @@ export function ToolResultCard({
             </span>
           </Button>
         ) : (
-          <div className="min-w-0 flex-1 px-1.5 py-0.5 text-sm font-medium">{heading}</div>
+          <div className="min-w-0 flex-1 px-1.5 py-0.5">
+            <span className="block min-w-0 text-sm font-medium">{heading}</span>
+            {summary ? (
+              <span className="text-muted-foreground block truncate text-xs" title={summary}>
+                {summary}
+              </span>
+            ) : null}
+          </div>
         )}
         {expandable ? <ToolResultDetailsPopover details={details} /> : null}
         {trailing}

@@ -49,6 +49,7 @@ export type AgentScheduleRun = {
   last_error_message: string | null
   outcome: RunOutcome | null
   completion_json: Record<string, unknown> | null
+  progress_reviews: number
   created_at: string
   health: ScheduleHealth
 }

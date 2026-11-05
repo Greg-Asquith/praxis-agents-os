@@ -14,6 +14,7 @@ export function RunOutcomeAlert({ outcome }: { outcome: RunInterruptionOutcome }
         <AlertTitle>{outcome.title}</AlertTitle>
         <AlertDescription>
           <p>{outcome.message}</p>
+          {outcome.reviewReason ? <p className="mt-1">{outcome.reviewReason}</p> : null}
           {outcome.completedActions.length > 0 ? (
             <details className="mt-2" open={!paused}>
               <summary className="cursor-pointer font-medium">

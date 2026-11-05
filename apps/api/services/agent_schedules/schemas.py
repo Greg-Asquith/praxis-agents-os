@@ -16,6 +16,7 @@ from services.agents.runtime.completion_contract import (
     ScheduleCompletionContract,
     serialized_completion_contract,
 )
+from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY
 from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
@@ -55,6 +56,7 @@ class AgentScheduleRunRead(BaseModel):
     last_error_message: str | None = None
     outcome: RunOutcome | None = None
     completion_json: dict[str, Any] | None = None
+    progress_reviews: int = 0
     created_at: datetime
     health: str
 
@@ -79,10 +81,17 @@ class AgentScheduleRunRead(BaseModel):
                 "last_error_message": run.last_error_message,
                 "outcome": outcome,
                 "completion_json": completion_json,
+                "progress_reviews": _progress_review_count(run),
                 "created_at": run.created_at,
                 "health": schedule_health_from_run(run, outcome=outcome),
             }
         )
+
+
+def _progress_review_count(run: AgentScheduleRun) -> int:
+    saved = (run.agent_run.metadata_json or {}).get(PROGRESS_REVIEWS_KEY) if run.agent_run else None
+    reviews = saved.get("reviews") if isinstance(saved, dict) else None
+    return len(reviews) if isinstance(reviews, list) else 0
 
 
 def _schedule_run_completion(

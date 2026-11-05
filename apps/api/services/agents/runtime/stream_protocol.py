@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from services.agent_runs.domain import RunStatus
 from services.agent_runs.schemas import PendingDelegatedApprovalRead
+from services.agents.runtime.progress_review.verdict import REASON_MAX_CHARS, Verdict
 from services.conversation_read_contract import ConversationRead, ConversationSource
 
 STREAM_PROTOCOL_VERSION = "1"
@@ -145,6 +146,16 @@ class WorkflowStateEvent(StreamEventPayload):
     error_excerpt: str | None = None
 
 
+class ProgressReviewEvent(StreamEventPayload):
+    event_name: ClassVar[Literal["progress.review"]] = "progress.review"
+
+    review_id: UUID
+    verdict: Verdict
+    reason: str = Field(max_length=REASON_MAX_CHARS)
+    steer_text: str | None = None
+    review_number: int = Field(ge=1)
+
+
 class ErrorEvent(StreamEventPayload):
     event_name: ClassVar[Literal["error"]] = "error"
 
@@ -170,6 +181,7 @@ STREAM_EVENT_MODELS: tuple[type[StreamEventPayload], ...] = (
     ToolProgressEvent,
     ToolApprovalRequiredEvent,
     WorkflowStateEvent,
+    ProgressReviewEvent,
     ErrorEvent,
     DoneEvent,
 )
@@ -236,6 +248,7 @@ def stream_protocol_schema() -> dict[str, Any]:
             "conversation_sources": _enum_values(ConversationSource),
             "message_channels": _enum_values(MessageChannel),
             "workflow_states": _enum_values(WorkflowState),
+            "progress_review_verdicts": _enum_values(Verdict),
         },
         "events": events,
     }
@@ -316,6 +329,13 @@ def stream_protocol_samples() -> list[dict[str, Any]]:
             tool_call_id="workflow-call",
             state="completed",
             output_excerpt="Sample output",
+        ),
+        ProgressReviewEvent(
+            review_id=sample_uuid,
+            verdict="steer_wrap_up",
+            reason="The task is nearly done.",
+            steer_text="Progress check: finish the remaining work.",
+            review_number=1,
         ),
         ErrorEvent(code="sample_error", message="Sample error"),
         DoneEvent(status="completed"),

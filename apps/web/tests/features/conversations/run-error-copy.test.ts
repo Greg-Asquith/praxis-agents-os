@@ -183,3 +183,31 @@ describe("root continuation recovery", () => {
     expect(runInterruptionOutcome(run)?.actionsTruncated).toBe(true)
   })
 })
+
+describe("progress review hand-backs", () => {
+  it("shows the reviewer's reason, or the check count once every extension is used", () => {
+    const run = {
+      ...failedRun("usage_limit_exceeded"),
+      outcome: "budget_exhausted" as const,
+      completion_json: {
+        progress_review: {
+          verdict: "ask_person",
+          reason: "The next step needs your decision.",
+          reviews_used: 2,
+          limit_reached: false,
+        },
+      },
+    }
+    expect(runInterruptionOutcome(run)?.reviewReason).toBe("The next step needs your decision.")
+
+    run.completion_json.progress_review = {
+      verdict: "ask_person",
+      reason: "The run used every automatic extension it is allowed.",
+      reviews_used: 4,
+      limit_reached: true,
+    }
+    const capped = runInterruptionOutcome(run)
+    expect(capped?.reviewReason).toBeUndefined()
+    expect(capped?.message).toContain("checked 4 times")
+  })
+})

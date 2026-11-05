@@ -48,6 +48,7 @@ def build_subagent(parent: Agent, spec: SubagentSpec, *, workspace: Workspace | 
         model_settings=parent.model_settings if same_model else None,
         azure_deployment=parent.azure_deployment if spec.model_provider == PROVIDER_AZURE else None,
         max_steps=parent.max_steps,
+        progress_reviews_enabled=parent.progress_reviews_enabled,
         metadata_json={
             **(parent.metadata_json or {}),
             SUBAGENT_METADATA_KEY: spec.model_dump(mode="json"),

@@ -39,8 +39,9 @@ import type {
   PendingWorkflowState,
 } from "@/features/conversations/types"
 import { runInterruptionOutcome } from "@/features/conversations/run-error-copy"
+import { PROGRESS_REVIEW_VERDICTS } from "@/features/conversations/stream/validation"
 import { titleCaseToken } from "@/lib/format"
-import { isRecord, stringValue } from "@/lib/guards"
+import { isOneOf, isPositiveInteger, isRecord, stringValue } from "@/lib/guards"
 
 const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "native-tool-return"])
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
@@ -61,7 +62,14 @@ export function parseConversationMessages(
   pendingWorkflows: PendingWorkflowState[] = [],
   runs: Readonly<Record<string, AgentRun>> = {}
 ): ParsedConversationMessage[] {
-  const parsed = messages.map(parseConversationMessage)
+  // A steer instruction is shown inside its progress check row, not as a person's message.
+  const parsed = messages
+    .filter(
+      (message) =>
+        !isRecord(message.parts["metadata"]) ||
+        message.parts["metadata"]["progress_review_steer"] !== true
+    )
+    .map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
   const pendingDelegationsByParentCallId = new Map(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
@@ -398,6 +406,25 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       return
     }
 
+    if (partKind === "progress-review") {
+      const verdict = part["verdict"]
+      const reviewNumber = part["review_number"]
+      if (isOneOf(PROGRESS_REVIEW_VERDICTS, verdict) && isPositiveInteger(reviewNumber)) {
+        parsed.parts?.push({
+          kind: "progress_review",
+          id: partId,
+          review: {
+            id: message.id,
+            verdict,
+            reason: stringValue(part["reason"]) ?? "",
+            steerText: stringValue(part["steer_text"]) ?? null,
+            reviewNumber,
+          },
+        })
+        return
+      }
+    }
+
     // Pydantic AI's feedback on an unusable response is model-facing only.
     if (partKind === "retry-feedback") {
       return
@@ -608,8 +635,13 @@ function resolveOrderedToolParts(
   return resolvedParts
 }
 
+export function hasProgressReviewPart(message: ParsedConversationMessage) {
+  return message.parts?.some((part) => part.kind === "progress_review") ?? false
+}
+
 function hasRenderableMessageContent(message: ParsedConversationMessage) {
   return (
+    hasProgressReviewPart(message) ||
     message.text.length > 0 ||
     message.thinking.length > 0 ||
     message.attachments.length > 0 ||

@@ -7,6 +7,7 @@ import type {
 } from "@/features/conversations/types"
 import type {
   MessageChannel,
+  ProgressReviewVerdict,
   StreamEvent,
   StreamEventName,
   StreamRunStatus,
@@ -39,6 +40,14 @@ export const WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set([
   "started",
   "completed",
   "failed",
+])
+
+export const PROGRESS_REVIEW_VERDICTS: ReadonlySet<ProgressReviewVerdict> = new Set([
+  "continue",
+  "steer_wrap_up",
+  "steer_stop_repeating",
+  "steer_refocus",
+  "ask_person",
 ])
 
 type StreamEnvelope = {
@@ -244,6 +253,28 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
     }
+    case "progress.review":
+      return {
+        event: "progress.review",
+        data: {
+          ...envelope,
+          review_id: requiredNonEmptyString(eventName, "data.review_id", data["review_id"]),
+          verdict: requiredEnum(
+            eventName,
+            "data.verdict",
+            data["verdict"],
+            PROGRESS_REVIEW_VERDICTS,
+            "a supported progress review verdict"
+          ),
+          reason: requiredString(eventName, "data.reason", data["reason"]),
+          steer_text: optionalNullableString(eventName, data, "steer_text") ?? null,
+          review_number: requiredPositiveInteger(
+            eventName,
+            "data.review_number",
+            data["review_number"]
+          ),
+        },
+      }
     case "error":
       return {
         event: "error",

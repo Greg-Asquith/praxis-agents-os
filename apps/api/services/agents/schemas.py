@@ -43,6 +43,7 @@ class AgentRead(BaseModel):
     model_settings: dict[str, Any] | None = None
     azure_deployment: str | None = None
     max_steps: int | None = None
+    progress_reviews_enabled: bool
     is_active: bool
     is_favorite: bool
     last_used_at: datetime | None = None
@@ -104,6 +105,7 @@ class AgentCreateRequest(BaseModel):
     model_settings: dict[str, Any] | None = None
     azure_deployment: str | None = Field(default=None, max_length=100)
     max_steps: int | None = Field(default=20, ge=1, le=100)
+    progress_reviews_enabled: bool = True
     is_active: bool = True
     is_favorite: bool = False
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
@@ -164,6 +166,7 @@ class AgentUpdateRequest(BaseModel):
     model_settings: dict[str, Any] | None = None
     azure_deployment: str | None = Field(default=None, max_length=100)
     max_steps: int | None = Field(default=None, ge=1, le=100)
+    progress_reviews_enabled: bool | None = None
     is_active: bool | None = None
     is_favorite: bool | None = None
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")

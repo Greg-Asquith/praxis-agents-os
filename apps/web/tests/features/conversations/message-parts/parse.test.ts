@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest"
 
 import { runInterruptionOutcome } from "@/features/conversations/run-error-copy"
+import { groupConversationRenderItems } from "@/features/conversations/message-parts/group-render-items"
 import {
   parseConversationMessages,
   toolActivityIdentity,
@@ -44,6 +45,46 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
+  it("keeps a progress check inside the turn and drops the steer prompt it sent", () => {
+    const runMetadata = { agent_run_id: "run-1" }
+    const steer = message(
+      "steer",
+      "user",
+      3,
+      [{ part_kind: "user-prompt", content: "Progress check: finish now." }],
+      runMetadata
+    )
+    steer.parts["metadata"] = { progress_review_steer: true }
+    const parsed = parseConversationMessages([
+      message("call", "assistant", 1, [{ part_kind: "text", content: "Working." }], runMetadata),
+      message(
+        "review",
+        "system",
+        2,
+        [
+          {
+            part_kind: "progress-review",
+            verdict: "steer_wrap_up",
+            reason: "Nearly done.",
+            steer_text: "Progress check: finish now.",
+            review_number: 1,
+          },
+        ],
+        runMetadata
+      ),
+      steer,
+      message("answer", "assistant", 4, [{ part_kind: "text", content: "Done." }], runMetadata),
+    ])
+
+    const [turn, ...rest] = groupConversationRenderItems(parsed)
+    expect(rest).toEqual([])
+    expect(turn?.kind).toBe("assistant-turn")
+    expect(parsed.map((item) => item.id)).toEqual(["call", "review", "answer"])
+    expect(parsed[1]?.parts).toMatchObject([
+      { kind: "progress_review", review: { id: "review", verdict: "steer_wrap_up" } },
+    ])
+  })
+
   it.each([
     ["interrupted", "stopped"],
     ["denied", "denied"],

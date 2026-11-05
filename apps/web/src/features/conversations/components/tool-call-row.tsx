@@ -11,6 +11,7 @@ import {
 } from "@/components/tool-ui/tool-conversation-context"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
+import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { FailedToolCard } from "@/features/conversations/components/failed-tool-card"
@@ -21,7 +22,6 @@ import {
   type ToolCallRowRenderProps,
 } from "@/features/conversations/components/tool-call-row-renderer"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
-import { ToolSurfaceCard } from "@/features/conversations/components/tool-surface-card"
 import {
   ToolActivityRowHeader,
   ToolActivityRowShell,
@@ -148,7 +148,6 @@ function VisibleToolCallRow({
   } else if (live && !compact && activity.status === "running") {
     defaultRow = (
       <RunningToolCard
-        argFields={argFields}
         headline={headlineForActivity(activity, title, ui)}
         iconToken={ui?.icon ?? null}
         stage={activity.progressStage ?? null}
@@ -279,39 +278,30 @@ class ToolPresenterErrorBoundary extends Component<
 }
 
 function RunningToolCard({
-  argFields,
   headline,
   iconToken,
   stage,
 }: {
-  argFields: ReturnType<typeof resolveUiFields>
   headline: string
   iconToken: string | null
   stage: string | null
 }) {
   return (
-    <ToolSurfaceCard
-      ariaLabel={`${headline}, in progress`}
-      header={
-        <div className="flex min-w-0 items-center gap-2 pt-1">
-          <ActivityStatusIcon fallbackIcon="tool" status="running" />
-          <h3 className="tool-activity-shimmer min-w-0 flex-1 truncate text-sm font-medium">
-            {headline}
-          </h3>
-          <ActivityStatusSuffix liveRunning status="running" suffix={null} />
-        </div>
+    <FanOutSkeleton
+      heading={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {iconToken && iconToken !== "tool" ? (
+            <ToolUiIcon token={iconToken} />
+          ) : (
+            <WrenchIcon className="text-muted-foreground size-4 shrink-0" />
+          )}
+          <span className="tool-activity-shimmer min-w-0 truncate">{headline}</span>
+        </span>
       }
-      icon={
-        iconToken && iconToken !== "tool" ? (
-          <ToolUiIcon token={iconToken} />
-        ) : (
-          <WrenchIcon className="size-4" />
-        )
-      }
-    >
-      {stage ? <p className="text-muted-foreground text-xs">{stage}</p> : null}
-      <ToolFieldGrid fields={argFields} />
-    </ToolSurfaceCard>
+      label={`${headline}, in progress`}
+      {...(stage ? { summary: stage } : {})}
+      trailing={<ActivityStatusSuffix liveRunning status="running" suffix={null} />}
+    />
   )
 }
 

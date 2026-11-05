@@ -111,15 +111,16 @@ async def consume_stream(
         if grant is not None:
 
             async def persist_progress_reviews(
-                reviewed_run_id: UUID, requests_granted: int
-            ) -> None:
+                reviewed: RuntimeDeps, requests_granted: int, steer_text: str | None
+            ) -> UUID:
                 async with session_lock:
-                    await save_progress_review(
+                    return await save_progress_review(
                         deps.db,
                         root_run=run,
                         grant=grant,
-                        reviewed_run_id=reviewed_run_id,
+                        reviewed=reviewed,
                         requests_granted=requests_granted,
+                        steer_text=steer_text,
                     )
 
             grant.persist = persist_progress_reviews

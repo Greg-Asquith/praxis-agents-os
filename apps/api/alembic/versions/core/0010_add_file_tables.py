@@ -30,7 +30,9 @@ def upgrade() -> None:
         sa.Column("content_type", sa.String(length=128), nullable=False),
         sa.Column("extension", sa.String(length=16), nullable=False),
         sa.Column("size_bytes", sa.BigInteger(), server_default=sa.text("0"), nullable=False),
-        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=False),
+        sa.Column(
+            "content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=False
+        ),
         sa.Column(
             "current_revision_id",
             sa.UUID(),
@@ -52,8 +54,18 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("deleted", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_by", sa.UUID(), nullable=True),
@@ -100,12 +112,19 @@ def upgrade() -> None:
         sa.Column("object_key", sa.String(length=1024), nullable=False),
         sa.Column("created_by_user_id", sa.UUID(), nullable=True),
         sa.Column("created_by_agent_id", sa.UUID(), nullable=True),
-        sa.Column("created_by_system", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "created_by_system", sa.Boolean(), server_default=sa.text("false"), nullable=False
+        ),
         sa.Column("restored_from_revision_id", sa.UUID(), nullable=True),
         sa.Column("markdown_object_key", sa.String(length=1024), nullable=True),
         sa.Column("markdown_size_bytes", sa.BigInteger(), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.CheckConstraint(
             "(CASE WHEN created_by_user_id IS NOT NULL THEN 1 ELSE 0 END + "
             "CASE WHEN created_by_agent_id IS NOT NULL THEN 1 ELSE 0 END + "
@@ -154,7 +173,12 @@ def upgrade() -> None:
         sa.Column("file_revision_id", sa.UUID(), nullable=True),
         sa.Column("created_by_user_id", sa.UUID(), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.CheckConstraint(
             "target_type IN ('conversation', 'artifact', 'agent', 'schedule_run')",
             name="file_references_target_type_check",
@@ -171,7 +195,9 @@ def upgrade() -> None:
             name="uq_file_references_file_target",
         ),
     )
-    op.create_index("ix_file_references_workspace_id", "file_references", ["workspace_id"], unique=False)
+    op.create_index(
+        "ix_file_references_workspace_id", "file_references", ["workspace_id"], unique=False
+    )
     op.create_index(
         "ix_file_references_target",
         "file_references",
@@ -198,7 +224,12 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"]),
         sa.PrimaryKeyConstraint("id"),

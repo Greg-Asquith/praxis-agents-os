@@ -9,6 +9,7 @@ import {
   UserMessageShell,
 } from "@/features/conversations/components/message-shell"
 import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
+import { ProgressReviewRow } from "@/features/conversations/components/progress-review-row"
 import { UnsupportedPartRows } from "@/features/conversations/components/unsupported-part-rows"
 import type { MessageAttachment } from "@/features/conversations/attachments"
 import type {
@@ -16,6 +17,7 @@ import type {
   ParsedMessagePart,
   PendingUserMessage,
 } from "@/features/conversations/message-parts"
+import { hasProgressReviewPart } from "@/features/conversations/message-parts/parse"
 import type { AssistantLiveTimelinePart } from "@/features/conversations/message-parts/timeline"
 import type { ChatMessageDraft } from "@/features/conversations/stream/reducer"
 import { supersededWriteTodoActivityIds } from "@/features/conversations/native-tools/todo-tools"
@@ -118,6 +120,8 @@ export function AssistantLiveActivityRow({
       {timeline.map((part) =>
         part.kind === "text" ? (
           <LiveMessageDraft key={`text:${part.message.id}`} message={part.message} />
+        ) : part.kind === "progress_review" ? (
+          <ProgressReviewRow key={`progress-review:${part.review.id}`} review={part.review} />
         ) : supersededTodoIds.has(part.activity.id) ? null : (
           <ToolCallRow
             key={
@@ -253,6 +257,9 @@ function renderMessagePart(
   if (part.kind === "thinking") {
     return null
   }
+  if (part.kind === "progress_review") {
+    return <ProgressReviewRow key={part.id} review={part.review} />
+  }
   if (part.kind === "tool") {
     if (hiddenToolActivityIds?.has(part.activity.id)) {
       return null
@@ -382,6 +389,7 @@ function UnsupportedMessageRow({ message }: { message: ParsedConversationMessage
 
 function hasPersistedTurnContent(message: ParsedConversationMessage) {
   return (
+    hasProgressReviewPart(message) ||
     message.text.length > 0 ||
     message.toolActivities.length > 0 ||
     message.attachments.length > 0 ||

@@ -21,7 +21,7 @@ from pydantic_ai.messages import (
 
 from services.agents.runtime.completion_contract import completion_contract_from_run_metadata
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.progress_review.verdict import STEER_TEXT
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 
 DIGEST_MAX_CHARS = 12_000
@@ -35,7 +35,6 @@ _ERROR_MAX_CHARS = 200
 _TOOL_NAME_MAX_CHARS = 64
 _HEAD_CALLS = 10
 _SIGNAL_THRESHOLD = 3
-_STEER_TEXTS = tuple(STEER_TEXT.values())
 
 
 @dataclass(frozen=True)
@@ -145,10 +144,12 @@ def _turn_start(messages: Sequence[ModelMessage]) -> tuple[int, str]:
     """Finds the latest prompt from a person, skipping progress-check steer messages."""
     for index in range(len(messages) - 1, -1, -1):
         message = messages[index]
-        if not isinstance(message, ModelRequest):
+        if not isinstance(message, ModelRequest) or (message.metadata or {}).get(
+            STEER_METADATA_KEY
+        ):
             continue
         prompts = [_prompt_text(part) for part in message.parts if isinstance(part, UserPromptPart)]
-        prompts = [text for text in prompts if text and not text.startswith(_STEER_TEXTS)]
+        prompts = [text for text in prompts if text]
         if prompts:
             return index, "\n".join(prompts)
     return 0, ""

@@ -183,11 +183,24 @@
   },
   {
     "data": {
+      "conversation_id": "11111111-1111-4111-8111-111111111111",
+      "reason": "The task is nearly done.",
+      "review_id": "11111111-1111-4111-8111-111111111111",
+      "review_number": 1,
+      "run_id": "11111111-1111-4111-8111-111111111111",
+      "seq": 12,
+      "steer_text": "Progress check: finish the remaining work.",
+      "verdict": "steer_wrap_up"
+    },
+    "event": "progress.review"
+  },
+  {
+    "data": {
       "code": "sample_error",
       "conversation_id": "11111111-1111-4111-8111-111111111111",
       "message": "Sample error",
       "run_id": "11111111-1111-4111-8111-111111111111",
-      "seq": 12
+      "seq": 13
     },
     "event": "error"
   },
@@ -195,7 +208,7 @@
     "data": {
       "conversation_id": "11111111-1111-4111-8111-111111111111",
       "run_id": "11111111-1111-4111-8111-111111111111",
-      "seq": 13,
+      "seq": 14,
       "status": "completed"
     },
     "event": "done"

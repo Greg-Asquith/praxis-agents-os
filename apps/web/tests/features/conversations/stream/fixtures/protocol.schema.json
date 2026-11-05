@@ -19,6 +19,13 @@
       "text",
       "thinking"
     ],
+    "progress_review_verdicts": [
+      "continue",
+      "steer_wrap_up",
+      "steer_stop_repeating",
+      "steer_refocus",
+      "ask_person"
+    ],
     "stream_run_statuses": [
       "pending",
       "running",
@@ -46,6 +53,7 @@
     "tool.progress",
     "tool.approval_required",
     "workflow.state",
+    "progress.review",
     "error",
     "done"
   ],
@@ -769,6 +777,72 @@
         "channel"
       ],
       "title": "MessageStartEvent",
+      "type": "object"
+    },
+    "progress.review": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 500,
+          "title": "Reason",
+          "type": "string"
+        },
+        "review_id": {
+          "format": "uuid",
+          "title": "Review Id",
+          "type": "string"
+        },
+        "review_number": {
+          "minimum": 1,
+          "title": "Review Number",
+          "type": "integer"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "steer_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steer Text"
+        },
+        "verdict": {
+          "enum": [
+            "continue",
+            "steer_wrap_up",
+            "steer_stop_repeating",
+            "steer_refocus",
+            "ask_person"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "review_id",
+        "verdict",
+        "reason",
+        "review_number"
+      ],
+      "title": "ProgressReviewEvent",
       "type": "object"
     },
     "run.status": {

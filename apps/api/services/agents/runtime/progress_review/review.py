@@ -64,6 +64,8 @@ async def _review_with_structured_output(
         name=f"praxis_progress_reviewer_{model_spec.provider}",
         output_type=ReviewerVerdict,
         instructions=_INSTRUCTIONS,
+        # Each digest is unique, so a cache write would never be read back.
+        model_settings={"cache": False},
     )
     result = await run_native_helper(
         deps, helper, digest, model_spec=model_spec, purpose=PURPOSE_RUN_REVIEW

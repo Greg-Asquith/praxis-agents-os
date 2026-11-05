@@ -135,6 +135,7 @@ function ConversationDetail({
     shouldRenderStream,
     streamError,
     streamMessages,
+    streamProgressReviews,
     streamToolCalls,
     visibleStreamApprovals,
   } = useConversationRunState({
@@ -200,6 +201,7 @@ function ConversationDetail({
           conversationId: shouldRenderStream ? stream.conversationId : null,
           isStreaming: shouldRenderStream && stream.isStreaming,
           messages: streamMessages,
+          progressReviews: streamProgressReviews,
           runId: shouldRenderStream ? stream.runId : null,
           toolCalls: streamToolCalls,
         },
@@ -227,6 +229,7 @@ function ConversationDetail({
       stream.isStreaming,
       stream.runId,
       streamMessages,
+      streamProgressReviews,
       streamToolCalls,
       transcriptRun,
       visibleStreamApprovals,

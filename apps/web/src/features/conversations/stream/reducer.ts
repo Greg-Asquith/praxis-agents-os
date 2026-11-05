@@ -5,6 +5,7 @@ import type {
   PendingDelegatedApproval,
   TaintSource,
 } from "@/features/conversations/types"
+import type { ProgressReview } from "@/features/conversations/message-parts/types"
 import type {
   MessageChannel,
   StreamError,
@@ -42,6 +43,8 @@ export type ToolCallState = {
   progressStage?: string
 }
 
+export type ProgressReviewState = ProgressReview & { timelineSequence: number }
+
 export type ApprovalState = {
   root_run_id: string
   owner_run_id: string
@@ -67,6 +70,7 @@ export type AgentStreamState = {
   messages: ChatMessageDraft[]
   toolCalls: Record<string, ToolCallState>
   approvals: Record<string, ApprovalState>
+  progressReviews: ProgressReviewState[]
   error: StreamError | null
   done: boolean
   lastSeq: number
@@ -76,6 +80,7 @@ export type AgentStreamState = {
 export type LiveTimelineItem =
   | { kind: "text"; message: ChatMessageDraft; sequence: number }
   | { kind: "tool"; toolCall: ToolCallState; sequence: number }
+  | { kind: "progress_review"; review: ProgressReviewState; sequence: number }
 
 export type AgentStreamAction =
   | { type: "start" }
@@ -97,6 +102,7 @@ export const initialAgentStreamState: AgentStreamState = {
   messages: [],
   toolCalls: {},
   approvals: {},
+  progressReviews: [],
   error: null,
   done: false,
   lastSeq: 0,
@@ -391,6 +397,22 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
         },
       }
     }
+    case "progress.review":
+      return {
+        ...nextState,
+        nextTimelineSequence: nextState.nextTimelineSequence + 1,
+        progressReviews: [
+          ...nextState.progressReviews,
+          {
+            id: streamEvent.data.review_id,
+            verdict: streamEvent.data.verdict,
+            reason: streamEvent.data.reason,
+            steerText: streamEvent.data.steer_text,
+            reviewNumber: streamEvent.data.review_number,
+            timelineSequence: nextState.nextTimelineSequence,
+          },
+        ],
+      }
     case "error":
       return withStreamError(nextState, {
         code: streamEvent.data.code,
@@ -457,7 +479,8 @@ function appendMessageDelta(
 
 export function selectLiveTimeline(
   messages: ChatMessageDraft[],
-  toolCalls: ToolCallState[]
+  toolCalls: ToolCallState[],
+  progressReviews: ProgressReviewState[] = []
 ): LiveTimelineItem[] {
   const timeline: LiveTimelineItem[] = [
     ...messages
@@ -474,6 +497,11 @@ export function selectLiveTimeline(
         toolCall,
         sequence: toolCall.timelineSequence,
       })),
+    ...progressReviews.map((review) => ({
+      kind: "progress_review" as const,
+      review,
+      sequence: review.timelineSequence,
+    })),
   ]
 
   return timeline.sort((left, right) => left.sequence - right.sequence)

@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.conversation import Conversation, ConversationMessage
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.conversations.schemas import ConversationMessageRead
 
 _MISSING_ARGS = object()
@@ -18,6 +19,7 @@ _RETURN_PARTS = {"tool-return", "builtin-tool-return", "native-tool-return"}
 _TOOL_PARTS = _CALL_PARTS | _RETURN_PARTS
 _DISPLAY_PARTS = {"text", "user-prompt"} | _TOOL_PARTS
 _PENDING_STATUSES = {"awaiting_approval", "pending"}
+_PROGRESS_REVIEW_FIELDS = ("part_kind", "verdict", "reason", "steer_text", "review_number")
 _PART_FIELDS = frozenset(
     {
         "part_kind",
@@ -105,21 +107,31 @@ def project_shared_message(
     completed = completed_calls
     if completed is None:
         completed = _completed_display_args([({"parts": parts}, message.metadata_json)])
-    visible = []
-    for part in parts if message.role != "system" else []:
-        if not isinstance(part, dict) or part.get("part_kind") not in _DISPLAY_PARTS:
-            continue
-        if part.get("status") in _PENDING_STATUSES:
-            continue
-        key = (run_id, part.get("tool_call_id"))
-        if part.get("part_kind") in _CALL_PARTS and key not in completed:
-            continue
-        visible.append(_display_part(part, completed.get(key, _MISSING_ARGS)))
+    projected: dict[str, Any] = {"parts": []}
+    if (message.parts.get("metadata") or {}).get(STEER_METADATA_KEY):
+        # Viewers keep the marker that hides the steer prompt; the prompt itself stays private.
+        projected["metadata"] = {STEER_METADATA_KEY: True}
+    elif message.role == "system":
+        projected["parts"] = [
+            {key: part[key] for key in _PROGRESS_REVIEW_FIELDS if key in part}
+            for part in parts
+            if isinstance(part, dict) and part.get("part_kind") == "progress-review"
+        ]
+    else:
+        for part in parts:
+            if not isinstance(part, dict) or part.get("part_kind") not in _DISPLAY_PARTS:
+                continue
+            if part.get("status") in _PENDING_STATUSES:
+                continue
+            key = (run_id, part.get("tool_call_id"))
+            if part.get("part_kind") in _CALL_PARTS and key not in completed:
+                continue
+            projected["parts"].append(_display_part(part, completed.get(key, _MISSING_ARGS)))
     return ConversationMessageRead(
         id=message.id,
         conversation_id=message.conversation_id,
         role=message.role,
-        parts={"parts": visible},
+        parts=projected,
         metadata_json={"agent_run_id": metadata["agent_run_id"]}
         if isinstance(metadata.get("agent_run_id"), str)
         else None,

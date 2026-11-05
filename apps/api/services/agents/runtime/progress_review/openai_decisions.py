@@ -27,6 +27,8 @@ from services.ai_usage.run_metered_helper import run_metered_helper
 
 _QUESTION_NAME = "verdict"
 _QUESTION = ChoiceQuestion(criteria=dict(VERDICT_DESCRIPTIONS), instructions=REVIEWER_INSTRUCTIONS)
+# Each digest is unique, so the implicit cache write would never be read back.
+_NO_PROMPT_CACHE = {"prompt_cache_options": {"mode": "explicit"}}
 REFUSED_REASON = "The progress reviewer declined to judge this run."
 LOW_CONFIDENCE_REASON = "The progress reviewer wasn't sure enough to let the run carry on."
 
@@ -49,7 +51,8 @@ async def decide_with_openai(
         usage.requests = 1
         try:
             response = await model.decide(
-                DecisionRequest(state=digest, questions={_QUESTION_NAME: _QUESTION}), {}
+                DecisionRequest(state=digest, questions={_QUESTION_NAME: _QUESTION}),
+                {"extra_body": _NO_PROMPT_CACHE},
             )
         except ContentFilterError as error:
             # A refusal is still billed; its usage is only in the error body.

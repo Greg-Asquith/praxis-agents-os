@@ -27,6 +27,11 @@ import {
 } from "@/features/agents/components/agent-form-model"
 import type { ModelCatalogResponse } from "@/features/models/types"
 
+const PROGRESS_REVIEW_OPTIONS = [
+  { label: "Let the agent check progress and continue", value: "true" },
+  { label: "Always ask me", value: "false" },
+] as const
+
 export function AgentModelSection({
   advancedOpen,
   fieldErrors,
@@ -256,9 +261,42 @@ export function AgentModelSection({
                   value={state.maxSteps}
                 />
                 <FieldDescription>
-                  The most actions one run may take before it stops.
+                  How many actions it takes before it checks in on its progress.
                 </FieldDescription>
                 <FieldError>{fieldErrors.maxSteps}</FieldError>
+              </Field>
+            )}
+
+            {state.isBuiltin ? null : (
+              <Field>
+                <FieldLabel htmlFor="agent-progress-reviews">
+                  When it reaches its step limit
+                </FieldLabel>
+                <Select
+                  onValueChange={(value) => {
+                    if (value === "true" || value === "false") {
+                      setField("progressReviewsEnabled", value)
+                    }
+                  }}
+                  value={state.progressReviewsEnabled}
+                >
+                  <SelectTrigger className="w-full" id="agent-progress-reviews">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    <SelectGroup>
+                      {PROGRESS_REVIEW_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} label={option.label} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  Praxis can check that a long run is still making progress and let it carry on, so
+                  you only hear from it when it needs you.
+                </FieldDescription>
               </Field>
             )}
           </div>

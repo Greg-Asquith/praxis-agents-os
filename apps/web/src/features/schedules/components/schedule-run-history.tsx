@@ -45,13 +45,7 @@ const columns = columnHelper.columns([
   }),
   columnHelper.accessor("status", {
     header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => (
-      <ScheduleRunStatusBadge
-        completionJson={row.original.completion_json}
-        outcome={row.original.outcome}
-        status={row.original.status}
-      />
-    ),
+    cell: ({ row }) => <RunStatus run={row.original} />,
     meta: { label: "Status" },
   }),
   columnHelper.accessor("attempt_count", {
@@ -185,11 +179,7 @@ function ScheduleRunMobileRow({ run }: { run: AgentScheduleRun }) {
               {run.attempt_count} {pluralize(run.attempt_count, "attempt")}
             </p>
           </div>
-          <ScheduleRunStatusBadge
-            completionJson={run.completion_json}
-            outcome={run.outcome}
-            status={run.status}
-          />
+          <RunStatus run={run} />
         </div>
 
         <dl className="grid gap-3">
@@ -201,6 +191,25 @@ function ScheduleRunMobileRow({ run }: { run: AgentScheduleRun }) {
         <ConversationLink run={run} fullWidth />
       </div>
     </ResponsiveListItem>
+  )
+}
+
+function RunStatus({ run }: { run: AgentScheduleRun }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <ScheduleRunStatusBadge
+        completionJson={run.completion_json}
+        outcome={run.outcome}
+        status={run.status}
+      />
+      {run.progress_reviews > 0 ? (
+        <span className="text-muted-foreground text-xs">
+          {run.progress_reviews === 1
+            ? "Checked once"
+            : `Checked ${String(run.progress_reviews)} times`}
+        </span>
+      ) : null}
+    </span>
   )
 }
 

@@ -26,6 +26,7 @@ export type Agent = {
   model_settings: Record<string, unknown> | null
   azure_deployment: string | null
   max_steps: number | null
+  progress_reviews_enabled: boolean
   is_active: boolean
   is_favorite: boolean
   last_used_at: string | null
@@ -59,6 +60,7 @@ export type AgentCreateRequest = {
   model_settings?: Record<string, unknown> | null
   azure_deployment?: string | null
   max_steps?: number | null
+  progress_reviews_enabled?: boolean
   is_active?: boolean
   is_favorite?: boolean
   metadata?: Record<string, unknown> | null

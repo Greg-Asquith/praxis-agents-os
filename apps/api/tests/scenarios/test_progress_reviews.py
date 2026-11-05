@@ -16,12 +16,17 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.progress_review.checkpoint import (
-    GRANTS_USED_REASON,
-    REVIEW_UNAVAILABLE_REASON,
+from services.agents.runtime.persistence import (
+    PROGRESS_REVIEW_MESSAGE_SOURCE,
+    load_message_history,
 )
-from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY
-from services.agents.runtime.progress_review.verdict import STEER_TEXT, ProgressReview
+from services.agents.runtime.progress_review.checkpoint import REVIEW_UNAVAILABLE_REASON
+from services.agents.runtime.progress_review.grant import GRANTS_USED_REASON, PROGRESS_REVIEWS_KEY
+from services.agents.runtime.progress_review.verdict import (
+    STEER_METADATA_KEY,
+    STEER_TEXT,
+    ProgressReview,
+)
 from services.agents.runtime.run_persistence import restored_run_usage
 from services.agents.runtime.usage_limits import BudgetLimitExceeded
 from tests.support.scenario import (
@@ -75,7 +80,27 @@ async def test_steer_extends_the_run_and_reaches_the_next_request(
     assert steer not in str(seen[1][0])
     assert steer in str(seen[2][0])
     assert "Report the totals." in str(seen[2][0])
-    assert steer in json.dumps([message.parts for message in result.messages])
+    [steer_row] = [
+        message
+        for message in result.messages
+        if (message.parts.get("metadata") or {}).get(STEER_METADATA_KEY)
+    ]
+    assert steer in json.dumps(steer_row.parts)
+    [review_row] = [
+        message
+        for message in result.messages
+        if message.metadata_json.get("source") == PROGRESS_REVIEW_MESSAGE_SOURCE
+    ]
+    assert review_row.parts["parts"][0]["steer_text"].startswith(steer)
+    [event] = [event for event in result.events if event.event == "progress.review"]
+    assert event.data["review_id"] == str(review_row.id)
+    async with committed_db_session_factory() as db:
+        history = await load_message_history(db, conversation_id=context.conversation_id)
+    # The review row stays out of model history; the steer keeps its marker on reload.
+    assert len(history) == len(result.messages) - 1
+    assert any(
+        (getattr(message, "metadata", None) or {}).get(STEER_METADATA_KEY) for message in history
+    )
     saved = result.run.metadata_json[PROGRESS_REVIEWS_KEY]
     assert saved["granted"] == 2
     assert [review["verdict"] for review in saved["reviews"]] == ["steer_wrap_up"]
@@ -138,8 +163,29 @@ async def test_grant_cap_asks_a_person_without_calling_the_reviewer(
     assert run.completion_json["progress_review"] == {
         "verdict": "ask_person",
         "reason": GRANTS_USED_REASON,
-        "reviews_used": 2,
+        "reviews_used": 1,
+        "limit_reached": True,
     }
+
+
+async def test_agent_setting_off_pauses_without_a_review(committed_db_session_factory, monkeypatch):
+    context = await _agent_with_steps(committed_db_session_factory, 1)
+    async with committed_db_session_factory() as db:
+        agent = await db.get(Agent, context.agent_id)
+        agent.progress_reviews_enabled = False
+        await db.commit()
+    calls: list[int] = []
+    monkeypatch.setattr(REVIEWER, _reviewer("continue", calls))
+    model = scripted_model(turns=[WRITE, "Unreachable."])
+
+    with pytest.raises(BudgetLimitExceeded):
+        await run_scenario(committed_db_session_factory, context, model=model)
+
+    async with committed_db_session_factory() as db:
+        run = await db.get(AgentRun, context.run_id)
+    assert calls == []
+    assert run.outcome == "budget_exhausted"
+    assert "progress_review" not in run.completion_json
 
 
 async def test_schedule_request_cap_trips_without_a_review(

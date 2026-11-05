@@ -27,6 +27,8 @@ from core.settings import settings
 from models.conversation import Conversation, ConversationMessage
 
 PYDANTIC_AI_MESSAGE_SOURCE = "pydantic_ai"
+# Transcript-only rows; history loaders read Pydantic AI rows only, so models never see these.
+PROGRESS_REVIEW_MESSAGE_SOURCE = "progress_review"
 _CAPABILITY_LOAD_TOOL_KIND = "capability-load"
 
 
@@ -321,6 +323,28 @@ async def persist_new_messages(
     conversation.last_message_at = now
     await db.flush()
     return rows
+
+
+async def persist_progress_review_message(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    conversation_id: UUID,
+    run_id: UUID,
+    review: Mapping[str, Any],
+) -> ConversationMessage:
+    """Appends a transcript row recording one progress review of the run."""
+    row = ConversationMessage(
+        conversation_id=conversation_id,
+        workspace_id=workspace_id,
+        role="system",
+        parts={"kind": "progress_review", "parts": [{"part_kind": "progress-review", **review}]},
+        metadata_json={"source": PROGRESS_REVIEW_MESSAGE_SOURCE, "agent_run_id": str(run_id)},
+        sequence=await _next_sequence(db, conversation_id=conversation_id),
+    )
+    db.add(row)
+    await db.flush()
+    return row
 
 
 async def persist_eager_user_prompt(

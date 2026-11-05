@@ -22,6 +22,7 @@ export const STREAM_EVENT_NAMES = [
   "tool.progress",
   "tool.approval_required",
   "workflow.state",
+  "progress.review",
   "error",
   "done",
 ] as const
@@ -41,6 +42,8 @@ type StreamEnvelope = {
 export type MessageChannel = "text" | "thinking"
 
 export type WorkflowState = "started" | "completed" | "failed"
+export type ProgressReviewVerdict =
+  "continue" | "steer_wrap_up" | "steer_stop_repeating" | "steer_refocus" | "ask_person"
 export type StreamRunStatus = AgentRunStatus | "queued"
 
 export type StreamError = {
@@ -125,6 +128,16 @@ export type StreamEvent =
         state: WorkflowState
         output_excerpt?: string | null
         error_excerpt?: string | null
+      }
+    }
+  | {
+      event: "progress.review"
+      data: StreamEnvelope & {
+        review_id: string
+        verdict: ProgressReviewVerdict
+        reason: string
+        steer_text: string | null
+        review_number: number
       }
     }
   | {

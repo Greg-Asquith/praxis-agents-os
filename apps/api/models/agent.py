@@ -84,6 +84,10 @@ class Agent(BaseModel):
         String(100), nullable=True
     )  # Azure OpenAI deployment name (special case)
     max_steps = Column(Integer, nullable=True, default=20, server_default=text("20"))
+    # At the step limit, a progress review can let the run carry on instead of pausing.
+    progress_reviews_enabled = Column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
 
     # The workspace's code-owned agent; its name, base instructions, and tools are platform-managed
     is_builtin = Column(Boolean, nullable=False, default=False, server_default=text("false"))

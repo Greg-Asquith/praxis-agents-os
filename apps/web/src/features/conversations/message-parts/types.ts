@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/message-parts/types.ts
 
 import type { MessageAttachment } from "@/features/conversations/attachments"
+import type { ProgressReviewVerdict } from "@/features/conversations/stream/protocol"
 import type { TaintSource } from "@/features/conversations/types"
 
 export type ParsedMessageRole = "user" | "assistant" | "tool" | "system" | "unknown"
@@ -59,6 +60,14 @@ export type ToolActivity = {
   progressStage?: string
 }
 
+export type ProgressReview = {
+  id: string
+  verdict: ProgressReviewVerdict
+  reason: string
+  steerText: string | null
+  reviewNumber: number
+}
+
 type UnsupportedMessagePart = {
   id: string
   label: string
@@ -69,6 +78,7 @@ export type ParsedMessagePart =
   | { kind: "text"; id: string; content: string }
   | { kind: "thinking"; id: string; content: string }
   | { kind: "tool"; id: string; activity: ToolActivity }
+  | { kind: "progress_review"; id: string; review: ProgressReview }
 
 export type ParsedConversationMessage = {
   id: string

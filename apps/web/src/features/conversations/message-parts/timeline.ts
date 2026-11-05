@@ -18,7 +18,11 @@ import {
   type LiveToolResult,
 } from "@/features/conversations/message-parts/parse"
 import type { ConversationRenderItem } from "@/features/conversations/message-parts/group-render-items"
-import type { PendingUserMessage, ToolActivity } from "@/features/conversations/message-parts/types"
+import type {
+  PendingUserMessage,
+  ProgressReview,
+  ToolActivity,
+} from "@/features/conversations/message-parts/types"
 import {
   normalizeToolArgs,
   toolActivityIdentity,
@@ -27,6 +31,7 @@ import {
   selectLiveTimeline,
   type ApprovalState,
   type ChatMessageDraft,
+  type ProgressReviewState,
   type ToolCallState,
 } from "@/features/conversations/stream/reducer"
 import type {
@@ -38,7 +43,9 @@ import type {
 } from "@/features/conversations/types"
 
 export type AssistantLiveTimelinePart =
-  { kind: "text"; message: ChatMessageDraft } | { kind: "tool"; activity: ToolActivity }
+  | { kind: "text"; message: ChatMessageDraft }
+  | { kind: "tool"; activity: ToolActivity }
+  | { kind: "progress_review"; review: ProgressReview }
 
 export type ConversationTimelineRow =
   | ConversationRenderItem
@@ -50,6 +57,7 @@ type ConversationTimelineStream = {
   conversationId: string | null
   isStreaming: boolean
   messages: ChatMessageDraft[]
+  progressReviews?: ProgressReviewState[]
   runId: string | null
   toolCalls: ToolCallState[]
 }
@@ -152,22 +160,36 @@ export function projectConversationTimeline({
       (activity) => [toolActivityIdentity(activity.agentRunId, activity.id), activity] as const
     )
   )
-  const liveTimeline = selectLiveTimeline(stream.messages, stream.toolCalls).flatMap(
-    (item): AssistantLiveTimelinePart[] => {
-      if (item.kind === "text") {
-        return [{ kind: "text", message: item.message }]
-      }
-      const identity = toolActivityIdentity(
-        item.toolCall.owner_run_id ?? stream.runId,
-        item.toolCall.tool_call_id
+  const transcriptReviewIds = new Set(
+    parsedMessages.flatMap((message) =>
+      (message.parts ?? []).flatMap((part) =>
+        part.kind === "progress_review" ? [part.review.id] : []
       )
-      if (transcriptToolIds.has(identity)) {
-        return []
-      }
-      const activity = activitiesByIdentity.get(identity)
-      return activity ? [{ kind: "tool", activity }] : []
-    }
+    )
   )
+  const liveTimeline = selectLiveTimeline(
+    stream.messages,
+    stream.toolCalls,
+    stream.progressReviews
+  ).flatMap((item): AssistantLiveTimelinePart[] => {
+    if (item.kind === "text") {
+      return [{ kind: "text", message: item.message }]
+    }
+    if (item.kind === "progress_review") {
+      return transcriptReviewIds.has(item.review.id)
+        ? []
+        : [{ kind: "progress_review", review: item.review }]
+    }
+    const identity = toolActivityIdentity(
+      item.toolCall.owner_run_id ?? stream.runId,
+      item.toolCall.tool_call_id
+    )
+    if (transcriptToolIds.has(identity)) {
+      return []
+    }
+    const activity = activitiesByIdentity.get(identity)
+    return activity ? [{ kind: "tool", activity }] : []
+  })
   const hasRunningTranscriptTool = parsedMessages.some((message) =>
     message.toolActivities.some((activity) => activity.status === "running")
   )

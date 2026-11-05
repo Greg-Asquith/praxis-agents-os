@@ -9,15 +9,16 @@ from uuid import uuid4
 
 import httpx2 as httpx
 import pytest
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic import SecretStr
 from pydantic_ai.models import override_allow_model_requests
-from pydantic_ai.models.function import FunctionModel
 
 from core.settings import settings
+from services.agents.models import factory
 from services.agents.models.utils import _build_retrying_http_client
 from services.agents.runtime.progress_review import openai_decisions, review
 from services.agents.runtime.progress_review.digest import ProgressDigest
 from services.agents.runtime.progress_review.verdict import VERDICT_DESCRIPTIONS
+from tests.support.anthropic import anthropic_message_response
 
 DIGEST = ProgressDigest(text="## Run\nTask: Summarise spend.", signal=None)
 
@@ -93,6 +94,7 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
     assert request.url.path == "/v1/decisions"
     sent = json.loads(request.content)
     assert (sent["model"], sent["input"]) == ("gpt-6-luna", DIGEST.text)
+    assert sent["prompt_cache_options"] == {"mode": "explicit"}
     [question] = sent["questions"]
     assert question["type"] == "choice"
     assert [choice["value"] for choice in question["choices"]] == list(VERDICT_DESCRIPTIONS)
@@ -105,25 +107,40 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
     )
 
 
-async def test_structured_reviewer_returns_a_bounded_verdict(monkeypatch):
+async def test_structured_reviewer_returns_a_bounded_verdict_without_caching(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     meter = AsyncMock()
     monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", meter)
-    prompts = []
+    output = {
+        "verdict": "steer_stop_repeating",
+        "reason": "It keeps running the same search.",
+        "guidance": "Try   the\nother account.",
+    }
+    message = {
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-5-5",
+        "content": [{"type": "text", "text": json.dumps(output)}],
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    }
+    requests = []
 
-    def respond(messages, info):
-        prompts.append(messages[-1].parts[-1].content)
-        output = {
-            "verdict": "steer_stop_repeating",
-            "reason": "It keeps running the same search.",
-            "guidance": "Try   the\nother account.",
-        }
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, output)])
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return anthropic_message_response(request, message)
 
-    monkeypatch.setattr(review, "build_model", lambda _spec: FunctionModel(respond))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
+        with override_allow_model_requests(True):
+            result = await review.review_progress(_deps(), DIGEST)
 
-    result = await review.review_progress(_deps(), DIGEST)
-
-    assert prompts == [DIGEST.text]
+    [sent] = requests
+    assert sent["messages"][-1]["content"][-1]["text"] == DIGEST.text
+    # The agent default turns caching on; a unique digest would only pay for the write.
+    assert "cache_control" not in json.dumps(sent)
     assert result.verdict == "steer_stop_repeating"
     assert result.guidance == "Try the other account."
     assert (result.provider, result.model) == ("anthropic", "claude-haiku-5-5")

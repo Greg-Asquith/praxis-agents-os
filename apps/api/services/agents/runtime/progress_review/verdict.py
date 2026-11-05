@@ -13,6 +13,8 @@ Verdict = Literal[
 ]
 REASON_MAX_CHARS = 500
 GUIDANCE_MAX_CHARS = 300
+# Marks a steer request in history so transcripts and digests can tell it from a person's prompt.
+STEER_METADATA_KEY = "progress_review_steer"
 
 # Decisions API choice descriptions, the reviewer rubric, and the reason when a model gives none.
 VERDICT_DESCRIPTIONS: dict[Verdict, str] = {

@@ -14,6 +14,7 @@ import {
   AGENT_RUN_STATUSES,
   CONVERSATION_SOURCES,
   MESSAGE_CHANNELS,
+  PROGRESS_REVIEW_VERDICTS,
   STREAM_RUN_STATUSES,
   WORKFLOW_STATES,
   parseStreamEvent,
@@ -35,6 +36,7 @@ describe("agent stream protocol contract", () => {
     expect([...CONVERSATION_SOURCES]).toEqual(protocolSchema.enums.conversation_sources)
     expect([...MESSAGE_CHANNELS]).toEqual(protocolSchema.enums.message_channels)
     expect([...WORKFLOW_STATES]).toEqual(protocolSchema.enums.workflow_states)
+    expect([...PROGRESS_REVIEW_VERDICTS]).toEqual(protocolSchema.enums.progress_review_verdicts)
   })
 
   it("accepts every backend sample and its schema-valid optional forms", () => {

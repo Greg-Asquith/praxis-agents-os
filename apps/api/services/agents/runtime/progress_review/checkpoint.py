@@ -7,6 +7,7 @@ import logging
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.capabilities import AgentNode, Hooks, NodeResult
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.usage import RunUsage
 
 from core.settings import settings
@@ -19,15 +20,16 @@ from services.agents.runtime.progress_review.digest import (
 )
 from services.agents.runtime.progress_review.grant import RequestGrant
 from services.agents.runtime.progress_review.verdict import (
+    STEER_METADATA_KEY,
     ProgressReview,
     ask_person,
     steer_message,
 )
+from services.agents.runtime.stream_protocol import ProgressReviewEvent
 from services.agents.runtime.usage_limits import RuntimeUsageLimits
 
 logger = logging.getLogger(__name__)
 
-GRANTS_USED_REASON = "The run used every automatic extension it is allowed."
 REVIEW_UNAVAILABLE_REASON = "The progress review was unavailable."
 
 
@@ -51,21 +53,38 @@ async def review_if_due(ctx: RunContext[RuntimeDeps]) -> None:
     if not isinstance(limits, RuntimeUsageLimits) or limits.grant is None:
         return
     grant = limits.grant
-    if not _due(limits, ctx.usage):
+    if not grant.enabled or not _due(limits, ctx.usage):
         return
     async with grant.lock:
-        # A specialist's review may already have raised the ceiling.
-        if not _due(limits, ctx.usage):
+        # A specialist's review may already have raised the ceiling; at the cap the request trips.
+        if not _due(limits, ctx.usage) or grant.limit_reached:
             return
         decision, digest = await _decide(ctx, limits, grant)
         granted = grant.record(
             decision, requests=ctx.usage.requests, steps=limits.family_step_size or 0
         )
-        if grant.persist is not None:
-            await grant.persist(ctx.deps.run.id, granted)
-    steer_text = steer_message(decision, digest.signal if digest else None)
+        steer_text = steer_message(decision, digest.signal if digest else None)
+        review_id = (
+            await grant.persist(ctx.deps, granted, steer_text)
+            if grant.persist is not None
+            else None
+        )
     if steer_text is not None:
-        ctx.enqueue(steer_text, priority="asap")
+        ctx.enqueue(
+            ModelRequest(parts=[UserPromptPart(steer_text)], metadata={STEER_METADATA_KEY: True}),
+            priority="asap",
+        )
+    if review_id is None:
+        return
+    await ctx.deps.sink.emit(
+        ProgressReviewEvent(
+            review_id=review_id,
+            verdict=decision.verdict,
+            reason=decision.reason,
+            steer_text=steer_text,
+            review_number=len(grant.reviews),
+        )
+    )
 
 
 def _due(limits: RuntimeUsageLimits, usage: RunUsage) -> bool:
@@ -80,8 +99,6 @@ def _due(limits: RuntimeUsageLimits, usage: RunUsage) -> bool:
 async def _decide(
     ctx: RunContext[RuntimeDeps], limits: RuntimeUsageLimits, grant: RequestGrant
 ) -> tuple[ProgressReview, ProgressDigest | None]:
-    if grant.grants_used >= settings.AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS:
-        return ask_person(GRANTS_USED_REASON), None
     try:
         digest = _digest(ctx, limits, grant)
         async with asyncio.timeout(settings.AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS):

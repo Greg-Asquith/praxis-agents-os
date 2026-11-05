@@ -87,6 +87,7 @@ async def create_agent(
             model_settings=payload.model_settings,
             azure_deployment=payload.azure_deployment,
             max_steps=payload.max_steps,
+            progress_reviews_enabled=payload.progress_reviews_enabled,
             is_active=payload.is_active,
             is_favorite=payload.is_favorite,
             metadata_json=payload.metadata_json,

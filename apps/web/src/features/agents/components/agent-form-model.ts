@@ -109,6 +109,7 @@ export type AgentFormState = {
   modelSelection: string
   modelSettings: Record<string, unknown>
   name: string
+  progressReviewsEnabled: "true" | "false"
   subagentsEnabled: boolean
   thinking: ThinkingSelection
   // Workspace policy, else the tool's own default; saved modes that match are not overrides.
@@ -170,6 +171,7 @@ export function initialAgentFormState(
     modelSelection: modelSelectionFromAgent(agent),
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
+    progressReviewsEnabled: agent?.progress_reviews_enabled === false ? "false" : "true",
     subagentsEnabled: agent?.subagents_enabled ?? false,
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
     toolDefaultPolicies: toolDefaultPolicies(toolCatalog, agent),
@@ -368,6 +370,7 @@ export function buildAgentPayload(
     model_provider: modelSelection.model_provider,
     model_settings: modelSettings,
     name,
+    progress_reviews_enabled: state.progressReviewsEnabled === "true",
     subagents_enabled: state.subagentsEnabled,
     ...toolPayload,
   }
@@ -425,6 +428,7 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.allTools !== initial.allTools ||
     current.subagentsEnabled !== initial.subagentsEnabled ||
     current.maxSteps !== initial.maxSteps ||
+    current.progressReviewsEnabled !== initial.progressReviewsEnabled ||
     current.isActive !== initial.isActive ||
     current.isFavorite !== initial.isFavorite ||
     current.thinking !== initial.thinking ||

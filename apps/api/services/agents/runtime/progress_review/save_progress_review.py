@@ -1,12 +1,14 @@
 # apps/api/services/agents/runtime/progress_review/save_progress_review.py
 
-"""Saves a run family's review history on the root run with an audit event."""
+"""Saves a run family's review history on the root run with an audit event and transcript row."""
 
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent_run import AgentRun
+from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.persistence import persist_progress_review_message
 from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY, RequestGrant
 from services.audit_events.enums import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import safe_record_operation_audit_event
@@ -22,11 +24,16 @@ async def save_progress_review(
     *,
     root_run: AgentRun,
     grant: RequestGrant,
-    reviewed_run_id: UUID,
+    reviewed: RuntimeDeps,
     requests_granted: int,
-) -> None:
-    """Commits the latest review. The caller holds the root run's session lock."""
+    steer_text: str | None,
+) -> UUID:
+    """Commits the latest review and returns its transcript row in the reviewed run's conversation.
+
+    The caller holds the root run's session lock.
+    """
     latest = grant.reviews[-1]
+    reviewed_run_id = reviewed.run.id
     root_run.metadata_json = {
         **(root_run.metadata_json or {}),
         PROGRESS_REVIEWS_KEY: grant.snapshot(),
@@ -52,4 +59,18 @@ async def save_progress_review(
             "model": latest.model,
         },
     )
+    # Written through the root session, so pass identifiers rather than the specialist's rows.
+    row = await persist_progress_review_message(
+        db,
+        workspace_id=root_run.workspace_id,
+        conversation_id=reviewed.conversation.id,
+        run_id=reviewed_run_id,
+        review={
+            "verdict": latest.verdict,
+            "reason": latest.reason,
+            "steer_text": steer_text,
+            "review_number": len(grant.reviews),
+        },
+    )
     await db.commit()
+    return row.id

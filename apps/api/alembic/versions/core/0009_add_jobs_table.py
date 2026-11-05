@@ -28,7 +28,9 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(length=64), nullable=False),
         sa.Column("subject_type", sa.String(length=64), nullable=True),
         sa.Column("subject_id", sa.UUID(), nullable=True),
-        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=False),
+        sa.Column(
+            "content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=False
+        ),
         sa.Column(
             "payload",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -36,8 +38,12 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("priority", sa.Integer(), server_default=sa.text("100"), nullable=False),
-        sa.Column("status", sa.String(length=16), server_default=sa.text("'pending'"), nullable=False),
-        sa.Column("run_after", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "status", sa.String(length=16), server_default=sa.text("'pending'"), nullable=False
+        ),
+        sa.Column(
+            "run_after", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
+        ),
         sa.Column("attempts", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("max_attempts", sa.Integer(), server_default=sa.text("5"), nullable=False),
         sa.Column("locked_by", sa.String(length=255), nullable=True),
@@ -48,8 +54,18 @@ def upgrade() -> None:
         sa.Column("last_error_message", sa.Text(), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.CheckConstraint("attempts >= 0", name="jobs_attempts_check"),
         sa.CheckConstraint("max_attempts > 0", name="jobs_max_attempts_check"),
         sa.CheckConstraint(

@@ -133,9 +133,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["integration_resource_id"], ["integration_resources.id"], ondelete="CASCADE"
         ),
-        sa.ForeignKeyConstraint(
-            ["conversation_id"], ["conversations.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["workspace_id"], ["workspaces.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(

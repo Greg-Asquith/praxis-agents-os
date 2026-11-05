@@ -31,8 +31,12 @@ def upgrade() -> None:
         sa.Column("workspace_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("deleted", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_by", postgresql.UUID(as_uuid=True), nullable=True),
@@ -69,12 +73,9 @@ def upgrade() -> None:
             f"USING ({predicate}) WITH CHECK ({predicate})"
         )
     )
-    op.execute(
-        sa.text("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE classifiers TO praxis_app")
-    )
+    op.execute(sa.text("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE classifiers TO praxis_app"))
 
 
 def downgrade() -> None:
     op.execute(sa.text('DROP POLICY IF EXISTS "classifiers_tenant_isolation" ON "classifiers"'))
     op.drop_table("classifiers")
-

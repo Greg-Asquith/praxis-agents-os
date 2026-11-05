@@ -242,8 +242,10 @@ child, and saved run ceilings. Approval continuations can tighten saved ceilings
 but cannot widen them. The one exception is a progress review at the agent's
 `max_steps` limit: a reviewer model can grant another `max_steps` of model
 requests, up to `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS` times per run, and each
-grant is saved and audited on the root run. Schedule, token, tool-call, and
-time limits stay hard, and any reviewer failure pauses the run for a person. A parent budget failure ends the root with
+grant is saved and audited on the root run. Each agent has a setting that
+turns reviews off, so its step limit always pauses for a person. Schedule,
+token, tool-call, and time limits stay hard, and any reviewer failure pauses
+the run for a person. A parent budget failure ends the root with
 `budget_exhausted`; a stricter specialist-only ceiling can stop that specialist.
 Request limits count model requests, so an already-approved action from the last
 permitted request can settle. Token limits use observed usage and can overshoot

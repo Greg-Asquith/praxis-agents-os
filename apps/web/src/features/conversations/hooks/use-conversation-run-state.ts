@@ -39,6 +39,7 @@ export function useConversationRunState({
     isStreaming: streamIsStreaming,
     isConnected: streamIsConnected,
     messages: rawStreamMessages,
+    progressReviews: rawStreamProgressReviews,
     reset: resetStream,
     runId: streamRunId,
     toolCalls: streamToolCallsById,
@@ -74,6 +75,10 @@ export function useConversationRunState({
   const streamToolCalls = useMemo(
     () => (shouldRenderStream ? Object.values(streamToolCallsById) : []),
     [shouldRenderStream, streamToolCallsById]
+  )
+  const streamProgressReviews = useMemo(
+    () => (shouldRenderStream ? rawStreamProgressReviews : []),
+    [shouldRenderStream, rawStreamProgressReviews]
   )
   const streamApprovals = useMemo(
     () => (streamConversationId === conversationId ? Object.values(streamApprovalsById) : []),
@@ -126,6 +131,7 @@ export function useConversationRunState({
     if (
       streamIsStreaming ||
       rawStreamMessages.length > 0 ||
+      rawStreamProgressReviews.length > 0 ||
       streamToolCallCount > 0 ||
       streamApprovalCount > 0
     ) {
@@ -144,6 +150,7 @@ export function useConversationRunState({
     streamRunId,
     streamToolCallCount,
     rawStreamMessages.length,
+    rawStreamProgressReviews.length,
     recoveredApprovals.length,
     resetStream,
     submittingApprovalRunId,
@@ -158,6 +165,7 @@ export function useConversationRunState({
         ? formatStreamError(streamErrorValue)
         : null,
     streamMessages,
+    streamProgressReviews,
     streamToolCalls,
     visibleStreamApprovals,
   }
