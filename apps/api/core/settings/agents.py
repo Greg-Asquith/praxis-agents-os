@@ -119,6 +119,20 @@ class AgentRunSettingsMixin:
         allow_inf_nan=False,
         description="Weight of cached input tokens in the cumulative total-token backstop.",
     )
+    AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS: int = Field(
+        default=4,
+        ge=0,
+        le=10,
+        description=(
+            "Step-limit extensions a progress review can grant per run; 0 always asks a person."
+        ),
+    )
+    AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS: float = Field(
+        default=20,
+        gt=0,
+        le=120,
+        description="Seconds a progress review may take before the run asks a person.",
+    )
     AGENT_TOOL_RESULT_MAX_CHARS: int | None = Field(
         default=16_000,
         gt=0,

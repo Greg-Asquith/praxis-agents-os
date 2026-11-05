@@ -13,8 +13,11 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   conditions were honoured, and private planning references did not leak into
   code, comments, or docstrings.
 - The owning implementation or architecture docs were updated when commands,
-  routes, environment variables, or behaviour changed. AGENTS.md files retain
-  top-level rules and accurate pointers rather than detailed feature inventories.
+  routes, environment variables, or behaviour changed. New or renamed settings
+  appear in `apps/api/.env.example` and are wired through every hosting
+  target under `deploy/`: its example env file, deploy script, and manifests.
+  AGENTS.md files retain top-level rules and accurate pointers rather than
+  detailed feature inventories.
 
 ## Security And Tenancy
 

@@ -129,7 +129,7 @@ def build_runtime_agent(
                 cached_token_weight=settings.AGENT_RUN_CACHED_TOKEN_WEIGHT,
             ),
             EffectiveUsageLimits(
-                request_limit=completion_contract.max_requests,
+                hard_request_limit=completion_contract.max_requests,
                 total_tokens_limit=completion_contract.max_total_tokens,
                 cached_token_weight=settings.AGENT_RUN_CACHED_TOKEN_WEIGHT,
             )

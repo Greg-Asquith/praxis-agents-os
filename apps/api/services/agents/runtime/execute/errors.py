@@ -84,6 +84,8 @@ def public_run_error(exc: Exception) -> PublicRunError:
         }
         if isinstance(exc, BudgetLimitExceeded) and type(exc.observed_total_tokens) is int:
             completion["observed_total_tokens"] = min(2**53 - 1, max(0, exc.observed_total_tokens))
+        if isinstance(exc, BudgetLimitExceeded) and exc.progress_review is not None:
+            completion["progress_review"] = exc.progress_review
         return PublicRunError(
             code="usage_limit_exceeded",
             message=_usage_limit_message(completion),

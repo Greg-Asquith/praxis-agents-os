@@ -383,8 +383,17 @@ async def test_link_schedule_run_rejects_context_mismatch(
         await link_schedule_run(db_session, schedule_run, run)
 
 
-@pytest.mark.parametrize("snapshot", [None, {}, {"version": 1, "limits": {"request_limit": 999}}])
-async def test_create_rejects_caller_supplied_effective_budget(db_session, run_context, snapshot):
+@pytest.mark.parametrize(
+    ("key", "snapshot"),
+    [
+        ("effective_usage_limits", None),
+        ("effective_usage_limits", {"version": 1, "limits": {"request_limit": 999}}),
+        ("progress_reviews", {"version": 1, "granted": 999}),
+    ],
+)
+async def test_create_rejects_caller_supplied_effective_budget(
+    db_session, run_context, key, snapshot
+):
     with pytest.raises(CustomValueError, match="owned by run execution"):
         await create_agent_run(
             db_session,
@@ -393,5 +402,5 @@ async def test_create_rejects_caller_supplied_effective_budget(db_session, run_c
             workspace_id=run_context.workspace_id,
             user_id=run_context.user_id,
             trigger="interactive",
-            metadata={"effective_usage_limits": snapshot},
+            metadata={key: snapshot},
         )

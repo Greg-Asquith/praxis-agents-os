@@ -210,6 +210,42 @@ writes count in full. Raw usage, cost accounting, and separate input/output
 ceilings remain unchanged. The request limit stays equal to the agent's
 `max_steps`, unless a schedule or inherited ceiling tightens it.
 
+## Progress reviews at the step limit
+
+The agent's `max_steps` ceiling is the only reviewable ceiling. A schedule's
+`max_requests` is saved separately as `hard_request_limit`, and it trips
+without a review, as do token, tool-call, cost, and duration ceilings.
+
+Before a model request that would cross the run family's step ceiling, an
+`after_node_run` checkpoint asks the progress reviewer for a verdict:
+
+- `continue` adds the root run's step limit to the ceiling again.
+- A `steer_*` verdict does the same, and queues a fixed Praxis instruction
+  into the next model request through `RunContext.enqueue`.
+- `ask_person` changes nothing, so the request trips with outcome
+  `budget_exhausted`. Completion evidence then includes
+  `progress_review: {verdict, reason, reviews_used}`.
+
+A reviewer exception or a timeout (`AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS`,
+default 20) asks a person. After `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS`
+extensions (default 4, range 0 to 10), the run asks a person without calling
+the reviewer. The reviewer does not call a model yet, so every review
+currently asks a person.
+
+One grant on the root run's execution control covers the whole run family.
+Every step-derived request ceiling, including each specialist's local and
+inherited ceiling, adds the live grant, because specialists count against the
+shared cumulative usage. A specialist whose own `max_steps` is stricter still
+trips locally without a review. A lock serialises reviews.
+
+Each review is saved in root run metadata under `progress_reviews`, with the
+granted total and at most one entry per grant plus the final hand-back.
+Continuations restore it, so an approval resume keeps its granted steps.
+This is the one, evidenced exception to the rule below that saved ceilings
+never widen: the saved `effective_usage_limits` snapshot keeps the base step
+limit, and the grant is added on top. Run creation rejects caller-supplied
+`progress_reviews` metadata.
+
 Runtime preparation stores a validated, versioned `effective_usage_limits`
 snapshot in server-owned run metadata before model execution. Each continuation
 intersects saved ceilings with newly resolved settings and inherited limits.

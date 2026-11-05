@@ -17,6 +17,7 @@ from services.agent_runs.execution_state import ExecutionState, read_execution_s
 
 if TYPE_CHECKING:
     from services.agents.runtime.context import RuntimeDeps
+    from services.agents.runtime.progress_review.grant import RequestGrant
 
 
 class ExecutionPhase(StrEnum):
@@ -55,6 +56,8 @@ class ExecutionControl:
     phase: ExecutionPhase = ExecutionPhase.QUEUED
     root: ExecutionControl | None = None
     reason: InterruptionReason | None = None
+    # Set on the root control only; specialists read it through `root`.
+    request_grant: RequestGrant | None = None
 
     @classmethod
     def from_claim(

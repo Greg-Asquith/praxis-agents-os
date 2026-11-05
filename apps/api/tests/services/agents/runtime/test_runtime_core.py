@@ -435,7 +435,8 @@ async def test_execute_run_persists_messages_usage_and_events(
             max_total_tokens=100,
         ),
     ).usage_limits
-    assert tightened.request_limit == min(agent.max_steps, 2)
+    assert tightened.request_limit == agent.max_steps
+    assert tightened.hard_request_limit == 2
     assert tightened.total_tokens_limit == min(settings.AGENT_RUN_TOTAL_TOKENS_LIMIT, 100)
 
     non_widening = build_runtime_agent(

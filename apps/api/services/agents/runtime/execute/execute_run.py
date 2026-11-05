@@ -45,6 +45,7 @@ from services.agents.runtime.persistence import (
     persist_eager_denied_tool_results,
     persist_eager_user_prompt,
 )
+from services.agents.runtime.progress_review.grant import RequestGrant
 from services.agents.runtime.sinks import EventSink, NullSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
@@ -139,6 +140,8 @@ async def execute_run(
                     run, root=root_execution
                 )
                 execution_control.phase = ExecutionPhase.EXECUTING
+                if execution_control.root is None:
+                    execution_control.request_grant = RequestGrant.restore(run.metadata_json)
                 heartbeat_task = asyncio.create_task(
                     heartbeat_agent_run_lease(
                         stop=heartbeat_stop,
@@ -195,6 +198,7 @@ async def execute_run(
                     deferred_tool_results=deferred_tool_results,
                     available_files=available_files,
                     inherited_usage_limits=inherited_usage_limits,
+                    request_grant=(execution_control.root or execution_control).request_grant,
                 )
                 built_agent = prepared.built_agent
                 resolved_model = built_agent.runtime_agent.resolved_model

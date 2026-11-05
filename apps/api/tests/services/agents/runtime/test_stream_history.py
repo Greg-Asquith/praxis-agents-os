@@ -187,7 +187,9 @@ async def test_checkpoint_waits_for_native_tool_audit(monkeypatch) -> None:
                 SimpleNamespace(
                     db=None,
                     conversation=None,
-                    execution_control=SimpleNamespace(owner_instance_id=str(uuid4())),
+                    execution_control=SimpleNamespace(
+                        owner_instance_id=str(uuid4()), request_grant=None
+                    ),
                 ),
             ),
             run=cast(AgentRun, SimpleNamespace(id=run_id)),

@@ -33,6 +33,8 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_native_tool_invocation_audit_event
 from services.agents.runtime.events import EventTranslationState, emit_agent_stream_event
 from services.agents.runtime.interrupted_history import InterruptedHistory
+from services.agents.runtime.progress_review.checkpoint import install_progress_review_checkpoint
+from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY
 from services.agents.runtime.sinks import EventSink
 
 CHECKPOINT_TIMEOUT = 3.0
@@ -101,6 +103,21 @@ async def consume_stream(
                     ),
                 )
             return result
+
+    if checkpoint_hooks is not None:
+        install_progress_review_checkpoint(checkpoint_hooks)
+        grant = deps.execution_control.request_grant if deps.execution_control else None
+        if grant is not None:
+
+            async def persist_progress_reviews() -> None:
+                async with session_lock:
+                    run.metadata_json = {
+                        **(run.metadata_json or {}),
+                        PROGRESS_REVIEWS_KEY: grant.snapshot(),
+                    }
+                    await deps.db.commit()
+
+            grant.persist = persist_progress_reviews
 
     try:
         async for event in stream:

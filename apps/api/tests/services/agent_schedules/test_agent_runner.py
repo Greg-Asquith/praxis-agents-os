@@ -369,7 +369,9 @@ async def test_worker_request_budget_is_cumulative_across_approval_resume(
             "tripped_budget": {"kind": "requests", "limit": 1, "scope": "local"},
             "observed_total_tokens": observed_total_tokens,
         }
-        assert agent_run.metadata_json["effective_usage_limits"]["limits"]["request_limit"] == 1
+        assert (
+            agent_run.metadata_json["effective_usage_limits"]["limits"]["hard_request_limit"] == 1
+        )
 
 
 async def test_run_once_provider_failure_disables_schedule_and_prunes_conversation(

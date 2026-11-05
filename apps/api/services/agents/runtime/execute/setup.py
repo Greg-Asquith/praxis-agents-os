@@ -55,6 +55,7 @@ from services.agents.runtime.persistence import (
     load_history_watermark_keys,
     load_message_history,
 )
+from services.agents.runtime.progress_review.grant import RequestGrant
 from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.subagents.constants import RUN_SUBAGENT_TOOL_NAME
@@ -194,6 +195,7 @@ async def prepare_runtime(
     deferred_tool_results: DeferredToolResults | None,
     available_files: Sequence[AvailableFile],
     inherited_usage_limits: EffectiveUsageLimits | None = None,
+    request_grant: RequestGrant | None = None,
 ) -> PreparedRuntime:
     user, workspace, membership = await load_actor_context(db, run)
     conversation_context_block = render_conversation_context_block(
@@ -277,6 +279,7 @@ async def prepare_runtime(
         workspace_definitions=workspace_definitions,
         tool_defaults=tool_defaults,
         inherited_usage_limits=inherited_usage_limits,
+        request_grant=request_grant,
     )
     deps = RuntimeDeps(
         db=db,
@@ -356,6 +359,7 @@ async def build_agent_for_run(
     workspace_definitions: Sequence[RuntimeToolDefinition],
     tool_defaults: WorkspaceToolDefaults,
     inherited_usage_limits: EffectiveUsageLimits | None = None,
+    request_grant: RequestGrant | None = None,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
     # Only presence matters here; the tools list delegates themselves.
@@ -424,7 +428,8 @@ async def build_agent_for_run(
         resolved = resolved.model_copy(update={"cached_token_weight": accepted.cached_token_weight})
     effective = intersect_usage_limits(resolved, saved, inherited_usage_limits)
     runtime_agent = replace(
-        runtime_agent, usage_limits=RuntimeUsageLimits(effective, inherited_usage_limits)
+        runtime_agent,
+        usage_limits=RuntimeUsageLimits(effective, inherited_usage_limits, grant=request_grant),
     )
     metadata[EFFECTIVE_USAGE_LIMITS_KEY] = SavedUsageLimits(limits=effective).model_dump(
         mode="json"

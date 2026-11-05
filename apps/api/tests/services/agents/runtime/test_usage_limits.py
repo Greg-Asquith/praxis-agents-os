@@ -163,6 +163,25 @@ def test_exact_request_boundary(inherited: bool) -> None:
     limits.check_before_tool_call(RunUsage(requests=2, tool_calls=1))
 
 
+def test_grant_offsets_every_step_ceiling_but_not_the_hard_request_cap() -> None:
+    from services.agents.runtime.progress_review.grant import RequestGrant
+
+    grant = RequestGrant(granted=4)
+    root = EffectiveUsageLimits(request_limit=4, hard_request_limit=10)
+    child = RuntimeUsageLimits(
+        intersect_usage_limits(root, EffectiveUsageLimits(request_limit=3)), root, grant=grant
+    )
+    assert child.family_request_ceiling == 8
+    child.check_before_request(RunUsage(requests=6))
+    with pytest.raises(BudgetLimitExceeded) as stricter_child:
+        child.check_before_request(RunUsage(requests=7))
+    assert (stricter_child.value.limit, stricter_child.value.inherited) == (7, False)
+    grant.granted = 20
+    with pytest.raises(BudgetLimitExceeded) as hard:
+        child.check_before_request(RunUsage(requests=10))
+    assert (hard.value.limit, hard.value.progress_review) == (10, None)
+
+
 def test_observed_token_overshoot_is_inherited_even_with_stricter_child() -> None:
     parent = EffectiveUsageLimits(total_tokens_limit=10)
     limits = RuntimeUsageLimits(EffectiveUsageLimits(total_tokens_limit=5), parent)

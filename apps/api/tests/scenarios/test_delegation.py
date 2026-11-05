@@ -797,7 +797,9 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         root = await db.get(AgentRun, context.run_id)
         child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
         for run in [root, child_run]:
-            assert run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
+            assert (
+                run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["hard_request_limit"] == 5
+            )
         root.metadata_json = {
             **root.metadata_json,
             "completion_contract": {"required": False, "max_requests": 10},
@@ -818,7 +820,7 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     )
     assert second.run.status == "awaiting_approval"
     assert second.run.usage_json["requests"] == 3
-    assert second.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
+    assert second.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["hard_request_limit"] == 5
     [next_pending] = [
         event.data for event in second.events if event.event == "tool.approval_required"
     ]
@@ -841,7 +843,9 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     )
     assert completed.run.status == "completed"
     assert completed.run.usage_json["requests"] == 5
-    assert completed.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
+    assert (
+        completed.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["hard_request_limit"] == 5
+    )
     assert [value for _, value in effects.calls] == (
         ["edited", "second"] if second_decision == "approved" else ["edited"]
     )
@@ -913,7 +917,7 @@ async def test_schedule_budget_stops_delegation_at_exact_shared_request_count(
         assert len(child_runs) == (2 if request_limit == 5 else 1)
         for run in [root, *child_runs]:
             assert (
-                run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"]
+                run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["hard_request_limit"]
                 == request_limit
             )
         events = list(
@@ -975,11 +979,11 @@ async def test_last_request_approval_settles_without_widening_saved_budget(
         child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
         assert root.outcome == "budget_exhausted"
         assert child_run.outcome == "budget_exhausted"
-        assert root.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == min(
-            3, updated_limit
-        )
+        assert root.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"][
+            "hard_request_limit"
+        ] == min(3, updated_limit)
         assert child_run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"][
-            "request_limit"
+            "hard_request_limit"
         ] == min(3, updated_limit)
         events = list(
             await db.scalars(
@@ -1174,3 +1178,34 @@ async def test_inherited_streaming_token_overrun_preserves_mixed_model_ledger(
         assert sum(event.requests for event in events) == usage.requests == 3
         assert sum(event.input_tokens for event in events) == usage.input_tokens
         assert sum(event.output_tokens for event in events) == usage.output_tokens
+
+
+async def test_specialist_crossing_the_family_step_limit_uses_the_shared_grant(
+    committed_db_session_factory, monkeypatch, effects
+):
+    from services.agents.runtime.progress_review.grant import PROGRESS_REVIEWS_KEY
+    from services.agents.runtime.progress_review.verdict import ProgressReview
+
+    context = await build_scenario_agent(committed_db_session_factory)
+    child = await add_scenario_delegate(
+        committed_db_session_factory, context, tool_names=[effects.name]
+    )
+    async with committed_db_session_factory() as db:
+        (await db.get(Agent, context.agent_id)).max_steps = 2
+        await db.commit()
+    reviewed_runs = []
+
+    async def review(ctx) -> ProgressReview:
+        reviewed_runs.append(ctx.deps.run.id)
+        return ProgressReview(verdict="continue")
+
+    monkeypatch.setattr("services.agents.runtime.progress_review.review.review_progress", review)
+    model = _delegation_model(child_ids=[str(child.id)], write_tool=effects.name)
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+
+    result = await run_scenario(committed_db_session_factory, context, model=model)
+
+    assert result.run.outcome == "success"
+    [(child_run_id, _value)] = effects.calls
+    assert reviewed_runs == [child_run_id, context.run_id]
+    assert result.run.metadata_json[PROGRESS_REVIEWS_KEY]["granted"] == 4

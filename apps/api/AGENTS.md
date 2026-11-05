@@ -14,6 +14,11 @@ Follow these backend conventions:
 - Keep settings in `core/settings`; it is composed from per-concern mixins,
   and the `model_validator` in `core/settings/__init__.py` must keep rejecting
   unsafe production combinations.
+- When you add or rename a setting, list it in `apps/api/.env.example` and in
+  every hosting target under `deploy/` (today only `deploy/gcp/`). A target's
+  example env file alone is not enough: also wire the setting through that
+  target's deploy script and the API and worker manifests or templates. Then
+  run each target's deploy tests.
 - Keep route modules thin. Put reusable domain logic in `services`.
 - Each API route operation must live in its own route file. Route package
   `__init__.py` files may only compose routers from those operation modules.
