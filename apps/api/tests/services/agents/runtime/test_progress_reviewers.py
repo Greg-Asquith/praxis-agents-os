@@ -10,6 +10,7 @@ from uuid import uuid4
 import httpx2 as httpx
 import pytest
 from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models import override_allow_model_requests
 from pydantic_ai.models.function import FunctionModel
 
 from core.settings import settings
@@ -64,7 +65,18 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
     meter = AsyncMock()
     monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", meter)
     requests = []
-    body = {**answer, "probabilities": []} if answer["type"] == "choice" else answer
+    if answer["type"] == "choice":
+        rest = (1 - answer["confidence"]) / (len(VERDICT_DESCRIPTIONS) - 1)
+        probabilities = [
+            {
+                "value": value,
+                "probability": answer["confidence"] if value == answer["choice"] else rest,
+            }
+            for value in VERDICT_DESCRIPTIONS
+        ]
+        body = {**answer, "probabilities": probabilities}
+    else:
+        body = answer
 
     def respond(request):
         requests.append(request)
@@ -72,7 +84,8 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
 
     async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
         monkeypatch.setattr(openai_decisions, "retrying_http_client", lambda: client)
-        result = await review.review_progress(_deps(), DIGEST)
+        with override_allow_model_requests(True):
+            result = await review.review_progress(_deps(), DIGEST)
 
     assert (result.verdict, result.reason) == (verdict, reason)
     assert (result.provider, result.model) == ("openai", "gpt-6-luna")

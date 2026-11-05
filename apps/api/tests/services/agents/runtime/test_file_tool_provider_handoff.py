@@ -2,7 +2,7 @@
 
 """Offline provider-mapping coverage for rich file tool results."""
 
-from io import BytesIO
+import base64
 
 import pytest
 from pydantic_ai.messages import BinaryContent, ModelRequest, ToolReturnPart
@@ -67,8 +67,7 @@ async def test_anthropic_maps_image_inside_tool_result() -> None:
     image = tool_result["content"][1]
     assert image["type"] == "image"
     assert image["source"]["media_type"] == "image/png"
-    assert isinstance(image["source"]["data"], BytesIO)
-    assert image["source"]["data"].read() == b"provider-visible-png"
+    assert base64.b64decode(image["source"]["data"]) == b"provider-visible-png"
 
 
 async def test_google_maps_image_inside_tool_result() -> None:

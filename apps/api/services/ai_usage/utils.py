@@ -9,7 +9,6 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from pydantic_ai.usage import RunUsage
 from sqlalchemy import Label, Numeric, cast, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -396,7 +395,7 @@ def build_usage_breakdown_rows(buckets: list[UsageBucket]) -> list[BreakdownUsag
 
 
 def usage_values(usage: Any) -> dict[str, int]:
-    """Return the four token classes and request count from Pydantic AI usage."""
+    """Return the four token classes and request counts from Pydantic AI usage."""
     values: dict[str, int] = {}
     for name in (
         "input_tokens",
@@ -404,6 +403,7 @@ def usage_values(usage: Any) -> dict[str, int]:
         "cache_write_tokens",
         "output_tokens",
         "requests",
+        "unmeasured_requests",
     ):
         raw = getattr(usage, name, 0) or 0
         if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
@@ -412,29 +412,5 @@ def usage_values(usage: Any) -> dict[str, int]:
     return values
 
 
-def subtract_usage(current: RunUsage, baseline: RunUsage) -> dict[str, int]:
-    current_values = usage_values(current)
-    baseline_values = usage_values(baseline)
-    return {name: max(0, value - baseline_values[name]) for name, value in current_values.items()}
-
-
 def add_event(db: AsyncSession, event: AIUsageEventData) -> None:
-    db.add(
-        AIUsageEvent(
-            workspace_id=event.workspace_id,
-            scope=event.scope,
-            provider=event.provider,
-            model=event.model,
-            purpose=event.purpose,
-            input_tokens=event.input_tokens,
-            cache_read_tokens=event.cache_read_tokens,
-            cache_write_tokens=event.cache_write_tokens,
-            output_tokens=event.output_tokens,
-            requests=event.requests,
-            agent_id=event.agent_id,
-            user_id=event.user_id,
-            run_id=event.run_id,
-            conversation_id=event.conversation_id,
-            details=event.details,
-        )
-    )
+    db.add(AIUsageEvent(**event.row_values()))

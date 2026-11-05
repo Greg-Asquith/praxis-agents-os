@@ -2,15 +2,15 @@
 
 """Audited provider-native URL fetch through configured helper models.
 
-Pydantic AI 2.20.0 maps ``WebFetch(native=True)`` to Anthropic's web-fetch
+Pydantic AI 2.66 maps ``WebFetch(native=True)`` to Anthropic's web-fetch
 tool and Google's URL-context tool. Anthropic returns a structured fetched
 content block and citation-bearing text parts; Google returns URL retrieval
 metadata while the helper's text output carries the extracted content. Both
 providers surface unreachable pages through provider errors or unsuccessful
 native-tool metadata. Anthropic enforces native domain, use, citation, and
-content-token options. Google ignores those options, so Praxis removes Google
-from the available providers whenever the settings-owned domain denylist is
-configured. Praxis also checks the requested URL before dispatch and retains
+content-token options. Pydantic AI refuses domain and use limits that Google
+can't apply, so Praxis sends Google no use cap and removes Google from the
+available providers whenever the settings-owned domain denylist is configured. Praxis also checks the requested URL before dispatch and retains
 dispatch's bounded free-text truncation for the helper output.
 
 The registered schema and presentation snapshot configured providers at
@@ -314,7 +314,8 @@ async def run_native_web_fetch(
                 native=True,
                 local=False,
                 blocked_domains=list(configured_web_fetch_blocked_domains()) or None,
-                max_uses=1,
+                # Gemini can't cap uses, and Pydantic AI refuses a cap it can't apply.
+                max_uses=1 if model_spec.provider == PROVIDER_ANTHROPIC else None,
                 enable_citations=True,
                 max_content_tokens=settings.NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS,
             )

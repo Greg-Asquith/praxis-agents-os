@@ -13,9 +13,7 @@ from functools import lru_cache
 import httpx2 as httpx
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.profiles import ModelProfile
-from pydantic_ai.profiles.anthropic import anthropic_model_profile
 from pydantic_ai.profiles.google import google_model_profile
-from pydantic_ai.profiles.openai import openai_model_profile
 from pydantic_ai.retries import wait_retry_after
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -35,6 +33,8 @@ from services.agents.models.domain import (
 )
 
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
+# The provider SDKs' own pool; a custom transport ignores client-level limits.
+_PROVIDER_POOL_LIMITS = httpx.Limits(max_connections=1000, max_keepalive_connections=100)
 _PROVIDER_KEY_SETTING = {
     PROVIDER_ANTHROPIC: "ANTHROPIC_API_KEY",
     PROVIDER_OPENAI: "OPENAI_API_KEY",
@@ -46,13 +46,8 @@ _PROVIDER_KEY_SETTING = {
 def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
     """Supplies profile settings for catalogue models Pydantic AI does not cover."""
     if provider == PROVIDER_GOOGLE and model == "gemini-4-argon":
-        # Argon rejects MINIMAL; the SDK's generic Gemini profile still includes it.
-        return {
-            **(google_model_profile(model) or {}),
-            "thinking_always_enabled": True,
-            "google_supports_minimal_thinking_level": False,
-            "google_thinking_levels": frozenset({"LOW", "MEDIUM", "HIGH"}),
-        }
+        # Argon can't turn thinking off; Pydantic AI's profile doesn't say so.
+        return {**(google_model_profile(model) or {}), "thinking_always_enabled": True}
     if provider == PROVIDER_GOOGLE and model == "gemini-nano-banana-2.1":
         # Pydantic AI detects image models by an `image` substring in their IDs.
         return {
@@ -62,22 +57,6 @@ def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
             "thinking_always_enabled": True,
             "google_thinking_levels": frozenset({"MINIMAL", "MEDIUM", "HIGH"}),
         }
-    if provider == PROVIDER_OPENAI and model == "gpt-6.1-terra":
-        # Pydantic AI 2.66 gives Terra the same profile as GPT-6 Sol; 2.54 doesn't know Terra.
-        return openai_model_profile("gpt-6-sol")
-    if provider == PROVIDER_ANTHROPIC and model == "claude-haiku-5-5":
-        # Haiku 5.5 rejects budget thinking and sampling settings but accepts disabled thinking.
-        return {
-            **(anthropic_model_profile(model) or {}),
-            "supports_json_schema_output": True,
-            "anthropic_supports_adaptive_thinking": True,
-            "anthropic_supports_effort": True,
-            "anthropic_supports_xhigh_effort": True,
-            "anthropic_disallows_budget_thinking": True,
-            "anthropic_disallows_sampling_settings": True,
-            "anthropic_disallows_top_effort_when_thinking_disabled": True,
-            "anthropic_binds_thinking_blocks": True,
-        }
     return None
 
 
@@ -85,7 +64,7 @@ class _ProviderRetryTransport(httpx.AsyncBaseTransport):
     """Returns final HTTP responses intact so SDKs preserve provider errors."""
 
     def __init__(self, wrapped: httpx.AsyncBaseTransport | None = None) -> None:
-        self.wrapped = wrapped or httpx.AsyncHTTPTransport()
+        self.wrapped = wrapped or httpx.AsyncHTTPTransport(limits=_PROVIDER_POOL_LIMITS)
         self.attempts = settings.LLM_HTTP_RETRY_MAX_ATTEMPTS
         self.wait = wait_retry_after(
             fallback_strategy=wait_exponential(

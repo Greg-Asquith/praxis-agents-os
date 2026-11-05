@@ -19,6 +19,7 @@ from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.record_durable import record_ai_usage_durable
 from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
+from services.ai_usage.utils import usage_values
 from tests.factories import build_workspace
 from tests.support.database import make_async_test_database_url
 from tests.support.scenario import build_scenario_agent
@@ -57,7 +58,7 @@ async def test_durable_record_survives_caller_rollback(
     async with committed_db_session_factory() as caller:
         await set_session_tenant_context(caller, workspace_id=workspace.id)
         await caller.execute(sa.select(Workspace.id).where(Workspace.id == workspace.id))
-        assert await record_ai_usage_durable(_event(workspace.id))
+        assert await record_ai_usage_durable(_event(workspace.id, unmeasured_requests=1))
         await caller.rollback()
 
     async with committed_db_session_factory() as verify:
@@ -65,6 +66,7 @@ async def test_durable_record_survives_caller_rollback(
         events = (await verify.scalars(sa.select(AIUsageEvent))).all()
         assert len(events) == 1
         assert events[0].requests == 1
+        assert events[0].details == {"unmeasured_requests": 1}
         await verify.delete(workspace)
         await verify.commit()
 
@@ -115,13 +117,7 @@ async def test_concurrent_terminal_finalization_records_one_event(
 ) -> None:
     context = await build_scenario_agent(committed_db_session_factory)
     metering = AgentRunMeteringContext(
-        baseline={
-            "input_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "output_tokens": 0,
-            "requests": 0,
-        },
+        baseline=usage_values(RunUsage()),
         usage=RunUsage(input_tokens=9, output_tokens=3, requests=1),
         provider="openai",
         model="gpt-5.6-luna",

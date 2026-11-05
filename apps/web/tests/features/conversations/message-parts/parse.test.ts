@@ -187,7 +187,7 @@ describe("parseConversationMessages", () => {
     }
   )
 
-  it("hides internal tool validation retries from the user-facing transcript", () => {
+  it("hides internal tool and output retries from the user-facing transcript", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
         {
@@ -199,11 +199,13 @@ describe("parseConversationMessages", () => {
       ]),
       message("message-2", "tool", 2, [
         {
-          part_kind: "retry-prompt",
+          part_kind: "tool-return",
           tool_call_id: "tool-call-1",
           tool_name: "google_ads_add_negative_keywords",
           content: [{ msg: "Extra inputs are not permitted" }],
+          outcome: "retried",
         },
+        { part_kind: "retry-feedback", content: "Return the final answer as JSON." },
       ]),
     ])
 

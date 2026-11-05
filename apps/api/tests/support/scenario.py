@@ -124,6 +124,8 @@ class ScenarioResult:
             if isinstance(value, dict)
             and value.get("part_kind") == "tool-return"
             and value.get("tool_name") == name
+            # Pydantic AI records tool retries as tool returns; they never delivered a result.
+            and value.get("outcome") != "retried"
         ]
 
 

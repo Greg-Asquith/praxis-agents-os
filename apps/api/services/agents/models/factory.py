@@ -136,13 +136,9 @@ def _build_google_model(spec: ResolvedModel, model_settings) -> Model:
 
 def _model_settings_for(spec: ResolvedModel):
     model_settings = dict(spec.settings)
-    if spec.provider == PROVIDER_ANTHROPIC and settings.AGENT_PROMPT_CACHE_ENABLED:
-        model_settings = {
-            "anthropic_cache": True,
-            "anthropic_cache_instructions": True,
-            "anthropic_cache_tool_definitions": True,
-            **model_settings,
-        }
+    if settings.AGENT_PROMPT_CACHE_ENABLED:
+        # Pydantic AI places breakpoints where the provider needs them and ignores the rest.
+        model_settings = {"cache": True, **model_settings}
     return model_settings or None
 
 

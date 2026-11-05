@@ -39,9 +39,8 @@ use the same multipliers as GPT-6 Sol. Usage estimates use the base rates.
 
 Terra is an OpenAI **Standard** model listed after GPT-6 Luna, so Luna stays
 the Standard default. Terra accepts `none` to `max` reasoning efforts with
-`medium` as the default. Pydantic AI 2.54 has no Terra profile.
-`provider_model_profile` gives it the GPT-6 Sol profile, matching Pydantic AI
-2.66. Live access hasn't been checked with a Praxis key.
+`medium` as the default. Pydantic AI 2.66 profiles it like GPT-6 Sol. Live
+access hasn't been checked with a Praxis key.
 
 ### Gemini 4 Argon
 
@@ -61,10 +60,9 @@ the configured Gemini API key and Vertex `eu` project. Other projects require
 their own access check.
 
 Argon accepts `low`, `medium` (the provider default), and `high` thinking.
-Pydantic AI 2.54's generic Google profile includes unsupported `minimal`, so
-`provider_model_profile` supplies Argon's levels and always-on thinking.
-The UI's `minimal` preference maps to `low`; disabled thinking leaves the
-provider default active. Explicit `thinking_budget` and `MINIMAL` settings are
+Pydantic AI 2.66 supplies Argon's levels but not its always-on thinking, so
+`provider_model_profile` adds `thinking_always_enabled`. The UI's `minimal`
+preference and disabled thinking both send `low`. Explicit `thinking_budget` and `MINIMAL` settings are
 unsupported. Google ignores temperature, top-p, and top-k, and rejects frequency
 and presence penalties, candidate counts, explicit caches, and prefilled model
 turns. See the
@@ -141,8 +139,9 @@ Haiku 5.5 uses adaptive thinking with `medium` default effort and accepts
 settings. Disabled thinking is accepted only at `high` effort or below. Unlike
 Opus 5.5 and Sonnet 5.5, it accepts forced tool choice, but a forced call skips
 thinking. Thinking blocks are bound to the conversation prefix. Pydantic AI
-2.54 has no Haiku 5.5 profile, so `provider_model_profile` in `utils.py`
-supplies these settings and native JSON schema support. Catalogue defaults
+2.66's profile covers these settings and native JSON schema output, so
+structured results use `output_config.format` instead of an output tool.
+Catalogue defaults
 request summarised thinking. Refusals have no server-side fallback.
 
 Haiku 5.5 is the Anthropic **Light** default and the Anthropic default for
@@ -175,8 +174,8 @@ text between tool calls as thinking blocks that are empty by default.
 
 GPT-6.1 Sol accepts `low`, `medium` (default), `high`, `xhigh`, and `max`
 reasoning efforts; it rejects `none` and `minimal`. Pydantic AI's 6.1 profile
-keeps reasoning always on. The UI's disabled-thinking preference sends no effort,
-and `minimal` maps to `low`.
+keeps reasoning always on. The UI's disabled-thinking and `minimal`
+preferences both send `low`.
 
 The catalogue no longer lists GPT-5.4, GPT-5.5, GPT-5.6, Claude Opus 4.6 to
 4.8, or Claude Sonnet 4.6. Their price rows remain so past usage keeps its
@@ -264,8 +263,11 @@ unavailable. Every API, worker, and eval process calls `close_vertex_clients`
 during shutdown. That shutdown also closes and clears the shared provider
 HTTP client, including processes that only use direct providers. Repeated
 shutdown does not create clients; subsequent acquisition creates an open
-client. Anthropic prompt-cache defaults and catalogue attribution
-remain unchanged across transports. Each Claude model requires Model Garden
+client. `AGENT_PROMPT_CACHE_ENABLED` sets Pydantic AI's unified `cache`
+setting, which caches instructions, tool definitions, and the conversation on
+Claude and on GPT-5.6 and later. Gemini caches implicitly and ignores it. An
+agent's own `cache` or provider cache settings take precedence. Catalogue
+attribution remains unchanged across transports. Each Claude model requires Model Garden
 enablement and a supported location.
 
 ### Vertex model lists
@@ -392,13 +394,17 @@ uses one SDK attempt over that transport; Google Vertex retains its
 SDK-owned retry policy. Backoff and `Retry-After` waits remain bounded by
 the configured wait limits. Exhausted HTTP responses reach the SDK intact,
 including their status and body; connection failures remain connection
-failures. Run failures persist and emit the same safe `model_rate_limited`
-message for HTTP 429, without provider bodies or project details.
+failures. Run failures map Pydantic AI's provider error categories to safe
+codes, without provider bodies or project details: `model_rate_limited`,
+`model_quota_exceeded`, `model_context_window_exceeded`, `model_access_denied`,
+`model_not_found`, and `model_unavailable` for overload and server errors.
+Only rate limits tell the user to try again later. The shared transport pools
+up to 1,000 connections, 100 kept alive, matching the provider SDKs.
 
-The API locks Pydantic AI, slim, evals, and graph to 2.54.0, with OpenAI
-3.40.0, Anthropic 1.13.0, and Google Gen AI 2.25.0. The manifest retains minimum
-version ranges. It lists `openai>=3.26.0` directly, because progress reviews
-call the Decisions API through `client.decisions`. It explicitly selects Pydantic AI's `retries` extra and
+The API locks Pydantic AI, slim, evals, and graph to 2.66.0, with OpenAI
+3.40.0, Anthropic 2.5.0, and Google Gen AI 2.34.0. The manifest retains minimum
+version ranges. The OpenAI SDK comes through Pydantic AI's `openai` extra
+(`openai>=3.31.0`), which includes the Decisions API. It explicitly selects Pydantic AI's `retries` extra and
 Tenacity because the transport imports their retry APIs. The `retries` extra
 still depends on legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
@@ -418,12 +424,10 @@ models stream on the wire. Offline tests that mock JSON message bodies set
 
 ## Content-filter failures
 
-Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.54.0
-maps an HTTP 400 `content_filter` response to a filtered result for ordinary
-requests. Its streaming path instead raises an internal `TypeError` while
-handling that result. Praxis settles the run as failed with its generic safe
-error, without exposing the provider body or retrying the action. A specific
-streamed filter outcome remains unavailable with this SDK version.
+Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.66 raises
+`ContentFilterError` for an HTTP 400 `content_filter` response, streamed or
+not. Praxis settles the run as failed with its generic safe error, without
+exposing the provider body or retrying the action.
 
 ## Frontend provider labels
 

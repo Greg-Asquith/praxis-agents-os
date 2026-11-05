@@ -11,7 +11,6 @@ from pydantic_ai import ToolFailed, capture_run_messages
 from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
-    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
 )
@@ -240,7 +239,7 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
         part.tool_call_id
         for message in history
         for part in message.parts
-        if isinstance(part, ToolReturnPart | RetryPromptPart)
+        if isinstance(part, ToolReturnPart)
     ]
     assert set(calls) <= set(returns)
     assert calls.count("saved-effect") == returns.count("saved-effect") == 1

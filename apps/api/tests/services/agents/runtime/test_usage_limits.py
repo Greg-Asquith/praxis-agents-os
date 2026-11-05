@@ -107,7 +107,7 @@ async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> No
     assert error.value.limit == 200
     assert len(requests) == 1
     assert usage.input_tokens == 1000 and usage.cache_read_tokens == 900
-    assert usage.output_tokens == 11 and usage.requests == 1
+    assert usage.output_tokens == 11 and usage.requests == 2
     public = public_run_error(error.value)
     assert public.completion_json == {
         "error_code": "usage_limit_exceeded",

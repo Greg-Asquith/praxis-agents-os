@@ -6,7 +6,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import UsageLimitExceeded
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import (
+    ModelAPIError,
+    ModelAuthenticationError,
+    ModelContextWindowExceededError,
+    ModelNotFoundError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
+    ModelServerError,
+    ModelUnavailableError,
+)
 
 from core.exceptions.general import ConflictError
 from services.agents.models.domain import ModelConfigurationError
@@ -63,14 +72,8 @@ def public_run_error(exc: Exception) -> PublicRunError:
             code=str(getattr(exc, "error_code", "model_configuration_error")),
             message=str(exc),
         )
-    if isinstance(exc, ModelHTTPError) and exc.status_code == 429:
-        return PublicRunError(
-            code="model_rate_limited",
-            message=(
-                "The model provider is limiting requests. Try again later. "
-                "If this continues, ask your administrator to check model access and quota."
-            ),
-        )
+    if isinstance(exc, ModelAPIError) and (provider_error := _provider_error(exc)) is not None:
+        return provider_error
     if isinstance(exc, ConflictError):
         return PublicRunError(
             code="agent_run_conflict",
@@ -104,6 +107,58 @@ def public_run_error(exc: Exception) -> PublicRunError:
         code=DEFAULT_RUN_ERROR_CODE,
         message=DEFAULT_RUN_ERROR_MESSAGE,
     )
+
+
+# Most specific first: a context overflow is also a rejected request, and overload is unavailability.
+_PROVIDER_ERRORS: tuple[tuple[type[ModelAPIError], str, str], ...] = (
+    (
+        ModelRateLimitError,
+        "model_rate_limited",
+        "The model provider is limiting requests. Try again later. "
+        "If this continues, ask your administrator to check model access and quota.",
+    ),
+    (
+        ModelQuotaExceededError,
+        "model_quota_exceeded",
+        "The model provider account has run out of quota or credits. "
+        "Ask your administrator to check billing for this provider.",
+    ),
+    (
+        ModelContextWindowExceededError,
+        "model_context_window_exceeded",
+        "This conversation is too long for the model. "
+        "Start a new conversation or shorten the context to continue.",
+    ),
+    (
+        ModelAuthenticationError,
+        "model_access_denied",
+        "The model provider rejected this deployment's credentials. "
+        "Ask your administrator to check the provider key and model access.",
+    ),
+    (
+        ModelNotFoundError,
+        "model_not_found",
+        "The model provider couldn't find this model. "
+        "Ask your administrator to check the agent's model.",
+    ),
+    (
+        ModelUnavailableError,
+        "model_unavailable",
+        "The model provider is temporarily unavailable. Try again shortly.",
+    ),
+    (
+        ModelServerError,
+        "model_unavailable",
+        "The model provider is temporarily unavailable. Try again shortly.",
+    ),
+)
+
+
+def _provider_error(exc: ModelAPIError) -> PublicRunError | None:
+    for category, code, message in _PROVIDER_ERRORS:
+        if isinstance(exc, category):
+            return PublicRunError(code=code, message=message)
+    return None
 
 
 def _tripped_budget(exc: UsageLimitExceeded) -> dict[str, str | int] | None:

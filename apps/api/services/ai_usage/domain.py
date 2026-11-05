@@ -3,7 +3,7 @@
 """Closed AI usage purpose domain and validated event values."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Literal
 from uuid import UUID
 
@@ -87,6 +87,8 @@ class AIUsageEventData:
     cache_write_tokens: int = 0
     output_tokens: int = 0
     requests: int = 0
+    # Responses that omitted usage; their tokens are missing from the counts above.
+    unmeasured_requests: int = 0
     agent_id: UUID | None = None
     user_id: UUID | None = None
     run_id: UUID | None = None
@@ -115,6 +117,7 @@ class AIUsageEventData:
             "cache_write_tokens",
             "output_tokens",
             "requests",
+            "unmeasured_requests",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -130,6 +133,15 @@ class AIUsageEventData:
                 raise ValueError("AI usage details must be JSON serializable") from exc
             if len(encoded_details) > AI_USAGE_DETAILS_MAX_BYTES:
                 raise ValueError("AI usage details exceed the 4096-byte serialized limit")
+
+    def row_values(self) -> dict[str, Any]:
+        """Ledger columns, with the unmeasured count kept in details."""
+        values = asdict(self)
+        if unmeasured := values.pop("unmeasured_requests"):
+            values["details"] = {**(values["details"] or {}), "unmeasured_requests": unmeasured}
+        if (event_id := values.pop("event_id")) is not None:
+            values["id"] = event_id
+        return values
 
     @property
     def is_zero(self) -> bool:

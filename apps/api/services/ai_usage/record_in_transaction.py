@@ -3,7 +3,6 @@
 """Record AI usage inside the caller transaction without poisoning it on failure."""
 
 import logging
-from dataclasses import asdict
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -29,8 +28,7 @@ async def record_ai_usage_in_transaction(
                 add_event(db, event)
                 await db.flush()
             else:
-                values = asdict(event)
-                values["id"] = values.pop("event_id")
+                values = event.row_values()
                 inserted = await db.scalar(
                     insert(AIUsageEvent)
                     .values(**values)

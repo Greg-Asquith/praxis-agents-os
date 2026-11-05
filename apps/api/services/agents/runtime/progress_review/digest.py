@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai.messages import (
+    ERROR_OUTCOMES,
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -180,19 +180,10 @@ def _record_result(calls: dict[str, _Call], part: Any) -> None:
         body = part.model_response_str(wrap_if_error=False)
         if part.outcome == "success":
             call.outcome, call.detail = "ok", f"{len(body):,} characters"
-        elif part.outcome == "failed":
+        elif part.outcome in ERROR_OUTCOMES:
             call.outcome, call.detail = "error", _clip(body, _ERROR_MAX_CHARS)
         else:
             call.outcome = part.outcome
-    elif isinstance(part, RetryPromptPart) and part.tool_call_id in calls:
-        content = part.content
-        message = (
-            content
-            if isinstance(content, str)
-            else "; ".join(str(error.get("msg", "")) for error in content)
-        )
-        calls[part.tool_call_id].outcome = "error"
-        calls[part.tool_call_id].detail = _clip(message, _ERROR_MAX_CHARS)
 
 
 def _signals(calls: list[_Call], responses_since_new_call: int) -> list[str]:

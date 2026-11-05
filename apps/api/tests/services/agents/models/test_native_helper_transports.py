@@ -17,6 +17,7 @@ from services.agents.models import factory
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.tools.native.classifier import _classification_output_model
 from services.agents.runtime.tools.native.web_search import _web_search_sources
+from tests.support.anthropic import anthropic_message_response
 from tests.support.google_native import mock_google_native
 
 
@@ -162,18 +163,14 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
     )
     args = {"results": [{"index": 0, "label": "yes"}]}
     if provider == "anthropic":
-        content = (
-            [{"type": "tool_use", "id": "tool_result", "name": "final_result", "input": args}]
-            if action == "classification"
-            else [{"type": "text", "text": "Result"}]
-        )
+        text = json.dumps(args) if action == "classification" else "Result"
         response = {
             "id": "msg_test",
             "type": "message",
             "role": "assistant",
             "model": model_id,
-            "content": content,
-            "stop_reason": "tool_use" if action == "classification" else "end_turn",
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": "end_turn",
             "usage": {"input_tokens": 10, "output_tokens": 5},
         }
     else:
@@ -211,6 +208,8 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
 
     def respond(request):
         requests.append(request)
+        if provider == "anthropic":
+            return anthropic_message_response(request, response)
         return httpx.Response(200, json=response)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -243,14 +242,18 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
         assert request.url.host == "aiplatform.googleapis.com"
         assert (
             request.url.path
-            == f"/v1/projects/helper-probe/locations/global/publishers/anthropic/models/{model_id}:rawPredict"
+            == f"/v1/projects/helper-probe/locations/global/publishers/anthropic/models/{model_id}:"
+            + ("streamRawPredict" if json.loads(request.content).get("stream") else "rawPredict")
         )
         assert request.headers["authorization"] == "Bearer test-token"
         assert "x-api-key" not in request.headers
     else:
         assert request.url.path == ("/v1/messages" if provider == "anthropic" else "/v1/responses")
         assert body["model"] == model_id
-    if action == "classification":
+    if action == "classification" and provider == "anthropic":
+        assert body["output_config"]["format"]["type"] == "json_schema"
+        assert result.output.results[0].label == "yes"
+    elif action == "classification":
         assert body["tools"][0]["name"] == "final_result"
         assert result.output.results[0].label == "yes"
     else:

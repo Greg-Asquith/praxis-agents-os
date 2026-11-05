@@ -10,7 +10,7 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
+from pydantic_ai.messages import ToolReturnPart
 from sqlalchemy import select
 
 from core.database import set_session_tenant_context
@@ -200,7 +200,7 @@ async def test_insights_dispatch_preserves_complete_report(
         part.content
         for message in seen[-1][0]
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert any(
         row.tool_name == DEFINITION.name and row.status == "success" for row in result.audit_rows
@@ -221,7 +221,7 @@ async def test_insights_dispatch_preserves_complete_report(
             part.content
             for message in seen[-1][0]
             for part in message.parts
-            if isinstance(part, RetryPromptPart)
+            if isinstance(part, ToolReturnPart) and part.outcome == "retried"
         ]
         assert result.tool_returns(RUN_CODE_TOOL_NAME)[0]["content"] == {
             "rows": 1_500,

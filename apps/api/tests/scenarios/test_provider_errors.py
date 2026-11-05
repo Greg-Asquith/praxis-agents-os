@@ -1,12 +1,17 @@
 # apps/api/tests/scenarios/test_provider_errors.py
 
-"""Provider rate limits retain the same safe failure in storage and the stream."""
+"""Provider failures retain the same safe failure in storage and the stream."""
 
 import httpx2 as httpx
 import pytest
 from pydantic import SecretStr
 from pydantic_ai import models
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import (
+    ContentFilterError,
+    ModelHTTPError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
+)
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,12 +24,24 @@ from services.agents.runtime.sinks import CollectingSink
 from tests.support.scenario import build_scenario_agent, run_scenario
 
 
-async def test_rate_limit_persists_and_emits_safe_error(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
+@pytest.mark.parametrize(
+    ("category", "status", "code", "advice"),
+    [
+        (ModelRateLimitError, 429, "model_rate_limited", "Try again later"),
+        (ModelQuotaExceededError, 429, "model_quota_exceeded", "check billing"),
+    ],
+)
+async def test_provider_error_persists_and_emits_safe_error(
+    committed_db_session_factory: async_sessionmaker[AsyncSession], category, status, code, advice
 ) -> None:
     async def fail_request(_messages, _info):
         yield "Starting"
-        raise ModelHTTPError(429, "test-model", {"message": "private project quota detail"})
+        raise ModelHTTPError.for_category(
+            category,
+            status_code=status,
+            model_name="test-model",
+            body={"message": "private project quota detail"},
+        )
 
     context = await build_scenario_agent(committed_db_session_factory)
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
@@ -41,11 +58,11 @@ async def test_rate_limit_persists_and_emits_safe_error(
         run = await db.get(AgentRun, context.run_id)
         assert run is not None
         assert run.status == "failed"
-        assert run.error_code == "model_rate_limited"
+        assert run.error_code == code
         error = next(event for event in sink.events if event.event == "error")
         assert error.data["code"] == run.error_code
         assert error.data["message"] == run.error_message
-        assert "Try again later" in run.error_message
+        assert advice in run.error_message
         assert "private" not in run.error_message
     assert sink.events[-1].event == "done"
     assert sink.events[-1].data["status"] == "failed"
@@ -86,8 +103,7 @@ async def test_azure_filtered_stream_settles_safely_without_retry(
                 max_steps=3,
             )
         )
-        # The SDK streaming adapter mishandles its filtered ModelResponse.
-        with pytest.raises(TypeError, match=r"ModelResponse.*asynchronous context manager"):
+        with pytest.raises(ContentFilterError):
             await run_scenario(committed_db_session_factory, context, model=model, sink=sink)
 
     assert len(requests) == 1

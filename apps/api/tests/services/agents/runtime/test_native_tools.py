@@ -761,7 +761,7 @@ async def test_native_web_fetch_parser_handles_normalized_provider_messages_and_
     [capability] = captured["capabilities"]
     assert capability.local is False
     assert capability.native.blocked_domains == ["blocked.example"]
-    assert capability.native.max_uses == 1
+    assert capability.native.max_uses == (1 if provider == PROVIDER_ANTHROPIC else None)
     assert capability.native.enable_citations is True
     assert capability.native.max_content_tokens == settings.NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS
     assert result.content == "# Extracted page\n\nPage body"

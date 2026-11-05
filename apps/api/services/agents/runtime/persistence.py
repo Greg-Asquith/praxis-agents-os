@@ -15,7 +15,6 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
     UserContent,
@@ -124,7 +123,7 @@ def close_dangling_tool_calls(
                     calls_by_response.setdefault(index, []).append(part)
         elif isinstance(message, ModelRequest):
             for part in message.parts:
-                if isinstance(part, ToolReturnPart | RetryPromptPart) and part.tool_call_id:
+                if isinstance(part, ToolReturnPart) and part.tool_call_id:
                     open_calls.pop(part.tool_call_id, None)
     if not open_calls:
         return messages
@@ -137,7 +136,7 @@ def close_dangling_tool_calls(
                 # Keep the synthesized returns next to the request's real ones.
                 insert_at = 0
                 for position, part in enumerate(message.parts):
-                    if isinstance(part, ToolReturnPart | RetryPromptPart):
+                    if isinstance(part, ToolReturnPart):
                         insert_at = position + 1
                 message = replace(
                     message,
@@ -185,6 +184,7 @@ async def load_history_watermark_keys(
             ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "user-prompt"}]}),
             not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "tool-return"}]})),
             not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "retry-prompt"}]})),
+            not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "retry-feedback"}]})),
         )
         .order_by(ConversationMessage.sequence.desc())
         .limit(limit)
@@ -484,7 +484,7 @@ def _role_for_message(message: dict[str, Any]) -> str:
     }
     if "user-prompt" in part_kinds:
         return "user"
-    if "tool-return" in part_kinds or "retry-prompt" in part_kinds:
+    if part_kinds & {"tool-return", "retry-feedback", "retry-prompt"}:
         return "tool"
     if "system-prompt" in part_kinds:
         return "system"

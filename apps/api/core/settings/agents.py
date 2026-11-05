@@ -256,7 +256,7 @@ class AgentRunSettingsMixin:
     )
     AGENT_PROMPT_CACHE_ENABLED: bool = Field(
         default=True,
-        description="Enable provider-native prompt caching where the provider needs explicit opt-in.",
+        description="Enable Pydantic AI prompt caching on providers that need explicit opt-in.",
     )
 
     @model_validator(mode="after")

@@ -13,7 +13,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelResponse,
-    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
 )
@@ -46,7 +45,7 @@ class InterruptedHistory:
             for part in message.parts:
                 if isinstance(part, ToolCallPart):
                     saved_calls[part.tool_call_id] = part
-                elif isinstance(part, ToolReturnPart | RetryPromptPart):
+                elif isinstance(part, ToolReturnPart):
                     saved_calls.pop(part.tool_call_id, None)
         messages = list(self.messages[self.checkpoint.message_count :])
         if saved_calls:

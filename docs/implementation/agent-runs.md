@@ -254,7 +254,8 @@ Environment settings choose the reviewer, like the other utility models:
   `AGENT_RUN_PROGRESS_REVIEW_MODEL` (default `gpt-6-luna`). The production
   credentials check includes this provider.
 - Provider `openai` asks the OpenAI Decisions API one `choice` question over
-  the five verdicts. Decisions supports `gpt-6-luna` only and returns no text,
+  the five verdicts through Pydantic AI's `OpenAIDecisionsModel`, which
+  validates the answer and honours `ALLOW_MODEL_REQUESTS`. Decisions supports `gpt-6-luna` only and returns no text,
   so the reason is the chosen verdict's description. A refusal, or a confidence
   below `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6), asks a person.
 - Other providers, such as `anthropic` with `claude-haiku-5-5` or `google`

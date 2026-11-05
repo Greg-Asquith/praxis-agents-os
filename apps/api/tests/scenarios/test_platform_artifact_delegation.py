@@ -6,7 +6,7 @@ import json
 from uuid import uuid4
 
 import pytest
-from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from sqlalchemy import delete, select
 
@@ -191,7 +191,9 @@ async def test_platform_artifact_delegate_uses_initiating_members_live_edit_auth
             assert invocation.status == "denied"
             assert invocation.details["outcome"] == "denied_authorization"
             assert any(
-                isinstance(part, RetryPromptPart) and part.tool_name == "update_artifact"
+                isinstance(part, ToolReturnPart)
+                and part.tool_name == "update_artifact"
+                and part.outcome == "retried"
                 for message in child_requests[-1]
                 for part in message.parts
             )

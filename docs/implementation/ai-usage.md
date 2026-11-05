@@ -47,7 +47,9 @@ The following contracts apply in this area:
   embedding API batch; `requests` sums provider requests within that row.
   Agent rows count the model responses the run acted on. A model call that
   fails without a response adds no request, and an invocation with no
-  usage writes no row.
+  usage writes no row. Responses that omit usage still count as requests,
+  and the row's details carry `unmeasured_requests`, so its token counts are
+  lower bounds.
   Agent usage is transactional with lifecycle settlement, including when
   another actor already recorded the terminal verdict. Helper, embedding, and
   shutdown-only usage use the separate bounded runtime-role AI usage pool.
@@ -68,9 +70,9 @@ The following contracts apply in this area:
   cannot separate their rates. Historical Gemini 3.1 Flash Image output
   estimates remain unchanged.
 - Progress reviews record under `run_review`, one row per reviewer call,
-  attributed to the run that reached its step limit. OpenAI Decisions rows
-  carry the reported input, cached, and output tokens and price at
-  `gpt-6-luna` token rates; Decisions-specific rates are pending.
+  attributed to the run that reached its step limit. OpenAI Decisions rows,
+  refusals included, carry the reported input, cached, and output tokens and
+  price at `gpt-6-luna` token rates; Decisions-specific rates are pending.
 - Video helpers record under `video_understanding`, `video_generation`, or
   `video_transcription`, with tokens as the provider reports them. Video
   generation tools are pending, so no tool records `video_generation` rows.
@@ -147,7 +149,7 @@ a separate counter without deleting prior accounting.
 
 ## Invocation settlement
 
-Image tools retain their existing invocation meters. Pydantic AI 2.54's
+Image tools retain their existing invocation meters. Pydantic AI 2.66's
 direct image adapters return usage only after accepting image output. Empty
 OpenAI responses and empty or content-filtered Google responses can contain
 usage that the adapters discard when raising. Switching to result-only

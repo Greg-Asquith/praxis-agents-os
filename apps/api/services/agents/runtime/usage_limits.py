@@ -194,6 +194,10 @@ class RuntimeUsageLimits(UsageLimits):
     def check_tokens(self, usage: RunUsage) -> None:
         self._check("check_tokens", usage)
 
+    def _check_token_limits(self, usage: RunUsage) -> None:
+        # Pydantic AI calls this directly on streamed chunks and provisional continuation usage.
+        self._check("_check_token_limits", usage)
+
     def check_before_tool_call(self, projected_usage: RunUsage) -> None:
         self._check("check_before_tool_call", projected_usage)
 

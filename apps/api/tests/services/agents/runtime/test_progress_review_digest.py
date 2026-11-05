@@ -5,7 +5,6 @@
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -54,7 +53,9 @@ def test_digest_excludes_bodies_counts_repeats_and_frames_untrusted_errors():
         _search("c"),
         _returned("c"),
         ModelResponse(parts=[ToolCallPart("export", {"format": "csv"}, tool_call_id="d")]),
-        ModelRequest(parts=[RetryPromptPart(INJECTION, tool_name="export", tool_call_id="d")]),
+        ModelRequest(
+            parts=[ToolReturnPart("export", INJECTION, tool_call_id="d", outcome="retried")]
+        ),
         ModelResponse(parts=[TextPart("Still working.")]),
     ]
 

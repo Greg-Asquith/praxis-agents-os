@@ -14,7 +14,6 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -232,7 +231,7 @@ def _is_clean_user_boundary(message: ModelMessage) -> bool:
     for part in message.parts:
         if isinstance(part, UserPromptPart):
             has_user_prompt = True
-        elif isinstance(part, ToolReturnPart | RetryPromptPart):
+        elif isinstance(part, ToolReturnPart):
             return False
     return has_user_prompt
 

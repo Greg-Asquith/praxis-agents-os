@@ -330,6 +330,25 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       return
     }
 
+    // Pydantic AI 2.66 stores tool retries as tool returns; older history has retry-prompt parts.
+    if (
+      partKind === "retry-prompt" ||
+      (partKind === "tool-return" && stringValue(part["outcome"]) === "retried")
+    ) {
+      const activity: ToolActivity = {
+        id: stringValue(part["tool_call_id"]) ?? partId,
+        agentRunId,
+        kind: "retry",
+        status: "failed",
+        name: stringValue(part["tool_name"]) ?? "tool",
+        result: part["content"],
+        outcome: "retry",
+      }
+      parsed.toolActivities.push(activity)
+      parsed.parts?.push({ kind: "tool", id: partId, activity })
+      return
+    }
+
     if (partKind && TOOL_RESULT_PART_KINDS.has(partKind)) {
       const outcome = stringValue(part["outcome"])
       const toolCallId = stringValue(part["tool_call_id"]) ?? partId
@@ -379,18 +398,8 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       return
     }
 
-    if (partKind === "retry-prompt") {
-      const activity: ToolActivity = {
-        id: stringValue(part["tool_call_id"]) ?? partId,
-        agentRunId,
-        kind: "retry",
-        status: "failed",
-        name: stringValue(part["tool_name"]) ?? "tool",
-        result: part["content"],
-        outcome: "retry",
-      }
-      parsed.toolActivities.push(activity)
-      parsed.parts?.push({ kind: "tool", id: partId, activity })
+    // Pydantic AI's feedback on an unusable response is model-facing only.
+    if (partKind === "retry-feedback") {
       return
     }
 

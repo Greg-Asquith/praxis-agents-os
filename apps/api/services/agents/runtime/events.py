@@ -13,7 +13,6 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
-    RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -180,14 +179,12 @@ async def emit_agent_stream_event(
         )
 
 
-def function_tool_result_outcome(part: ToolReturnPart | RetryPromptPart) -> str | None:
+def function_tool_result_outcome(part: ToolReturnPart) -> str | None:
     """Labels a retry so live rows do not present the model-facing error as success."""
-    if isinstance(part, RetryPromptPart):
-        return "retry"
-    return getattr(part, "outcome", None)
+    return "retry" if part.outcome == "retried" else part.outcome
 
 
-def public_function_tool_result(part: ToolReturnPart | RetryPromptPart) -> Any:
+def public_function_tool_result(part: ToolReturnPart) -> Any:
     """Return a stream-safe tool result without multimodal transport bytes."""
     if (
         isinstance(part, ToolReturnPart)

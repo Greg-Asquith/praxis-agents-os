@@ -396,8 +396,9 @@ apps/api/
   SDK-owned retry policy. Backoff and `Retry-After` waits remain bounded by
   the configured wait limits. Exhausted HTTP responses reach the SDK intact,
   including their status and body; connection failures remain connection
-  failures. Run failures persist and emit the same safe `model_rate_limited`
-  message for HTTP 429, without provider bodies or project details.
+  failures. Run failures persist and emit safe codes for each provider error
+  category, such as `model_rate_limited` and `model_quota_exceeded`, without
+  provider bodies or project details.
 - Infrastructure provider settings live in `core/settings/providers.py`.
   Large language model (LLM) configuration remains separate and includes the
   model catalog and credentials.

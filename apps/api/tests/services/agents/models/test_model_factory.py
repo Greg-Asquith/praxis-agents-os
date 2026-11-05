@@ -7,6 +7,7 @@ so these assert the correct Pydantic AI types and explicit credential handling.
 """
 
 import importlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -14,7 +15,8 @@ import httpx2 as httpx
 import pytest
 from anthropic import AsyncAnthropicVertex
 from pydantic import SecretStr
-from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
+from pydantic_ai import Agent
+from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT, override_allow_model_requests
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 
@@ -29,6 +31,7 @@ from services.agents.models.vertex_clients import (
     get_anthropic_vertex_client,
     get_google_vertex_client,
 )
+from tests.support.anthropic import anthropic_message_response
 
 
 @pytest.fixture(params=[False, True], ids=["direct", "vertex"])
@@ -80,28 +83,42 @@ def test_build_anthropic_model_rejects_thinking_the_profile_disallows(monkeypatc
     )
 
 
-def test_build_anthropic_model_respects_agent_cache_settings(monkeypatch, anthropic_transport):
+async def test_prompt_cache_marks_anthropic_instructions_tools_and_messages(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)
+    bodies = []
 
-    model = build_model(
-        _spec(
-            "anthropic",
-            "claude-sonnet-5",
-            settings={
-                "anthropic_cache": "1h",
-                "anthropic_cache_instructions": False,
-                "temperature": 0.2,
+    def respond(request):
+        bodies.append(json.loads(request.content))
+        return anthropic_message_response(
+            request,
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-5",
+                "content": [{"type": "text", "text": "Done."}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 2},
             },
         )
-    )
 
-    assert model.settings == {
-        "anthropic_cache": "1h",
-        "anthropic_cache_instructions": False,
-        "anthropic_cache_tool_definitions": True,
-        "temperature": 0.2,
-    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http_client:
+        monkeypatch.setattr(
+            importlib.import_module("services.agents.models.factory"),
+            "retrying_http_client",
+            lambda: http_client,
+        )
+        agent = Agent(build_model(_spec("anthropic", "claude-sonnet-5")), instructions="Be brief.")
+        agent.tool_plain(lambda: "ok", name="lookup")
+        with override_allow_model_requests(True):
+            await agent.run("Hello")
+
+    [body] = bodies
+    assert body["cache_control"]["type"] == "ephemeral"
+    assert body["system"][-1]["cache_control"]["type"] == "ephemeral"
+    assert body["tools"][-1]["cache_control"]["type"] == "ephemeral"
 
 
 def test_build_openai_model_ignores_ambient_base_url_env(monkeypatch):

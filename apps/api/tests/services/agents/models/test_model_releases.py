@@ -17,11 +17,12 @@ from pydantic_ai.tools import ToolDefinition
 from core.settings import settings
 from services.agents.models import factory
 from services.agents.models.resolution import resolve_catalog_model
+from tests.support.anthropic import anthropic_message_response
 from tests.support.google_native import mock_google_native
 
 
 @pytest.mark.parametrize(
-    ("vertex", "thinking", "level"), [(False, "minimal", "LOW"), (True, False, None)]
+    ("vertex", "thinking", "level"), [(False, "minimal", "LOW"), (True, False, "LOW")]
 )
 async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
     monkeypatch, vertex, thinking, level
@@ -160,7 +161,7 @@ async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort
     assert result.usage.input_tokens == 3
 
 
-async def test_gpt_6_1_sol_never_sends_unsupported_none_effort(monkeypatch):
+async def test_gpt_6_1_sol_sends_lowest_effort_when_thinking_is_disabled(monkeypatch):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     requests = []
@@ -190,8 +191,7 @@ async def test_gpt_6_1_sol_never_sends_unsupported_none_effort(monkeypatch):
         )
 
     [body] = requests
-    assert "effort" not in body["reasoning"]
-    assert body["reasoning"]["context"] == "all_turns"
+    assert body["reasoning"] == {"effort": "low", "context": "all_turns"}
 
 
 @pytest.fixture(params=[False, True], ids=["direct", "vertex"])
@@ -280,9 +280,9 @@ async def test_haiku_5_5_sends_adaptive_effort_without_sampling(monkeypatch):
 
     def respond(request):
         requests.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
+        return anthropic_message_response(
+            request,
+            {
                 "id": "msg_haiku",
                 "type": "message",
                 "role": "assistant",
