@@ -25,7 +25,7 @@ import {
 import { DEFAULT_CHART_COLORS, formatChartValue } from "@/components/tool-ui/chart-format"
 import type { ChartSeries, ChartSpec } from "@/components/tool-ui/chart-types"
 import { Button } from "@/components/ui/button"
-import { downloadChartPng } from "@/lib/chart-export"
+import { downloadChartPng, downloadChartSvg } from "@/lib/chart-export"
 
 type XAxisProps = ComponentProps<typeof XAxis>
 type YAxisProps = ComponentProps<typeof YAxis>
@@ -69,36 +69,48 @@ export function DataChart({ spec }: { spec: ChartSpec }) {
             <p className="text-muted-foreground mt-0.5 text-xs">{spec.subtitle}</p>
           ) : null}
         </div>
-        <Button
-          disabled={exporting}
-          onClick={() => {
-            const chart = chartRef.current
-            if (!chart) {
-              return
-            }
-            setExporting(true)
-            setExportError(null)
-            void downloadChartPng(chart, {
-              caption: spec.caption,
-              subtitle: spec.subtitle,
-              title: spec.title,
-            })
-              .catch((error: unknown) => {
-                setExportError(
-                  error instanceof Error ? error.message : "The chart could not be exported."
-                )
-              })
-              .finally(() => {
-                setExporting(false)
-              })
-          }}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <DownloadIcon data-icon="inline-start" />
-          {exporting ? "Exporting…" : "Download PNG"}
-        </Button>
+        <div className="flex gap-1">
+          {(["png", "svg"] as const).map((format) => (
+            <Button
+              disabled={exporting}
+              key={format}
+              onClick={() => {
+                const chart = chartRef.current
+                if (!chart) {
+                  return
+                }
+                setExporting(true)
+                setExportError(null)
+                const details = {
+                  caption: spec.caption,
+                  subtitle: spec.subtitle,
+                  title: spec.title,
+                }
+                const exported =
+                  format === "png"
+                    ? downloadChartPng(chart, details)
+                    : Promise.resolve().then(() => {
+                        downloadChartSvg(chart, details)
+                      })
+                void exported
+                  .catch((error: unknown) => {
+                    setExportError(
+                      error instanceof Error ? error.message : "The chart could not be exported."
+                    )
+                  })
+                  .finally(() => {
+                    setExporting(false)
+                  })
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <DownloadIcon data-icon="inline-start" />
+              {format.toUpperCase()}
+            </Button>
+          ))}
+        </div>
       </div>
       <div
         className="bg-card border-border min-w-0 overflow-hidden rounded-lg border p-2"

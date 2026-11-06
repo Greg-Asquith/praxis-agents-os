@@ -7,6 +7,7 @@ import { codeModeWorkflowPresenter } from "@/features/conversations/components/c
 import { completionReportPresenter } from "@/features/conversations/components/completion-report-presenter"
 import { documentToolPresenter } from "@/features/conversations/components/document-tool-presenter"
 import { delegationToolPresenters } from "@/features/conversations/components/delegation-tool-presenter"
+import { forecastToolPresenter } from "@/features/conversations/components/forecast-tool-presenter"
 import { fileToolPresenter } from "@/features/conversations/components/file-tool-presenter"
 import { kbToolPresenter } from "@/features/conversations/components/kb-tool-presenter"
 import { memoryToolPresenter } from "@/features/conversations/components/memory-tool-presenter"
@@ -37,6 +38,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   artifactToolPresenter,
   classifierToolPresenter,
   chartToolPresenter,
+  forecastToolPresenter,
   webFetchToolPresenter,
   webSearchToolPresenter,
   ...delegationToolPresenters,

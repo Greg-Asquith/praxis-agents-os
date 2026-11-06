@@ -43,24 +43,9 @@ export async function downloadChartPng(
   element: HTMLElement,
   details: ChartExportDetails
 ): Promise<void> {
-  const surface = element.querySelector<HTMLElement>("[data-chart-surface]")
-  // Legend icons are svgs too; the plot svg is the direct child of the recharts wrapper.
-  const source = surface?.querySelector<SVGSVGElement>(".recharts-wrapper > svg.recharts-surface")
-  if (!surface || !source) {
-    throw new Error("The chart is not ready to export.")
-  }
-
-  const bounds = source.getBoundingClientRect()
-  if (bounds.width < 40 || bounds.height < 40) {
-    throw new Error("The chart is not ready to export.")
-  }
-  const plotWidth = Math.max(1, Math.ceil(bounds.width))
-  const plotHeight = Math.max(1, Math.ceil(bounds.height))
+  const { background, clone, plotHeight, plotWidth, surface } = plotSvg(element)
   const width = plotWidth + EXPORT_PADDING * 2
-  const surfaceStyles = getComputedStyle(surface)
   const rootStyles = getComputedStyle(document.documentElement)
-  const background =
-    opaqueColor(surfaceStyles.backgroundColor) ?? resolvedToken(rootStyles, "--card") ?? "#ffffff"
   const foreground =
     opaqueColor(getComputedStyle(element).color) ??
     resolvedToken(rootStyles, "--card-foreground") ??
@@ -91,17 +76,6 @@ export async function downloadChartPng(
   const captionHeight = captionLines.length > 0 ? captionLines.length * 16 + 14 : 0
   const height =
     EXPORT_PADDING + headerHeight + plotHeight + legendHeight + captionHeight + EXPORT_PADDING
-
-  const clone = source.cloneNode(true)
-  if (!(clone instanceof SVGSVGElement)) {
-    throw new Error("This browser cannot export the chart.")
-  }
-  inlineSvgPresentation(source, clone)
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
-  clone.setAttribute("width", String(plotWidth))
-  clone.setAttribute("height", String(plotHeight))
-  clone.style.background = background
-  clone.style.fontFamily = surfaceStyles.fontFamily || rootStyles.fontFamily
 
   const svg = new XMLSerializer().serializeToString(clone)
   const sourceUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }))
@@ -159,18 +133,61 @@ export async function downloadChartPng(
       drawTextLines(context, captionLines, EXPORT_PADDING, y, 16)
     }
 
-    const png = await canvasBlob(canvas)
-    const downloadUrl = URL.createObjectURL(png)
-    try {
-      const anchor = document.createElement("a")
-      anchor.download = `${filenameStem(details.title, "chart")}.png`
-      anchor.href = downloadUrl
-      anchor.click()
-    } finally {
-      URL.revokeObjectURL(downloadUrl)
-    }
+    downloadBlob(await canvasBlob(canvas), `${filenameStem(details.title, "chart")}.png`)
   } finally {
     URL.revokeObjectURL(sourceUrl)
+  }
+}
+
+// The plot alone, with its computed styles inlined so it renders outside the page.
+export function downloadChartSvg(element: HTMLElement, details: Pick<ChartExportDetails, "title">) {
+  const { clone } = plotSvg(element)
+  const svg = new XMLSerializer().serializeToString(clone)
+  downloadBlob(
+    new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+    `${filenameStem(details.title, "chart")}.svg`
+  )
+}
+
+function plotSvg(element: HTMLElement) {
+  const surface = element.querySelector<HTMLElement>("[data-chart-surface]")
+  // Legend icons are svgs too; the plot svg is the direct child of the recharts wrapper.
+  const source = surface?.querySelector<SVGSVGElement>(".recharts-wrapper > svg.recharts-surface")
+  if (!surface || !source) {
+    throw new Error("The chart is not ready to export.")
+  }
+  const bounds = source.getBoundingClientRect()
+  if (bounds.width < 40 || bounds.height < 40) {
+    throw new Error("The chart is not ready to export.")
+  }
+  const plotWidth = Math.max(1, Math.ceil(bounds.width))
+  const plotHeight = Math.max(1, Math.ceil(bounds.height))
+  const surfaceStyles = getComputedStyle(surface)
+  const rootStyles = getComputedStyle(document.documentElement)
+  const background =
+    opaqueColor(surfaceStyles.backgroundColor) ?? resolvedToken(rootStyles, "--card") ?? "#ffffff"
+  const clone = source.cloneNode(true)
+  if (!(clone instanceof SVGSVGElement)) {
+    throw new Error("This browser cannot export the chart.")
+  }
+  inlineSvgPresentation(source, clone)
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg")
+  clone.setAttribute("width", String(plotWidth))
+  clone.setAttribute("height", String(plotHeight))
+  clone.style.background = background
+  clone.style.fontFamily = surfaceStyles.fontFamily || rootStyles.fontFamily
+  return { background, clone, plotHeight, plotWidth, surface }
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement("a")
+    anchor.download = filename
+    anchor.href = url
+    anchor.click()
+  } finally {
+    URL.revokeObjectURL(url)
   }
 }
 

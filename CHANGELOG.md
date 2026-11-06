@@ -17,7 +17,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   (`apps/data-science`). It returns each period's median and likely range, a
   backtest on the end of the history, and UK, EU, US, or AU public holidays
   as built-in covariates, and works from `run_code`. It is hidden unless
-  `DATA_SCIENCE_URL` is set; the deploy sets it on GCP.
+  `DATA_SCIENCE_URL` is set; the deploy sets it on GCP. Conversations show
+  each forecast as a card with the history, the forecast and its likely
+  range, holiday markers, and covariate strips, with a switch to compare the
+  forecast without covariates.
+- Charts from `build_chart` and forecast cards download as SVG as well as PNG.
 - An isolated media renderer (`apps/media-renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command
   runs under a seccomp filter with no network sockets and bounded memory,

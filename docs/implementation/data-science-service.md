@@ -230,6 +230,27 @@ forecasts (with and without covariates), both backtests, and each covariate
 (holiday regions first) over the same window. The largest request yields
 about 600,000 characters, within the declared 1,000,000.
 
+### Forecast card
+
+`forecast-tool-presenter.tsx` renders `forecast_series` rows in
+conversations and on nested `run_code` calls. Running calls show a collapsed
+loading card. Failed calls, and results whose `chart` doesn't parse, fall back
+to the default row.
+
+- The main chart shows history as a neutral line, the median as a
+  `--chart-1` line, and the 10 to 90% range as a shaded band. A reference
+  line marks where the forecast starts, and faint lines mark holidays in the
+  horizon. The tooltip names them.
+- Covariate strips sit under the chart on the same X axis, holiday regions
+  first.
+- When `baseline` exists, one **Use in Forecast** switch swaps in the
+  forecast without covariates on the client. It never re-runs the tool. With
+  the switch on, the header shows the backtest's `covariate_error_change`.
+- The footer gives the typical error and range coverage. With covariates off,
+  the card scores the no-covariate backtest from `chart` itself.
+- **PNG** and **SVG** export the main chart through `lib/chart-export.ts`,
+  which `build_chart` cards also use.
+
 ## Local development
 
 To run it by hand:
