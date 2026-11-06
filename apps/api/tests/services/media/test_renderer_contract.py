@@ -8,7 +8,7 @@ from typing import get_args
 
 from services.media import domain
 
-RENDERER_MEDIA = Path(__file__).resolve().parents[4] / "renderer" / "media"
+RENDERER_MEDIA = Path(__file__).resolve().parents[4] / "media-renderer" / "media"
 # API name: renderer name, where they differ.
 RENAMED = {
     "DEFAULT_FRAME_EDGE_PX": "DEFAULT_MAX_EDGE_PX",

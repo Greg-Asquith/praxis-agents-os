@@ -2,7 +2,6 @@
 
 """Helpers for the media services."""
 
-import asyncio
 import logging
 import math
 import re
@@ -56,22 +55,6 @@ def renderer_transfer_url(url: str) -> str:
     if not url.startswith(f"{origin}/"):
         raise MediaRendererError("unavailable", "The media renderer can't reach local storage.")
     return settings.MEDIA_RENDERER_LOCAL_STORAGE_URL.rstrip("/") + url[len(origin) :]
-
-
-async def renderer_auth_headers() -> dict[str, str]:
-    """Returns the renderer's authorization header for the configured auth mode."""
-    if settings.MEDIA_RENDERER_AUTH == "none":
-        return {}
-    if settings.MEDIA_RENDERER_AUTH == "shared_secret":
-        secret = settings.MEDIA_RENDERER_SHARED_SECRET.get_secret_value()
-        return {"authorization": f"Bearer {secret}"}
-    try:
-        from google.auth.transport.requests import Request
-        from google.oauth2 import id_token
-    except ImportError as exc:
-        raise MediaRendererError("unavailable", "The media renderer isn't available.") from exc
-    token = await asyncio.to_thread(id_token.fetch_id_token, Request(), settings.MEDIA_RENDERER_URL)
-    return {"authorization": f"Bearer {token}"}
 
 
 async def discard_staged_outputs(

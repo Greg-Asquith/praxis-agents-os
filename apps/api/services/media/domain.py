@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.files.domain import VideoMetadata
 from services.storage.domain import StorageObjectRef
+from utils.isolated_service import IsolatedServiceError
 
 MEDIA_STAGING_PREFIX = "platform/media-staging"
 INVALID_RESPONSE_MESSAGE = "The media renderer gave an invalid answer."
@@ -287,13 +288,8 @@ class VideoUnderstandingError(Exception):
     """An understanding model failure with a message safe to show an agent."""
 
 
-class MediaRendererError(Exception):
+class MediaRendererError(IsolatedServiceError):
     """A renderer failure with a stable code and a message safe to show an agent."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
 
 
 # Transcripts: words come from a provider reading untrusted audio, so text is bounded.

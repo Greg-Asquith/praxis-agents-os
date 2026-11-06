@@ -162,6 +162,8 @@ for manifest in \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: MEDIA_RENDERER_URL' "$manifest" \
     | grep -q 'value: https://praxis-media-renderer-123456789012.europe-west4.run.app'
+  grep -A1 'name: DATA_SCIENCE_URL' "$manifest" \
+    | grep -q 'value: https://praxis-data-science-123456789012.europe-west4.run.app'
 done
 grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 grep -A1 'name: GOOGLE_VERTEX_AI' "$TEST_TMP/rendered/jobs/praxis-migrate.yaml" \

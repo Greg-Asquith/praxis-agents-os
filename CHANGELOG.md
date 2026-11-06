@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Agents can forecast a time series with `forecast_series`, which runs
+  Mistral's Timestral 123M on CPU in the isolated data science service
+  (`apps/data-science`). It returns each period's median and likely range, a
+  backtest on the end of the history, and UK, EU, US, or AU public holidays
+  as built-in covariates, and works from `run_code`. It is hidden unless
+  `DATA_SCIENCE_URL` is set; the deploy sets it on GCP.
 - An isolated media renderer (`apps/media-renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command
   runs under a seccomp filter with no network sockets and bounded memory,

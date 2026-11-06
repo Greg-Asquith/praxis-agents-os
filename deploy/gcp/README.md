@@ -457,8 +457,11 @@ stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
 ## Data science service
 
 `praxis-data-science` is a Cloud Run service that runs CPU forecasting with
-Timestral 123M. The `forecast_series` tool that calls it is pending, so the
-API and worker don't receive its URL yet. `make gcp-deploy` builds its image
+Timestral 123M for the `forecast_series` tool. The deploy passes the API and
+worker its URL as `DATA_SCIENCE_URL`, with `DATA_SCIENCE_TIMEOUT_SECONDS` and
+the tool's limits (`FORECAST_MAX_HISTORY_POINTS`, `FORECAST_MAX_HORIZON`,
+`FORECAST_MAX_COVARIATES`, checked against the API's bounds). They
+authenticate with a Google ID token. `make gcp-deploy` builds its image
 from `apps/data-science`, with `apps/isolation-driver` as a named build
 context, and deploys it before the API and worker at its stable
 `https://praxis-data-science-PROJECT_NUMBER.REGION.run.app` address. See

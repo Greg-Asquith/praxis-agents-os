@@ -76,6 +76,7 @@ architecture decisions. Paths in this table are relative to this file:
 | Storage, uploads, file revisions, or attachments | [Storage and files](../../docs/implementation/storage-and-files.md) |
 | Office document worker, pre-check, or document tools | [Document tools](../../docs/implementation/document-tools.md) |
 | Media renderer, its client, or video operations | [Video tools](../../docs/implementation/video-tools.md) |
+| Data science service, its client, or `forecast_series` | [Data science service](../../docs/implementation/data-science-service.md) |
 | Knowledge Base import or source refresh | [Knowledge sources](../../docs/implementation/knowledge-sources.md) |
 
 ## Verification

@@ -303,6 +303,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "edit_word_document": "none",
         "edit_workbook": "none",
         "fetch_url": "arbitrary_url",
+        "forecast_series": "none",
         "generate_image": "none",
         "generate_image_from_video": "none",
         "transcribe_video": "none",
@@ -417,6 +418,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_assign_campaign_budgets",
         "google_ads_create_campaign_budget",
         "google_ads_dismiss_recommendations",
+        "forecast_series",
         "google_ads_get_report_field",
         "google_ads_create_labels",
         "google_ads_apply_labels",
@@ -540,7 +542,9 @@ def test_build_runtime_tools_mounts_auto_tools_beside_the_selection() -> None:
     auto_mounted = {
         name
         for name, definition in RUNTIME_TOOL_CATALOG.items()
-        if definition.auto_mount and definition.integration_binding is None
+        if definition.auto_mount
+        and definition.integration_binding is None
+        and (definition.availability_check is None or definition.availability_check())
     }
     assert auto_mounted <= set(names)
     assert names[-3:] == ["test_runtime_context", "test_add_numbers", "run_code"]

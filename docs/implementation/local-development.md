@@ -53,9 +53,10 @@ target and runs it with `docker run --rm --init`.
 ## Data science service
 
 The data science service runs forecasting models on CPU in an isolated
-container. Nothing calls it until the `forecast_series` tool lands. `make dev`
-starts it with the `data-science` Compose profile when `apps/api/.env` sets
-`DATA_SCIENCE_URL`, bound to `127.0.0.1:8091` (override with
+container for the `forecast_series` tool. Set
+`DATA_SCIENCE_URL=http://127.0.0.1:8091` and `DATA_SCIENCE_AUTH=none` in
+`apps/api/.env`; `make dev` then starts it with the `data-science` Compose
+profile, bound to `127.0.0.1:8091` (override with
 `PRAXIS_DATA_SCIENCE_PORT`). It runs as a non-root user with a 4 GiB memory
 limit and fetches no URLs. Run its tests with `make datascience-check`. See
 [Data science service](data-science-service.md).

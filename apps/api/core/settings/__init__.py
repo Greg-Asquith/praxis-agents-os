@@ -21,6 +21,7 @@ from core.settings.aws import AwsSettingsMixin
 from core.settings.azure import AzureSettingsMixin
 from core.settings.base import SettingsBase
 from core.settings.code_mode import CodeModeSettingsMixin
+from core.settings.data_science import DataScienceSettingsMixin
 from core.settings.database import DatabaseSettingsMixin
 from core.settings.documents import DocumentToolsSettingsMixin
 from core.settings.email import EmailSettingsMixin
@@ -62,6 +63,7 @@ class Settings(
     AwsSettingsMixin,
     AzureSettingsMixin,
     DatabaseSettingsMixin,
+    DataScienceSettingsMixin,
     DocumentToolsSettingsMixin,
     EmailSettingsMixin,
     EmbeddingsSettingsMixin,
@@ -123,6 +125,9 @@ class Settings(
 
         if self.MEDIA_RENDERER_AUTH == "none" and self.ENVIRONMENT != "local":
             raise ValueError("MEDIA_RENDERER_AUTH=none is only allowed when ENVIRONMENT=local")
+
+        if self.DATA_SCIENCE_AUTH == "none" and self.ENVIRONMENT != "local":
+            raise ValueError("DATA_SCIENCE_AUTH=none is only allowed when ENVIRONMENT=local")
 
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")
@@ -326,6 +331,11 @@ class Settings(
             self.MEDIA_RENDERER_URL is not None
             and self.STORAGE_PROVIDER in RENDERER_STORAGE_PROVIDERS
         )
+
+    @property
+    def data_science_available(self) -> bool:
+        """Checks the data science service is configured; it needs no storage."""
+        return self.DATA_SCIENCE_URL is not None
 
     model_config = SettingsConfigDict(
         env_file=".env",

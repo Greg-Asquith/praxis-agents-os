@@ -151,7 +151,9 @@ or write waits at most 30 seconds, so a stalled transfer ends inside the
 
 ## API client
 
-`apps/api/services/media/` calls the renderer:
+`apps/api/services/media/` calls the renderer. The HTTP post, auth header,
+and error mapping are shared with the data science client in
+`apps/api/utils/isolated_service.py`:
 
 - `run_media_operation(workspace_id, sources, operation, staged_inputs?)`
   takes the File revisions the caller resolved for the workspace, one per

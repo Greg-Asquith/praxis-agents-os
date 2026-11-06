@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-import httpx2 as httpx
 from pydantic import ValidationError
 
 from core.settings import settings
@@ -23,14 +22,10 @@ from services.media.domain import (
     MediaRendererError,
     StagedMediaOutput,
 )
-from services.media.utils import (
-    discard_staged_outputs,
-    renderer_auth_headers,
-    renderer_transfer_url,
-    staging_ref,
-)
+from services.media.utils import discard_staged_outputs, renderer_transfer_url, staging_ref
 from services.storage.domain import StorageBucket, StorageObjectRef
 from services.storage.factory import get_storage_provider
+from utils.isolated_service import IsolatedService, post_isolated_operation
 
 # The renderer's budget covers its transfers; this covers cold start and the round trip.
 REQUEST_ALLOWANCE_SECONDS = 60
@@ -118,26 +113,15 @@ async def run_media_operation(
 
 
 async def _post(payload: dict[str, Any]) -> dict[str, Any]:
+    service = IsolatedService(
+        label="media renderer",
+        url=str(settings.MEDIA_RENDERER_URL),
+        auth=settings.MEDIA_RENDERER_AUTH,
+        shared_secret=settings.MEDIA_RENDERER_SHARED_SECRET,
+        error=MediaRendererError,
+    )
     timeout = settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{settings.MEDIA_RENDERER_URL}/v1/operations",
-                json=payload,
-                headers=await renderer_auth_headers(),
-            )
-        body = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise MediaRendererError("unavailable", "The media renderer couldn't be reached.") from exc
-    if not isinstance(body, dict):
-        raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)
-    if response.status_code != 200 or body.get("ok") is not True:
-        error = body.get("error") if isinstance(body.get("error"), dict) else {}
-        raise MediaRendererError(
-            str(error.get("code") or "failed")[:64],
-            str(error.get("message") or "The media renderer failed.")[:300],
-        )
-    return body
+    return await post_isolated_operation(service, payload, request_seconds=timeout)
 
 
 async def _read_response(

@@ -7,8 +7,8 @@ isolated container. Its first operation is `forecast`, which runs Mistral's
 Timestral 123M model. The service never runs model-authored code: agents
 write code only through `run_code`.
 
-The `forecast_series` tool that calls it is pending (plan 325 slice B).
-Until then, nothing in the API or worker calls the service.
+The `forecast_series` tool calls it (see [below](#forecast_series-tool)).
+The tool is hidden when `DATA_SCIENCE_URL` is unset.
 
 ## Layout
 
@@ -175,9 +175,64 @@ request the API will send (10,000 hourly points, a 1,024-step horizon, four
 regions, and eight covariates) takes about 75 seconds, so the default timeout
 is 300 seconds.
 
+## `forecast_series` tool
+
+`apps/api/services/agents/runtime/tools/forecasting.py` defines
+`forecast_series`. It's a read-only `core` tool that every agent mounts when
+the service is configured, and it's code-eligible, so a `run_code` script can
+line data up and forecast it in one step. It takes `title`, optional `unit`,
+`start`, `frequency`, `values`, `horizon`, `holiday_regions`, and
+`covariates` (`name`, `timing`, `kind`, `values`).
+
+Before calling the service, the tool refuses with a plain retry message:
+
+- more than `FORECAST_MAX_HISTORY_POINTS` history points (10,000)
+- a horizon over `FORECAST_MAX_HORIZON` (1,024)
+- more than `FORECAST_MAX_COVARIATES` covariates (8)
+- fewer than `max(16, 2 × horizon)` history points, or more than 30% gaps
+- a covariate whose length misses the history (and the horizon, for
+  `known_future`), or a number covariate that holds text
+
+Category labels become codes in first-seen order; names and labels stay in
+the API. The service's own `invalid_request` message is returned as a retry.
+`invalid_series` becomes a plain failure saying Timestral couldn't forecast
+the series. Any other error, or a result whose series don't fit the request,
+fails the call.
+
+### Client
+
+`services/data_science/run_forecast.py` posts the operation with
+`timeout_seconds` set to `DATA_SCIENCE_TIMEOUT_SECONDS` and validates the
+result's shape and every series' length. The HTTP post, the auth header
+(`google_id_token` with the service URL as audience, `shared_secret`, or
+`none` locally), and error mapping live in `apps/api/utils/isolated_service.py`,
+which the media renderer client also uses. `DATA_SCIENCE_AUTH=none` is
+refused outside `ENVIRONMENT=local`, and a shared secret must be at least 32
+characters.
+
+### Result
+
+The model sees:
+
+- `forecast`: one row per period (`period`, `median`, `low`, `high`), rounded
+  to the most decimal places in the history, up to six
+- `backtest`: `periods` held out, `typical_error` (WAPE), `range_coverage`
+  (share of actuals in the 10 to 90% range), and `covariate_error_change`
+  (relative change in quantile loss; negative means covariates helped)
+- `holidays` in the horizon, with region and population share
+- `caveat` when the history is less than three horizons, plus `method`,
+  `frequency`, and `history_points`
+
+The forecast card gets the same value plus `chart` through `public_result`
+metadata, which never reaches the model or a script. `chart` holds the
+period labels and history for the last `max(3 × horizon, 90)` periods, both
+forecasts (with and without covariates), both backtests, and each covariate
+(holiday regions first) over the same window. The largest request yields
+about 600,000 characters, within the declared 1,000,000.
+
 ## Local development
 
-Not needed until `forecast_series` lands. To run it by hand:
+To run it by hand:
 
 ```bash
 docker compose --profile data-science up -d --build data-science
@@ -187,14 +242,16 @@ It listens on `127.0.0.1:8091` (override with `PRAXIS_DATA_SCIENCE_PORT`),
 runs as user 1001 with a 4 GiB memory limit, and logs
 `{"message": "renderer ready", "isolation": "verified"}` once both
 self-checks pass. `make dev` starts it when `apps/api/.env` sets
-`DATA_SCIENCE_URL`.
+`DATA_SCIENCE_URL` (use `http://127.0.0.1:8091` with `DATA_SCIENCE_AUTH=none`).
 
 ## Deployment
 
 On GCP, `praxis-data-science` is a Cloud Run gen2 service with one request
 per instance, 2 vCPU, 4 GiB, startup CPU boost, and scale to zero. It runs as
 its own service account with no roles. Only the API and worker identities
-hold `run.invoker`, and the deploy reads the policy back. See
+hold `run.invoker`, and the deploy reads the policy back. The deploy passes
+`DATA_SCIENCE_URL`, `DATA_SCIENCE_TIMEOUT_SECONDS`, and the three
+`FORECAST_MAX_*` limits to the API and worker. See
 [GCP deployment](../../deploy/gcp/README.md#data-science-service).
 
 ## Verification
@@ -212,3 +269,10 @@ in Docker:
 
 `make isolation-driver-check` covers zero-input operations and the
 per-service request cap.
+
+In the API, `tests/services/agents/runtime/test_forecasting_tool.py` uses a
+stub transport: the tool is hidden without the service, labels and the chart
+stay out of the request and the model's result, a short known-future
+covariate is refused before any request, and a malformed result fails.
+`tests/scenarios/test_forecasting.py` forecasts from a `run_code` script and
+checks the nested audit record and that the chart never reaches the model.
