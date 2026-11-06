@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.conversation import Conversation, ConversationMessage
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 
 PYDANTIC_AI_MESSAGE_SOURCE = "pydantic_ai"
 # Transcript-only rows; history loaders read Pydantic AI rows only, so models never see these.
@@ -187,6 +188,7 @@ async def load_history_watermark_keys(
             not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "tool-return"}]})),
             not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "retry-prompt"}]})),
             not_(ConversationMessage.parts.op("@>")({"parts": [{"part_kind": "retry-feedback"}]})),
+            not_(ConversationMessage.parts.op("@>")({"metadata": {STEER_METADATA_KEY: True}})),
         )
         .order_by(ConversationMessage.sequence.desc())
         .limit(limit)

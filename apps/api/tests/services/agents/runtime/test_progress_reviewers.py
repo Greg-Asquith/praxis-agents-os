@@ -62,7 +62,8 @@ def _decision(answer: dict) -> dict:
 )
 async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict, reason):
     monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_PROVIDER", "openai")
-    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_MODEL", "gpt-6-luna")
+    # Decisions serves gpt-6-luna only, so another OpenAI model falls back to it.
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_MODEL", "gpt-6.1-sol")
     meter = AsyncMock()
     monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", meter)
     requests = []

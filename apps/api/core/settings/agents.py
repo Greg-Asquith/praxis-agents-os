@@ -139,7 +139,7 @@ class AgentRunSettingsMixin:
     )
     AGENT_RUN_PROGRESS_REVIEW_MODEL: str = Field(
         default="gpt-6-luna",
-        description="Model for the step-limit progress reviewer.",
+        description="Model for the step-limit progress reviewer; provider openai always uses gpt-6-luna.",
     )
     AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE: float = Field(
         default=0.6,

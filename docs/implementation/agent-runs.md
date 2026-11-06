@@ -230,13 +230,15 @@ A reviewer exception or a timeout (`AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS`,
 default 20) asks a person. After `AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS`
 extensions (default 4, range 0 to 10), the run asks a person without calling
 the reviewer or recording a review, and the evidence sets `limit_reached`.
-A value of 0 turns reviews off for the whole platform.
+A value of 0 turns reviews off for the whole platform. When a specialist's
+review asks a person, the shared ceiling trips and the whole run family pauses.
 
 The agent's `progress_reviews_enabled` setting (default on) is in the agent
 form's Advanced section as **When It Reaches Its Step Limit**. When it's off,
 the step limit pauses for a person, with no review and no `progress_review`
 evidence. The root agent's setting covers the whole run family. Steps that
-were already granted stay in force when a continuation finds the setting off.
+were already granted stay in force when a continuation finds the setting off
+or the platform cap at 0.
 
 ### The reviewer
 
@@ -262,9 +264,11 @@ Environment settings choose the reviewer, like the other utility models:
   credentials check includes this provider.
 - Provider `openai` asks the OpenAI Decisions API one `choice` question over
   the five verdicts through Pydantic AI's `OpenAIDecisionsModel`, which
-  validates the answer and honours `ALLOW_MODEL_REQUESTS`. Decisions supports `gpt-6-luna` only and returns no text,
-  so the reason is the chosen verdict's description. A refusal, or a confidence
-  below `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6), asks a person.
+  validates the answer and honours `ALLOW_MODEL_REQUESTS`. Decisions supports
+  `gpt-6-luna` only, so this provider always uses it, whatever the model
+  setting says. Decisions returns no text, so the reason is the chosen
+  verdict's description. A refusal, or a confidence below
+  `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6), asks a person.
 - Other providers, such as `anthropic` with `claude-haiku-5-5` or `google`
   with `gemini-3.8-flash`, return a structured verdict, a reason, and optional
   guidance of 300 characters at most.
@@ -300,8 +304,8 @@ null sink, so their reviews appear when the conversation reloads.
 A steer request carries `metadata.progress_review_steer`, which Pydantic AI
 doesn't send to the model. The digest skips these requests when it finds the
 task, and the web app hides them, because the review row shows the steer
-text. Shared viewers get the review parts and the marker, but not the steer
-prompt.
+text. Shared viewers get the review parts, including the steer text, and only
+the marker from the steer request.
 
 When a review asks a person, **Paused to Check In** shows the reviewer's
 reason. When `limit_reached` is set, it says how many times the run was checked

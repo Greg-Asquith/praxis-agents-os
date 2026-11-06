@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from models.conversation import ConversationMessage
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.conversations.shared_projection import project_shared_message
 
 SECRET = "PRIVATE_SENTINEL"
@@ -54,6 +55,17 @@ def test_model_and_approval_metadata_are_not_transcript_content():
     assert projected.parts == {"parts": [{"part_kind": "text", "content": "Saved answer"}]}
     assert SECRET not in projected.model_dump_json()
     assert project_shared_message(message(row.parts["parts"], role="system")).parts == {"parts": []}
+
+
+def test_progress_review_rows_keep_only_review_fields_and_the_steer_marker():
+    review = {"part_kind": "progress-review", "verdict": "continue", "reason": "On track."}
+    row = message([{**review, "digest": SECRET}], role="system")
+    steer = message([{"part_kind": "user-prompt", "content": SECRET}], role="user")
+    steer.parts["metadata"] = {STEER_METADATA_KEY: True, "extra": SECRET}
+
+    assert project_shared_message(row).parts == {"parts": [review]}
+    projected_steer = project_shared_message(steer)
+    assert projected_steer.parts == {"parts": [], "metadata": {STEER_METADATA_KEY: True}}
 
 
 def test_workflow_preserves_completed_result_and_hides_pending_approval():

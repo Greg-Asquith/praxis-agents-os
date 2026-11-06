@@ -38,6 +38,8 @@ from services.agents.models.validate_vertex_configuration import (
     validate_vertex_configuration,
 )
 
+_DECISIONS_MODEL = "gpt-6-luna"
+
 
 def _require_active(provider: str, model: str) -> ModelInfo:
     """Return the catalog entry, rejecting unknown and deprecated models."""
@@ -259,7 +261,12 @@ def resolve_history_summary_model() -> ResolvedModel:
 def resolve_progress_review_model() -> ResolvedModel:
     """Resolve the fixed model that reviews a run's progress at its step limit."""
     provider = settings.AGENT_RUN_PROGRESS_REVIEW_PROVIDER
-    model = settings.AGENT_RUN_PROGRESS_REVIEW_MODEL
+    # The OpenAI Decisions API only serves gpt-6-luna, so any other OpenAI model falls back to it.
+    model = (
+        _DECISIONS_MODEL
+        if provider == PROVIDER_OPENAI
+        else settings.AGENT_RUN_PROGRESS_REVIEW_MODEL
+    )
     # Structured output can need one retry after an invalid verdict.
     return resolve_catalog_model(provider, model, max_steps=2)
 

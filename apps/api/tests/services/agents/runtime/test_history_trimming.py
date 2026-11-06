@@ -24,6 +24,7 @@ from services.agents.runtime.history import (
     history_trimmer,
     trim_history,
 )
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 
 pytestmark = pytest.mark.asyncio
 
@@ -57,6 +58,20 @@ async def test_trim_history_does_not_cut_at_merged_tool_return_request() -> None
     first_message = trimmed[0]
     assert isinstance(first_message, ModelRequest)
     assert all(not isinstance(part, ToolReturnPart) for part in first_message.parts)
+
+
+async def test_trim_history_does_not_cut_at_progress_review_steer() -> None:
+    history = _history(41)
+    steer = ModelRequest(
+        parts=[UserPromptPart("Progress check: wrap up.")],
+        metadata={STEER_METADATA_KEY: True},
+    )
+    history[39:39] = [steer, ModelResponse(parts=[TextPart("steered reply")])]
+
+    trimmed = trim_history(history, max_turns=40, keep_turns=20)
+
+    assert trimmed[0] is history[42]
+    assert _boundary_texts(trimmed)[0] == "turn 20"
 
 
 async def test_trim_history_preserves_trailing_approval_tool_calls() -> None:

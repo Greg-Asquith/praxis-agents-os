@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
 )
 
 from core.settings import settings
+from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.agents.runtime.skills import loaded_skill_name
 from utils.tokens import estimate_tokens
 
@@ -225,7 +226,7 @@ def _cut_boundary_position(
 
 
 def _is_clean_user_boundary(message: ModelMessage) -> bool:
-    if not isinstance(message, ModelRequest):
+    if not isinstance(message, ModelRequest) or (message.metadata or {}).get(STEER_METADATA_KEY):
         return False
     has_user_prompt = False
     for part in message.parts:

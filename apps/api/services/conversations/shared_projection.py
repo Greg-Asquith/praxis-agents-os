@@ -109,7 +109,7 @@ def project_shared_message(
         completed = _completed_display_args([({"parts": parts}, message.metadata_json)])
     projected: dict[str, Any] = {"parts": []}
     if (message.parts.get("metadata") or {}).get(STEER_METADATA_KEY):
-        # Viewers keep the marker that hides the steer prompt; the prompt itself stays private.
+        # The review row already shows the steer text, so viewers get only the hiding marker.
         projected["metadata"] = {STEER_METADATA_KEY: True}
     elif message.role == "system":
         projected["parts"] = [
