@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
@@ -53,6 +53,9 @@ class FieldChange:
     body: Mapping[str, str]
     # Why the change mustn't be sent, such as an object that changed after approval.
     refused: str | None = None
+    # Settings that must read back different from these values, such as an ad's creative ID,
+    # when the new value is only known after the change.
+    replaces: SettingValues = field(default_factory=dict)
 
     @property
     def object_id(self) -> str:
@@ -60,7 +63,7 @@ class FieldChange:
 
     @property
     def unchanged(self) -> bool:
-        return all(
+        return not self.replaces and all(
             same_value(self.before_values.get(key), value) for key, value in self.requested.items()
         )
 
@@ -119,7 +122,8 @@ async def update_fields(
     """Sends each change once, in order, then verifies every accepted one by reading it back.
 
     A checkpoint marks each object before its change is sent, so recovery knows which
-    objects might have changed. `values` reads an object's settings for the comparison, or
+    objects might have changed. An unclear reply is never resent: the read-back settles it
+    when it shows the change, and it stays unverified otherwise. `values` reads an object's settings for the comparison, or
     `read` reads them by ID instead. Objects already at the requested values are skipped;
     refused ones are never sent.
 
@@ -130,6 +134,7 @@ async def update_fields(
     if (values is None) == (read is None):
         raise ValueError("Read settings back through either values or read")
     accepted: list[FieldChange] = []
+    unclear: dict[str, MetaAdsMutationEffect] = {}
     parents: dict[str, MetaAdsMutationParent] = {}
     for index, change in enumerate(changes):
         if change.refused is not None:
@@ -163,10 +168,12 @@ async def update_fields(
                 parents[pending.object_id] = not_dispatched_parent(
                     pending.object_id, _requested_fields(pending)
                 )
-            exc.ledger = _ledger(action, changes, parents, accepted, {})
+            exc.ledger = _ledger(action, changes, parents, accepted, {}, unclear)
             raise
-        if effect is None:
+        if effect is None or effect.outcome == "unverified":
             accepted.append(change)
+            if effect is not None:
+                unclear[change.object_id] = effect
         else:
             parents[change.object_id] = submitted_parent(change.object_id, effect)
 
@@ -179,9 +186,9 @@ async def update_fields(
             with contextlib.suppress(Exception):
                 after.update(await read([change.object_id for change in accepted]))
     except asyncio.CancelledError as exc:
-        exc.ledger = _ledger(action, changes, parents, accepted, after)
+        exc.ledger = _ledger(action, changes, parents, accepted, after, unclear)
         raise
-    return _ledger(action, changes, parents, accepted, after)
+    return _ledger(action, changes, parents, accepted, after, unclear)
 
 
 async def _read_objects(
@@ -211,11 +218,13 @@ def _ledger(
     parents: dict[str, MetaAdsMutationParent],
     accepted: Sequence[FieldChange],
     after: Mapping[str, SettingValues],
+    unclear: Mapping[str, MetaAdsMutationEffect],
 ) -> MetaAdsMutationLedger:
     for change in accepted:
-        parents[change.object_id] = submitted_parent(
-            change.object_id, _verified_effect(change, after.get(change.object_id))
-        )
+        effect = _verified_effect(change, after.get(change.object_id))
+        if change.object_id in unclear and effect.outcome != "applied":
+            effect = unclear[change.object_id]
+        parents[change.object_id] = submitted_parent(change.object_id, effect)
     return MetaAdsMutationLedger(
         action=action, parents=tuple(parents[change.object_id] for change in changes)
     )
@@ -231,10 +240,17 @@ def _verified_effect(change: FieldChange, read: SettingValues | None) -> MetaAds
             message=_READBACK_FAILED,
         )
     # Keep what Meta returned even when it disagrees, so the row shows the real value.
-    fields.update({f"after.{key}": read.get(key) or "none" for key in change.requested})
+    fields.update(
+        {f"after.{key}": read.get(key) or "none" for key in (*change.requested, *change.replaces)}
+    )
     different = [
         key for key, value in change.requested.items() if not same_value(read.get(key), value)
     ]
+    different.extend(
+        key
+        for key, value in change.replaces.items()
+        if read.get(key) is None or same_value(read.get(key), value)
+    )
     if not different:
         return MetaAdsMutationEffect(
             fields=freeze_fields(fields), outcome="applied", external_ref=change.object_id
@@ -257,4 +273,4 @@ def _refused_effect(change: FieldChange) -> MetaAdsMutationEffect:
 
 
 def _requested_fields(change: FieldChange) -> dict[str, str]:
-    return {"settings": ",".join(change.requested)}
+    return {"settings": ",".join((*change.requested, *change.replaces))}

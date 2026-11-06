@@ -10,6 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..client import MetaAdsClient
+from ..creative_features import change_labels
 from ..money import amount_to_minor, minor_to_amount
 from ..tools.schemas.activities import MetaAdsActivitiesInput
 from ..tools.schemas.objects import MetaAdsObject
@@ -33,6 +34,15 @@ AUTOMATIC_PLACEMENTS_NOTE = (
     "Automatic placements include Stories and Reels, so ads without a vertical version may "
     "show cropped."
 )
+# Unverified: whether the old version keeps delivering while the new one is in review.
+CREATIVE_REVIEW_NOTE = (
+    "The ad goes back into review. It keeps running with the old version until the new one "
+    "is approved."
+)
+CREATIVE_LEARNING_NOTE = "This restarts learning for the ad set."
+SOCIAL_PROOF_NOTE = "Likes and comments stay with the old version."
+NEW_POST_NOTE = "The ad shows the new post with its own likes and comments."
+SHOP_NOTE = "Sends people to your shop where Meta thinks it works better."
 # Below this many people, Meta's estimate is narrow enough to limit delivery.
 _NARROW_AUDIENCE = 100_000
 # Meta's guidance is to change bids and budgets no more than 2 to 3 times a day.
@@ -217,3 +227,24 @@ def narrow_audience_note(lower: int, upper: int) -> str | None:
     if upper >= _NARROW_AUDIENCE:
         return None
     return f"Meta estimates {lower:,} to {upper:,} people, which may limit delivery."
+
+
+def creative_notes(
+    *, before: frozenset[str], after: frozenset[str], new_post: bool, shop: bool
+) -> list[str]:
+    """What a new creative does to the ad beyond what it shows."""
+    notes = [
+        CREATIVE_REVIEW_NOTE,
+        CREATIVE_LEARNING_NOTE,
+        NEW_POST_NOTE if new_post else SOCIAL_PROOF_NOTE,
+    ]
+    if shop:
+        notes.append(SHOP_NOTE)
+    turned_on, turned_off = change_labels(after - before), change_labels(before - after)
+    if not turned_on and not turned_off:
+        notes.append("Automatic changes on this ad are kept.")
+    if turned_on:
+        notes.append(f"Turns on {', '.join(turned_on)}.")
+    if turned_off:
+        notes.append(f"Turns off {', '.join(turned_off)}.")
+    return notes

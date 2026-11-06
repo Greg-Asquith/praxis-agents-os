@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/tools/schemas/ad_edits.py
 
-"""Input and result contracts for renaming and rescheduling existing ads."""
+"""Input and result contracts for renaming, rescheduling, and changing the creative of existing ads."""
 
 from typing import Literal, Self, get_args
 
@@ -8,11 +8,23 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ...creative_features import OFFERED_CHANGE_KEYS
 from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
-from ...references import MetaAdsAdReference
+from ...references import MetaAdsAdReference, MetaAdsMediaReference, MetaAdsPostReference
 from .ad_set_edits import MetaAdsSettingValue
-from .ads import MetaAdsAdName
+from .ads import (
+    MetaAdsAdName,
+    MetaAdsAutomaticChangeKey,
+    MetaAdsButton,
+    MetaAdsCarouselCard,
+    MetaAdsDescription,
+    MetaAdsHeadline,
+    MetaAdsLink,
+    MetaAdsPrimaryText,
+    MetaAdsUrlTags,
+)
 from .budget_schedules import MetaAdsLocalTime
+from .objects import MetaAdsReviewState
 
 MAX_AD_EDITS = 50
 # Every setting an edit can change, in the order the card and results show them.
@@ -21,6 +33,73 @@ AD_SETTINGS: tuple[MetaAdsAdSetting, ...] = get_args(MetaAdsAdSetting.__value__)
 
 # "none" removes the ad's own time, so it follows its ad set's schedule again.
 type MetaAdsAdTime = MetaAdsLocalTime | Literal["none"]
+
+
+# What a creative change can set, in the order the card and results show them.
+type MetaAdsCreativeField = Literal[
+    "primary_text",
+    "headline",
+    "description",
+    "link",
+    "call_to_action",
+    "url_tags",
+    "media",
+    "vertical_media",
+    "thumbnail",
+    "cards",
+    "post",
+    "automatic_changes",
+]
+CREATIVE_FIELDS: tuple[MetaAdsCreativeField, ...] = get_args(MetaAdsCreativeField.__value__)
+
+
+class MetaAdsCreativeChanges(MetaAdsStrictModel):
+    """What the ad says or shows; an omitted field keeps the live creative's value."""
+
+    primary_text: MetaAdsPrimaryText | None = None
+    headline: MetaAdsHeadline | None = None
+    description: MetaAdsDescription | Literal["none"] | None = Field(
+        default=None, description="Description, or none to remove it."
+    )
+    link: MetaAdsLink | None = None
+    call_to_action: MetaAdsButton | None = None
+    url_tags: MetaAdsUrlTags | Literal["none"] | None = Field(
+        default=None, description="URL tags, or none to remove them."
+    )
+    media: MetaAdsMediaReference | None = Field(
+        default=None, description="New image or ready video from the media library."
+    )
+    vertical_media: MetaAdsMediaReference | Literal["none"] | None = Field(
+        default=None, description="New 9:16 version for Stories and Reels, or none to remove it."
+    )
+    thumbnail: MetaAdsMediaReference | None = Field(
+        default=None, description="Image shown before a video ad plays."
+    )
+    cards: list[MetaAdsCarouselCard] | None = Field(
+        default=None,
+        min_length=2,
+        max_length=10,
+        description="Every carousel card, in order; replaces the current cards.",
+    )
+    post: MetaAdsPostReference | None = Field(
+        default=None, description="For existing post ads: the post to run instead."
+    )
+    automatic_changes: list[MetaAdsAutomaticChangeKey] | None = Field(
+        default=None,
+        max_length=len(OFFERED_CHANGE_KEYS),
+        description="Every automatic change that should be on; the rest are turned off.",
+    )
+
+    @model_validator(mode="after")
+    def _one_change(self) -> Self:
+        if not self.fields:
+            raise ValueError("Name at least one part of the creative to change.")
+        return self
+
+    @property
+    def fields(self) -> tuple[MetaAdsCreativeField, ...]:
+        """The parts this change sets, in display order."""
+        return tuple(key for key in CREATIVE_FIELDS if getattr(self, key) is not None)
 
 
 class MetaAdsAdEdit(MetaAdsStrictModel):
@@ -36,10 +115,14 @@ class MetaAdsAdEdit(MetaAdsStrictModel):
         default=None,
         description="When the ad stops, as YYYY-MM-DDTHH:MM in the account's time zone, or none.",
     )
+    creative: MetaAdsCreativeChanges | None = Field(
+        default=None,
+        description="Changes to what the ad says or shows; the ad switches to a new creative.",
+    )
 
     @model_validator(mode="after")
     def _one_setting(self) -> Self:
-        if not self.settings:
+        if not self.settings and self.creative is None:
             raise ValueError("Set at least one setting to change for each ad.")
         return self
 
@@ -71,10 +154,20 @@ class MetaAdsAdSettingChange(MetaAdsStrictModel):
     after: MetaAdsSettingValue | None
 
 
+class MetaAdsCreativeOutcome(MetaAdsStrictModel):
+    changed: list[MetaAdsCreativeField] = Field(max_length=len(CREATIVE_FIELDS))
+    before_creative_id: MetaAdsId | None
+    # Read back after the change; null when it couldn't be read.
+    after_creative_id: MetaAdsId | None
+    review: MetaAdsReviewState
+    effective_status: MetaAdsText | None
+
+
 class MetaAdsAdEditOutcome(MetaAdsStrictModel):
     ad_id: MetaAdsId
     name: MetaAdsText | None
     changes: list[MetaAdsAdSettingChange] = Field(max_length=len(AD_SETTINGS))
+    creative: MetaAdsCreativeOutcome | None = None
     outcome: Literal["updated", "already_set", "failed", "unverified"]
     error_code: str | None = Field(default=None, max_length=100)
     message: str | None = Field(default=None, max_length=1000)

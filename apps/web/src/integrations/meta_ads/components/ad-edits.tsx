@@ -1,6 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/ad-edits.tsx
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
+import { AdCreativeEdit } from "@/integrations/meta_ads/components/ad-creative-edit"
 import { SwitchField, TextField } from "@/integrations/meta_ads/components/campaign-controls"
 import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
 import {
@@ -17,6 +18,8 @@ import {
   adSetScheduleText,
   adSettingProblem,
   adSettingTitle,
+  creativeOutcomeSetting,
+  creativeOutcomeText,
   currentAdProblems,
   editAds,
   formatAdSetting,
@@ -30,7 +33,7 @@ import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-lin
 import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-type Edit = (id: string, change: { included: boolean } | AdSettingEdit) => void
+type Edit = (id: string, change: Parameters<typeof editAds>[2]) => void
 
 export function AdEditApproval({
   args,
@@ -56,14 +59,30 @@ export function AdEditApproval({
       />
       <SettingRows ariaLabel="Ads to change" defaultOpen={rows[0]?.edit.id ?? null}>
         {rows.map((row) => (
-          <AdRow key={row.edit.id} disabled={disabled} edit={edit} row={row} />
+          <AdRow
+            key={row.edit.id}
+            catalogue={args.catalogue}
+            disabled={disabled}
+            edit={edit}
+            row={row}
+          />
         ))}
       </SettingRows>
     </div>
   )
 }
 
-function AdRow({ disabled, edit, row }: { disabled: boolean; edit: Edit; row: AdEditRow }) {
+function AdRow({
+  catalogue,
+  disabled,
+  edit,
+  row,
+}: {
+  catalogue: unknown
+  disabled: boolean
+  edit: Edit
+  row: AdEditRow
+}) {
   const { edit: ad, included } = row
   const problems = included ? currentAdProblems(ad) : []
   const note = included ? adNote(ad) : null
@@ -114,6 +133,16 @@ function AdRow({ disabled, edit, row }: { disabled: boolean; edit: Edit; row: Ad
             <p className="text-muted-foreground text-sm">
               Leave a time empty and the ad follows its ad set's schedule.
             </p>
+          ) : null}
+          {ad.creative ? (
+            <AdCreativeEdit
+              ad={ad}
+              catalogue={catalogue}
+              disabled={disabled}
+              onChange={(creative, name) => {
+                edit(ad.id, { creative, name })
+              }}
+            />
           ) : null}
           {problems.map((problem) => (
             <p key={problem} className="text-destructive text-sm font-medium">
@@ -176,8 +205,8 @@ function AdEditField({
 }
 
 export function AdEditOutcome({ result }: { result: AdEditResult }) {
-  const rows: MetaAdsOutcomeRow[] = result.ads.flatMap((ad) =>
-    ad.changes.map((change, index) => ({
+  const rows: MetaAdsOutcomeRow[] = result.ads.flatMap((ad) => [
+    ...ad.changes.map((change, index) => ({
       name: ad.name,
       setting: adSettingTitle(change.key),
       before: formatAdSetting(change.key, change.before),
@@ -190,8 +219,21 @@ export function AdEditOutcome({ result }: { result: AdEditResult }) {
       // The ad's message once, on its first setting.
       details: index === 0 ? (ad.message ?? "") : "",
       errorCode: index === 0 ? ad.errorCode : null,
-    }))
-  )
+    })),
+    ...(ad.creative
+      ? [
+          {
+            name: ad.name,
+            setting: creativeOutcomeSetting(ad.creative),
+            before: "Previous version",
+            after: creativeOutcomeText(ad.creative),
+            outcome: ad.outcome,
+            details: ad.changes.length === 0 ? (ad.message ?? "") : "",
+            errorCode: ad.changes.length === 0 ? ad.errorCode : null,
+          },
+        ]
+      : []),
+  ])
   return (
     <MetaAdsOutcomeTable
       columns={[

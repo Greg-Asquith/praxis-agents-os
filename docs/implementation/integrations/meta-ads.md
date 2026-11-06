@@ -934,16 +934,16 @@ reading an unconfirmed field would fail every ad set read. See
 
 ### Editing ads
 
-`meta_ads_update_ads` renames up to 50 existing ads, and sets or removes
-their own start and end times, in one approval. Each entry names one ad and
-only the settings that change. Status stays with `meta_ads_update_status`
-and ad set dates with `meta_ads_update_ad_sets`. Changing what an ad says or
-shows is pending.
+`meta_ads_update_ads` renames up to 50 existing ads, sets or removes their
+own start and end times, and changes what they say or show, in one approval.
+Each entry names one ad and only the settings that change. Status stays with
+`meta_ads_update_status` and ad set dates with `meta_ads_update_ad_sets`.
 
 | Setting | Meta field |
 | --- | --- |
 | `name` | `name` |
 | `start_at`, `end_at` (`YYYY-MM-DDTHH:MM` in the account's time zone, or `none`) | `ad_schedule_start_time`, `ad_schedule_end_time` as ISO 8601 with the account's offset; `none` sends an empty value |
+| `creative` (only the parts that change) | `creative` as a new inline creative, plus `conversion_domain` when the ad set's promoted object has a pixel |
 
 `operations/edit_ad.py` holds the rules, checked against the ad and its ad
 set as they are now:
@@ -990,14 +990,70 @@ The tool works like [Editing ad sets](#editing-ad-sets), through
 
 Each result row has the ad, its settings with `before`, `requested`, and
 read-back `after` values, and the outcome; the result carries the account's
-`time_zone`. The tool has a 300-second timeout, supports Code Mode, and is
+`time_zone`. An ad with a new creative also has `creative`: the parts that
+changed, the creative IDs before and after, and the review and delivery
+status read back. The tool has a 300-second timeout, supports Code Mode, and is
 listed in the spend policy test.
+
+#### Changing an ad's creative
+
+Meta doesn't edit creatives in place: `POST /{creative_id}` takes only a
+name and status. A new creative is attached to the same ad, so the ad keeps
+its ID, history, and results. The agent sends only what changes:
+`primary_text`, `headline`, `description` (or `none`), `link`,
+`call_to_action`, `url_tags` (or `none`), `media`, `vertical_media` (or
+`none`), `thumbnail`, `cards` (every card, replacing the current ones),
+`post` for existing post ads, and `automatic_changes` (the full list to have
+on). New media must already be in the ad account's media library; Files go
+through `meta_ads_upload_media` first, so every new creative is dry-run
+before approval.
+
+`operations/read_creative.py` reads each ad's creative through the ad
+account's ads edge and maps it back into the `create_ads` ad model: image,
+video, and carousel ads, the main and vertical versions Praxis builds for
+Stories and Reels, and existing post ads. It refuses, naming the reason,
+catalogue, partnership, poll, lead, instant experience, and dynamic creative
+ads, and any key it doesn't recognise, since a rebuild would lose it. It
+keeps, as read, what the ad model doesn't edit: `destination_spec` (so an ad
+never moves onto or off a shop), `applink_treatment`, the display link
+(`caption`), and every automatic change Meta shows on.
+
+`operations/edit_creative.py` merges the changes into the live content and
+validates the result with `MetaAdsAdContent` and `design_problem`, the same
+rules as ad creation. It also refuses media from another ad account, a newly
+enabled AI-generated change (only new ads, which start off, take one),
+dropping the vertical version of an asset feed ad (Meta won't turn one back),
+a video without a thumbnail, and a change that leaves the creative as it is.
+`creative_spec()` then builds the creative. Changes the card doesn't offer
+stay as Meta has them; offered ones follow `automatic_changes` when it's
+sent.
+
+The card shows the ad now and after approval in Praxis feed previews side by
+side, the parts that change, and the ad editor from ad creation for the new
+version. Edits on the card are sent as the parts that differ from the live
+creative. The card lists the notes from `edit_impact.creative_notes`: the ad
+goes back into review and keeps running with the old version meanwhile,
+learning restarts, likes and comments stay with the old version (or come
+from the new post), the shop note when the live destination is
+`WEBSITE_AND_SHOP`, and which automatic changes turn on or off.
+
+The approved card's `before` holds the ad's `creative_id`; a different
+creative at preparation fails the ad with `CHANGED_SINCE_APPROVAL`.
+`update_fields` takes `replaces` for settings whose new value is only known
+after the send: an ad with a new creative is `updated` only when its
+`creative_id` reads back different. An unclear reply to any edit is never
+resent; the read-back marks it `updated` when it shows the change, and it
+stays `unverified` otherwise. Pending evidence records the requested
+creative changes as approved, since ad text is public.
 
 Whether an empty value removes an ad's own time, the time zone Meta applies
 and reads back, the minimum length, edits after an ad starts, and whether
 ads in legacy Advantage+ campaigns accept updates haven't been checked
-against a live account. Meta's dry run is the backstop until then. See
-[Live qualification record](#live-qualification-record).
+against a live account. Neither have inline creatives on `POST /{ad_id}`,
+whether the old version keeps delivering during review, the read shape of
+an existing creative (`destination_spec`, labels, and the keys Meta adds on
+read), and the creative field list. Meta's dry run is the backstop until
+then. See [Live qualification record](#live-qualification-record).
 
 ### Editing targeting
 
@@ -2029,7 +2085,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Budget increases | `capabilities` containing `CAN_USE_BUDGET_SCHEDULING_API`; `GET /{id}/budget_schedules` field shapes (`time_start` format, `budget_value` units); `POST` reply with `id`; whether the edge accepts `validate_only`; what Meta stores for `MULTIPLIER`; whether Meta rejects overlapping periods; whether a high-demand period can be deleted |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
 | Ad set edits | `validate_only` on an ad set update; a new start date after delivery; leaving `roas_goal` at ad set level; the `learning_stage_info` shape on an active ad set; spend control read-back for an unset cap; a goal and a promoted object change on a delivered ad set; attribution windows per goal, the engaged-view write value, and a change after delivery; `frequency_control_specs=[]` removing a cap; `adset_schedule` read-back; whether ad sets in legacy Advantage+ campaigns accept updates; bid `event_type` names in `activities`; the time for 50 ad sets in sequence |
-| Ad edits | `validate_only` on an ad update; `ad_schedule_start_time` and `ad_schedule_end_time` read-back shape and time zone; an empty value removing an ad's own time; minimum length and edits after the ad starts; whether ads in legacy Advantage+ campaigns accept a rename |
+| Ad edits | `validate_only` on an ad update; `ad_schedule_start_time` and `ad_schedule_end_time` read-back shape and time zone; an empty value removing an ad's own time; minimum length and edits after the ad starts; whether ads in legacy Advantage+ campaigns accept a rename; an inline creative on `POST /{ad_id}`; whether the old version keeps delivering during review and learning resets; the read shape of `creative{...}` in `CREATIVE_FIELDS`, including `destination_spec`, placement labels, and keys Meta adds on read |
 | Targeting edits | That `targeting` on `POST /{adset_id}` replaces the whole spec; `zips`, `regions`, `cities`, and `flexible_spec` read shapes against the write shapes; `location_types` in `excluded_geo_locations`; whether a targeting change sends ads to review; `reachestimate` latency with a whole spec; `ADS_TARGETING__REQUIRE_EXPLICIT_ADVANTAGE_AUDIENCE_FLAG` on updates; an update to an ad set that reads back with Instagram `explore` |
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |

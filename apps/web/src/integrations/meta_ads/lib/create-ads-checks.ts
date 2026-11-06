@@ -17,7 +17,7 @@ import {
   type PostPreview,
   type PreviewMedia,
 } from "@/integrations/meta_ads/lib/create-ads-args"
-import { formatCurrencyAmount, pluralize } from "@/lib/format"
+import { formatCurrencyAmount, pluralize, urlDomain } from "@/lib/format"
 
 type CheckLevel = "error" | "warning"
 // The editor field a check belongs to, so its message shows beside that field.
@@ -394,4 +394,27 @@ export function checksFor(row: AdRow, field: CheckField): AdCheck[] {
 
 export function hasError(checks: readonly AdCheck[]): boolean {
   return checks.some((check) => check.level === "error")
+}
+
+/** What the Praxis preview draws for one ad row, as typed values. */
+export function adPreviewProps(args: Pick<CreateAdsArgs, "pageId" | "pageName">, row: AdRow) {
+  const { ad } = row
+  return {
+    callToAction: row.callToAction,
+    cards: ad.cards.map((card) => ({
+      media: card.media,
+      headline: card.headline,
+      description: card.description,
+      callToAction: card.callToAction ?? row.callToAction,
+    })),
+    description: ad.description,
+    domain: urlDomain(row.link),
+    format: ad.format,
+    headline: ad.headline,
+    media: ad.media,
+    pageId: args.pageId,
+    pageName: args.pageName,
+    primaryText: ad.primaryText,
+    verticalMedia: ad.verticalMedia,
+  }
 }

@@ -130,6 +130,7 @@ type MetaAdsAutomaticChangeKey = Literal[OFFERED_CHANGE_KEYS]
 type MetaAdsMediaInput = Annotated[
     MetaAdsMediaReference | FileReference, Field(discriminator="entity_kind")
 ]
+type MetaAdsPrimaryText = Annotated[str, Field(max_length=2200), AfterValidator(_primary_text)]
 type MetaAdsAdName = Annotated[str, Field(max_length=MAX_NAME_LENGTH), AfterValidator(_ad_text)]
 type MetaAdsHeadline = Annotated[str, Field(max_length=255), AfterValidator(_ad_text)]
 type MetaAdsDescription = Annotated[str, Field(max_length=255), AfterValidator(_ad_text)]
@@ -167,8 +168,8 @@ class MetaAdsAdContent(MetaAdsStrictModel):
 
     name: MetaAdsAdName
     format: MetaAdsAdFormat
-    primary_text: Annotated[str, Field(max_length=2200), AfterValidator(_primary_text)] | None = (
-        Field(default=None, description="Required for every format but existing_post.")
+    primary_text: MetaAdsPrimaryText | None = Field(
+        default=None, description="Required for every format but existing_post."
     )
     post: MetaAdsPostReference | None = Field(
         default=None, description="For existing_post: the post from meta_ads_list_assets."

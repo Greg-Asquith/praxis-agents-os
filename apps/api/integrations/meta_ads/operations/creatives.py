@@ -110,6 +110,10 @@ class CreativeInput:
     enabled: frozenset[str]
     disclaimer: CreativeDisclaimer | None = None
     post: CreativePost | None = None
+    # A new ad never goes to a shop; an edited one keeps the live creative's choice.
+    destination_type: str = "WEBSITE_AND_SHOP_OPT_OUT"
+    applink_treatment: str | None = None
+    display_link: str | None = None
 
 
 def creative_spec(item: CreativeInput) -> dict[str, Any]:
@@ -166,7 +170,7 @@ def _automatic_change_values(item: CreativeInput) -> dict[str, Any]:
             "enroll_status": "OPT_IN" if "multi_advertiser_ads" in enabled else "OPT_OUT"
         },
         # From v26 Meta may send clicks to a shop instead of the website.
-        "destination_spec": {"destination_type": "WEBSITE_AND_SHOP_OPT_OUT"},
+        "destination_spec": {"destination_type": item.destination_type},
         "format_transformation_spec": [
             {"format": name, "data_source": ["none"]} for name in _TRANSFORMED_FORMATS
         ],
@@ -180,6 +184,8 @@ def _automatic_change_values(item: CreativeInput) -> dict[str, Any]:
         }
     if item.format == "carousel":
         values["portrait_customizations"] = {"carousel_delivery_mode": "fixed_num_cards"}
+    if item.applink_treatment:
+        values["applink_treatment"] = item.applink_treatment
     return values
 
 
@@ -193,6 +199,8 @@ def _link_data(item: CreativeInput) -> dict[str, Any]:
         "message": item.primary_text,
         "call_to_action": _call_to_action(item.call_to_action, item.link),
     }
+    if item.display_link:
+        data["caption"] = item.display_link
     if item.format == "carousel":
         data["child_attachments"] = [_card(card) for card in item.cards]
         data["multi_share_optimized"] = "carousel_reordering" in item.enabled

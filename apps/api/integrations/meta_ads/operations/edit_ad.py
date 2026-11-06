@@ -1,6 +1,9 @@
 # apps/api/integrations/meta_ads/operations/edit_ad.py
 
-"""Rules and the Meta request body for renaming or rescheduling one existing ad."""
+"""Rules and the Meta request body for renaming or rescheduling one existing ad.
+
+Creative changes are built in `edit_creative`.
+"""
 
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -20,6 +23,7 @@ def ad_values(ad: MetaAdsObject, zone: ZoneInfo) -> dict[str, str | None]:
         "name": ad.name,
         "start_at": _local(ad.start_time, zone),
         "end_at": _local(ad.end_time, zone),
+        "creative_id": ad.creative_id,
     }
 
 
@@ -39,7 +43,7 @@ def edit_problems(
     now: datetime,
 ) -> list[str]:
     """Lists the Meta rules this edit breaks for the ad as it is now."""
-    if ad.status in CLOSED_STATUSES and set(edit.settings) - {"name"}:
+    if ad.status in CLOSED_STATUSES and (set(edit.settings) - {"name"} or edit.creative):
         return ["This ad is archived or deleted, so only its name can change."]
     if edit.start_at is None and edit.end_at is None:
         return []

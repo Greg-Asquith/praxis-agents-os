@@ -42,7 +42,7 @@ from ...operations.plan_ads import (
     plan_ads,
 )
 from ...operations.values import require_currency
-from ...references import MetaAdsAdSetReference, MetaAdsMediaReference
+from ...references import MetaAdsAdSetReference, MetaAdsMediaReference, MetaAdsPostReference
 from ..schemas.ads import (
     UPLOAD_VIDEOS_FIRST,
     MediaKey,
@@ -279,7 +279,14 @@ async def _check_posts(
     client: MetaAdsClient, entry: ResolvedContextEntry, request: SharedAdSettings
 ) -> None:
     """Re-reads each post through its Page or Instagram account, and its boost eligibility."""
-    posts = {design.post.key: design.post for design in request.ads if design.post is not None}
+    await check_posts(client, entry, [design.post for design in request.ads if design.post])
+
+
+async def check_posts(
+    client: MetaAdsClient, entry: ResolvedContextEntry, references: Sequence[MetaAdsPostReference]
+) -> None:
+    """Refuses a post this ad account can't find among recent posts, or can't run as an ad."""
+    posts = {post.key: post for post in references}
     if not posts:
         return
     read_args = asset_read_args(entry, ReportResultBudget("meta_ads", _OPERATION))
@@ -303,9 +310,23 @@ async def _library_media(
     client: MetaAdsClient, entry: ResolvedContextEntry, request: SharedAdSettings
 ) -> dict[MediaKey, CreativeMedia]:
     """Confirms library images exist and videos are ready, and reads video thumbnails."""
-    items = [
-        item for item in distinct_media(request).values() if isinstance(item, MetaAdsMediaReference)
-    ]
+    media = await library_media(
+        client,
+        entry,
+        [
+            item
+            for item in distinct_media(request).values()
+            if isinstance(item, MetaAdsMediaReference)
+        ],
+    )
+    _require_video_thumbnails(request, media)
+    return media
+
+
+async def library_media(
+    client: MetaAdsClient, entry: ResolvedContextEntry, items: Sequence[MetaAdsMediaReference]
+) -> dict[MediaKey, CreativeMedia]:
+    """Re-reads library media through the account: images must exist and videos be ready."""
     read_args = asset_read_args(entry, ReportResultBudget("meta_ads", _OPERATION))
     media = await _library_images(
         client, read_args, sorted({i.image_hash for i in items if i.image_hash})
@@ -315,7 +336,6 @@ async def _library_media(
             client, entry, read_args, sorted({i.video_id for i in items if i.video_id})
         )
     )
-    _require_video_thumbnails(request, media)
     return media
 
 

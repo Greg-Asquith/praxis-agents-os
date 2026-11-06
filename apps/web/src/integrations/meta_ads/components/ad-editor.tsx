@@ -27,6 +27,7 @@ import {
   type PostPreview,
 } from "@/integrations/meta_ads/lib/create-ads-args"
 import {
+  adPreviewProps,
   checksFor,
   hasError,
   type AdRow,
@@ -345,24 +346,7 @@ function LinkAndButton({
 function PreviewPanel({ args, row }: Pick<Edits, "args" | "row">) {
   const { ad } = row
   const carousel = ad.format === "carousel"
-  const props = {
-    callToAction: row.callToAction,
-    cards: ad.cards.map((card) => ({
-      media: card.media,
-      headline: card.headline,
-      description: card.description,
-      callToAction: card.callToAction ?? row.callToAction,
-    })),
-    description: ad.description,
-    domain: urlDomain(row.link),
-    format: ad.format,
-    headline: ad.headline,
-    media: ad.media,
-    pageId: args.pageId,
-    pageName: args.pageName,
-    primaryText: ad.primaryText,
-    verticalMedia: ad.verticalMedia,
-  }
+  const props = adPreviewProps(args, row)
   return (
     <div className="grid justify-items-center gap-3">
       <div className="flex flex-wrap items-start justify-center gap-4">

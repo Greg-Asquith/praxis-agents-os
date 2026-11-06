@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/tools/update_ads.py
 
-"""Approval-only tool that renames existing Meta ads and sets their own start and end times."""
+"""Approval-only tool that renames existing Meta ads, sets their own times, or changes their creative."""
 
 import asyncio
 from collections import defaultdict
@@ -41,11 +41,21 @@ from services.integrations.operations import (
 from utils.metadata import metadata_str
 
 from ..client import MetaAdsClient
+from ..creative_features import OFFERED_CHANGE_KEYS, offered_catalogue
+from ..operations.ad_review import review_state
 from ..operations.edit_ad import ad_values, edit_body, edit_problems, requested_values
+from ..operations.edit_creative import (
+    CreativeEdit,
+    creative_body,
+    plan_creative_edit,
+    thumbnail_problem,
+)
+from ..operations.edit_impact import creative_notes
 from ..operations.list_objects import read_objects_by_id
 from ..operations.mutations import MetaAdsMutationLedger
+from ..operations.read_creative import read_live_creatives
 from ..operations.update_fields import FieldChange, same_value, update_fields, validate_fields
-from ..references import MetaAdsAdReference
+from ..references import MetaAdsAdReference, MetaAdsPageReference
 from ..throttle import ensure_account_available, ensure_headroom
 from ..tools.schemas.objects import MetaAdsObject
 from .schemas.ad_edits import (
@@ -54,7 +64,13 @@ from .schemas.ad_edits import (
     MetaAdsUpdateAdsOutput,
     MetaAdsUpdateAdsRequest,
 )
-from .utils.ad_preparation import hydrate_references, required_currency
+from .schemas.ads import APP_BUTTONS, WEBSITE_BUTTONS, media_key
+from .utils.ad_preparation import (
+    check_posts,
+    hydrate_references,
+    library_media,
+    required_currency,
+)
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import (
     meta_ads_available,
@@ -96,6 +112,7 @@ class _Review:
     values: dict[str, str | None]
     # The ad's own times must fall inside its ad set's schedule.
     ad_set: MetaAdsObject | None = None
+    creative: CreativeEdit | None = None
     body: dict[str, str] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
@@ -104,8 +121,27 @@ class _Review:
         return dict(requested_values(self.edit))
 
     @property
+    def compared(self) -> tuple[str, ...]:
+        """The values the approver saw that must still hold when the change is sent."""
+        return (*self.requested, *(("creative_id",) if self.edit.creative else ()))
+
+    @property
     def unchanged(self) -> bool:
-        return all(same_value(self.values[key], value) for key, value in self.requested.items())
+        return self.edit.creative is None and all(
+            same_value(self.values[key], value) for key, value in self.requested.items()
+        )
+
+    @property
+    def notes(self) -> list[str]:
+        if self.creative is None:
+            return []
+        live = self.creative.live
+        return creative_notes(
+            before=live.enabled,
+            after=self.creative.enabled,
+            new_post="post" in self.creative.changed,
+            shop=live.destination_type == "WEBSITE_AND_SHOP",
+        )
 
 
 async def meta_ads_update_ads(
@@ -128,31 +164,39 @@ async def meta_ads_update_ads(
     async def operation(entry: ResolvedContextEntry, selected: Sequence[Any]) -> Any:
         client: MetaAdsClient | None = None
         changes: list[FieldChange] = []
+        changed: dict[str, tuple[str, ...]] = {}
         pending: PendingIntegrationOperationDetail | None = None
         zone: ZoneInfo | None = None
         account_edits = [edits[_key(reference)] for reference in selected]
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, changes, pending, zone
+            nonlocal client, changes, changed, pending, zone
             ensure_account_available(entry.external_id, operation=_OPERATION)
             ensure_headroom(entry.external_id, operation=_OPERATION, limit=_USAGE_LIMIT)
             zone = account_zone(metadata_str(entry.permissions_metadata.get("timezone_name")))
             client = await meta_ads_client(ctx, entry)
-            changes = await _prepare(client, entry, account_edits, shown, zone)
-            pending = _pending_detail(entry, changes)
+            changes, changed = await _prepare(client, entry, account_edits, shown, zone)
+            pending = _pending_detail(entry, changes, edits, changed)
             return pending
 
         async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
             if client is None or pending is None or zone is None:
                 raise RuntimeError("Meta Ads ad edit preparation did not complete")
             read_zone = zone
+            # Each ad as read back, for its review and delivery status after a new creative.
+            read: dict[str, MetaAdsObject] = {}
+
+            def values(item: MetaAdsObject) -> dict[str, str | None]:
+                read[item.id] = item
+                return ad_values(item, read_zone)
+
             try:
                 ledger = await update_fields(
                     client,
                     account_id=entry.external_id,
                     currency=required_currency(entry),
                     changes=changes,
-                    values=lambda item: ad_values(item, read_zone),
+                    values=values,
                     action=_OPERATION,
                     group_key=_GROUP,
                     operation=_OPERATION,
@@ -161,7 +205,7 @@ async def meta_ads_update_ads(
                 attach_interrupted_evidence(exc, pending, identity_key="object_id")
                 raise
             detail = terminal_operation_detail(pending, ledger, identity_key="object_id")
-            result = _result(entry, read_zone, changes, ledger)
+            result = _result(entry, read_zone, changes, ledger, changed, read)
             status = audit_status(detail)
             return IntegrationAuditOutcome(
                 result,
@@ -199,12 +243,17 @@ def _require_proposed(proposed: Mapping[str, Any], request: MetaAdsUpdateAdsRequ
         original = MetaAdsUpdateAdsRequest.model_validate(proposed).changes
     except ValidationError:
         original = []
-    settings = {_key(edit.ad): set(edit.settings) for edit in original}
+    settings = {_key(edit.ad): _proposed_settings(edit) for edit in original}
     for edit in request.changes:
-        if not set(edit.settings) <= settings.get(_key(edit.ad), set()):
+        if not _proposed_settings(edit) <= settings.get(_key(edit.ad), set()):
             raise ModelRetry(
                 "A setting or ad was added after approval. Ask the agent to prepare it again."
             )
+
+
+def _proposed_settings(edit: MetaAdsAdEdit) -> set[str]:
+    """A creative counts as one setting, since the card can edit any part of it."""
+    return {*edit.settings, *(("creative",) if edit.creative else ())}
 
 
 async def _review_account(
@@ -242,8 +291,12 @@ async def _review_account(
             review.problems.append("This ad's ad set couldn't be read.")
         else:
             review.problems.extend(edit_problems(edit, ad, ad_set, zone=zone, now=now))
+        reviews.append(review)
+    await _plan_creatives(client, entry, reviews)
+    for review in reviews:
+        ad = review.ad
         if not review.problems and not review.unchanged:
-            review.body = edit_body(edit, zone)
+            review.body = {**edit_body(review.edit, zone), **review.body}
             if reason := await validate_fields(
                 client,
                 account_id=account_id,
@@ -252,8 +305,68 @@ async def _review_account(
                 operation=_OPERATION,
             ):
                 review.problems.append(reason)
-        reviews.append(review)
     return reviews
+
+
+async def _plan_creatives(
+    client: MetaAdsClient, entry: ResolvedContextEntry, reviews: Sequence[_Review]
+) -> None:
+    """Builds each new creative from the live one, reading new media and posts once."""
+    account_id = entry.external_id
+    wanted = [
+        review for review in reviews if review.edit.creative is not None and not review.problems
+    ]
+    if not wanted:
+        return
+    lives = await read_live_creatives(
+        client, account_id=account_id, ad_ids=[r.ad.id for r in wanted], operation=_OPERATION
+    )
+    for review in wanted:
+        live = lives[review.ad.id]
+        if isinstance(live, str):
+            review.problems.append(live)
+        elif review.edit.creative is not None and review.ad_set is not None:
+            review.creative = plan_creative_edit(
+                live,
+                review.edit.creative,
+                ad=review.ad,
+                ad_set=review.ad_set,
+                account_id=account_id,
+            )
+            review.problems.extend(review.creative.problems)
+    planned = [r for r in wanted if r.creative is not None and not r.problems]
+    media = await _read_new_media(client, entry, planned)
+    for review in planned:
+        creative, ad_set = review.creative, review.ad_set
+        if creative is None or ad_set is None or review.problems:
+            continue
+        available = {**creative.live.media, **media}
+        if problem := thumbnail_problem(creative, available):
+            review.problems.append(problem)
+            continue
+        pixel = ad_set.promoted_object.pixel_id if ad_set.promoted_object else None
+        review.body = creative_body(creative, available, adset_id=ad_set.id, pixel_id=pixel)
+
+
+async def _read_new_media(
+    client: MetaAdsClient, entry: ResolvedContextEntry, reviews: Sequence[_Review]
+) -> dict[Any, Any]:
+    """Re-reads chosen library media and posts through the account; a miss refuses those ads."""
+    items = {
+        media_key(item): item
+        for review in reviews
+        if review.creative is not None
+        for item in review.creative.new_media
+    }
+    posts = [r.creative.new_post for r in reviews if r.creative and r.creative.new_post]
+    try:
+        await check_posts(client, entry, posts)
+        return await library_media(client, entry, list(items.values()))
+    except ModelRetry as exc:
+        for review in reviews:
+            if review.creative and (review.creative.new_media or review.creative.new_post):
+                review.problems.append(str(exc))
+        return {}
 
 
 async def _prepare(
@@ -262,8 +375,12 @@ async def _prepare(
     edits: Sequence[MetaAdsAdEdit],
     shown: Mapping[str, Any],
     zone: ZoneInfo,
-) -> list[FieldChange]:
-    """Checks every edit again, refuses stale ones, and stops if Meta rejects any."""
+) -> tuple[list[FieldChange], dict[str, tuple[str, ...]]]:
+    """Checks every edit again, refuses stale ones, and stops if Meta rejects any.
+
+    Returns:
+        The changes to send, and the creative parts each ad with a new creative changes.
+    """
     reviews = await _review_account(client, entry, edits, zone)
     if problems := [
         f"{review.ad.name or review.ad.id}: {problem}"
@@ -273,17 +390,22 @@ async def _prepare(
         raise ModelRetry(
             f"These ad changes can't be made, so nothing was changed. {' '.join(problems)}"
         )
-    return [
+    changes = [
         FieldChange(
             object_type="ad",
             before=review.ad,
-            before_values={key: review.values[key] for key in review.requested},
+            before_values={key: review.values[key] for key in review.compared},
             requested=review.requested,
             body=review.body,
             refused=_stale(review, shown.get(review.ad.id)),
+            replaces={"creative_id": review.ad.creative_id} if review.edit.creative else {},
         )
         for review in reviews
     ]
+    changed = {
+        review.ad.id: review.creative.changed for review in reviews if review.creative is not None
+    }
+    return changes, changed
 
 
 def _stale(review: _Review, shown: Any) -> str | None:
@@ -291,23 +413,33 @@ def _stale(review: _Review, shown: Any) -> str | None:
     before = shown.get("before") if isinstance(shown, Mapping) else None
     if not isinstance(before, Mapping):
         return _NOT_SHOWN
-    for key in review.requested:
+    for key in review.compared:
         if key not in before or not same_value(review.values[key], before[key]):
             return _CHANGED
     return None
 
 
 def _pending_detail(
-    entry: ResolvedContextEntry, changes: Sequence[FieldChange]
+    entry: ResolvedContextEntry,
+    changes: Sequence[FieldChange],
+    edits: Mapping[_Key, MetaAdsAdEdit],
+    changed: Mapping[str, tuple[str, ...]],
 ) -> PendingIntegrationOperationDetail:
     items: list[IntegrationOperationIntent] = []
     for change in changes:
+        creative = edits[(entry.external_id, change.object_id)].creative
         fields = {
             "object_id": change.object_id,
             "object_name": change.before.name,
             "before": dict(change.before_values),
-            # Names are public ad text, so the record keeps them as approved.
+            # Names and ad text are public, so the record keeps them as approved.
             "requested": dict(change.requested),
+            "creative": {
+                "changed": list(changed.get(change.object_id, ())),
+                "requested": creative.model_dump(mode="json", exclude_none=True),
+            }
+            if creative is not None
+            else None,
         }
         items.append(
             IntegrationOperationIntent(
@@ -329,6 +461,8 @@ def _result(
     zone: ZoneInfo,
     changes: Sequence[FieldChange],
     ledger: MetaAdsMutationLedger,
+    changed: Mapping[str, tuple[str, ...]],
+    read: Mapping[str, MetaAdsObject],
 ) -> dict[str, Any]:
     parents = {dict(parent.identity)["object_id"]: parent for parent in ledger.parents}
     rows = []
@@ -336,6 +470,7 @@ def _result(
         parent = parents[change.object_id]
         effect = parent.effects[0] if parent.effects else None
         observed = dict(effect.fields) if effect is not None else {}
+        after = read.get(change.object_id)
         rows.append(
             {
                 "ad_id": change.object_id,
@@ -351,6 +486,15 @@ def _result(
                     }
                     for key, value in change.requested.items()
                 ],
+                "creative": {
+                    "changed": list(changed.get(change.object_id, ())),
+                    "before_creative_id": change.before.creative_id,
+                    "after_creative_id": _read_value(observed.get("after.creative_id")),
+                    "review": review_state(after.effective_status) if after else "unknown",
+                    "effective_status": after.effective_status if after else None,
+                }
+                if change.replaces
+                else None,
                 "outcome": {"applied": "updated", "skipped": "already_set"}.get(
                     parent.outcome, parent.outcome
                 ),
@@ -382,7 +526,10 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     checks: dict[str, dict[str, Any]] = {}
     for account_id, edits in by_account.items():
         checks.update(await _account_checks(deps, entries.get(account_id), edits))
-    return {**args, "changes": changes, "_checks": checks}
+    display: dict[str, Any] = {**args, "changes": changes, "_checks": checks}
+    if any(edit.creative for edit in request.changes):
+        display["_automatic_change_catalogue"] = offered_catalogue()
+    return display
 
 
 async def _account_checks(
@@ -399,6 +546,7 @@ async def _account_checks(
         reviews = await _review_account(client, entry, edits, zone)
     except (IntegrationError, LookupError, ModelRetry):
         return {edit.ad.ad_id: {"unavailable": True} for edit in edits}
+    pages = await _page_names(deps, entry, reviews)
     return {
         review.ad.id: {
             "time_zone": zone.key,
@@ -406,11 +554,58 @@ async def _account_checks(
             # The values these problems were found for, so the card knows when an edit makes
             # them stale.
             "requested": review.requested,
+            "requested_creative": review.edit.creative.model_dump(mode="json", exclude_none=True)
+            if review.edit.creative
+            else None,
             "problems": review.problems,
             "ad_set_schedule": _schedule(review.ad_set, zone),
+            "creative": _creative_check(review, pages),
             "unavailable": False,
         }
         for review in reviews
+    }
+
+
+async def _page_names(
+    deps: RuntimeDeps, entry: ResolvedContextEntry, reviews: Sequence[_Review]
+) -> dict[str, str]:
+    """Names each Page a creative runs as, for the previews; a Page that can't be read has none."""
+    page_ids = sorted({r.creative.live.page_id for r in reviews if r.creative is not None})
+    if not page_ids:
+        return {}
+    references = [
+        MetaAdsPageReference(account_id=entry.external_id, page_id=page_id, label="Page")
+        for page_id in page_ids
+    ]
+    try:
+        hydrated = await hydrate_references(deps, "meta_ads_page", "changes", references)
+    except (IntegrationError, LookupError, ModelRetry):
+        return {}
+    return {str(item.get("page_id")): str(item.get("label")) for item in hydrated}
+
+
+def _creative_check(review: _Review, pages: Mapping[str, str]) -> dict[str, Any] | None:
+    """The live creative for the card's before preview, with what the new one changes."""
+    creative = review.creative
+    if creative is None:
+        return None
+    live = creative.live
+    app = review.ad_set is not None and review.ad_set.objective == "OUTCOME_APP_PROMOTION"
+    return {
+        "content": live.content,
+        "ad_set": {
+            "adset_id": review.ad_set.id,
+            "label": review.ad_set.name or review.ad_set.id,
+            "objective": review.ad_set.objective,
+        }
+        if review.ad_set
+        else None,
+        "page_id": live.page_id,
+        "page_name": pages.get(live.page_id),
+        "changed": list(creative.changed),
+        "automatic_changes": sorted(live.enabled & set(OFFERED_CHANGE_KEYS)),
+        "buttons": list(APP_BUTTONS if app else WEBSITE_BUTTONS),
+        "notes": review.notes,
     }
 
 
@@ -426,16 +621,26 @@ DEFINITION = RuntimeToolDefinition(
     name="meta_ads_update_ads",
     function=meta_ads_update_ads,
     description=(
-        "Rename existing Meta ads or set their own start and end times, up to 50 ads per call, "
-        "in one approval. Each entry names one ad from meta_ads_list_objects and only the "
-        "settings that change: name; start_at and end_at as YYYY-MM-DDTHH:MM in the ad "
-        "account's time zone, or none to follow the ad set's schedule again. Ad start and end "
+        "Change existing Meta ads, up to 50 per call, in one approval. Each entry names one ad "
+        "from meta_ads_list_objects and only what changes: name; start_at and end_at as "
+        "YYYY-MM-DDTHH:MM in the ad account's time zone, or none to follow the ad set's "
+        "schedule again; and creative, with only the parts of what the ad says or shows that "
+        "change (primary_text, headline, description, link, call_to_action, url_tags, media, "
+        "vertical_media, thumbnail, cards, post for existing post ads, or automatic_changes as "
+        "the full list to have on). Praxis reads the ad's live creative, applies the changes, "
+        "and switches the ad to a new creative, keeping its ID and results. New media must "
+        "already be in the media library: upload Files with meta_ads_upload_media first. "
+        "cards replaces every carousel card. A new creative sends the ad back to review, "
+        "restarts learning, and leaves likes and comments on the old version; when the "
+        "operator would rather keep the old ad's likes and comments, create a new ad with "
+        "meta_ads_create_ads and pause the old one instead. Catalogue, collection, "
+        "partnership, poll, and lead ads can't change their creative here. Ad start and end "
         "times work only in sales and app promotion campaigns, must fall inside the ad set's "
         "schedule, and can't be in the past. Archived and deleted ads can only be renamed. "
-        "Change status with meta_ads_update_status and ad set dates with "
-        "meta_ads_update_ad_sets. The card shows each new value with its current one. Meta "
-        "checks every change before any is made, and each result reports the values Meta "
-        "shows after the change."
+        "Write ad text only from the operator's brief and approved brand material. Change "
+        "status with meta_ads_update_status and ad set dates with meta_ads_update_ad_sets. "
+        "Meta checks every change before any is made, and each result reports the values, "
+        "creative, and review status Meta shows after the change."
     ),
     provider="meta_ads",
     label="Update Meta Ads",
@@ -458,7 +663,7 @@ DEFINITION = RuntimeToolDefinition(
         running_label="Updating Meta Ads",
         completed_label="Updated Meta Ads",
         failed_label="Couldn't Update Meta Ads",
-        approval_title="Change Meta Ad Settings",
+        approval_title="Change Meta Ads",
         approval_prompt="The agent wants to change these Meta ads.",
         approve_label="Approve & Update",
         arg_fields=(

@@ -63,7 +63,7 @@ def ad_body(
         "adset_id": ad.adset_id,
         "status": "ACTIVE" if ad.status == "active" else "PAUSED",
         "creative": json.dumps(
-            creative_spec(_creative_input(ad, page_id, instagram_user_id, media)),
+            creative_spec(creative_input(ad, page_id, instagram_user_id, media)),
             separators=(",", ":"),
         ),
     }
@@ -73,7 +73,7 @@ def ad_body(
     return body
 
 
-def _creative_input(
+def creative_input(
     ad: PlannedAd, page_id: str, instagram_user_id: str | None, media: ResolvedMedia
 ) -> CreativeInput:
     design = ad.design
