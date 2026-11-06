@@ -150,8 +150,8 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
 - [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the API, web,
-      and media renderer images, runs the migration job, then creates the
-      services and the worker job.
+      media renderer, and data science images, runs the migration job, then
+      creates the services and the worker job.
       A failed migration stops the script before any service is created.
 - [ ] Until this first deployment completes, the Scheduler trigger fails every
       minute with `NOT_FOUND` because the deployment creates the
@@ -292,7 +292,8 @@ services accept public requests as soon as they deploy. If your organization
 enforces the `constraints/run.managed.requireInvokerIam` policy, the
 deployment fails; remove the `run.googleapis.com/invoker-iam-disabled`
 annotation from both service templates and grant `roles/run.invoker` to
-`allUsers` instead. The media renderer already requires invoker IAM.
+`allUsers` instead. The media renderer and data science service already
+require invoker IAM.
 
 Map the custom domains from the env file (`APP_BASE_URL`, `FRONTEND_URL`)
 with Cloud Run domain mappings. They exist only in the regions listed in the
@@ -394,10 +395,10 @@ the previous revision is compatible with persisted metadata.
 - [ ] If the change adds a Vertex partner model or changes the Vertex project,
       complete [model enablement](#enable-serverless-partner-models) for that
       model and project, then verify inference after deployment.
-- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the three
+- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the four
       images tagged with the git SHA (override via `GIT_SHA=...`), replaces
-      and waits for the migration job, then replaces the media renderer, API,
-      web, and worker.
+      and waits for the migration job, then replaces the media renderer, data
+      science service, API, web, and worker.
       A failed migration stops the script before any serving revision
       changes. Re-running the same SHA is safe.
 - [ ] If the migration failed: do not deploy the services. Inspect the
@@ -452,6 +453,35 @@ stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
   `platform/media-staging/` one day after creation and removes their
   noncurrent versions a day later. Bootstrap merges this rule into the bucket's
   existing lifecycle rules. The bucket's 30-day soft delete still applies.
+
+## Data science service
+
+`praxis-data-science` is a Cloud Run service that runs CPU forecasting with
+Timestral 123M. The `forecast_series` tool that calls it is pending, so the
+API and worker don't receive its URL yet. `make gcp-deploy` builds its image
+from `apps/data-science`, with `apps/isolation-driver` as a named build
+context, and deploys it before the API and worker at its stable
+`https://praxis-data-science-PROJECT_NUMBER.REGION.run.app` address. See
+[Data science service](../../docs/implementation/data-science-service.md).
+
+- **Identity:** it runs as `praxis-data-science@PROJECT.iam.gserviceaccount.com`
+  (`DATA_SCIENCE_SERVICE_ACCOUNT`). Bootstrap creates the account and grants
+  it no IAM roles. It has no secrets, no Cloud SQL connection, and no URL it
+  may fetch: series travel inline in the request, and the manifest sets no
+  `RENDERER_ALLOWED_URL_PREFIXES`.
+- **Access:** the same as the media renderer. Ingress is `all` with invoker
+  IAM required, and the deploy grants `roles/run.invoker` to the API and
+  worker accounts only, then reads the policy back.
+- **Sizing:** one forecast per instance, 2 vCPU and 4 GiB by default, startup
+  CPU boost, scaling from zero to `DATA_SCIENCE_MAX_INSTANCES` (default 3).
+  `DATA_SCIENCE_MEMORY` must cover `DATA_SCIENCE_CHILD_MEMORY_BYTES` (3 GiB)
+  plus 512 MiB; the deploy script refuses a smaller value. The request
+  timeout is `DATA_SCIENCE_TIMEOUT_SECONDS` (default 300) plus 60 seconds.
+- **Start-up:** the service imports PyTorch and runs one forecast in an
+  isolated child before it listens, so the startup probe allows two minutes.
+- **Licence:** the image ships the Timestral weights' Modified MIT licence.
+  Its rights don't apply to a company whose consolidated monthly revenue was
+  over $20M the previous month.
 
 ## Rotate secrets and keys
 

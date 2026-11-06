@@ -1,0 +1,226 @@
+{
+  "uk": {
+    "source": "ONS mid-year population estimates, mid-2025 (Nomis dataset NM_2002_1)",
+    "reference_date": "2025-06-30",
+    "calendars": [
+      {
+        "country": "GB",
+        "subdivision": "ENG",
+        "population": 58834812
+      },
+      {
+        "country": "GB",
+        "subdivision": "NIR",
+        "population": 1928446
+      },
+      {
+        "country": "GB",
+        "subdivision": "SCT",
+        "population": 5545500
+      },
+      {
+        "country": "GB",
+        "subdivision": "WLS",
+        "population": 3175181
+      }
+    ]
+  },
+  "eu": {
+    "source": "Eurostat tps00001, population on 1 January 2026",
+    "reference_date": "2026-01-01",
+    "calendars": [
+      {
+        "country": "AT",
+        "subdivision": null,
+        "population": 9215956
+      },
+      {
+        "country": "BE",
+        "subdivision": null,
+        "population": 11955308
+      },
+      {
+        "country": "BG",
+        "subdivision": null,
+        "population": 6423207
+      },
+      {
+        "country": "CY",
+        "subdivision": null,
+        "population": 996571
+      },
+      {
+        "country": "CZ",
+        "subdivision": null,
+        "population": 10915839
+      },
+      {
+        "country": "DE",
+        "subdivision": null,
+        "population": 83467117
+      },
+      {
+        "country": "DK",
+        "subdivision": null,
+        "population": 6025603
+      },
+      {
+        "country": "EE",
+        "subdivision": null,
+        "population": 1360745
+      },
+      {
+        "country": "GR",
+        "subdivision": null,
+        "population": 10366586
+      },
+      {
+        "country": "ES",
+        "subdivision": null,
+        "population": 49590099
+      },
+      {
+        "country": "FI",
+        "subdivision": null,
+        "population": 5652881
+      },
+      {
+        "country": "FR",
+        "subdivision": null,
+        "population": 69112309
+      },
+      {
+        "country": "HR",
+        "subdivision": null,
+        "population": 3876002
+      },
+      {
+        "country": "HU",
+        "subdivision": null,
+        "population": 9488428
+      },
+      {
+        "country": "IE",
+        "subdivision": null,
+        "population": 5510565
+      },
+      {
+        "country": "IT",
+        "subdivision": null,
+        "population": 58942828
+      },
+      {
+        "country": "LT",
+        "subdivision": null,
+        "population": 2887592
+      },
+      {
+        "country": "LU",
+        "subdivision": null,
+        "population": 690959
+      },
+      {
+        "country": "LV",
+        "subdivision": null,
+        "population": 1845096
+      },
+      {
+        "country": "MT",
+        "subdivision": null,
+        "population": 588254
+      },
+      {
+        "country": "NL",
+        "subdivision": null,
+        "population": 18130208
+      },
+      {
+        "country": "PL",
+        "subdivision": null,
+        "population": 36332765
+      },
+      {
+        "country": "PT",
+        "subdivision": null,
+        "population": 11424031
+      },
+      {
+        "country": "RO",
+        "subdivision": null,
+        "population": 19041322
+      },
+      {
+        "country": "SE",
+        "subdivision": null,
+        "population": 10605529
+      },
+      {
+        "country": "SI",
+        "subdivision": null,
+        "population": 2135107
+      },
+      {
+        "country": "SK",
+        "subdivision": null,
+        "population": 5409407
+      }
+    ]
+  },
+  "us": {
+    "source": "Federal holidays only, so one calendar with the whole weight",
+    "reference_date": null,
+    "calendars": [
+      {
+        "country": "US",
+        "subdivision": null,
+        "population": 1
+      }
+    ]
+  },
+  "au": {
+    "source": "ABS estimated resident population, 2026 Q1 (dataset ERP_Q)",
+    "reference_date": "2026-03-31",
+    "calendars": [
+      {
+        "country": "AU",
+        "subdivision": "ACT",
+        "population": 489668
+      },
+      {
+        "country": "AU",
+        "subdivision": "NSW",
+        "population": 8670105
+      },
+      {
+        "country": "AU",
+        "subdivision": "NT",
+        "population": 268899
+      },
+      {
+        "country": "AU",
+        "subdivision": "QLD",
+        "population": 5739461
+      },
+      {
+        "country": "AU",
+        "subdivision": "SA",
+        "population": 1916836
+      },
+      {
+        "country": "AU",
+        "subdivision": "TAS",
+        "population": 580691
+      },
+      {
+        "country": "AU",
+        "subdivision": "VIC",
+        "population": 7154221
+      },
+      {
+        "country": "AU",
+        "subdivision": "WA",
+        "population": 3096222
+      }
+    ]
+  }
+}

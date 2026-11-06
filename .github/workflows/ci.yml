@@ -108,10 +108,14 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-          cache-dependency-glob: apps/api/uv.lock
+          cache-dependency-glob: |
+            apps/api/uv.lock
+            apps/data-science/uv.lock
           prune-cache: true
       - name: Audit API production dependencies
         run: python3 .github/scripts/dependency_audit.py api
+      - name: Audit data science production dependencies
+        run: python3 .github/scripts/dependency_audit.py data-science
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: apps/web/package.json
@@ -151,3 +155,22 @@ jobs:
       - run: make media-renderer-check
       - name: Build renderer production image
         run: docker build --target production --build-context driver=apps/isolation-driver --tag praxis-media-renderer-check apps/media-renderer
+
+  data-science:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+          prune-cache: true
+      - run: uv sync --locked --project apps/api
+      - name: Lint data science service
+        working-directory: apps/data-science
+        run: uv run --locked --project ../api ruff check . && uv run --locked --project ../api ruff format --check .
+      # PyTorch and Timestral forecasting in an isolated child, in Docker.
+      - run: make datascience-check
+      - name: Build data science production image
+        run: docker build --target production --build-context driver=apps/isolation-driver --tag praxis-data-science-check apps/data-science

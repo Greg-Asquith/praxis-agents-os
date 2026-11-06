@@ -53,6 +53,7 @@ web-install: ## Install frontend dependencies with pnpm
 dev: doctor local-env ## Start Postgres, migrate, then run API, worker, and web dev servers
 	@$(MAKE) db-up
 	@$(MAKE) media-renderer-up
+	@$(MAKE) data-science-up
 	@$(MAKE) db-wait
 	@$(MAKE) migrate
 	@$(MAKE) -j3 api-dev worker-dev web-dev
@@ -91,6 +92,13 @@ db-up: local-env ## Start local Postgres in Docker
 media-renderer-up:
 	@if grep -Eq '^MEDIA_RENDERER_URL=[^[:space:]]+' $(API_DIR)/.env 2>/dev/null; then \
 		$(COMPOSE) --profile media up -d --build media-renderer; \
+	fi
+
+# make dev starts the data science service only when the API is configured to use it.
+.PHONY: data-science-up
+data-science-up:
+	@if grep -Eq '^DATA_SCIENCE_URL=[^[:space:]]+' $(API_DIR)/.env 2>/dev/null; then \
+		$(COMPOSE) --profile data-science up -d --build data-science; \
 	fi
 
 .PHONY: db-wait

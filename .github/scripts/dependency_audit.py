@@ -17,6 +17,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 ALLOWLIST_PATH = REPOSITORY_ROOT / ".github" / "dependency-audit-allowlist.json"
 PIP_AUDIT_VERSION = "2.10.1"
 ECOSYSTEMS = {"python", "npm"}
+# Git-pinned packages have no hash or PyPI advisories; their own dependencies are still audited.
+GIT_PINNED_PACKAGES = {"data-science": ("timestral",)}
 REQUIRED_EXCEPTION_FIELDS = {
     "ecosystem",
     "package",
@@ -100,8 +102,9 @@ def load_allowlist(path: Path = ALLOWLIST_PATH) -> dict[str, list[str]]:
     return advisories
 
 
-def run_api_audit(ignored_advisories: list[str]) -> None:
-    api_dir = REPOSITORY_ROOT / "apps" / "api"
+def run_python_audit(app: str, ignored_advisories: list[str]) -> None:
+    """Audits a uv project's locked production dependencies under apps/<app>."""
+    project_dir = REPOSITORY_ROOT / "apps" / app
     with tempfile.TemporaryDirectory(prefix="praxis-dependency-audit-") as temp_dir:
         requirements_path = Path(temp_dir) / "requirements.txt"
         subprocess.run(
@@ -115,8 +118,13 @@ def run_api_audit(ignored_advisories: list[str]) -> None:
                 "requirements-txt",
                 "--output-file",
                 str(requirements_path),
+                *(
+                    option
+                    for package in GIT_PINNED_PACKAGES.get(app, ())
+                    for option in ("--no-emit-package", package)
+                ),
             ],
-            cwd=api_dir,
+            cwd=project_dir,
             check=True,
         )
         command = [
@@ -132,7 +140,7 @@ def run_api_audit(ignored_advisories: list[str]) -> None:
         ]
         for advisory in ignored_advisories:
             command.extend(("--ignore-vuln", advisory))
-        subprocess.run(command, cwd=api_dir, check=True)
+        subprocess.run(command, cwd=project_dir, check=True)
 
 
 def run_web_audit(ignored_advisories: list[str]) -> None:
@@ -144,13 +152,15 @@ def run_web_audit(ignored_advisories: list[str]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("target", choices=("api", "web", "all"))
+    parser.add_argument("target", choices=("api", "data-science", "web", "all"))
     args = parser.parse_args()
 
     try:
         allowlist = load_allowlist()
         if args.target in {"api", "all"}:
-            run_api_audit(allowlist["python"])
+            run_python_audit("api", allowlist["python"])
+        if args.target in {"data-science", "all"}:
+            run_python_audit("data-science", allowlist["python"])
         if args.target in {"web", "all"}:
             run_web_audit(allowlist["npm"])
     except AllowlistError as exc:

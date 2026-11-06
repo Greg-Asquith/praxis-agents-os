@@ -32,7 +32,10 @@ It runs in the media renderer, a separate service:
   `additional_contexts` in Compose), so every service runs the same
   isolation code. `driver_testing/` holds the fake signed-URL storage and
   pytest fixtures that service test images reuse. `make
-  isolation-driver-check` runs its tests on Linux in Docker.
+  isolation-driver-check` runs its tests on Linux in Docker. `serve` takes
+  options for other services: a larger request cap, no transfers, and a
+  toolchain check after the isolation self-check. The
+  [data science service](data-science-service.md) uses all three.
 - `apps/media-renderer/` holds the ffmpeg operations (`media/`) and the
   image. The image builds a pinned ffmpeg from source with only the
   demuxers, decoders, encoders, and filters the operations use, plus

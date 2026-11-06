@@ -36,22 +36,22 @@ def _service_env_names(document: dict[str, Any]) -> set[str]:
     return {entry["name"] for entry in container.get("env") or []}
 
 
-def _check_renderer(document: dict[str, Any]) -> None:
+def _check_isolated_service(document: dict[str, Any], name: str) -> None:
     # Ingress is open because there is no VPC, so invoker IAM must stay on.
     annotations = document["metadata"]["annotations"]
     if "run.googleapis.com/invoker-iam-disabled" in annotations:
-        raise ValueError("media renderer must keep invoker IAM enabled")
+        raise ValueError(f"{name} must keep invoker IAM enabled")
     template = document["spec"]["template"]
     if template["spec"]["containerConcurrency"] != 1:
-        raise ValueError("media renderer must handle one request per instance")
+        raise ValueError(f"{name} must handle one request per instance")
     timeout = template["spec"]["timeoutSeconds"]
     if not isinstance(timeout, int) or isinstance(timeout, bool):
-        raise TypeError(f"media renderer timeoutSeconds must be an integer, got {timeout!r}")
+        raise TypeError(f"{name} timeoutSeconds must be an integer, got {timeout!r}")
     if not isinstance(template["metadata"]["annotations"]["autoscaling.knative.dev/maxScale"], str):
-        raise TypeError("media renderer maxScale must render as a string")
+        raise TypeError(f"{name} maxScale must render as a string")
     env_names = {entry["name"] for entry in template["spec"]["containers"][0]["env"]}
-    if any(not name.startswith("RENDERER_") for name in env_names):
-        raise ValueError("media renderer must receive only RENDERER_* settings")
+    if any(not env_name.startswith("RENDERER_") for env_name in env_names):
+        raise ValueError(f"{name} must receive only RENDERER_* settings")
 
 
 def main() -> None:
@@ -60,10 +60,11 @@ def main() -> None:
         "api": _load(rendered_dir / "services/praxis-api.yaml"),
         "web": _load(rendered_dir / "services/praxis-web.yaml"),
         "renderer": _load(rendered_dir / "services/praxis-media-renderer.yaml"),
+        "data-science": _load(rendered_dir / "services/praxis-data-science.yaml"),
         "migrate": _load(rendered_dir / "jobs/praxis-migrate.yaml"),
         "worker": _load(rendered_dir / "jobs/praxis-worker.yaml"),
     }
-    for name in ("api", "web", "renderer"):
+    for name in ("api", "web", "renderer", "data-science"):
         cpu = _service_cpu(manifests[name])
         if not isinstance(cpu, str):
             raise TypeError(f"{name} CPU limit must render as a string, got {cpu!r}")
@@ -79,7 +80,11 @@ def main() -> None:
     for name in ("api", "web"):
         if "PORT" in _service_env_names(manifests[name]):
             raise ValueError(f"{name} sets PORT, a reserved Cloud Run env name")
-    _check_renderer(manifests["renderer"])
+    _check_isolated_service(manifests["renderer"], "media renderer")
+    _check_isolated_service(manifests["data-science"], "data science service")
+    # Series travel inline, so the data science service must not fetch any URL.
+    if "RENDERER_ALLOWED_URL_PREFIXES" in _service_env_names(manifests["data-science"]):
+        raise ValueError("data science service must not allow transfer URLs")
     if "SUPER_ADMIN_EMAILS" not in _service_env_names(manifests["api"]):
         raise ValueError("API manifest does not configure the super-admin allowlist")
     if "EMAIL_AUTH_ENABLED" not in _service_env_names(manifests["api"]):

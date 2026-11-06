@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from driver.child import ChildResult, kill_stray_processes, run_child
 from driver.isolation import ChildLimits, IsolationError, make_driver_undumpable
@@ -53,13 +53,17 @@ class DriverConfig:
     shared_secret: str = ""
 
     @classmethod
-    def from_environment(cls) -> "DriverConfig":
+    def from_environment(cls, *, transfers: bool = True) -> "DriverConfig":
+        """Reads the configuration; without transfers, no URL prefix is allowed."""
         prefixes = tuple(
             prefix.strip()
             for prefix in os.environ.get("RENDERER_ALLOWED_URL_PREFIXES", "").split(",")
             if prefix.strip()
         )
-        if not prefixes or any(not prefix.endswith("/") for prefix in prefixes):
+        if not transfers:
+            if prefixes:
+                raise SystemExit("RENDERER_ALLOWED_URL_PREFIXES must be unset for this service")
+        elif not prefixes or any(not prefix.endswith("/") for prefix in prefixes):
             raise SystemExit("RENDERER_ALLOWED_URL_PREFIXES must list URL prefixes ending in /")
         shared_secret = os.environ.get("RENDERER_SHARED_SECRET", "")
         if shared_secret and len(shared_secret) < 32:
@@ -139,8 +143,9 @@ class Operation:
 
     ``validate`` returns the arguments or raises OperationError; it sees only numbers,
     booleans, and names it checks against fixed lists. ``input_count`` and ``output_count``
-    say how many signed downloads and uploads the caller must provide. ``run`` writes
-    outputs by index and returns the result.
+    say how many signed downloads and uploads the caller must provide; an operation whose
+    data travels in ``arguments`` takes zero inputs. ``run`` writes outputs by index and
+    returns the result.
     """
 
     validate: Callable[[dict[str, Any]], dict[str, Any]]
@@ -239,7 +244,7 @@ def _parse_request(
     inputs = payload["inputs"]
     if (
         not isinstance(inputs, list)
-        or not 1 <= len(inputs) <= MAX_INPUTS
+        or len(inputs) > MAX_INPUTS
         or len(inputs) != operation.input_count(arguments)
     ):
         raise OperationError("invalid_request", "The request has the wrong number of inputs.")
@@ -310,7 +315,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         header = self.headers.get("content-length") or ""
         length = int(header) if header.isascii() and header.isdigit() else 0
-        if not 0 < length <= MAX_REQUEST_BYTES:
+        if not 0 < length <= self.server.max_request_bytes:
             self._send(HTTPStatus.BAD_REQUEST, _error("invalid_request", "Bad request size."))
             return
         try:
@@ -355,29 +360,53 @@ class RendererServer(HTTPServer):
     """Single-threaded on purpose: one request per instance at a time."""
 
     def __init__(
-        self, address: tuple[str, int], *, config: DriverConfig, operations: dict[str, Operation]
+        self,
+        address: tuple[str, int],
+        *,
+        config: DriverConfig,
+        operations: dict[str, Operation],
+        max_request_bytes: int = MAX_REQUEST_BYTES,
     ) -> None:
         super().__init__(address, _Handler)
         self.config = config
         self.operations = operations
+        self.max_request_bytes = max_request_bytes
 
 
-def serve(operations: dict[str, Operation]) -> None:
-    """Runs the self-check, then serves until stopped. Exits if isolation is unavailable."""
-    config = DriverConfig.from_environment()
+def serve(
+    operations: dict[str, Operation],
+    *,
+    max_request_bytes: int = MAX_REQUEST_BYTES,
+    transfers: bool = True,
+    ready_check: Callable[[DriverConfig], None] | None = None,
+) -> None:
+    """Runs the self-checks, then serves until stopped. Exits if either fails.
+
+    ``ready_check`` runs after the isolation check, so a toolchain can prove it works
+    in an isolated child before the first request.
+    """
+    config = DriverConfig.from_environment(transfers=transfers)
     make_driver_undumpable()
     try:
         check_isolation()
     except IsolationError as exc:
-        print(  # noqa: T201
-            json.dumps({"message": "isolation unavailable", "reason": str(exc)}), flush=True
-        )
-        raise SystemExit(1) from exc
+        _stop("isolation unavailable", exc)
+    if ready_check is not None:
+        try:
+            ready_check(config)
+        except Exception as exc:
+            _stop("toolchain unavailable", exc)
     server = RendererServer(
         # Cloud Run routes to 0.0.0.0:$PORT.
         ("0.0.0.0", int(os.environ.get("PORT", "8080"))),  # noqa: S104
         config=config,
         operations=operations,
+        max_request_bytes=max_request_bytes,
     )
     print(json.dumps({"message": "renderer ready", "isolation": "verified"}), flush=True)  # noqa: T201
     server.serve_forever()
+
+
+def _stop(message: str, exc: Exception) -> NoReturn:
+    print(json.dumps({"message": message, "reason": str(exc)}), flush=True)  # noqa: T201
+    raise SystemExit(1) from exc

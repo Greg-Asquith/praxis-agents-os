@@ -1,0 +1,8 @@
+# apps/data-science/ruff.toml
+
+extend = "../api/ruff.toml"
+
+[lint.per-file-ignores]
+"tests/**" = ["S101"]
+# The child puts the service on sys.path before importing it.
+"datascience/child_forecast.py" = ["E402"]

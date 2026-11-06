@@ -50,6 +50,16 @@ renderer tests with `make media-renderer-check`, and the shared isolation
 driver's tests with `make isolation-driver-check`; each builds a `test` image
 target and runs it with `docker run --rm --init`.
 
+## Data science service
+
+The data science service runs forecasting models on CPU in an isolated
+container. Nothing calls it until the `forecast_series` tool lands. `make dev`
+starts it with the `data-science` Compose profile when `apps/api/.env` sets
+`DATA_SCIENCE_URL`, bound to `127.0.0.1:8091` (override with
+`PRAXIS_DATA_SCIENCE_PORT`). It runs as a non-root user with a 4 GiB memory
+limit and fetches no URLs. Run its tests with `make datascience-check`. See
+[Data science service](data-science-service.md).
+
 ## Backend tests
 
 The following contracts apply in this area:

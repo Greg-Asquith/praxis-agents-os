@@ -40,5 +40,10 @@ media-renderer-check: ## Build and run the media renderer tests in Docker
 	docker build --target test --build-context driver=$(ISOLATION_DRIVER_DIR) -f $(MEDIA_RENDERER_DIR)/Dockerfile -t praxis-media-renderer-test $(MEDIA_RENDERER_DIR)
 	docker run --rm --init praxis-media-renderer-test
 
+.PHONY: datascience-check
+datascience-check: ## Build and run the data science service tests in Docker
+	docker build --target test --build-context driver=$(ISOLATION_DRIVER_DIR) -f $(DATA_SCIENCE_DIR)/Dockerfile -t praxis-data-science-test $(DATA_SCIENCE_DIR)
+	docker run --rm --init praxis-data-science-test
+
 .PHONY: check
 check: api-lint api-format-check stream-protocol-check api-migrations-check api-test web-check ## Run the main backend and frontend checks

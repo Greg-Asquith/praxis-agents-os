@@ -24,6 +24,7 @@ GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}
 ANTHROPIC_VERTEX_AI=${ANTHROPIC_VERTEX_AI:-false}
 VERTEX_PARTNER_MODELS_ENABLED=${VERTEX_PARTNER_MODELS_ENABLED:-false}
 MEDIA_RENDERER_SERVICE_ACCOUNT=${MEDIA_RENDERER_SERVICE_ACCOUNT:-praxis-media-renderer@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
+DATA_SCIENCE_SERVICE_ACCOUNT=${DATA_SCIENCE_SERVICE_ACCOUNT:-praxis-data-science@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
 set +a
 VERTEX_PARTNER_MODEL_LOCATIONS_YAML=$(python3 "$SCRIPT_DIR/helpers.py" partner-locations)
 export VERTEX_PARTNER_MODEL_LOCATIONS_YAML
@@ -571,10 +572,10 @@ execute_section "Platform-private bucket"
 echo "Checking dedicated service accounts and IAM"
 service_accounts=(
   "$API_SERVICE_ACCOUNT" "$WEB_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"
-  "$MIGRATE_SERVICE_ACCOUNT" "$MEDIA_RENDERER_SERVICE_ACCOUNT"
+  "$MIGRATE_SERVICE_ACCOUNT" "$MEDIA_RENDERER_SERVICE_ACCOUNT" "$DATA_SCIENCE_SERVICE_ACCOUNT"
 )
-# The media renderer account holds no IAM roles and no secrets. Callers get
-# run.invoker on the renderer service during deploy, once the service exists.
+# The media renderer and data science accounts hold no IAM roles and no secrets.
+# Callers get run.invoker on each service during deploy, once the service exists.
 for service_account in "${service_accounts[@]}"; do
   if ! gcloud iam service-accounts describe "$service_account" --project="$GCP_PROJECT_ID" \
     --format='value(email)' --quiet >/dev/null 2>&1; then

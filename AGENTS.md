@@ -117,7 +117,10 @@ already covers the rule.
 `apps/web` contains the Vite and React frontend. `apps/media-renderer` contains
 the isolated media renderer (ffmpeg), built on the shared isolation driver
 library in `apps/isolation-driver`; see
-[video tools](docs/implementation/video-tools.md). The root Makefile wraps local
+[video tools](docs/implementation/video-tools.md). `apps/data-science` contains
+the isolated CPU forecasting service (PyTorch, Timestral) on the same driver;
+see [data science service](docs/implementation/data-science-service.md). The
+root Makefile wraps local
 development; Docker Compose provides Postgres and optional application services.
 
 Use the relevant checks and report anything you could not run:
@@ -127,15 +130,16 @@ Use the relevant checks and report anything you could not run:
   [local development](docs/implementation/local-development.md) for details.
 - `make check` runs backend lint and format checks, Alembic drift checks,
   database-backed pytest, and the complete frontend `pnpm check`.
-- `make isolation-driver-check` runs the shared driver's isolation tests, and
-  `make media-renderer-check` runs the renderer's ffmpeg tests, on Linux in
-  Docker. Run the first when `apps/isolation-driver` changes and both when a
-  change could affect the renderer.
+- `make isolation-driver-check` runs the shared driver's isolation tests,
+  `make media-renderer-check` runs the renderer's ffmpeg tests, and
+  `make datascience-check` runs the data science service's tests, on Linux in
+  Docker. Run the driver check when `apps/isolation-driver` changes, plus the
+  check for each service the change could affect.
 - Run the most relevant checks for changed files before finishing. Keep test
   scope proportional to the change and use each app's documented commands.
 - Production dependency audits match CI and require registry access:
-  `python3 .github/scripts/dependency_audit.py api` and
-  `python3 .github/scripts/dependency_audit.py web`. For a full sweep that
+  `python3 .github/scripts/dependency_audit.py api`, `data-science`, and
+  `web`. For a full sweep that
   also checks Cloudflare Radar Zero-Wire and new CVEs, use the
   [dependency security audit skill](.claude/skills/dependency-security-audit/SKILL.md).
 - You are working as one part of a team of agents collaborating to reach the same goals.

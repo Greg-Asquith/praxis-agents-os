@@ -47,6 +47,13 @@ MEDIA_RENDERER_MAX_INPUT_BYTES=$MAX_FILE_SIZE_SOURCE_VIDEO
 MEDIA_RENDERER_MAX_OUTPUT_BYTES=${MEDIA_RENDERER_MAX_OUTPUT_BYTES:-2147483648}
 MEDIA_RENDERER_CHILD_MEMORY_BYTES=${MEDIA_RENDERER_CHILD_MEMORY_BYTES:-8589934592}
 MEDIA_STAGING_URL_TTL_SECONDS=${MEDIA_STAGING_URL_TTL_SECONDS:-1800}
+DATA_SCIENCE_IMAGE_NAME=${DATA_SCIENCE_IMAGE_NAME:-praxis-data-science}
+DATA_SCIENCE_SERVICE_ACCOUNT=${DATA_SCIENCE_SERVICE_ACCOUNT:-praxis-data-science@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
+DATA_SCIENCE_MAX_INSTANCES=${DATA_SCIENCE_MAX_INSTANCES:-3}
+DATA_SCIENCE_CPU=${DATA_SCIENCE_CPU:-2}
+DATA_SCIENCE_MEMORY=${DATA_SCIENCE_MEMORY:-4Gi}
+DATA_SCIENCE_TIMEOUT_SECONDS=${DATA_SCIENCE_TIMEOUT_SECONDS:-300}
+DATA_SCIENCE_CHILD_MEMORY_BYTES=${DATA_SCIENCE_CHILD_MEMORY_BYTES:-3221225472}
 ANTHROPIC_VERTEX_LOCATION=${ANTHROPIC_VERTEX_LOCATION:-global}
 set +a
 VERTEX_PARTNER_MODEL_LOCATIONS_YAML=$(python3 "$SCRIPT_DIR/helpers.py" partner-locations)
@@ -95,7 +102,8 @@ required_vars=(
   DB_MAINTENANCE_POOL_MAX_OVERFLOW AI_USAGE_DB_POOL_SIZE AGENT_RUN_MAX_CONCURRENT_TURNS
   WORKER_DRAIN_MAX_SECONDS WORKER_TASK_TIMEOUT_SECONDS
   WORKER_MAX_CONCURRENT_RUNS
-  WORKER_MAX_RETRIES MEDIA_RENDERER_IMAGE_NAME MEDIA_RENDERER_SERVICE_ACCOUNT VITE_API_BASE_URL WEB_PUBLIC_ASSET_ORIGINS WEB_HTTPS_ONLY
+  WORKER_MAX_RETRIES MEDIA_RENDERER_IMAGE_NAME MEDIA_RENDERER_SERVICE_ACCOUNT
+  DATA_SCIENCE_IMAGE_NAME DATA_SCIENCE_SERVICE_ACCOUNT VITE_API_BASE_URL WEB_PUBLIC_ASSET_ORIGINS WEB_HTTPS_ONLY
 )
 for variable_name in "${required_vars[@]}"; do
   [[ -n "${!variable_name:-}" ]] || die "required variable $variable_name is unset or empty"
@@ -126,7 +134,8 @@ ARTIFACT_ORIGIN=${ARTIFACT_ORIGIN:-}
   || die "WORKER_MAX_CONCURRENT_RUNS must be a positive integer"
 for media_integer_variable in MEDIA_RENDERER_MAX_INSTANCES MEDIA_RENDERER_TIMEOUT_SECONDS \
   MEDIA_RENDERER_MAX_INPUT_BYTES MEDIA_RENDERER_MAX_OUTPUT_BYTES \
-  MEDIA_RENDERER_CHILD_MEMORY_BYTES MEDIA_STAGING_URL_TTL_SECONDS; do
+  MEDIA_RENDERER_CHILD_MEMORY_BYTES MEDIA_STAGING_URL_TTL_SECONDS DATA_SCIENCE_MAX_INSTANCES \
+  DATA_SCIENCE_TIMEOUT_SECONDS DATA_SCIENCE_CHILD_MEMORY_BYTES; do
   [[ "${!media_integer_variable}" =~ ^[1-9][0-9]*$ ]] \
     || die "$media_integer_variable must be a positive integer"
 done
@@ -140,6 +149,7 @@ require_integer_range MEDIA_RENDERER_TIMEOUT_SECONDS 30 3000
 require_integer_range MEDIA_RENDERER_MAX_OUTPUT_BYTES 1048576 5368709120
 require_integer_range MEDIA_STAGING_URL_TTL_SECONDS 60 7200
 require_integer_range MEDIA_RENDERER_MAX_INPUT_BYTES 1048576 21474836480
+require_integer_range DATA_SCIENCE_TIMEOUT_SECONDS 30 900
 (( MEDIA_STAGING_URL_TTL_SECONDS >= MEDIA_RENDERER_TIMEOUT_SECONDS + 60 )) \
   || die "MEDIA_STAGING_URL_TTL_SECONDS must be at least MEDIA_RENDERER_TIMEOUT_SECONDS + 60 so output uploads don't expire mid-render"
 for pool_size_variable in DB_POOL_SIZE DB_MAINTENANCE_POOL_SIZE AI_USAGE_DB_POOL_SIZE \
@@ -176,7 +186,7 @@ memory_to_mib() {
   fi
 }
 
-for memory_variable in API_MEMORY WEB_MEMORY JOB_MEMORY MEDIA_RENDERER_MEMORY; do
+for memory_variable in API_MEMORY WEB_MEMORY JOB_MEMORY MEDIA_RENDERER_MEMORY DATA_SCIENCE_MEMORY; do
   memory_mib=$(memory_to_mib "$memory_variable")
   (( memory_mib >= 512 )) \
     || die "$memory_variable must be at least 512Mi for the Cloud Run gen2 execution environment"
@@ -186,25 +196,33 @@ renderer_need_mib=$(( (MEDIA_RENDERER_MAX_INPUT_BYTES + MEDIA_RENDERER_MAX_OUTPU
   + MEDIA_RENDERER_CHILD_MEMORY_BYTES) / 1048576 ))
 (( renderer_need_mib <= $(memory_to_mib MEDIA_RENDERER_MEMORY) )) \
   || die "MEDIA_RENDERER_MEMORY must cover MAX_FILE_SIZE_SOURCE_VIDEO, MEDIA_RENDERER_MAX_OUTPUT_BYTES, and MEDIA_RENDERER_CHILD_MEMORY_BYTES (${renderer_need_mib}Mi)"
+# The data science child holds PyTorch and the model; the driver needs headroom beside it.
+data_science_need_mib=$(( DATA_SCIENCE_CHILD_MEMORY_BYTES / 1048576 + 512 ))
+(( data_science_need_mib <= $(memory_to_mib DATA_SCIENCE_MEMORY) )) \
+  || die "DATA_SCIENCE_MEMORY must cover DATA_SCIENCE_CHILD_MEMORY_BYTES plus 512Mi (${data_science_need_mib}Mi)"
 
 API_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${API_IMAGE_NAME}:${GIT_SHA}"
 WEB_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${WEB_IMAGE_NAME}:${GIT_SHA}"
 MEDIA_RENDERER_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${MEDIA_RENDERER_IMAGE_NAME}:${GIT_SHA}"
+DATA_SCIENCE_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${DATA_SCIENCE_IMAGE_NAME}:${GIT_SHA}"
 CLOUD_SQL_CONNECTION_NAME="${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUD_SQL_INSTANCE}"
 # Cloud Run gives every service the stable URL https://SERVICE-PROJECT_NUMBER.REGION.run.app,
 # so the API and worker can receive it before the renderer exists.
 MEDIA_RENDERER_URL="https://praxis-media-renderer-${GCP_PROJECT_NUMBER}.${GCP_REGION}.run.app"
 # The request timeout leaves headroom over the longest render for upload and teardown.
 MEDIA_RENDERER_REQUEST_TIMEOUT_SECONDS=$(( MEDIA_RENDERER_TIMEOUT_SECONDS + 60 ))
+DATA_SCIENCE_URL="https://praxis-data-science-${GCP_PROJECT_NUMBER}.${GCP_REGION}.run.app"
+DATA_SCIENCE_REQUEST_TIMEOUT_SECONDS=$(( DATA_SCIENCE_TIMEOUT_SECONDS + 60 ))
 # Quoted so an empty origin renders as an empty string, which render-template would otherwise refuse.
 ARTIFACT_ORIGIN_YAML=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$ARTIFACT_ORIGIN")
 export API_IMAGE WEB_IMAGE MEDIA_RENDERER_IMAGE CLOUD_SQL_CONNECTION_NAME MEDIA_RENDERER_URL
 export ARTIFACT_ORIGIN_YAML
 export MEDIA_RENDERER_REQUEST_TIMEOUT_SECONDS
+export DATA_SCIENCE_IMAGE DATA_SCIENCE_URL DATA_SCIENCE_REQUEST_TIMEOUT_SECONDS
 
 # Literal allowlist consumed by helpers.py render-template; expansion here would defeat the guard.
 # shellcheck disable=SC2016
-TEMPLATE_VARIABLES='${GCP_PROJECT_ID} ${GCP_PROJECT_NUMBER} ${GCP_REGION} ${API_IMAGE} ${WEB_IMAGE} ${CLOUD_SQL_CONNECTION_NAME} ${API_SERVICE_ACCOUNT} ${WEB_SERVICE_ACCOUNT} ${WORKER_SERVICE_ACCOUNT} ${MIGRATE_SERVICE_ACCOUNT} ${DATABASE_MAINTENANCE_URL_SECRET_ID} ${DEPLOYMENT_ENVIRONMENT} ${GCS_PUBLIC_ASSETS_BUCKET} ${GCS_PLATFORM_PRIVATE_BUCKET} ${GCS_WORKSPACE_BUCKET_LOCATION} ${WORKSPACE_BUCKET_PREFIX} ${PUBLIC_ASSETS_BASE_URL} ${APP_BASE_URL} ${FRONTEND_URL} ${ALLOWED_CORS_ORIGINS} ${COOKIE_DOMAIN} ${ARTIFACT_ORIGIN_YAML} ${ARTIFACT_ALLOW_APP_DOMAIN} ${ARTIFACT_SHARING_ENABLED} ${ALLOW_SIGNUP} ${SUPER_ADMIN_EMAILS} ${ALLOW_WORKSPACE_CREATION} ${EMAIL_AUTH_ENABLED} ${GOOGLE_OAUTH_ENABLED} ${GOOGLE_OAUTH_CLIENT_ID} ${GOOGLE_OAUTH_REDIRECT_URI} ${GITHUB_OAUTH_ENABLED} ${GITHUB_OAUTH_CLIENT_ID} ${GITHUB_OAUTH_REDIRECT_URI} ${MICROSOFT_OAUTH_ENABLED} ${MICROSOFT_OAUTH_CLIENT_ID} ${MICROSOFT_OAUTH_REDIRECT_URI} ${EMAIL_PROVIDER} ${EMAIL_ENABLED} ${EMAIL_REPLY_TO} ${INTEGRATIONS_ENABLED_PROVIDERS} ${INTEGRATIONS_OAUTH_REDIRECT_URI} ${MICROSOFT_GRAPH_ENV_YAML} ${ENCRYPTION_KEYS_SECRET_NAME} ${CREDENTIAL_MASTER_KEY_SECRET_NAME} ${DEFAULT_MODEL_PROVIDER} ${DEFAULT_MODEL} ${GOOGLE_VERTEX_AI} ${GOOGLE_VERTEX_LOCATION} ${CONVERSATION_NAMING_PROVIDER} ${CONVERSATION_NAMING_MODEL} ${AGENT_HISTORY_SUMMARY_MODEL_PROVIDER} ${AGENT_HISTORY_SUMMARY_MODEL} ${EMBEDDINGS_PROVIDER} ${EMBEDDINGS_MODEL} ${EMBEDDINGS_DIMENSIONS} ${METRICS_ENABLED} ${TRUSTED_PROXY_CIDRS} ${AUDIT_EVENTS_RETENTION_DAYS} ${SECURITY_EVENTS_RETENTION_DAYS} ${AGENT_RUN_APPROVAL_EXPIRY_DAYS} ${AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS} ${AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS} ${AGENT_RUN_PROGRESS_REVIEW_PROVIDER} ${AGENT_RUN_PROGRESS_REVIEW_MODEL} ${AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE} ${API_CPU} ${API_MEMORY} ${WEB_CPU} ${WEB_MEMORY} ${JOB_CPU} ${JOB_MEMORY} ${DB_POOL_SIZE} ${DB_POOL_MAX_OVERFLOW} ${DB_MAINTENANCE_POOL_SIZE} ${DB_MAINTENANCE_POOL_MAX_OVERFLOW} ${WORKER_DRAIN_MAX_SECONDS} ${WORKER_TASK_TIMEOUT_SECONDS} ${WORKER_MAX_CONCURRENT_RUNS} ${WORKER_MAX_RETRIES} ${RUNTIME_SECRET_ENV_YAML} ${RUNTIME_SECRET_ANNOTATION} ${MIGRATE_SECRET_ENV_YAML} ${MIGRATE_SECRET_ANNOTATION} ${ANTHROPIC_VERTEX_AI} ${ANTHROPIC_VERTEX_LOCATION} ${ANTHROPIC_VERTEX_MODELS_YAML} ${VERTEX_PARTNER_MODELS_ENABLED} ${VERTEX_PARTNER_MODELS_YAML} ${VERTEX_PARTNER_MODEL_LOCATIONS_YAML} ${KB_ANNOTATION_PROVIDER} ${KB_ANNOTATION_MODEL} ${AI_USAGE_DB_POOL_SIZE} ${AGENT_RUN_MAX_CONCURRENT_TURNS} ${MEDIA_RENDERER_IMAGE} ${MEDIA_RENDERER_SERVICE_ACCOUNT} ${MEDIA_RENDERER_MAX_INSTANCES} ${MEDIA_RENDERER_CPU} ${MEDIA_RENDERER_MEMORY} ${MEDIA_RENDERER_TIMEOUT_SECONDS} ${MEDIA_RENDERER_REQUEST_TIMEOUT_SECONDS} ${MEDIA_RENDERER_MAX_INPUT_BYTES} ${MEDIA_RENDERER_MAX_OUTPUT_BYTES} ${MEDIA_RENDERER_CHILD_MEMORY_BYTES} ${MEDIA_STAGING_URL_TTL_SECONDS} ${MEDIA_RENDERER_URL} ${MAX_FILE_SIZE_SOURCE_VIDEO}'
+TEMPLATE_VARIABLES='${GCP_PROJECT_ID} ${GCP_PROJECT_NUMBER} ${GCP_REGION} ${API_IMAGE} ${WEB_IMAGE} ${CLOUD_SQL_CONNECTION_NAME} ${API_SERVICE_ACCOUNT} ${WEB_SERVICE_ACCOUNT} ${WORKER_SERVICE_ACCOUNT} ${MIGRATE_SERVICE_ACCOUNT} ${DATABASE_MAINTENANCE_URL_SECRET_ID} ${DEPLOYMENT_ENVIRONMENT} ${GCS_PUBLIC_ASSETS_BUCKET} ${GCS_PLATFORM_PRIVATE_BUCKET} ${GCS_WORKSPACE_BUCKET_LOCATION} ${WORKSPACE_BUCKET_PREFIX} ${PUBLIC_ASSETS_BASE_URL} ${APP_BASE_URL} ${FRONTEND_URL} ${ALLOWED_CORS_ORIGINS} ${COOKIE_DOMAIN} ${ARTIFACT_ORIGIN_YAML} ${ARTIFACT_ALLOW_APP_DOMAIN} ${ARTIFACT_SHARING_ENABLED} ${ALLOW_SIGNUP} ${SUPER_ADMIN_EMAILS} ${ALLOW_WORKSPACE_CREATION} ${EMAIL_AUTH_ENABLED} ${GOOGLE_OAUTH_ENABLED} ${GOOGLE_OAUTH_CLIENT_ID} ${GOOGLE_OAUTH_REDIRECT_URI} ${GITHUB_OAUTH_ENABLED} ${GITHUB_OAUTH_CLIENT_ID} ${GITHUB_OAUTH_REDIRECT_URI} ${MICROSOFT_OAUTH_ENABLED} ${MICROSOFT_OAUTH_CLIENT_ID} ${MICROSOFT_OAUTH_REDIRECT_URI} ${EMAIL_PROVIDER} ${EMAIL_ENABLED} ${EMAIL_REPLY_TO} ${INTEGRATIONS_ENABLED_PROVIDERS} ${INTEGRATIONS_OAUTH_REDIRECT_URI} ${MICROSOFT_GRAPH_ENV_YAML} ${ENCRYPTION_KEYS_SECRET_NAME} ${CREDENTIAL_MASTER_KEY_SECRET_NAME} ${DEFAULT_MODEL_PROVIDER} ${DEFAULT_MODEL} ${GOOGLE_VERTEX_AI} ${GOOGLE_VERTEX_LOCATION} ${CONVERSATION_NAMING_PROVIDER} ${CONVERSATION_NAMING_MODEL} ${AGENT_HISTORY_SUMMARY_MODEL_PROVIDER} ${AGENT_HISTORY_SUMMARY_MODEL} ${EMBEDDINGS_PROVIDER} ${EMBEDDINGS_MODEL} ${EMBEDDINGS_DIMENSIONS} ${METRICS_ENABLED} ${TRUSTED_PROXY_CIDRS} ${AUDIT_EVENTS_RETENTION_DAYS} ${SECURITY_EVENTS_RETENTION_DAYS} ${AGENT_RUN_APPROVAL_EXPIRY_DAYS} ${AGENT_RUN_PROGRESS_REVIEW_MAX_GRANTS} ${AGENT_RUN_PROGRESS_REVIEW_TIMEOUT_SECONDS} ${AGENT_RUN_PROGRESS_REVIEW_PROVIDER} ${AGENT_RUN_PROGRESS_REVIEW_MODEL} ${AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE} ${API_CPU} ${API_MEMORY} ${WEB_CPU} ${WEB_MEMORY} ${JOB_CPU} ${JOB_MEMORY} ${DB_POOL_SIZE} ${DB_POOL_MAX_OVERFLOW} ${DB_MAINTENANCE_POOL_SIZE} ${DB_MAINTENANCE_POOL_MAX_OVERFLOW} ${WORKER_DRAIN_MAX_SECONDS} ${WORKER_TASK_TIMEOUT_SECONDS} ${WORKER_MAX_CONCURRENT_RUNS} ${WORKER_MAX_RETRIES} ${RUNTIME_SECRET_ENV_YAML} ${RUNTIME_SECRET_ANNOTATION} ${MIGRATE_SECRET_ENV_YAML} ${MIGRATE_SECRET_ANNOTATION} ${ANTHROPIC_VERTEX_AI} ${ANTHROPIC_VERTEX_LOCATION} ${ANTHROPIC_VERTEX_MODELS_YAML} ${VERTEX_PARTNER_MODELS_ENABLED} ${VERTEX_PARTNER_MODELS_YAML} ${VERTEX_PARTNER_MODEL_LOCATIONS_YAML} ${KB_ANNOTATION_PROVIDER} ${KB_ANNOTATION_MODEL} ${AI_USAGE_DB_POOL_SIZE} ${AGENT_RUN_MAX_CONCURRENT_TURNS} ${MEDIA_RENDERER_IMAGE} ${MEDIA_RENDERER_SERVICE_ACCOUNT} ${MEDIA_RENDERER_MAX_INSTANCES} ${MEDIA_RENDERER_CPU} ${MEDIA_RENDERER_MEMORY} ${MEDIA_RENDERER_TIMEOUT_SECONDS} ${MEDIA_RENDERER_REQUEST_TIMEOUT_SECONDS} ${MEDIA_RENDERER_MAX_INPUT_BYTES} ${MEDIA_RENDERER_MAX_OUTPUT_BYTES} ${MEDIA_RENDERER_CHILD_MEMORY_BYTES} ${MEDIA_STAGING_URL_TTL_SECONDS} ${MEDIA_RENDERER_URL} ${MAX_FILE_SIZE_SOURCE_VIDEO} ${DATA_SCIENCE_IMAGE} ${DATA_SCIENCE_SERVICE_ACCOUNT} ${DATA_SCIENCE_MAX_INSTANCES} ${DATA_SCIENCE_CPU} ${DATA_SCIENCE_MEMORY} ${DATA_SCIENCE_TIMEOUT_SECONDS} ${DATA_SCIENCE_REQUEST_TIMEOUT_SECONDS} ${DATA_SCIENCE_CHILD_MEMORY_BYTES}'
 
 secret_env_yaml() {
   local indent=$1
@@ -296,6 +314,7 @@ fi
 render_template "$SCRIPT_DIR/services/praxis-api.yaml.tmpl" "$OUTPUT_DIR/services/praxis-api.yaml" "            "
 render_template "$SCRIPT_DIR/services/praxis-web.yaml.tmpl" "$OUTPUT_DIR/services/praxis-web.yaml" "            "
 render_template "$SCRIPT_DIR/services/praxis-media-renderer.yaml.tmpl" "$OUTPUT_DIR/services/praxis-media-renderer.yaml" "            "
+render_template "$SCRIPT_DIR/services/praxis-data-science.yaml.tmpl" "$OUTPUT_DIR/services/praxis-data-science.yaml" "            "
 render_template "$SCRIPT_DIR/jobs/praxis-migrate.yaml.tmpl" "$OUTPUT_DIR/jobs/praxis-migrate.yaml" "                "
 render_template "$SCRIPT_DIR/jobs/praxis-worker.yaml.tmpl" "$OUTPUT_DIR/jobs/praxis-worker.yaml" "                "
 
@@ -320,9 +339,13 @@ docker build --platform linux/amd64 --target production \
 docker build --platform linux/amd64 --target production \
   --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$MEDIA_RENDERER_IMAGE" \
   "$REPO_ROOT/apps/media-renderer"
+docker build --platform linux/amd64 --target production \
+  --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$DATA_SCIENCE_IMAGE" \
+  "$REPO_ROOT/apps/data-science"
 docker push "$API_IMAGE"
 docker push "$WEB_IMAGE"
 docker push "$MEDIA_RENDERER_IMAGE"
+docker push "$DATA_SCIENCE_IMAGE"
 
 previous_api_revision=$(gcloud run services describe praxis-api --project="$GCP_PROJECT_ID" \
   --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet 2>/dev/null || true)
@@ -335,31 +358,39 @@ gcloud run services replace "$OUTPUT_DIR/services/praxis-web.yaml" --project="$G
   --region="$GCP_REGION" --dry-run --quiet >/dev/null
 gcloud run services replace "$OUTPUT_DIR/services/praxis-media-renderer.yaml" \
   --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --dry-run --quiet >/dev/null
+gcloud run services replace "$OUTPUT_DIR/services/praxis-data-science.yaml" \
+  --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --dry-run --quiet >/dev/null
 
 gcloud run jobs replace "$OUTPUT_DIR/jobs/praxis-migrate.yaml" --project="$GCP_PROJECT_ID" \
   --region="$GCP_REGION" --quiet
 gcloud run jobs execute praxis-migrate --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
   --wait --quiet
 
-# The renderer deploys first so the API and worker never point at a missing service.
-gcloud run services replace "$OUTPUT_DIR/services/praxis-media-renderer.yaml" \
-  --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet
-# Invoker IAM is the renderer's caller check: only the API and worker identities may call it.
-for caller_service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
-  echo "+ granting roles/run.invoker on praxis-media-renderer to ${caller_service_account}"
-  gcloud run services add-iam-policy-binding praxis-media-renderer \
-    --member="serviceAccount:${caller_service_account}" --role=roles/run.invoker \
-    --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet >/dev/null
-done
-# Read the policy back: any other invoker, including allUsers, stops the deploy.
-renderer_invokers=$(gcloud run services get-iam-policy praxis-media-renderer \
-  --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
-  --flatten='bindings[].members' --filter='bindings.role=roles/run.invoker' \
-  --format='value(bindings.members)' --quiet | LC_ALL=C sort)
-expected_renderer_invokers=$(printf '%s\n' "serviceAccount:${API_SERVICE_ACCOUNT}" \
-  "serviceAccount:${WORKER_SERVICE_ACCOUNT}" | LC_ALL=C sort)
-[[ "$renderer_invokers" == "$expected_renderer_invokers" ]] \
-  || die "praxis-media-renderer invokers must be exactly the API and worker accounts; found: $renderer_invokers"
+# Isolated services deploy first so the API and worker never point at a missing service.
+# Invoker IAM is each service's caller check: only the API and worker identities may call it.
+deploy_isolated_service() {
+  local service_name=$1
+  local invokers expected_invokers caller_service_account
+  gcloud run services replace "$OUTPUT_DIR/services/${service_name}.yaml" \
+    --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet
+  for caller_service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
+    echo "+ granting roles/run.invoker on ${service_name} to ${caller_service_account}"
+    gcloud run services add-iam-policy-binding "$service_name" \
+      --member="serviceAccount:${caller_service_account}" --role=roles/run.invoker \
+      --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet >/dev/null
+  done
+  # Read the policy back: any other invoker, including allUsers, stops the deploy.
+  invokers=$(gcloud run services get-iam-policy "$service_name" \
+    --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
+    --flatten='bindings[].members' --filter='bindings.role=roles/run.invoker' \
+    --format='value(bindings.members)' --quiet | LC_ALL=C sort)
+  expected_invokers=$(printf '%s\n' "serviceAccount:${API_SERVICE_ACCOUNT}" \
+    "serviceAccount:${WORKER_SERVICE_ACCOUNT}" | LC_ALL=C sort)
+  [[ "$invokers" == "$expected_invokers" ]] \
+    || die "${service_name} invokers must be exactly the API and worker accounts; found: $invokers"
+}
+deploy_isolated_service praxis-media-renderer
+deploy_isolated_service praxis-data-science
 
 gcloud run services replace "$OUTPUT_DIR/services/praxis-api.yaml" --project="$GCP_PROJECT_ID" \
   --region="$GCP_REGION" --quiet
@@ -375,6 +406,7 @@ web_revision=$(gcloud run services describe praxis-web --project="$GCP_PROJECT_I
 echo "Deployed praxis-api revision: $api_revision"
 echo "Deployed praxis-web revision: $web_revision"
 echo "Deployed praxis-media-renderer at: $MEDIA_RENDERER_URL"
+echo "Deployed praxis-data-science at: $DATA_SCIENCE_URL"
 if [[ -n "$previous_api_revision" ]]; then
   echo "API rollback: gcloud run services update-traffic praxis-api --to-revisions=${previous_api_revision}=100 --project=${GCP_PROJECT_ID} --region=${GCP_REGION} --quiet"
 fi

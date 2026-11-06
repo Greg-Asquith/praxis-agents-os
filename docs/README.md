@@ -32,6 +32,7 @@ Use these references before changing the corresponding behaviour:
 | Storage, uploads, and file references | [Storage and files](implementation/storage-and-files.md) | [Agent context](architecture/agent-context.md) |
 | Office document worker and tools | [Document tools](implementation/document-tools.md) | [Threat model](architecture/threat-model.md) |
 | Media renderer and video operations | [Video tools](implementation/video-tools.md) | [Threat model](architecture/threat-model.md) |
+| Data science service and forecasting | [Data science service](implementation/data-science-service.md) | [Threat model](architecture/threat-model.md) |
 | Knowledge Base imports and source refresh | [Knowledge sources](implementation/knowledge-sources.md) | Agent context |
 
 ## Operator guides and other design notes

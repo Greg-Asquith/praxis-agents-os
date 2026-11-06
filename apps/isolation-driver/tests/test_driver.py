@@ -11,13 +11,19 @@ from driver import transfer
 from driver.server import DriverConfig, Operation, OperationError, RendererServer, handle_request
 from driver_testing.plugin import FakeStorage
 
-# Reads its one input; stands in for a toolchain's operations.
+# Stand-ins for a toolchain's operations: one reads its input, one takes its data inline.
 OPERATIONS = {
     "size": Operation(
         validate=lambda arguments: arguments,
         output_count=lambda arguments: 0,
         run=lambda context, arguments: {"size_bytes": context.fetch_input().stat().st_size},
-    )
+    ),
+    "total": Operation(
+        validate=lambda arguments: arguments,
+        output_count=lambda arguments: 0,
+        run=lambda context, arguments: {"total": sum(arguments["values"])},
+        input_count=lambda arguments: 0,
+    ),
 }
 
 
@@ -92,6 +98,52 @@ def test_requests_need_the_shared_secret_when_one_is_set(config: DriverConfig) -
     # Past authentication, both reach validation; a bad Content-Length gets a structured error.
     for status, body in (accepted, malformed):
         assert (status, body["error"]["code"]) == (400, "invalid_request")
+
+
+def test_only_a_zero_input_operation_runs_without_inputs(config: DriverConfig) -> None:
+    def request(operation: str) -> dict:
+        return {
+            "operation": operation,
+            "timeout_seconds": 10,
+            "inputs": [],
+            "outputs": [],
+            "arguments": {"values": [1, 2]},
+        }
+
+    with pytest.raises(OperationError) as error:
+        handle_request(request("size"), config=config, operations=OPERATIONS)
+
+    assert error.value.code == "invalid_request"
+    assert handle_request(request("total"), config=config, operations=OPERATIONS)["result"] == {
+        "total": 3
+    }
+
+
+def test_a_request_over_the_services_size_cap_is_refused(config: DriverConfig) -> None:
+    server = RendererServer(
+        ("127.0.0.1", 0), config=config, operations=OPERATIONS, max_request_bytes=1024
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        body = json.dumps(
+            {
+                "operation": "total",
+                "timeout_seconds": 10,
+                "inputs": [],
+                "outputs": [],
+                "arguments": {"values": [1] * 1000},
+            }
+        ).encode()
+        within = _post(server, {"Content-Length": "1024"}, body[:1024])
+        over = _post(server, {"Content-Length": str(len(body))}, body)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    # The truncated body passes the size check and fails as JSON instead.
+    assert within[1]["error"]["message"] == "Bad JSON."
+    assert over[1]["error"]["message"] == "Bad request size."
 
 
 def _post(server: RendererServer, headers: dict[str, str], body: bytes = b"") -> tuple[int, dict]:

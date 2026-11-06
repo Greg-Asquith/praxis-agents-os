@@ -1,0 +1,30 @@
+# apps/data-science/pyproject.toml
+
+[project]
+name = "praxis-data-science"
+version = "0.1.0"
+description = "Isolated CPU data science service for Praxis Agents OS"
+requires-python = "==3.12.*"
+dependencies = [
+    "holidays==0.108",
+    "numpy==2.5.4",
+    "timestral",
+    "torch==2.15.0",
+]
+
+[dependency-groups]
+dev = ["pytest==8.4.2"]
+
+[tool.uv]
+package = false
+# The image runs on Linux only; skip resolving macOS and Windows wheels.
+environments = ["sys_platform == 'linux'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+timestral = { git = "https://github.com/mistralai/timestral.git", rev = "a534bdbd244d64f3d9d743f46c7bf6fc330ed4ff" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

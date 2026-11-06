@@ -25,9 +25,12 @@ validating the issue and identifying a remediation path.
 
 ## Dependency audit policy
 
-CI audits the locked production dependency sets for both applications. The API
-audit exports hashed requirements from `apps/api/uv.lock` without development
-dependencies and fails on every known advisory. The web audit reads
+CI audits the locked production dependency sets for the API, the data science
+service, and the web app. The Python audits export hashed requirements from
+`apps/api/uv.lock` and `apps/data-science/uv.lock` without development
+dependencies and fail on every known advisory. Timestral, which the data science
+service installs from a pinned Git commit, has no hash or PyPI advisories, so the
+audit leaves it out and checks its dependencies. The web audit reads
 `apps/web/pnpm-lock.yaml`, includes only production dependencies, and fails on
 high or critical advisories. Scanner or registry failures also fail the job.
 Development-only and low or moderate web findings are reviewed through routine
@@ -45,6 +48,7 @@ From the repository root, run the same audits locally:
 
 ```bash
 python3 .github/scripts/dependency_audit.py api
+python3 .github/scripts/dependency_audit.py data-science
 python3 .github/scripts/dependency_audit.py web
 ```
 

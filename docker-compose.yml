@@ -169,3 +169,24 @@ services:
     restart: unless-stopped
     networks:
       - praxis-network
+
+  # Optional data science service. make dev starts it when apps/api/.env sets DATA_SCIENCE_URL.
+  data-science:
+    profiles: ["data-science"]
+    build:
+      context: ./apps/data-science
+      additional_contexts:
+        driver: ./apps/isolation-driver
+      target: production
+    container_name: praxis-data-science
+    ports:
+      - "127.0.0.1:${PRAXIS_DATA_SCIENCE_PORT:-8091}:8080"
+    # Series travel inline, so no URL prefix is allowed and no host is reachable.
+    environment:
+      RENDERER_CHILD_MEMORY_BYTES: "3221225472"
+      RENDERER_MAX_TIMEOUT_SECONDS: "300"
+    user: "1001:1001"
+    mem_limit: 4g
+    restart: unless-stopped
+    networks:
+      - praxis-network

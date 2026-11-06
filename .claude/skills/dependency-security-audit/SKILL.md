@@ -19,17 +19,19 @@ in-flight bump.
 
 ## 1. Run the production audits
 
-These are the same audits CI runs. From the repository root, run both, even
-if the first one fails:
+These are the same audits CI runs. From the repository root, run all three,
+even if one fails:
 
 ```bash
 python3 .github/scripts/dependency_audit.py api
+python3 .github/scripts/dependency_audit.py data-science
 python3 .github/scripts/dependency_audit.py web
 ```
 
-- `api` exports hashed requirements from `apps/api/uv.lock` without
-  development dependencies and runs `pip-audit --strict`. It fails on every
-  advisory.
+- `api` and `data-science` export hashed requirements from their `uv.lock`
+  without development dependencies and run `pip-audit --strict`. They fail on
+  every advisory. `data-science` leaves out Timestral, which is pinned to a
+  Git commit; check its repository for security fixes by hand.
 - `web` runs `pnpm audit --prod --audit-level high` in `apps/web`. It fails
   on high or critical advisories.
 - Both read `.github/dependency-audit-allowlist.json`. An expired or invalid

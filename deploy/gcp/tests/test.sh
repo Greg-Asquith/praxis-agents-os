@@ -77,6 +77,7 @@ cd "$REPO_ROOT"
 test -s "$TEST_TMP/rendered/services/praxis-api.yaml"
 test -s "$TEST_TMP/rendered/services/praxis-web.yaml"
 test -s "$TEST_TMP/rendered/services/praxis-media-renderer.yaml"
+test -s "$TEST_TMP/rendered/services/praxis-data-science.yaml"
 test -s "$TEST_TMP/rendered/jobs/praxis-migrate.yaml"
 test -s "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -E '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$TEST_TMP/rendered"; then
