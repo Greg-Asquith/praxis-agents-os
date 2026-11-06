@@ -95,7 +95,10 @@ concurrently with tools. Each checkpoint has a three-second deadline and checks
 the invocation owner under the existing family locks. Completed tool calls
 commit before the next request; retrying or invalid tool
 calls roll back their staged database work and reload runtime state before
-model continuation. `RunTaskRegistry` bounds admitted turns per API
+model continuation. Each tool gets three retries (`TOOL_RETRIES` in
+`runtime/loop.py`), which sub-agents and code mode share. When a tool's retries
+run out, the run fails with `tool_retries_exhausted` and tells the user to try
+again or say what to change. `RunTaskRegistry` bounds admitted turns per API
 process and emits a transient `queued` stream status while a turn waits;
 this value is not a persisted run lifecycle status. Stream sinks use a
 bounded queue and detach slow consumers when that queue fills. Define stream

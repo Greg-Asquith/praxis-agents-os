@@ -15,6 +15,7 @@ from pydantic_ai.exceptions import (
     ModelRateLimitError,
     ModelServerError,
     ModelUnavailableError,
+    UnexpectedModelBehavior,
 )
 
 from core.exceptions.general import ConflictError
@@ -103,10 +104,22 @@ def public_run_error(exc: Exception) -> PublicRunError:
             ),
             completion_json=exc.completion_json,
         )
+    if isinstance(exc, UnexpectedModelBehavior) and _TOOL_RETRIES_EXCEEDED in exc.message:
+        return PublicRunError(
+            code="tool_retries_exhausted",
+            message=(
+                "The agent stopped after several attempts at a tool call didn't pass its checks. "
+                "Try again, or tell the agent what to change."
+            ),
+        )
     return PublicRunError(
         code=DEFAULT_RUN_ERROR_CODE,
         message=DEFAULT_RUN_ERROR_MESSAGE,
     )
+
+
+# Pydantic AI raises UnexpectedModelBehavior with this text when a tool's retries run out.
+_TOOL_RETRIES_EXCEEDED = "exceeded max retries count"
 
 
 # Most specific first: a context overflow is also a rejected request, and overload is unavailability.

@@ -1,6 +1,6 @@
 # apps/api/tests/scenarios/test_provider_errors.py
 
-"""Provider failures retain the same safe failure in storage and the stream."""
+"""Model and provider failures retain the same safe failure in storage and the stream."""
 
 import httpx2 as httpx
 import pytest
@@ -11,6 +11,7 @@ from pydantic_ai.exceptions import (
     ModelHTTPError,
     ModelQuotaExceededError,
     ModelRateLimitError,
+    UnexpectedModelBehavior,
 )
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,7 +22,13 @@ from models.agent_run import AgentRun
 from services.agents.models import factory
 from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.sinks import CollectingSink
-from tests.support.scenario import build_scenario_agent, run_scenario
+from tests.support.scenario import (
+    ToolCall,
+    ToolTurn,
+    build_scenario_agent,
+    run_scenario,
+    scripted_model,
+)
 
 
 @pytest.mark.parametrize(
@@ -66,6 +73,30 @@ async def test_provider_error_persists_and_emits_safe_error(
         assert "private" not in run.error_message
     assert sink.events[-1].event == "done"
     assert sink.events[-1].data["status"] == "failed"
+
+
+async def test_tool_gets_three_retries_then_fails_with_a_clear_error(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(committed_db_session_factory, tool_names=["scenario_fail"])
+    attempts = [ToolTurn((ToolCall("scenario_fail", {}),)) for _ in range(4)]
+    sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+    with pytest.raises(UnexpectedModelBehavior):
+        await run_scenario(
+            committed_db_session_factory,
+            context,
+            model=scripted_model(turns=[*attempts, "Unreachable."]),
+            sink=sink,
+        )
+
+    async with committed_db_session_factory() as db:
+        await set_session_tenant_context(db, workspace_id=context.workspace_id)
+        run = await db.get(AgentRun, context.run_id)
+        assert run is not None
+        assert (run.status, run.requests) == ("failed", 4)
+        assert run.error_code == "tool_retries_exhausted"
+        error = next(event for event in sink.events if event.event == "error")
+        assert error.data["code"] == run.error_code
 
 
 async def test_azure_filtered_stream_settles_safely_without_retry(

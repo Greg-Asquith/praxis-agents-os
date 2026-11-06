@@ -39,6 +39,10 @@ if TYPE_CHECKING:
     from services.integrations.context.domain import ResolvedActiveContext
 
 
+# Large write tools often need a few corrections before their arguments pass every check.
+TOOL_RETRIES = 3
+
+
 @dataclass(frozen=True)
 class RuntimeAgent:
     """The constructed Pydantic AI agent and the resolved limits behind it."""
@@ -95,6 +99,7 @@ def build_runtime_agent(
             instructions=instructions,
             deps_type=RuntimeDeps,
             output_type=[str, DeferredToolRequests],
+            retries={"tools": TOOL_RETRIES},
             tools=build_runtime_tools(
                 agent,
                 include_delegation=include_delegation,
