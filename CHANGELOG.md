@@ -12,7 +12,7 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
-- An isolated media renderer (`apps/renderer`) runs ffmpeg for video probe,
+- An isolated media renderer (`apps/media-renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command
   runs under a seccomp filter with no network sockets and bounded memory,
   CPU, output, and time; the renderer refuses to start if that isolation

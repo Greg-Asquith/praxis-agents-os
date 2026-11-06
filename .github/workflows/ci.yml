@@ -141,12 +141,13 @@ jobs:
           cache-dependency-glob: apps/api/uv.lock
           prune-cache: true
       - run: uv sync --locked --project apps/api
-      - name: Lint renderer
-        working-directory: apps/renderer
+      - name: Lint isolation driver and media renderer
         run: |
-          uv run --locked --project ../api ruff check .
-          uv run --locked --project ../api ruff format --check .
-      # Real ffmpeg and Linux isolation (seccomp, rlimits, process cleanup) in Docker.
+          for dir in apps/isolation-driver apps/media-renderer; do
+            (cd "$dir" && uv run --locked --project ../api ruff check . && uv run --locked --project ../api ruff format --check .)
+          done
+      # Linux isolation (seccomp, rlimits, process cleanup), then real ffmpeg, in Docker.
+      - run: make isolation-driver-check
       - run: make media-renderer-check
       - name: Build renderer production image
-        run: docker build --target production -f apps/renderer/media/Dockerfile --tag praxis-media-renderer-check apps/renderer
+        run: docker build --target production --build-context driver=apps/isolation-driver --tag praxis-media-renderer-check apps/media-renderer

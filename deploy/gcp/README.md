@@ -421,7 +421,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 `praxis-media-renderer` is a Cloud Run service that cuts and encodes video. The
 API and worker call it with a short-lived signed URL for each input and output
-object. `make gcp-deploy` builds its image from `apps/renderer`, deploys it
+object. `make gcp-deploy` builds its image from `apps/media-renderer`, with the shared
+`apps/isolation-driver` as a named build context, deploys it
 before the API and worker, and passes them `MEDIA_RENDERER_URL`, the service's
 stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
 

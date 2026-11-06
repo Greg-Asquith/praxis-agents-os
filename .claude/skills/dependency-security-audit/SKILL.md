@@ -94,8 +94,8 @@ below, which the repository depends on directly:
 | API runtime | Python 3.12, FastAPI, Starlette, Uvicorn, Pydantic, Pydantic AI, SQLAlchemy, Alembic, asyncpg, pgvector, cryptography, PyJWT, pwdlib/argon2, pyotp, httpx2, Pillow, defusedxml, openpyxl, python-docx, python-pptx, sqlglot, fastmcp, `mcp`, Logfire | `apps/api/pyproject.toml`, `apps/api/uv.lock` |
 | Web | React, TanStack Router and Query, marked, react-markdown, rehype-raw, rehype-sanitize, Mermaid, DOMPurify, KaTeX, Vite, Hono, undici | `apps/web/package.json`, `apps/web/pnpm-lock.yaml` |
 | Sandboxing and untrusted content | pydantic-monty (Code Mode), nh3, beautifulsoup4, markdownify, firecrawl-anydoc | `apps/api/uv.lock` |
-| Media renderer | ffmpeg and its codec libraries | `apps/renderer/media/Dockerfile` |
-| Images | `python:3.12.16-slim-trixie` (Debian 13), `node:24-slim`, `nginxinc/nginx-unprivileged:1.30-alpine` | `apps/*/Dockerfile`, `apps/renderer/media/Dockerfile` |
+| Media renderer | ffmpeg and its codec libraries | `apps/media-renderer/Dockerfile` |
+| Images | `python:3.12.16-slim-trixie` (Debian 13), `node:24-slim`, `nginxinc/nginx-unprivileged:1.30-alpine` | `apps/*/Dockerfile` |
 | Data and infrastructure | PostgreSQL, Cloud Run, Cloud SQL, GitHub Actions used in `.github/workflows/` | `docker-compose*.yml`, `deploy/`, `.github/workflows/` |
 
 Confirm the list against the manifests before searching, because

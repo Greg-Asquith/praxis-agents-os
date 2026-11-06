@@ -46,8 +46,9 @@ local API.
 
 `MEDIA_RENDERER_AUTH=none` is accepted only when `ENVIRONMENT=local`; other
 environments use `google_id_token` or `shared_secret`. Run the
-renderer tests with `make media-renderer-check`; they build the `test` image
-target and run it with `docker run --rm --init`.
+renderer tests with `make media-renderer-check`, and the shared isolation
+driver's tests with `make isolation-driver-check`; each builds a `test` image
+target and runs it with `docker run --rm --init`.
 
 ## Backend tests
 

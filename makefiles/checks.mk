@@ -30,9 +30,14 @@ evals: ## Run opt-in live-model agent behavior evaluations
 web-check: ## Run the frontend local gate
 	cd $(WEB_DIR) && pnpm check
 
+.PHONY: isolation-driver-check
+isolation-driver-check: ## Build and run the shared isolation driver tests in Docker
+	docker build --target test -f $(ISOLATION_DRIVER_DIR)/Dockerfile -t praxis-isolation-driver-test $(ISOLATION_DRIVER_DIR)
+	docker run --rm --init praxis-isolation-driver-test
+
 .PHONY: media-renderer-check
 media-renderer-check: ## Build and run the media renderer tests in Docker
-	docker build --target test -f $(RENDERER_DIR)/media/Dockerfile -t praxis-media-renderer-test $(RENDERER_DIR)
+	docker build --target test --build-context driver=$(ISOLATION_DRIVER_DIR) -f $(MEDIA_RENDERER_DIR)/Dockerfile -t praxis-media-renderer-test $(MEDIA_RENDERER_DIR)
 	docker run --rm --init praxis-media-renderer-test
 
 .PHONY: check

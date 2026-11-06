@@ -52,7 +52,7 @@ class _Font:
     has_bold: bool
 
 
-# The renderer image bundles these (apps/renderer/media/fonts.lock).
+# The renderer image bundles these (apps/media-renderer/media/fonts.lock).
 FONTS: dict[str, _Font] = {
     "Anton": _Font(0.42, has_bold=False),
     "Archivo Black": _Font(0.68, has_bold=False),

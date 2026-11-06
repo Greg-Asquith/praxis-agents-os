@@ -114,8 +114,9 @@ already covers the rule.
 ## Repository and verification
 
 `apps/api` contains the FastAPI backend and separate Python worker.
-`apps/web` contains the Vite and React frontend. `apps/renderer` contains the
-isolated media renderer (ffmpeg behind a shared driver); see
+`apps/web` contains the Vite and React frontend. `apps/media-renderer` contains
+the isolated media renderer (ffmpeg), built on the shared isolation driver
+library in `apps/isolation-driver`; see
 [video tools](docs/implementation/video-tools.md). The root Makefile wraps local
 development; Docker Compose provides Postgres and optional application services.
 
@@ -126,8 +127,10 @@ Use the relevant checks and report anything you could not run:
   [local development](docs/implementation/local-development.md) for details.
 - `make check` runs backend lint and format checks, Alembic drift checks,
   database-backed pytest, and the complete frontend `pnpm check`.
-- `make media-renderer-check` runs the renderer's isolation and ffmpeg tests
-  on Linux in Docker. Run it when `apps/renderer` changes.
+- `make isolation-driver-check` runs the shared driver's isolation tests, and
+  `make media-renderer-check` runs the renderer's ffmpeg tests, on Linux in
+  Docker. Run the first when `apps/isolation-driver` changes and both when a
+  change could affect the renderer.
 - Run the most relevant checks for changed files before finishing. Keep test
   scope proportional to the change and use each app's documented commands.
 - Production dependency audits match CI and require registry access:

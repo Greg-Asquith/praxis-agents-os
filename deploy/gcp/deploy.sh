@@ -318,8 +318,8 @@ docker build --platform linux/amd64 --target production \
   --build-arg WEB_PUBLIC_ASSET_ORIGINS="$WEB_PUBLIC_ASSET_ORIGINS" \
   --build-arg WEB_HTTPS_ONLY="$WEB_HTTPS_ONLY" --tag "$WEB_IMAGE" "$REPO_ROOT/apps/web"
 docker build --platform linux/amd64 --target production \
-  -f "$REPO_ROOT/apps/renderer/media/Dockerfile" --tag "$MEDIA_RENDERER_IMAGE" \
-  "$REPO_ROOT/apps/renderer"
+  --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$MEDIA_RENDERER_IMAGE" \
+  "$REPO_ROOT/apps/media-renderer"
 docker push "$API_IMAGE"
 docker push "$WEB_IMAGE"
 docker push "$MEDIA_RENDERER_IMAGE"

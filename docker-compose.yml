@@ -151,8 +151,9 @@ services:
   media-renderer:
     profiles: ["media"]
     build:
-      context: ./apps/renderer
-      dockerfile: media/Dockerfile
+      context: ./apps/media-renderer
+      additional_contexts:
+        driver: ./apps/isolation-driver
       target: production
     container_name: praxis-media-renderer
     ports:

@@ -24,14 +24,19 @@ tool is code-eligible.
 ffmpeg parses attacker-controlled media, so it never runs in the API or worker.
 It runs in the media renderer, a separate service:
 
-- `apps/renderer/driver/` is the shared driver: a stdlib-only HTTP server,
-  signed URL transfers, the child launcher, the seccomp filter, resource
-  limits, and the start-up self-check. Other renderers can reuse it with
-  their own image.
-- `apps/renderer/media/` holds the ffmpeg operations and the image. The image
-  builds a pinned ffmpeg from source with only the demuxers, decoders,
-  encoders, and filters the operations use, plus `libx264`, `libopus`, AAC,
-  and `libass`. Network protocols are compiled out, and the build fails if
+- `apps/isolation-driver/driver/` is the shared driver: a stdlib-only HTTP
+  server, signed URL transfers, the child launcher, the seccomp filter,
+  resource limits, and the start-up self-check. It's a library, not a
+  service. Each service's Dockerfile copies it from a named build context
+  (`--build-context driver=apps/isolation-driver`, or
+  `additional_contexts` in Compose), so every service runs the same
+  isolation code. `driver_testing/` holds the fake signed-URL storage and
+  pytest fixtures that service test images reuse. `make
+  isolation-driver-check` runs its tests on Linux in Docker.
+- `apps/media-renderer/` holds the ffmpeg operations (`media/`) and the
+  image. The image builds a pinned ffmpeg from source with only the
+  demuxers, decoders, encoders, and filters the operations use, plus
+  `libx264`, `libopus`, AAC, and `libass`. Network protocols are compiled out, and the build fails if
   any remain. The image also holds headless OpenCV with the YuNet face
   detection model for automatic framing, and the caption fonts in
   `media/fonts.lock` (16 Google Fonts families, each file pinned by hash),
