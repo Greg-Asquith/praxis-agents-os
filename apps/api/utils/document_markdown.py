@@ -71,6 +71,7 @@ async def convert_document_to_markdown(
     max_bytes: int,
     timeout_seconds: float | None = None,
     strict_utf8: bool = False,
+    clean: Callable[[str], str] | None = None,
 ) -> str:
     """Converts bytes to bounded Markdown, replacing invalid UTF-8 unless strict."""
     result = await convert_document_to_markdown_result(
@@ -80,6 +81,7 @@ async def convert_document_to_markdown(
         max_bytes=max_bytes,
         timeout_seconds=timeout_seconds,
         strict_utf8=strict_utf8,
+        clean=clean,
     )
     return result.markdown
 
@@ -92,26 +94,32 @@ async def convert_document_to_markdown_result(
     max_bytes: int,
     timeout_seconds: float | None = None,
     strict_utf8: bool = False,
+    clean: Callable[[str], str] | None = None,
 ) -> DocumentConversionResult:
-    """Converts bytes with actual truncation state and worker-side UTF-8 policy."""
+    """Converts bytes in the worker, applying `clean` (picklable) before bounding the output."""
+    operation = partial(
+        _convert_bounded_sync, data, content_type, filename, max_bytes, strict_utf8, clean
+    )
     if timeout_seconds is not None:
-        return await _run_document_process(
-            partial(_convert_bounded_sync, data, content_type, filename, max_bytes, strict_utf8),
-            timeout_seconds=timeout_seconds,
-        )
+        return await _run_document_process(operation, timeout_seconds=timeout_seconds)
     try:
-        return await asyncio.to_thread(
-            _convert_bounded_sync, data, content_type, filename, max_bytes, strict_utf8
-        )
+        return await asyncio.to_thread(operation)
     except Exception as exc:
         raise DocumentConversionError("Document could not be converted to markdown") from exc
 
 
 def _convert_bounded_sync(
-    data: bytes, content_type: str, filename: str, max_bytes: int, strict_utf8: bool
+    data: bytes,
+    content_type: str,
+    filename: str,
+    max_bytes: int,
+    strict_utf8: bool,
+    clean: Callable[[str], str] | None = None,
 ) -> DocumentConversionResult:
     """Converts and bounds output before returning it from the worker."""
     markdown, source = _convert_text_sync(data, content_type, filename, strict_utf8)
+    if clean is not None:
+        markdown = clean(markdown)
     markdown, truncated = _bound_markdown(markdown, max_bytes=max_bytes)
     return DocumentConversionResult(markdown=markdown, truncated=truncated, source=source)
 

@@ -288,6 +288,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- Adding a web page to the Knowledge Base can no longer stall the worker.
+  Image and empty-link cleanup takes linear time and runs with the
+  conversion, off the worker's event loop.
 - Deleting or deactivating a user turns off every schedule that runs as
   them. Deleting a user also ends their workspace memberships and sign-in
   records. Background runs, queued schedule runs, and tool calls are refused

@@ -72,8 +72,9 @@ _HTML_BOILERPLATE_TAGS = [
 _HTML_BOILERPLATE_ROLES = frozenset(
     {"alert", "banner", "complementary", "contentinfo", "dialog", "navigation", "search"}
 )
-_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
-_MARKDOWN_EMPTY_LINK_RE = re.compile(r"\[\s*\]\([^)]*\)")
+# Bracket and parenthesis exclusions keep failed matches from rescanning, so cleanup is linear.
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\[\]]*)\]\([^()]*\)")
+_MARKDOWN_EMPTY_LINK_RE = re.compile(r"\[\s*\]\([^()]*\)")
 _EXTRA_BLANK_LINES_RE = re.compile(r"\n{3,}")
 
 
@@ -129,15 +130,13 @@ async def convert_html_to_markdown(
     media_type = content_type.partition(";")[0].strip().lower()
     if media_type in _HTML_MEDIA_TYPES:
         data = await asyncio.to_thread(_prune_html_boilerplate, data)
-    markdown = await convert_document_to_markdown(
+    return await convert_document_to_markdown(
         data,
         content_type=media_type,
         filename=filename,
         max_bytes=settings.KB_MAX_DOCUMENT_BYTES,
+        clean=_strip_markdown_noise if media_type in _HTML_MEDIA_TYPES else None,
     )
-    if media_type in _HTML_MEDIA_TYPES:
-        markdown = _strip_markdown_noise(markdown)
-    return markdown
 
 
 def _prune_html_boilerplate(data: bytes) -> bytes:

@@ -2,6 +2,7 @@
 
 """SSRF and pinned-connect coverage for knowledge-base URL ingestion."""
 
+import time
 from collections.abc import Awaitable, Callable
 
 import httpx2
@@ -10,7 +11,7 @@ import pytest
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.kb.domain import KBSourceUnavailableError
-from services.kb.utils import convert_html_to_markdown, fetch_url
+from services.kb.utils import _strip_markdown_noise, convert_html_to_markdown, fetch_url
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
@@ -156,6 +157,7 @@ async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> 
       <h1>Plans</h1>
       <p><img src="/hero.png" alt="Plan comparison chart"> Tiers are listed below.</p>
       <p>See <a href="/plans/pro">the Pro plan</a> for details.</p>
+      <p><a href="/plans/team"><img src="/team-mark.svg" alt=""></a></p>
       <p aria-hidden="true">Decorative marquee</p>
     </main>
     <footer><a href="/privacy">Privacy</a></footer>
@@ -175,10 +177,18 @@ async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> 
     assert "![" not in markdown
     assert "Greg Asquith Logo" not in markdown
     assert "G.svg" not in markdown
+    assert "/plans/team" not in markdown
     assert "Sign up" not in markdown
     assert "Privacy" not in markdown
     assert "Decorative marquee" not in markdown
     assert "\n\n\n" not in markdown
+
+
+def test_markdown_noise_cleanup_is_linear_on_unclosed_markup() -> None:
+    for payload in ("![" * 32_768, "[](" * 21_846):
+        started = time.perf_counter()
+        _strip_markdown_noise(payload)
+        assert time.perf_counter() - started < 0.5
 
 
 async def test_fetch_url_brackets_ipv6_literal_host_header() -> None:
