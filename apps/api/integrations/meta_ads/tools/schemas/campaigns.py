@@ -15,6 +15,9 @@ from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
 from .text import tidy_text
 
 MAX_CAMPAIGN_NAME = 400
+type MetaAdsCampaignName = Annotated[
+    str, Field(max_length=MAX_CAMPAIGN_NAME), AfterValidator(tidy_text)
+]
 
 type MetaAdsObjective = Literal[
     "sales", "leads", "traffic", "engagement", "awareness", "app_promotion"
@@ -70,7 +73,7 @@ class MetaAdsSpecialAdCategory(MetaAdsStrictModel):
 
 
 class MetaAdsCreateCampaignRequest(MetaAdsStrictModel):
-    name: Annotated[str, Field(max_length=MAX_CAMPAIGN_NAME), AfterValidator(tidy_text)]
+    name: MetaAdsCampaignName
     status: MetaAdsNewObjectStatus = "paused"
     objective: MetaAdsObjective
     budget: MetaAdsCampaignBudget

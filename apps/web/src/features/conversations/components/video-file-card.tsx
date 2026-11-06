@@ -140,7 +140,7 @@ function VideoPlayer({
       <video
         aria-label={name}
         autoPlay={autoPlay}
-        className="max-h-112 w-full bg-black object-contain"
+        className="bg-media max-h-112 w-full object-contain"
         controls
         playsInline
         preload="metadata"

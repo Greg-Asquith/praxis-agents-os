@@ -8,11 +8,11 @@ import {
 } from "@/components/tool-ui/approval-card"
 import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { Button } from "@/components/ui/button"
 import { FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { editApprovalFields } from "@/integrations/approval-edits"
 import type { ToolActivity } from "@/integrations/contract"
+import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
 import { MetaAdsLogo } from "@/integrations/meta_ads/components/logo"
 import { InsightsFilters } from "@/integrations/meta_ads/components/insights-filters"
 import { ReportChoice, ReportMultiChoice } from "@/integrations/meta_ads/components/report-choice"
@@ -80,29 +80,21 @@ export function MetaAdsInsightsApproval({
         <FieldSet disabled={disabled}>
           <div className="grid gap-3">
             <div className="grid gap-2">
-              <div aria-label="Date range" className="flex flex-wrap gap-1.5" role="radiogroup">
-                {[...presets, { label: "Custom", since: "", until: "" }].map((preset) => {
-                  const checked = preset.label === activePreset
-                  return (
-                    <Button
-                      key={preset.label}
-                      aria-checked={checked}
-                      className="h-8 rounded-full"
-                      disabled={disabled}
-                      onClick={() => {
-                        if (preset.since) edit({ since: preset.since, until: preset.until })
-                        else document.getElementById(`${activity.id}-since`)?.focus()
-                      }}
-                      role="radio"
-                      size="sm"
-                      type="button"
-                      variant={checked ? "secondary" : "outline"}
-                    >
-                      {preset.label}
-                    </Button>
-                  )
-                })}
-              </div>
+              <SegmentedChoice
+                ariaLabel="Date range"
+                className="flex-wrap"
+                disabled={disabled}
+                onChange={(label) => {
+                  const preset = presets.find((item) => item.label === label)
+                  if (preset) edit({ since: preset.since, until: preset.until })
+                  else document.getElementById(`${activity.id}-since`)?.focus()
+                }}
+                options={[...presets.map((preset) => preset.label), "Custom"].map((label) => ({
+                  value: label,
+                  label,
+                }))}
+                value={activePreset}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   aria-label="Start date"
@@ -142,29 +134,16 @@ export function MetaAdsInsightsApproval({
                 }
                 title="Report By"
               >
-                <div
-                  aria-label="Report By"
-                  className="bg-muted flex w-fit flex-wrap rounded-lg p-0.5"
-                  role="radiogroup"
-                >
-                  {levelOptions.map((item) => (
-                    <Button
-                      key={item.value}
-                      aria-checked={item.value === args.level}
-                      className="h-8"
-                      disabled={disabled}
-                      onClick={() => {
-                        edit({ level: item.value })
-                      }}
-                      role="radio"
-                      size="sm"
-                      type="button"
-                      variant={item.value === args.level ? "outline" : "ghost"}
-                    >
-                      {item.label}
-                    </Button>
-                  ))}
-                </div>
+                <SegmentedChoice
+                  ariaLabel="Report By"
+                  className="flex-wrap"
+                  disabled={disabled}
+                  onChange={(level) => {
+                    edit({ level })
+                  }}
+                  options={levelOptions}
+                  value={args.level}
+                />
               </SettingRow>
               <SettingRow rowKey="fields" summary={listSummary(args.fields)} title="Measures">
                 <ReportMultiChoice

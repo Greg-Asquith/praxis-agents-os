@@ -7,6 +7,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
 import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
 import {
   MetaAdsLink,
@@ -69,35 +70,16 @@ export function StatusApprovalSummary({
   }
   return (
     <div className="grid min-w-0 gap-3">
-      <div
-        aria-label="Change to"
-        className="bg-muted/60 flex w-fit rounded-lg border p-0.5"
-        role="radiogroup"
-      >
-        {CHANGES.map((change) => {
-          const checked = change.value === args.status
-          return (
-            <button
-              key={change.value}
-              aria-checked={checked}
-              className={cn(
-                "focus-visible:ring-ring/50 h-8 min-w-24 cursor-pointer rounded-md px-3 text-sm font-medium outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-60",
-                checked && change.value === "ACTIVE" && "bg-primary text-primary-foreground",
-                checked && change.value === "PAUSED" && "bg-foreground text-background",
-                !checked && "text-foreground/70 hover:bg-muted"
-              )}
-              disabled={disabled}
-              onClick={() => {
-                if (!checked) onFieldEdit("status", change.value)
-              }}
-              role="radio"
-              type="button"
-            >
-              {change.label}
-            </button>
-          )
-        })}
-      </div>
+      <SegmentedChoice
+        ariaLabel="Change to"
+        className="bg-muted/60"
+        disabled={disabled}
+        onChange={(status) => {
+          onFieldEdit("status", status)
+        }}
+        options={CHANGES}
+        value={args.status}
+      />
       {args.needsReview ? (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-muted-foreground text-sm">

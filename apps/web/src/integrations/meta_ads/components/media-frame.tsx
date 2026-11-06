@@ -66,7 +66,7 @@ function LibraryPicture({ media }: { media: PreviewMedia }) {
       <img alt={media.label} className="size-full object-cover" src={content} />
       {media.mediaType === "video" ? (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex size-9 items-center justify-center rounded-full bg-black/55 text-white">
+          <span className="bg-media-overlay/55 text-media-foreground flex size-9 items-center justify-center rounded-full">
             <VideoIcon aria-hidden="true" className="size-4" />
           </span>
         </span>

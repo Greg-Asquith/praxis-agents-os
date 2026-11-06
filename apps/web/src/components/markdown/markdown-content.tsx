@@ -178,7 +178,7 @@ function markdownComponents(): Components {
       </li>
     ),
     mark: ({ children, ...props }) => (
-      <mark className="rounded bg-amber-200 px-0.5 text-amber-950" {...props}>
+      <mark className="bg-accent text-accent-foreground rounded px-0.5" {...props}>
         {children}
       </mark>
     ),

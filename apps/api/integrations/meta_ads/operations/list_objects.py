@@ -46,7 +46,7 @@ from .values import (
 
 _OPERATION = "list_objects"
 _FIELDS = {
-    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled,smart_promotion_type,advantage_state_info",
+    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled,spend_cap,smart_promotion_type,advantage_state_info",
     "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,bid_constraints,daily_budget,lifetime_budget,budget_remaining,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,dsa_payor,dsa_beneficiary,learning_stage_info,attribution_spec,frequency_control_specs,pacing_type,adset_schedule,targeting{geo_locations,publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
     "ad": "id,name,status,effective_status,campaign_id,adset_id,bid_amount,ad_review_feedback,issues_info,creative{id},ad_schedule_start_time,ad_schedule_end_time",
 }
@@ -193,6 +193,9 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         review_reasons=review_reasons(raw) if object_type == "ad" else None,
         issues=issue_summaries(raw) if object_type == "ad" else None,
         creative_id=_mapping(raw.get("creative")).get("id") if object_type == "ad" else None,
+        spend_limit=_spend_control(raw.get("spend_cap"), currency)
+        if object_type == "campaign"
+        else None,
         smart_promotion_type=bounded_string(raw.get("smart_promotion_type"), operation=_OPERATION)
         if object_type == "campaign"
         else None,

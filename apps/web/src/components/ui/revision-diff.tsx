@@ -42,9 +42,9 @@ function DiffLine({ item }: { item: LineDiffItem }) {
   const marker = item.kind === "added" ? "+" : item.kind === "removed" ? "-" : " "
   const className =
     item.kind === "added"
-      ? "bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+      ? "bg-success/10 text-success"
       : item.kind === "removed"
-        ? "bg-red-500/10 text-red-800 dark:text-red-300"
+        ? "bg-destructive/10 text-destructive"
         : "text-muted-foreground"
 
   return (

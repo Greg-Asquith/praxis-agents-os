@@ -202,7 +202,7 @@ function StoriesPreview({
   return (
     <figure
       aria-label="Stories and Reels preview"
-      className="relative mx-auto grid aspect-9/16 w-full max-w-60 min-w-0 overflow-hidden rounded-xl bg-neutral-900"
+      className="bg-media relative mx-auto grid aspect-9/16 w-full max-w-60 min-w-0 overflow-hidden rounded-xl"
     >
       {/* Without a vertical version, Meta centres the main media on a plain background. */}
       <div className="absolute inset-0 flex items-center justify-center">
@@ -212,11 +212,11 @@ function StoriesPreview({
           shape={verticalMedia && format !== "carousel" ? "fill" : "feed"}
         />
       </div>
-      <div className="absolute inset-x-0 top-0 bg-linear-to-b from-black/50 to-transparent p-3">
+      <div className="from-media-overlay/50 absolute inset-x-0 top-0 bg-linear-to-b to-transparent p-3">
         <PreviewHeader inverted pageId={pageId} pageName={pageName} />
       </div>
-      <div className="absolute inset-x-0 bottom-0 grid gap-2 bg-linear-to-t from-black/60 to-transparent p-3 pt-8">
-        <p className="line-clamp-2 text-xs wrap-anywhere text-white">{primaryText}</p>
+      <div className="from-media-overlay/60 absolute inset-x-0 bottom-0 grid gap-2 bg-linear-to-t to-transparent p-3 pt-8">
+        <p className="text-media-foreground line-clamp-2 text-xs wrap-anywhere">{primaryText}</p>
         <PreviewButton callToAction={callToAction} wide />
       </div>
     </figure>
@@ -246,13 +246,13 @@ function PreviewHeader({
         </span>
       )}
       <span className="grid min-w-0">
-        <span className={cn("truncate text-sm font-semibold", inverted && "text-white")}>
+        <span className={cn("truncate text-sm font-semibold", inverted && "text-media-foreground")}>
           {pageName}
         </span>
         <span
           className={cn(
             "text-muted-foreground flex items-center gap-1 text-xs",
-            inverted && "text-white/80"
+            inverted && "text-media-foreground/80"
           )}
         >
           Sponsored <GlobeIcon aria-hidden="true" className="size-3" />
@@ -268,7 +268,7 @@ function PreviewButton({ callToAction, wide = false }: { callToAction: string; w
     <span
       className={cn(
         "bg-background shrink-0 rounded-md border px-3 py-1.5 text-center text-xs font-semibold whitespace-nowrap",
-        wide && "w-full border-transparent bg-white text-neutral-900"
+        wide && "bg-media-foreground text-media w-full border-transparent"
       )}
     >
       {fieldOptionLabel(callToAction)}

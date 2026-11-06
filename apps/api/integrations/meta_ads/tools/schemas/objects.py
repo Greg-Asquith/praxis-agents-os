@@ -119,6 +119,8 @@ class MetaAdsObject(MetaAdsStrictModel):
     attribution: MetaAdsAttribution | None = None
     frequency_cap: MetaAdsFrequencyCap | None = None
     ad_schedule: MetaAdsAdSchedule | None = None
+    # Campaigns only: the lifetime spending limit, null for none.
+    spend_limit: MetaAdsMoney | None = None
     # Campaigns only: set for legacy Advantage+ shopping and app campaigns.
     smart_promotion_type: MetaAdsText | None = None
     # Campaigns only: Meta's Advantage+ state, such as ADVANTAGE_PLUS_SALES, or DISABLED.

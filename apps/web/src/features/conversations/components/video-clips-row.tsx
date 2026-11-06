@@ -136,19 +136,19 @@ function ClipTile({ clip }: { clip: VideoClip }) {
           render={
             <button
               aria-label={`Play ${clip.name}`}
-              className="group focus-visible:ring-ring/50 relative block aspect-video w-full overflow-hidden rounded-md border bg-black outline-none focus-visible:ring-3"
+              className="group focus-visible:ring-ring/50 bg-media relative block aspect-video w-full overflow-hidden rounded-md border outline-none focus-visible:ring-3"
               type="button"
             />
           }
         >
           <ClipPoster fileId={video.fileId} />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/30">
-            <span className="flex size-9 items-center justify-center rounded-full bg-black/60 text-white">
+          <span className="bg-media-overlay/10 group-hover:bg-media-overlay/30 absolute inset-0 flex items-center justify-center transition-colors">
+            <span className="bg-media-overlay/60 text-media-foreground flex size-9 items-center justify-center rounded-full">
               <PlayIcon className="size-4 fill-current" />
             </span>
           </span>
           {length ? (
-            <span className="absolute right-1.5 bottom-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-white tabular-nums">
+            <span className="bg-media-overlay/70 text-media-foreground absolute right-1.5 bottom-1.5 rounded px-1.5 py-0.5 text-[11px] tabular-nums">
               {length}
             </span>
           ) : null}

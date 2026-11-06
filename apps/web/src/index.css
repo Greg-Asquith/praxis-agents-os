@@ -50,6 +50,9 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary: var(--primary);
   --color-link: var(--link);
+  --color-media: var(--media);
+  --color-media-foreground: var(--media-foreground);
+  --color-media-overlay: var(--media-overlay);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -76,6 +79,10 @@
   --primary-hover: #b45309;
   --primary-foreground: #f7f4ec;
   --link: #0f766e;
+  /* Behind and over photos and video, such as ad previews; dark in both themes. */
+  --media: #171717;
+  --media-foreground: #fff;
+  --media-overlay: #000;
   --secondary: #f1eee6;
   --secondary-foreground: #1e293b;
   --muted: #f7f4ec;

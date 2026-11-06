@@ -249,7 +249,12 @@ def _bid_problems(
 ) -> list[str]:
     if edit.bid_strategy is not None:
         if campaign_holds_bids(campaign):
-            return ["The campaign sets the bid strategy for its ad sets, so change it there."]
+            return [
+                (
+                    "The campaign sets the bid strategy for its ad sets, so change it with "
+                    "meta_ads_update_campaigns."
+                )
+            ]
         problem = bid_problem(
             BID_STRATEGIES[edit.bid_strategy],
             bid_amount=edit.bid_amount is not None,

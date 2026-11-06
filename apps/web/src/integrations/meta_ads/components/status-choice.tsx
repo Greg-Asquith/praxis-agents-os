@@ -3,6 +3,7 @@
 import { CirclePauseIcon, CirclePlayIcon } from "lucide-react"
 import { useId } from "react"
 
+import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
 import { cn } from "@/lib/utils"
 
 export type CreateStatus = "paused" | "active"
@@ -45,35 +46,16 @@ export function StatusChoice({
         <span className="text-sm font-medium" id={`${id}-label`}>
           {label}
         </span>
-        <div
-          aria-labelledby={`${id}-label`}
-          className="bg-background flex rounded-lg border p-0.5"
-          role="radiogroup"
-        >
-          {(["paused", "active"] as const).map((choice) => {
-            const checked = choice === value
-            return (
-              <button
-                key={choice}
-                aria-checked={checked}
-                className={cn(
-                  "focus-visible:ring-ring/50 h-8 min-w-20 cursor-pointer rounded-md px-3 text-sm font-medium outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-60",
-                  checked && choice === "paused" && "bg-foreground text-background",
-                  checked && choice === "active" && "bg-primary text-primary-foreground",
-                  !checked && "text-foreground/70 hover:bg-muted"
-                )}
-                disabled={disabled || lockedNote !== null}
-                onClick={() => {
-                  if (!checked) onChange(choice)
-                }}
-                role="radio"
-                type="button"
-              >
-                {labels[choice]}
-              </button>
-            )
-          })}
-        </div>
+        <SegmentedChoice
+          ariaLabelledBy={`${id}-label`}
+          disabled={disabled || lockedNote !== null}
+          onChange={onChange}
+          options={(["paused", "active"] as const).map((choice) => ({
+            value: choice,
+            label: labels[choice],
+          }))}
+          value={value}
+        />
       </div>
       <p
         className={cn(

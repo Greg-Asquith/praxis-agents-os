@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react"
 import { useId, type ReactNode } from "react"
 
 import { Input } from "@/components/ui/input"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Select,
   SelectContent,
@@ -13,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 
 type Option = { value: string; label: string; description?: string; disabledNote?: string }
@@ -34,51 +36,91 @@ export function ChoiceCards({
   value: string
 }) {
   return (
-    <div
+    <RadioGroup
       aria-label={ariaLabel}
       className={cn(
-        "grid min-w-0 gap-2",
+        "min-w-0 gap-2",
         columns === 2 && "sm:grid-cols-2",
         columns === 3 && "sm:grid-cols-3"
       )}
-      role="radiogroup"
+      disabled={disabled}
+      onValueChange={(next) => {
+        if (typeof next === "string" && next !== value) onChange(next)
+      }}
+      value={value}
     >
-      {options.map((option) => {
-        const checked = option.value === value
-        return (
-          <button
-            key={option.value}
-            aria-checked={checked}
-            className={cn(
-              "focus-visible:ring-ring/50 flex min-h-10 min-w-0 cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-60",
-              checked ? "border-primary bg-primary/5" : "bg-background hover:bg-muted/60"
-            )}
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className={cn(
+            "bg-background hover:bg-muted/60 has-data-checked:border-primary has-data-checked:bg-accent/60 flex min-h-10 min-w-0 cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors",
+            (disabled || option.disabledNote !== undefined) &&
+              "hover:bg-background cursor-not-allowed opacity-60"
+          )}
+        >
+          <RadioGroupItem
+            className="mt-0.5"
             disabled={disabled || option.disabledNote !== undefined}
-            onClick={() => {
-              if (!checked) onChange(option.value)
-            }}
-            role="radio"
-            type="button"
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mt-0.5 size-4 shrink-0 rounded-full border",
-                checked ? "border-primary border-[5px]" : "border-muted-foreground/60"
-              )}
-            />
-            <span className="grid min-w-0 gap-0.5">
-              <span className="font-medium">{option.label}</span>
-              {option.description || option.disabledNote ? (
-                <span className="text-foreground/75">
-                  {option.disabledNote ?? option.description}
-                </span>
-              ) : null}
-            </span>
-          </button>
+            value={option.value}
+          />
+          <span className="grid min-w-0 gap-0.5">
+            <span className="font-medium">{option.label}</span>
+            {option.description || option.disabledNote ? (
+              <span className="text-foreground/75">
+                {option.disabledNote ?? option.description}
+              </span>
+            ) : null}
+          </span>
+        </label>
+      ))}
+    </RadioGroup>
+  )
+}
+
+/** A short either-or choice as one segmented control, such as Paused or Active. */
+export function SegmentedChoice<T extends string>({
+  ariaLabel,
+  ariaLabelledBy,
+  className,
+  disabled,
+  onChange,
+  options,
+  value,
+}: {
+  ariaLabel?: string
+  ariaLabelledBy?: string
+  className?: string
+  disabled: boolean
+  onChange: (value: T) => void
+  options: readonly { value: T; label: string }[]
+  value: T | null
+}) {
+  return (
+    <ToggleGroup
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabelledBy}
+      className={cn("bg-background rounded-lg border p-0.5", className)}
+      disabled={disabled}
+      onValueChange={(next) => {
+        // Pressing the chosen item again would clear it, so only a new choice counts.
+        const chosen = options.find(
+          (option) => next.includes(option.value) && option.value !== value
         )
-      })}
-    </div>
+        if (chosen) onChange(chosen.value)
+      }}
+      spacing={0.5}
+      value={value === null ? [] : [value]}
+    >
+      {options.map((option) => (
+        <ToggleGroupItem
+          key={option.value}
+          className="text-foreground/70 aria-pressed:bg-accent aria-pressed:text-accent-foreground h-8 min-w-20 px-3 aria-pressed:font-semibold"
+          value={option.value}
+        >
+          {option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   )
 }
 

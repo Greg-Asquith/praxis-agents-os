@@ -689,7 +689,8 @@ text returns as untrusted-content nodes. `meta_ads_search_targeting` and
 `meta_ads_estimate_audience` read targeting keys and audience estimates, with
 an audience resolver for the draft's audiences.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
-`meta_ads_schedule_budget_increases`, `meta_ads_update_ad_sets`,
+`meta_ads_schedule_budget_increases`, `meta_ads_update_campaigns`,
+`meta_ads_update_ad_sets`,
 `meta_ads_update_targeting`, `meta_ads_update_ads`,
 `meta_ads_upload_media`, `meta_ads_create_campaign`, `meta_ads_create_ad_set`,
 `meta_ads_create_ads`, `meta_ads_copy_ads`, and `meta_ads_launch_campaign`

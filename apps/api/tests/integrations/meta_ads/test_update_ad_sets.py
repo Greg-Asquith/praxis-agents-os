@@ -414,7 +414,10 @@ def test_a_bid_strategy_is_refused_when_the_campaign_holds_the_budget():
 
     problems = _problems(_edit(bid_strategy="bid_cap", bid_amount="2"), _object(), campaign)
 
-    assert problems == ["The campaign sets the bid strategy for its ad sets, so change it there."]
+    assert problems == [
+        "The campaign sets the bid strategy for its ad sets, so change it with "
+        "meta_ads_update_campaigns."
+    ]
 
 
 def test_a_daily_spend_cap_under_a_campaign_lifetime_budget_is_refused():

@@ -49,24 +49,26 @@ class CampaignAccount:
     minimum_spend_limit: str | None
 
 
-async def read_campaign_account(client: MetaAdsClient, *, account_id: str) -> CampaignAccount:
-    ensure_account_available(account_id, operation=OPERATION)
+async def read_campaign_account(
+    client: MetaAdsClient, *, account_id: str, operation: str = OPERATION
+) -> CampaignAccount:
+    ensure_account_available(account_id, operation=operation)
     raw = await client.graph_get(
         ad_account_path(account_id),
         params={"fields": _ACCOUNT_FIELDS},
-        operation=OPERATION,
+        operation=operation,
         policy=IntegrationRequestPolicy.READ,
         usage_account_id=account_id,
     )
-    currency = require_currency(raw.get("currency"), operation=OPERATION)
-    status = numeric_value(raw.get("account_status"), count=True, operation=OPERATION)
+    currency = require_currency(raw.get("currency"), operation=operation)
+    status = numeric_value(raw.get("account_status"), count=True, operation=operation)
     return CampaignAccount(
         currency=currency,
-        timezone_name=bounded_string(raw.get("timezone_name"), operation=OPERATION),
+        timezone_name=bounded_string(raw.get("timezone_name"), operation=operation),
         closed=status in _CLOSED_ACCOUNT_STATUSES,
-        minimum=money_value(raw.get("min_daily_budget"), currency, operation=OPERATION),
+        minimum=money_value(raw.get("min_daily_budget"), currency, operation=operation),
         minimum_spend_limit=money_value(
-            raw.get("min_campaign_group_spend_cap"), currency, operation=OPERATION
+            raw.get("min_campaign_group_spend_cap"), currency, operation=operation
         ),
     )
 

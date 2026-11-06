@@ -236,7 +236,7 @@ export function ArtifactDetail({
                 without exposing your workspace.
               </p>
               {!isCurrent ? (
-                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                <p className="text-warning-text mt-1 text-xs">
                   You are viewing version {String(selectedVersion?.revision_number ?? "")}. A new
                   link will share the current version.
                 </p>

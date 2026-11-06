@@ -170,6 +170,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   failure leaves the campaign paused, and the result shows what was built so
   the step tools can finish it. A launch doesn't start while the ad account
   has used 75% or more of Meta's hourly request allowance.
+- Meta Ads campaign edits: `meta_ads_update_campaigns` renames up to 50
+  campaigns, sets or removes their spending limits, moves them between
+  highest volume, bid cap, and cost per result goal with a bid for every ad
+  set, and turns off ad set budget sharing, in one approval. The card shows
+  each new setting with its value now and the campaign's spend so far, Meta
+  checks every change first, and each result shows the values and bids Meta
+  reads back.
 - Meta Ads ad set edits: `meta_ads_update_ad_sets` changes the name, start
   and end dates, bid strategy, bid or cost goal, minimum return on ad spend,
   spend limits, EU payer and beneficiary, goal, conversion event or custom
