@@ -288,6 +288,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- Password registration refuses `SUPER_ADMIN_EMAILS` addresses, including
+  with an invitation token. A super admin's account is created only by OAuth
+  sign-in with a provider-verified email, so a workspace admin can no longer
+  invite a listed address and register it themselves.
 - The API and media renderer images move from `python:3.12.10-slim`, last
   rebuilt in May 2025, to `python:3.12.16-slim-trixie`. This picks up the
   Python 3.12.11 to 3.12.16 security fixes, including the Expat parser used

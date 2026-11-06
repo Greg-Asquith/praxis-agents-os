@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.dependencies import is_super_admin_email
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError
 from core.settings import settings
@@ -47,6 +48,17 @@ async def register_with_password(
     email = normalize_email(payload.email)
     validate_email(email)
     validate_password_strength(payload.password)
+
+    # Super admins prove email ownership through verified OAuth only.
+    if is_super_admin_email(email):
+        await record_auth_security_event(
+            event_type=SecurityEventType.AUTH_REGISTER_FAILED,
+            request=request,
+            user_email=email,
+            details={"reason": "super_admin_email"},
+            committed=True,
+        )
+        raise AuthorizationError("Signup is disabled")
 
     invitation = None
     if not settings.ALLOW_SIGNUP and payload.invitation_token:

@@ -279,6 +279,8 @@ With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft
 provider and the exact verified email in `SUPER_ADMIN_EMAILS`. That OAuth login
 creates the first user and personal workspace; every other unknown OAuth user
 remains rejected. No password or temporary public-signup window is required.
+Listed addresses can't register with a password, even with an invitation, so
+every super admin signs in through OAuth.
 
 Complete this step after step 6, because the sign-in flow needs the custom
 domains: session cookies don't flow between the `run.app` service URLs.

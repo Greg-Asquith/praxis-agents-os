@@ -21,7 +21,11 @@ and `read_only` in `models/workspace.py`. The role sets are `MANAGER_ROLES`
 `read_only`) in `services/workspaces/utils.py`. Access checks use `require_role` and the
 `require_owner`/`require_editor`/`require_read` shortcuts
 (`core/dependencies.py`). Super-admin is an email allowlist
-(`require_super_admin`, `core/dependencies.py`).
+(`require_super_admin`, `core/dependencies.py`). A listed address signs
+up through OAuth with a provider-verified email, or an existing super admin
+creates it. Password registration refuses listed addresses, with or without
+an invitation token, so nobody can claim an unused super-admin address
+before its owner signs in.
 
 Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 `[default — confirm at review]`.

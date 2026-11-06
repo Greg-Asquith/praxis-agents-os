@@ -134,3 +134,65 @@ async def test_closed_signup_rejects_invitation_token_for_another_email(
     assert response.json()["detail"] == "Signup is disabled"
     assert await db_session.scalar(select(User).where(User.email == registering_email)) is None
     assert invitation.accepted_at is None
+
+
+@pytest.mark.asyncio
+async def test_open_signup_refuses_listed_super_admin_email(
+    db_async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listed_email = f"listed-admin-{uuid4()}@example.com"
+    monkeypatch.setattr(settings, "ALLOW_SIGNUP", True)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", listed_email)
+
+    response = await db_async_client.post(
+        "/api/v1/auth/register",
+        headers={"origin": "http://localhost:3000"},
+        json={"email": listed_email.upper(), "password": "StrongerPassword123!"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Signup is disabled"
+    assert await db_session.scalar(select(User).where(User.email == listed_email)) is None
+
+
+@pytest.mark.asyncio
+async def test_closed_signup_refuses_invitation_token_for_listed_super_admin_email(
+    db_async_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listed_email = f"invited-admin-{uuid4()}@example.com"
+    raw_token = f"raw-token-{uuid4()}"
+    owner = build_user(email=f"owner-{uuid4()}@example.com")
+    workspace = build_workspace(slug=f"listed-invite-{uuid4()}", is_personal=False)
+    invitation = WorkspaceInvitation(
+        workspace_id=workspace.id,
+        email=listed_email,
+        role=WorkspaceRole.MEMBER.value,
+        invited_by=owner.id,
+        token_hash=WorkspaceInvitation.hash_raw_token(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    db_session.add_all([owner, workspace, invitation])
+    await db_session.flush()
+    monkeypatch.setattr(settings, "ALLOW_SIGNUP", False)
+    monkeypatch.setattr(settings, "EMAIL_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", listed_email)
+
+    response = await db_async_client.post(
+        "/api/v1/auth/register",
+        headers={"origin": "http://localhost:3000"},
+        json={
+            "email": listed_email,
+            "password": "StrongerPassword123!",
+            "invitation_token": raw_token,
+        },
+    )
+
+    assert response.status_code == 403
+    assert await db_session.scalar(select(User).where(User.email == listed_email)) is None
+    await db_session.refresh(invitation)
+    assert invitation.accepted_at is None
