@@ -33,7 +33,8 @@ class ArtifactHostMiddleware(BaseHTTPMiddleware):
     reach the cookie-free artifact serving surface, and every other host
     refuses that surface. This makes the origin split enforced by settings
     validation hold at request time instead of relying on DNS alone. Inactive
-    when ``ARTIFACT_ORIGIN`` is empty (local serves both from APP_BASE_URL).
+    when ``ARTIFACT_ORIGIN`` is empty, so APP_BASE_URL serves both (local, or
+    ``ARTIFACT_ALLOW_APP_DOMAIN``).
     """
 
     def __init__(self, app, artifact_origin: str | None = None):

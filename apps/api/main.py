@@ -57,6 +57,11 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
     logger.info("Starting FastAPI application...")
+    if settings.ARTIFACT_ALLOW_APP_DOMAIN and settings.ENVIRONMENT != "local":
+        logger.warning(
+            "Artifact previews and share links are served without separate-site "
+            "isolation because ARTIFACT_ALLOW_APP_DOMAIN is true"
+        )
     assemble_runtime_catalogs()
     setup_agent_tracing()
     register_notification_action_handlers()

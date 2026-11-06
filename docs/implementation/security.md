@@ -49,6 +49,30 @@ The following contracts apply in this area:
 - When `ARTIFACT_ORIGIN` is set, `ArtifactHostMiddleware` partitions routes by
   host: the artifact host serves only `/artifacts/view/*` and
   `/artifacts/shared/*`, and every other host refuses those paths.
+- Outside local environments, artifact sharing requires `RATE_LIMIT_ENABLED`
+  and, by default, an HTTPS `ARTIFACT_ORIGIN` on a separate registrable domain
+  that `COOKIE_DOMAIN` doesn't cover. To serve share links from the app domain
+  instead, set `ARTIFACT_ALLOW_APP_DOMAIN=true`. `ARTIFACT_ORIGIN` can then be
+  empty, so `APP_BASE_URL` (which must use HTTPS) serves share links, or a
+  same-site HTTPS host. It can't use the `APP_BASE_URL` or `FRONTEND_URL` host,
+  because the host partition would refuse every API route there. Previews then
+  use `APP_BASE_URL` too. Outside local, the API logs a startup warning while
+  the setting is on.
+- `ARTIFACT_ALLOW_APP_DOMAIN` removes only the separate-site layer. Every
+  artifact response keeps its CSP `sandbox` without `allow-same-origin`, so the
+  document has an opaque origin and can't read app cookies or storage, call
+  the API, or register a service worker. HTML artifacts also keep
+  `connect-src 'none'` and `form-action 'none'`, with `no-referrer`,
+  `no-store`, and `nosniff`. The remaining risks are these:
+  - **Domain reputation.** A hostile or phishing-style artifact on the main
+    domain can get that domain flagged by safe-browsing lists, which affects
+    the app too.
+  - **Brand trust.** A shared page on the main domain looks like official
+    product content.
+  - **Single-layer isolation.** The CSP sandbox is the only barrier. Any change
+    that adds `allow-same-origin`, loosens `connect-src`, or serves an artifact
+    without the serving headers becomes a same-origin compromise. The exact
+    CSP assertions in the artifact route tests guard this.
 - Preserve auditability for sensitive operations. Workspace, security,
   approval, credential, notification, and schedule flows should leave enough
   context to debug later.

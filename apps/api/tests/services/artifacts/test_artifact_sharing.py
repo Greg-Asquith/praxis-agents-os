@@ -39,6 +39,7 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
 @pytest.mark.parametrize(
     "origin",
     [
+        "",
         "https://app.example.com",
         "https://artifacts.app.example.com",
     ],
@@ -68,6 +69,31 @@ def test_production_sharing_rejects_cookie_domain_coverage() -> None:
             ARTIFACT_SHARING_ENABLED=True,
             ARTIFACT_ORIGIN="https://artifacts.example.net",
             COOKIE_DOMAIN=".example.net",
+        )
+
+
+def test_app_domain_sharing_accepts_empty_and_cookie_covered_origins() -> None:
+    production_settings(ARTIFACT_SHARING_ENABLED=True, ARTIFACT_ALLOW_APP_DOMAIN=True)
+    production_settings(
+        ARTIFACT_SHARING_ENABLED=True,
+        ARTIFACT_ALLOW_APP_DOMAIN=True,
+        ARTIFACT_ORIGIN="https://artifacts.example.com",
+        COOKIE_DOMAIN=".example.com",
+    )
+
+
+def test_app_domain_sharing_rejects_app_host_and_http_app_base_url() -> None:
+    with pytest.raises(ValidationError, match="must not use the APP_BASE_URL host"):
+        production_settings(
+            ARTIFACT_SHARING_ENABLED=True,
+            ARTIFACT_ALLOW_APP_DOMAIN=True,
+            ARTIFACT_ORIGIN="https://api.example.com",
+        )
+    with pytest.raises(ValidationError, match="APP_BASE_URL must use HTTPS"):
+        production_settings(
+            ARTIFACT_SHARING_ENABLED=True,
+            ARTIFACT_ALLOW_APP_DOMAIN=True,
+            APP_BASE_URL="http://api.example.com",
         )
 
 

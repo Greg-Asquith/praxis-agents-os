@@ -135,6 +135,27 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/small-renderer-render" \
 fi
 grep -q 'MEDIA_RENDERER_MEMORY must cover' "$TEST_TMP/small-renderer.out"
 
+# App-domain share links render an empty origin as a string, never YAML null.
+sed -e 's/^ARTIFACT_ORIGIN=.*$/ARTIFACT_ORIGIN=/' \
+  -e 's/^ARTIFACT_ALLOW_APP_DOMAIN=.*$/ARTIFACT_ALLOW_APP_DOMAIN=true/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/app-domain.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/app-domain-render" \
+  "$TEST_TMP/app-domain.env" abcdef0123456789
+for manifest in services/praxis-api.yaml jobs/praxis-worker.yaml jobs/praxis-migrate.yaml; do
+  grep -A1 'name: ARTIFACT_ORIGIN$' "$TEST_TMP/app-domain-render/$manifest" | grep -q 'value: ""'
+  grep -A1 'name: ARTIFACT_ALLOW_APP_DOMAIN$' "$TEST_TMP/app-domain-render/$manifest" \
+    | grep -q 'value: "true"'
+done
+sed 's/^ARTIFACT_ORIGIN=.*$/ARTIFACT_ORIGIN=/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/empty-origin.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/empty-origin-render" \
+  "$TEST_TMP/empty-origin.env" abcdef0123456789 \
+  >"$TEST_TMP/empty-origin.out" 2>&1; then
+  echo "render unexpectedly accepted an empty ARTIFACT_ORIGIN without ARTIFACT_ALLOW_APP_DOMAIN" >&2
+  exit 1
+fi
+grep -q 'ARTIFACT_ORIGIN may be empty only when' "$TEST_TMP/empty-origin.out"
+
 for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do

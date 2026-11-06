@@ -131,6 +131,7 @@ async def test_share_is_hashed_pinned_cookie_free_and_revocable(
     )
     assert created.status_code == 201
     body = created.json()
+    assert body["share_url"].startswith("http://testserver/artifacts/shared/")
     token = body["share_url"].rsplit("/", 1)[-1]
     share = await db_session.scalar(select(ArtifactShare).where(ArtifactShare.id == body["id"]))
     assert share is not None

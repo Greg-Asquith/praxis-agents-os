@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 
 class ArtifactSettingsMixin:
     ARTIFACT_ORIGIN: str = ""
+    ARTIFACT_ALLOW_APP_DOMAIN: bool = False
     ARTIFACT_SHARING_ENABLED: bool = False
     ARTIFACT_SHARE_DEFAULT_TTL_DAYS: int = Field(default=7, ge=1, le=30)
     ARTIFACT_SHARE_MAX_TTL_DAYS: int = Field(default=30, ge=1, le=30)

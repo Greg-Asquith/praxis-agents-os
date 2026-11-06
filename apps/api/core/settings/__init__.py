@@ -151,41 +151,7 @@ class Settings(
             )
 
         if self.ARTIFACT_SHARING_ENABLED and self.ENVIRONMENT != "local":
-            artifact_origin = urlsplit(self.ARTIFACT_ORIGIN)
-            artifact_host = artifact_origin.hostname
-            if not artifact_host:
-                raise ValueError(
-                    "ARTIFACT_ORIGIN is required when artifact sharing is enabled "
-                    "outside local environments"
-                )
-            if artifact_origin.scheme != "https":
-                raise ValueError(
-                    "ARTIFACT_ORIGIN must use HTTPS when artifact sharing is enabled "
-                    "outside local environments"
-                )
-            if not self.RATE_LIMIT_ENABLED:
-                raise ValueError(
-                    "RATE_LIMIT_ENABLED must be true when artifact sharing is enabled "
-                    "outside local environments"
-                )
-            for setting_name, value in (
-                ("APP_BASE_URL", self.APP_BASE_URL),
-                ("FRONTEND_URL", self.FRONTEND_URL),
-            ):
-                app_host = urlsplit(value).hostname
-                if app_host and _hosts_share_site(artifact_host, app_host):
-                    raise ValueError(
-                        "ARTIFACT_ORIGIN must use a distinct site from "
-                        f"{setting_name} when artifact sharing is enabled"
-                    )
-            cookie_domain = (self.COOKIE_DOMAIN or "").lstrip(".").rstrip(".").lower()
-            if cookie_domain and (
-                artifact_host == cookie_domain or artifact_host.endswith(f".{cookie_domain}")
-            ):
-                raise ValueError(
-                    "ARTIFACT_ORIGIN must not be covered by COOKIE_DOMAIN "
-                    "when artifact sharing is enabled"
-                )
+            self._validate_artifact_sharing_origin()
 
         if (
             self.ENVIRONMENT != "local"
@@ -286,6 +252,62 @@ class Settings(
                 )
 
         return self
+
+    def _validate_artifact_sharing_origin(self) -> None:
+        """Reject share-link origins that weaken isolation outside local environments."""
+        if not self.RATE_LIMIT_ENABLED:
+            raise ValueError(
+                "RATE_LIMIT_ENABLED must be true when artifact sharing is enabled "
+                "outside local environments"
+            )
+        artifact_origin = urlsplit(self.ARTIFACT_ORIGIN)
+        artifact_host = (artifact_origin.hostname or "").rstrip(".")
+        if not artifact_host:
+            if not self.ARTIFACT_ALLOW_APP_DOMAIN:
+                raise ValueError(
+                    "ARTIFACT_ORIGIN is required when artifact sharing is enabled "
+                    "outside local environments"
+                )
+            if urlsplit(self.APP_BASE_URL).scheme != "https":
+                raise ValueError(
+                    "APP_BASE_URL must use HTTPS when artifact share links use the app domain"
+                )
+            return
+        if artifact_origin.scheme != "https":
+            raise ValueError(
+                "ARTIFACT_ORIGIN must use HTTPS when artifact sharing is enabled "
+                "outside local environments"
+            )
+        app_hosts = {
+            setting_name: (urlsplit(value).hostname or "").rstrip(".")
+            for setting_name, value in (
+                ("APP_BASE_URL", self.APP_BASE_URL),
+                ("FRONTEND_URL", self.FRONTEND_URL),
+            )
+        }
+        if self.ARTIFACT_ALLOW_APP_DOMAIN:
+            # ArtifactHostMiddleware would refuse every API route on a shared host.
+            for setting_name, app_host in app_hosts.items():
+                if artifact_host == app_host:
+                    raise ValueError(
+                        f"ARTIFACT_ORIGIN must not use the {setting_name} host. Leave "
+                        "ARTIFACT_ORIGIN empty to serve share links from the app domain"
+                    )
+            return
+        for setting_name, app_host in app_hosts.items():
+            if app_host and _hosts_share_site(artifact_host, app_host):
+                raise ValueError(
+                    "ARTIFACT_ORIGIN must use a distinct site from "
+                    f"{setting_name} when artifact sharing is enabled"
+                )
+        cookie_domain = (self.COOKIE_DOMAIN or "").lstrip(".").rstrip(".").lower()
+        if cookie_domain and (
+            artifact_host == cookie_domain or artifact_host.endswith(f".{cookie_domain}")
+        ):
+            raise ValueError(
+                "ARTIFACT_ORIGIN must not be covered by COOKIE_DOMAIN "
+                "when artifact sharing is enabled"
+            )
 
     @property
     def is_dev(self) -> bool:

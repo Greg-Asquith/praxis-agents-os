@@ -310,6 +310,19 @@ deployment day. Watch progress with
 `gcloud beta run domain-mappings describe --domain=api.DOMAIN --project=$PROJECT --region=$REGION --format='yaml(status.conditions)'`
 until every condition reports `True`.
 
+To turn on artifact share links (`ARTIFACT_SHARING_ENABLED=true`), choose
+where they're served from:
+
+- **Separate domain (recommended).** Set `ARTIFACT_ORIGIN` to an HTTPS host
+  on a registrable domain other than the app's, outside `COOKIE_DOMAIN`, such
+  as `https://usercontent.example.net`. Map that host to `praxis-api` with
+  another domain mapping.
+- **App domain.** Set `ARTIFACT_ALLOW_APP_DOMAIN=true` and leave
+  `ARTIFACT_ORIGIN` empty. Share links use `APP_BASE_URL`, so you don't need
+  another domain mapping or certificate. Artifacts stay sandboxed, but a
+  hostile shared page sits on your main domain. See
+  [security](../../docs/implementation/security.md) for the trade-off.
+
 - [ ] Register the login OAuth redirect URI (`https://app.DOMAIN/oauth/callback`)
       and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
       enabled provider's console. For Notion, register the integration redirect
