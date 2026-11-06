@@ -25,10 +25,6 @@ const REMARK_PLUGINS = [remarkGfm]
 const SANITIZE_SCHEMA = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "mark", "u"],
-  attributes: {
-    ...defaultSchema.attributes,
-    "*": [...(defaultSchema.attributes?.["*"] ?? []), "className"],
-  },
 }
 const REHYPE_PLUGINS: NonNullable<Options["rehypePlugins"]> = [
   rehypeRaw,
@@ -138,8 +134,8 @@ function markdownComponents(): Components {
         {children}
       </h1>
     ),
-    h2: ({ children, ...props }) => (
-      <h2 className="mt-5 mb-2 text-lg font-semibold first:mt-0" {...props}>
+    h2: ({ children, className, ...props }) => (
+      <h2 className={cn("mt-5 mb-2 text-lg font-semibold first:mt-0", className)} {...props}>
         {children}
       </h2>
     ),
@@ -186,8 +182,8 @@ function markdownComponents(): Components {
         {children}
       </mark>
     ),
-    ol: ({ children, start, ...props }) => (
-      <ol className="my-3 list-decimal pl-5" start={start} {...props}>
+    ol: ({ children, className, start, ...props }) => (
+      <ol className={cn("my-3 list-decimal pl-5", className)} start={start} {...props}>
         {children}
       </ol>
     ),
@@ -243,11 +239,20 @@ function markdownComponents(): Components {
 
 export type MarkdownAnchorProps = ComponentPropsWithoutRef<"a"> & ExtraProps
 
-export function MarkdownAnchor({ children, href, node: _node, ...props }: MarkdownAnchorProps) {
+export function MarkdownAnchor({
+  children,
+  className,
+  href,
+  node: _node,
+  ...props
+}: MarkdownAnchorProps) {
   const isExternal = typeof href === "string" && /^https?:\/\//i.test(href)
   return (
     <a
-      className="text-link hover:text-primary wrap-break-word underline underline-offset-2"
+      className={cn(
+        "text-link hover:text-primary wrap-break-word underline underline-offset-2",
+        className
+      )}
       href={href}
       rel={isExternal ? "noopener noreferrer" : undefined}
       target={isExternal ? "_blank" : undefined}

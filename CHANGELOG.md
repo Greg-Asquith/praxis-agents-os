@@ -286,8 +286,18 @@ minor release. Patch releases contain backward-compatible fixes only.
   maths in Code Mode. No workspace file bytes leave the deployment for code
   execution. Earlier Run Code usage stays in the usage ledger.
 
+### Fixed
+
+- Your own messages with long code lines stay inside the conversation
+  column; the code block scrolls sideways instead of the message spilling
+  under the sidebar.
+
 ### Security
 
+- Markdown from fetched pages, KB documents, emails, and other members can
+  no longer set class names. Only the classes code blocks, task lists, and
+  footnotes need survive, so content can't style itself as an overlay on
+  the Praxis UI.
 - Adding a web page to the Knowledge Base can no longer stall the worker.
   Image and empty-link cleanup takes linear time and runs with the
   conversion, off the worker's event loop.

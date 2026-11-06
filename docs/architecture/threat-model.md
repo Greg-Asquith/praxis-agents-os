@@ -407,6 +407,18 @@ Hostile-HTML coverage lives in `tests/routes/integrations/test_preview_routes.py
 (script, event handler, form, meta refresh, `javascript:` link, nested iframe)
 and the Gmail and Outlook provider operation tests.
 
+Markdown is a second browser surface. Agent replies, fetched pages, KB
+documents, and messages from other members render through `MarkdownContent`,
+which allows raw HTML through `rehype-raw` and then `rehype-sanitize`. The
+schema keeps `defaultSchema`'s per-tag class lists only: `language-*` on
+`code`, task-list classes on `ul`, `ol`, and `li`, and the footnote classes.
+Content can't set any other class, so it can't use the app's own styles to
+place a fixed overlay, such as a fake sign-in panel, over the UI. Inline
+`style` and scripts are stripped. Custom renderers merge an allowed class
+with their own rather than replacing it.
+`tests/components/markdown/markdown-content.test.ts` covers the overlay
+input and the classes code blocks and task lists keep.
+
 ## 7. Code Mode composition contract
 
 Code mode changes how already-authorized tools compose; it does not create a

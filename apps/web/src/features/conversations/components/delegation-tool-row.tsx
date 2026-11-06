@@ -222,7 +222,7 @@ function DelegationAsk({ task }: { task: string }) {
           ) : null}
           <span className="text-foreground truncate font-medium">{caller?.label ?? "Agent"}</span>
         </div>
-        <div className={cn(userMessageBubbleClass, "min-w-0 whitespace-pre-wrap")}>{task}</div>
+        <div className={cn(userMessageBubbleClass, "whitespace-pre-wrap")}>{task}</div>
       </div>
     </div>
   )

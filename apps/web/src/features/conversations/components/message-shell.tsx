@@ -11,7 +11,7 @@ import { formatTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export const userMessageBubbleClass =
-  "bg-muted text-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed"
+  "bg-muted text-foreground max-w-full min-w-0 rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed"
 
 function MessageCopyButton({ text }: { text: string }) {
   const { copied, copy } = useClipboardCopy()
@@ -46,7 +46,7 @@ export function UserMessageShell({
 }) {
   return (
     <div className="group/message flex justify-end px-1">
-      <div className="flex max-w-[min(38rem,90%)] flex-col items-end gap-1.5">
+      <div className="flex max-w-[min(38rem,90%)] min-w-0 flex-col items-end gap-1.5">
         <div className={userMessageBubbleClass}>{children}</div>
         <div
           className={cn(
