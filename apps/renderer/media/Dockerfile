@@ -16,11 +16,11 @@ RUN apt-get update \
 
 # YuNet face detection for automatic framing (MIT licence), pinned by hash.
 RUN mkdir -p /opt/yunet \
-    && curl -fsSL -o /opt/yunet/face_detection_yunet_2023mar.onnx "${YUNET_URL}" \
+    && curl -fsSL --retry 5 --retry-all-errors -o /opt/yunet/face_detection_yunet_2023mar.onnx "${YUNET_URL}" \
     && echo "${YUNET_SHA256}  /opt/yunet/face_detection_yunet_2023mar.onnx" | sha256sum -c -
 
 WORKDIR /build
-RUN curl -fsSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
+RUN curl -fsSL --retry 5 --retry-all-errors -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
     && echo "${FFMPEG_SHA256}  ffmpeg.tar.xz" | sha256sum -c - \
     && tar -xJf ffmpeg.tar.xz --strip-components=1 \
     && ./configure \
@@ -50,7 +50,7 @@ RUN curl -fsSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER
 # Caption fonts, each pinned by hash; after the build so a font change keeps its cache.
 COPY media/fonts.lock /tmp/fonts.lock
 RUN set -eu; mkdir -p /opt/fonts; grep -v '^#' /tmp/fonts.lock | while read -r hash name url; do \
-        curl -fsSL -o "/opt/fonts/${name}" "${url}"; \
+        curl -fsSL --retry 5 --retry-all-errors -o "/opt/fonts/${name}" "${url}"; \
         echo "${hash}  /opt/fonts/${name}" | sha256sum -c -; \
     done
 

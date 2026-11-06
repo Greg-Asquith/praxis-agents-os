@@ -230,18 +230,15 @@ async def test_platform_knowledge_read_only_admin_lifecycle(db_session, platform
             for job in jobs
         )
         events = list(
-            await db.scalars(
-                select(AuditEvent)
-                .where(AuditEvent.resource_id == str(document.id))
-                .order_by(AuditEvent.created_at)
-            )
+            await db.scalars(select(AuditEvent).where(AuditEvent.resource_id == str(document.id)))
         )
-        assert [event.details["operation"] for event in events] == [
+        # created_at is transaction start time, so it can't order events from overlapping sessions.
+        assert sorted(event.details["operation"] for event in events) == [
             "create",
-            "publish",
-            "withdraw",
-            "update",
             "delete",
+            "publish",
+            "update",
+            "withdraw",
         ]
         assert all(event.workspace_id is None for event in events)
 

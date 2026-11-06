@@ -163,17 +163,14 @@ async def test_platform_read_only_admin_publication_lifecycle(db_session, manage
         for revision_id in (first.current_revision_id, second.current_revision_id):
             assert (await db.get(FileRevision, revision_id)).is_published
         events = (
-            await db.scalars(
-                select(AuditEvent)
-                .where(AuditEvent.resource_id == str(first.id))
-                .order_by(AuditEvent.created_at)
-            )
+            await db.scalars(select(AuditEvent).where(AuditEvent.resource_id == str(first.id)))
         ).all()
-        assert [event.details["operation"] for event in events] == [
+        # created_at is transaction start time, so it can't order events from overlapping sessions.
+        assert sorted(event.details["operation"] for event in events) == [
             "create",
             "publish",
-            "replace",
             "publish",
+            "replace",
             "withdraw",
         ]
         assert all(event.workspace_id is None for event in events)
