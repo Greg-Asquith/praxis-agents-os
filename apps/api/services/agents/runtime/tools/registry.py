@@ -211,10 +211,6 @@ def build_runtime_tools(
             active_context is None
             or not active_context.compatible_entries(definition.integration_binding)
         ):
-            logger.info(
-                "Skipping runtime tool %s without compatible active context",
-                definition.name,
-            )
             continue
         if not permissions.is_tool_allowed(
             definition,
@@ -222,11 +218,6 @@ def build_runtime_tools(
             agent=agent,
             disabled_tool_names=disabled_tool_names,
         ):
-            logger.info(
-                "Skipping disallowed runtime tool %s for agent %s",
-                definition.name,
-                agent.id,
-            )
             continue
         effective_policy = permissions.resolve_tool_policy(
             definition,

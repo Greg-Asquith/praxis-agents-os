@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from core.exceptions.general import AppValidationError
 from models.user import User
+from services.agent_schedules.disable_user_schedules import disable_user_schedules
 from services.audit_events import AuditAction, record_user_audit_event
 from services.users.schemas import UserRead, UserUpdateRequest
 from services.users.utils import get_user_or_raise
@@ -26,6 +27,7 @@ async def update_user(
     user = await get_user_or_raise(db, user_id=user_id)
     changed_fields: list[str] = []
     revoked_sessions = 0
+    disabled_schedules = 0
 
     if "display_name" in payload.model_fields_set and payload.display_name != user.display_name:
         user.display_name = payload.display_name
@@ -40,6 +42,13 @@ async def update_user(
                 revoked_sessions = await session_manager.revoke_user_sessions(
                     db, user_id=str(user.id)
                 )
+                disabled_schedules = await disable_user_schedules(
+                    db,
+                    request=request,
+                    actor=actor,
+                    user_id=user.id,
+                    reason="user_deactivated",
+                )
 
     if changed_fields:
         await db.flush()
@@ -49,7 +58,11 @@ async def update_user(
             user=user,
             actor=actor,
             request=request,
-            details={"fields": changed_fields, "revoked_sessions": revoked_sessions},
+            details={
+                "fields": changed_fields,
+                "revoked_sessions": revoked_sessions,
+                "disabled_schedules": disabled_schedules,
+            },
         )
         await db.refresh(user)
 

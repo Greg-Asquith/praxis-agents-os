@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -60,6 +60,11 @@ async def get_workspace_or_raise(
     return workspace
 
 
+def membership_user_is_active() -> ColumnElement[bool]:
+    """Match memberships whose user is neither deleted nor deactivated."""
+    return WorkspaceMembership.user.has(and_(User.deleted.is_(False), User.is_active.is_(True)))
+
+
 async def get_active_membership(
     db: AsyncSession,
     *,
@@ -71,6 +76,7 @@ async def get_active_membership(
         WorkspaceMembership.workspace_id == workspace_id,
         WorkspaceMembership.user_id == user_id,
         WorkspaceMembership.deleted.is_(False),
+        membership_user_is_active(),
     )
     if load_workspace:
         stmt = stmt.options(selectinload(WorkspaceMembership.workspace))
@@ -127,19 +133,6 @@ async def get_user_or_raise(
     return user
 
 
-async def active_owner_count(db: AsyncSession, *, workspace_id: UUID) -> int:
-    count = await db.scalar(
-        select(func.count())
-        .select_from(WorkspaceMembership)
-        .where(
-            WorkspaceMembership.workspace_id == workspace_id,
-            WorkspaceMembership.role == WorkspaceRole.OWNER.value,
-            WorkspaceMembership.deleted.is_(False),
-        )
-    )
-    return int(count or 0)
-
-
 async def lock_workspace_membership_writes(
     db: AsyncSession,
     *,
@@ -158,7 +151,18 @@ async def ensure_not_last_owner(
 ) -> None:
     if membership.role != WorkspaceRole.OWNER.value:
         return
-    if await active_owner_count(db, workspace_id=membership.workspace_id) <= 1:
+    other_active_owners = await db.scalar(
+        select(func.count())
+        .select_from(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == membership.workspace_id,
+            WorkspaceMembership.id != membership.id,
+            WorkspaceMembership.role == WorkspaceRole.OWNER.value,
+            WorkspaceMembership.deleted.is_(False),
+            membership_user_is_active(),
+        )
+    )
+    if not other_active_owners:
         raise AppValidationError(
             "A workspace must keep at least one active owner",
             field="membership_id",

@@ -288,6 +288,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- Deleting or deactivating a user turns off every schedule that runs as
+  them. Deleting a user also ends their workspace memberships and sign-in
+  records. Background runs, queued schedule runs, and tool calls are refused
+  for an inactive or deleted user even if their membership remains.
 - Password registration refuses `SUPER_ADMIN_EMAILS` addresses, including
   with an invitation token. A super admin's account is created only by OAuth
   sign-in with a provider-verified email, so a workspace admin can no longer

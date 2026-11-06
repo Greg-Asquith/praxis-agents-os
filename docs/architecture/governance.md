@@ -225,6 +225,25 @@ registered by the owning domain). Values not marked _(enforced)_ are
 | Conversation todos                   | follows the conversation lifecycle               | with conversation                                                                | n/a                                               | digest rows                                         | —                                                                                     |
 | Conversation summaries               | derived rows, one per trim watermark             | with conversation; safe to regenerate                                            | n/a (bounded Postgres text)                       | no separate audit; source messages remain canonical | —                                                                                     |
 
+### Deleting and deactivating users
+
+A super admin can deactivate a user or delete one. Both end the user's
+sessions and turn off every active schedule that runs as them, with an audit
+event giving `user_deactivated` or `user_deleted` as the reason
+_(enforced: `agent_schedules/disable_user_schedules.py`)_.
+
+- **Deactivation is reversible.** The user's memberships stay, so
+  reactivating them restores their workspace access. Their schedules stay off
+  until they turn them back on.
+- **Deletion ends memberships.** It also soft-deletes the user's sign-in
+  records.
+
+Membership checks for background work also require the user to be active and
+not deleted: schedule run preparation, runtime actor loading, and the role
+check before each tool call. A run that was already queued is refused even if
+the membership row is still present. Inactive owners don't count toward the
+last-owner rule.
+
 ## 4. Quotas and cost controls
 
 All limits initially use **counters and admin visibility without hard

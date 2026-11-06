@@ -22,6 +22,7 @@ from services.agent_runs.settle_run_family import lock_run_family
 from services.agents.runtime.subagents.build_subagent import runtime_agent_for_run
 from services.files.utils import file_for_revision, get_visible_file_revision
 from services.files.visibility import visible_file_filter
+from services.workspaces.utils import get_active_membership
 from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
@@ -182,12 +183,10 @@ async def load_actor_context(
             resource_id=str(run.workspace_id),
         )
 
-    membership = await db.scalar(
-        select(WorkspaceMembership).where(
-            WorkspaceMembership.workspace_id == run.workspace_id,
-            WorkspaceMembership.user_id == run.user_id,
-            WorkspaceMembership.deleted.is_(False),
-        )
+    membership = await get_active_membership(
+        db,
+        workspace_id=run.workspace_id,
+        user_id=run.user_id,
     )
     if membership is None:
         raise AuthorizationError("Agent run user no longer has access to this workspace")

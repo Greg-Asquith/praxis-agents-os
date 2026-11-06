@@ -102,7 +102,7 @@ from services.audit_events.tool_events import (
 )
 from services.files.save_tool_result import save_tool_result
 from services.integrations.context.utils import sanitize_context_error
-from services.workspaces.utils import EDITOR_ROLES
+from services.workspaces.utils import EDITOR_ROLES, membership_user_is_active
 from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
 
@@ -763,6 +763,7 @@ async def _active_workspace_role(deps: RuntimeDeps) -> str | None:
             WorkspaceMembership.workspace_id == deps.workspace.id,
             WorkspaceMembership.user_id == deps.user.id,
             WorkspaceMembership.deleted.is_(False),
+            membership_user_is_active(),
         )
     )
 
