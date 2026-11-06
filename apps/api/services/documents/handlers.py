@@ -10,6 +10,7 @@ from typing import Any
 from services.documents.docx_edit import edit_document
 from services.documents.docx_model import read_document
 from services.documents.editing import split_attachments
+from services.documents.markdown import find_markdown, markdown_window, to_markdown
 from services.documents.packages import (
     open_archive,
     open_package,
@@ -120,4 +121,7 @@ HANDLERS: dict[str, Handler] = {
     "read_table": read_table,
     "extract_image": extract_image,
     "edit": edit,
+    "to_markdown": to_markdown,
+    "markdown_window": markdown_window,
+    "find_markdown": find_markdown,
 }

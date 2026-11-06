@@ -41,7 +41,6 @@ async def read_item_window(
             filename=result["name"].content,
             offset=offset,
             max_bytes=max_bytes,
-            timeout_seconds=30,
         )
     except TextWindowError as exc:
         raise file_error(str(exc), "invalid_offset", operation="read_file") from None

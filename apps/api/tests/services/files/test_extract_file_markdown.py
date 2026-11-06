@@ -9,12 +9,13 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from services.documents.markdown import TRUNCATION_MARKER
 from services.files.utils import private_ref_from_key, revision_object_key
 from services.jobs.handlers.extract_file_markdown import extract_file_markdown
 from tests.factories import build_file, build_file_revision, build_job, build_workspace
 from tests.support.documents import tiny_pdf
 from tests.support.storage import reset_storage_provider_cache
-from utils.document_markdown import TRUNCATION_MARKER, DocumentConversionError
+from utils.document_markdown import DocumentConversionError
 
 pytestmark = pytest.mark.asyncio
 

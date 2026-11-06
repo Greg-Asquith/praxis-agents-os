@@ -8,16 +8,7 @@ from tests.support.documents import tiny_docx, tiny_pdf
 from utils.document_markdown import DocumentConversionError, convert_document_to_markdown
 
 
-async def test_convert_document_to_markdown_converts_html_directly(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def unexpected_binary_conversion(_data: bytes, _extension: str) -> str:
-        raise AssertionError("HTML conversion must not use the binary converter")
-
-    monkeypatch.setattr(
-        "utils.document_markdown._convert_sync",
-        unexpected_binary_conversion,
-    )
+async def test_convert_document_to_markdown_converts_html_directly() -> None:
     markdown = await convert_document_to_markdown(
         b"<h1>Guide</h1><ul><li>First</li><li>Second</li></ul>",
         content_type="text/html",

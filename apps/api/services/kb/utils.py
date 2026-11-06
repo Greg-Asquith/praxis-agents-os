@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import re
 import socket
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -53,29 +52,6 @@ _DEFINITIVE_URL_STATUS_CODES = {
 }
 _MAX_ETAG_CHARS = 256
 _Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
-_HTML_MEDIA_TYPES = frozenset({"text/html", "application/xhtml+xml"})
-_HTML_BOILERPLATE_TAGS = [
-    "aside",
-    "button",
-    "dialog",
-    "footer",
-    "form",
-    "header",
-    "iframe",
-    "nav",
-    "noscript",
-    "script",
-    "style",
-    "svg",
-    "template",
-]
-_HTML_BOILERPLATE_ROLES = frozenset(
-    {"alert", "banner", "complementary", "contentinfo", "dialog", "navigation", "search"}
-)
-# Bracket and parenthesis exclusions keep failed matches from rescanning, so cleanup is linear.
-_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\[\]]*)\]\([^()]*\)")
-_MARKDOWN_EMPTY_LINK_RE = re.compile(r"\[\s*\]\([^()]*\)")
-_EXTRA_BLANK_LINES_RE = re.compile(r"\n{3,}")
 
 
 def require_kb_workspace_id(workspace_id: UUID | None) -> UUID:
@@ -127,40 +103,13 @@ async def convert_html_to_markdown(
 ) -> str:
     """Convert fetched content through the shared document pipeline."""
     filename = PurePosixPath(httpx2.URL(source_url).path).name or "document.html"
-    media_type = content_type.partition(";")[0].strip().lower()
-    if media_type in _HTML_MEDIA_TYPES:
-        data = await asyncio.to_thread(_prune_html_boilerplate, data)
     return await convert_document_to_markdown(
         data,
-        content_type=media_type,
+        content_type=content_type.partition(";")[0],
         filename=filename,
         max_bytes=settings.KB_MAX_DOCUMENT_BYTES,
-        clean=_strip_markdown_noise if media_type in _HTML_MEDIA_TYPES else None,
+        web_page=True,
     )
-
-
-def _prune_html_boilerplate(data: bytes) -> bytes:
-    """Keep the main page content and drop chrome, hidden, and scripted elements."""
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(data, "html.parser")
-    root = soup.find("main") or soup.body or soup
-    removable = root.find_all(_HTML_BOILERPLATE_TAGS)
-    removable += root.find_all(
-        role=lambda value: bool(value) and value.lower() in _HTML_BOILERPLATE_ROLES
-    )
-    removable += root.find_all(attrs={"aria-hidden": "true"})
-    for tag in removable:
-        if not tag.decomposed:
-            tag.decompose()
-    return str(root).encode("utf-8")
-
-
-def _strip_markdown_noise(markdown: str) -> str:
-    """Replace image markup with alt text and drop empty links converted pages leave behind."""
-    cleaned = _MARKDOWN_IMAGE_RE.sub(r"\1", markdown)
-    cleaned = _MARKDOWN_EMPTY_LINK_RE.sub("", cleaned)
-    return _EXTRA_BLANK_LINES_RE.sub("\n\n", cleaned).strip("\n")
 
 
 def _require_fetch_url(url: str) -> httpx2.URL:

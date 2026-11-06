@@ -14,6 +14,7 @@ from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINI
 from integrations.sharepoint.tools.read_file import DEFINITION
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_END, UNTRUSTED_CONTENT_START
+from services.documents.markdown import TRUNCATION_MARKER
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.sharepoint.support import (
     DOCX_CONTENT_TYPE as DOCX,
@@ -30,7 +31,6 @@ from tests.support.scenario import (
     run_scenario,
     scripted_model,
 )
-from utils.document_markdown import TRUNCATION_MARKER
 
 
 @pytest.mark.parametrize(

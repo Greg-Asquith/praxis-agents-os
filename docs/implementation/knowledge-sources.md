@@ -172,10 +172,11 @@ timestamp so persistently unavailable sources cannot monopolise later scans.
 `KB_SOURCE_SCAN_BATCH_SIZE` bounds each pass. URL refreshes retain the guarded
 public-address fetch path, send stored validators only on the first hop, and
 map `401`, `403`, `404`, and `410` to definitive access loss.
-For HTML pages, `convert_html_to_markdown` in `services/kb/utils.py` prunes
-page chrome, then passes `_strip_markdown_noise` as the `clean` step of
-`convert_document_to_markdown`. Cleanup replaces images with their alt text
-and drops empty links inside the conversion worker, before the size bound.
+For HTML pages, `convert_html_to_markdown` in `services/kb/utils.py` calls
+`convert_document_to_markdown` with `web_page=True`. Inside the document
+worker, `services/documents/markdown.py` prunes page chrome, converts the
+page, then replaces images with their alt text and drops empty links before
+the size bound.
 Its patterns exclude brackets and parentheses so hostile markup can't make
 them rescan; keep any new cleanup pattern linear.
 

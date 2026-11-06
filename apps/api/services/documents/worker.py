@@ -30,6 +30,8 @@ _MAX_RESULT_HEADER_BYTES = 16 * 1024 * 1024
 _MAX_REJECTION_MESSAGE_CHARS = 300
 # Plain-text formats that only the table read accepts.
 TABLE_FORMATS = frozenset({"csv", "tsv", "json"})
+# Markdown conversions accept any supported source; the handler resolves its format.
+MARKDOWN_FORMAT = "markdown"
 
 
 class DocumentRejectedError(AppValidationError):
@@ -137,7 +139,7 @@ class DocumentWorkerPool:
 
         Attachments, such as images an edit adds, travel after the file bytes.
         """
-        if document_format not in OFFICE_FORMATS | TABLE_FORMATS:
+        if document_format not in OFFICE_FORMATS | TABLE_FORMATS | {MARKDOWN_FORMAT}:
             raise DocumentRejectedError("Only .pptx, .xlsx, .docx, and table files are supported.")
         if len(data) + sum(len(item) for item in attachments) > self._max_source_bytes:
             raise DocumentRejectedError("The file is larger than document tools allow.")

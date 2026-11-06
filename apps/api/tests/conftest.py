@@ -525,7 +525,7 @@ def local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[N
         reset_storage_provider_cache()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(autouse=True)
 async def document_workers() -> AsyncIterator[None]:
     """Close the document worker pool, whose pipes belong to this test's event loop."""
     from services.documents.worker import close_document_worker_pool

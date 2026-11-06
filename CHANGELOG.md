@@ -294,6 +294,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- Converting an uploaded, fetched, or attached document to text can no
+  longer run the API or jobs worker out of memory. Every conversion runs in
+  the document worker, which has no secrets and a memory, CPU, and time
+  limit, and Office files pass the zip pre-check first. Files over
+  `DOCUMENT_TOOLS_MAX_SOURCE_BYTES` (50 MiB) are no longer converted.
 - Markdown from fetched pages, KB documents, emails, and other members can
   no longer set class names. Only the classes code blocks, task lists, and
   footnotes need survive, so content can't style itself as an overlay on

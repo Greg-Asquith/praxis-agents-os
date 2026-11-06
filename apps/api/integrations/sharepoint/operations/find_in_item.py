@@ -25,7 +25,6 @@ async def find_in_item(
             filename=metadata["name"].content,
             query=query,
             limit=limit,
-            timeout_seconds=30,
         )
     except DocumentConversionError:
         raise conversion_error(operation="find_in_file") from None

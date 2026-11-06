@@ -371,7 +371,9 @@ File text, names, and read-back values render as plain text only.
 `services/documents/worker.py` owns a process-local pool. The API process
 and the jobs worker each start their own worker processes on the first
 document call and reuse them after that, in whichever process is running
-the agent turn. At most `DOCUMENT_TOOLS_WORKERS` calls run at once. A call
+the agent turn. Markdown conversion for Files, chat attachments, skill
+documents, Knowledge Base pages, SharePoint, and Outlook attachments shares
+the same pool (`services/documents/markdown.py`). At most `DOCUMENT_TOOLS_WORKERS` calls run at once. A call
 waits up to `DOCUMENT_TOOLS_TIMEOUT_SECONDS` for a free worker and then
 fails as busy; once it has a worker, the same limit applies to processing.
 

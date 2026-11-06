@@ -1,27 +1,13 @@
 # apps/api/tests/support/document_conversion_worker.py
 
-"""An observable slow converter for process cancellation tests."""
+"""Document worker handlers whose markdown conversion overruns memory. Loaded only by tests."""
 
-import os
-import time
-from pathlib import Path
+from services.documents.handlers import HANDLERS as PRODUCTION_HANDLERS
 
 
-def slow_conversion(data: bytes, *_args) -> str:
-    Path(data.decode()).write_text(str(os.getpid()))
-    time.sleep(60)
-    return "Unexpected completion"
+def _allocate(*_args):
+    bytearray(1024 * 1024 * 1024)
+    return {}, None
 
 
-class WorkerDecodedBytes(bytes):
-    """Rejects decoding in the caller process or more than once in the worker."""
-
-    def __init__(self, data: bytes):
-        self.parent_pid = os.getpid()
-        self.decode_calls = 0
-
-    def decode(self, *args, **kwargs):
-        assert os.getpid() != self.parent_pid
-        self.decode_calls += 1
-        assert self.decode_calls == 1
-        return super().decode(*args, **kwargs)
+HANDLERS = {**PRODUCTION_HANDLERS, "to_markdown": _allocate}

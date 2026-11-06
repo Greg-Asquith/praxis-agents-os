@@ -15,12 +15,15 @@ The document attachment settings are defined as follows:
 | `MAX_MULTIMODAL_DOCUMENT_BYTES` | `20971520` | Maximum PDF attachment size sent to a model as raw bytes. |
 | `CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS` | `60` | Maximum time for on-demand chat attachment conversion. Configuration accepts 5–300 seconds. |
 
-The shared `convert_document_to_markdown` helper accepts an optional
-`timeout_seconds` argument. When supplied, conversion runs in a cancellable
-AnyIO process; timeout or cancellation kills the worker. Output is bounded
-inside the worker before it returns. Callers that omit the argument use a
-thread. The [SharePoint file read](integrations/microsoft-graph.md#file-content)
-uses this deadline with its provider-owned download limit.
+The shared `convert_document_to_markdown` helper runs every conversion in the
+[document worker pool](document-tools.md#worker-processes), never in the API
+or jobs worker process. The worker has no secrets, a memory and CPU limit, and
+the `DOCUMENT_TOOLS_TIMEOUT_SECONDS` deadline; timeout, cancellation, or the
+memory limit kills it. `.docx`, `.pptx`, and `.xlsx` packages pass the
+[zip pre-check](document-tools.md#pre-check) before AnyDoc opens them. Output is
+bounded inside the worker before it returns. Files over
+`DOCUMENT_TOOLS_MAX_SOURCE_BYTES` (50 MiB by default) aren't converted, even
+when `MAX_FILE_SIZE_DOCUMENT` accepts the upload.
 
 `convert_document_to_markdown_result` provides the same conversion with
 `markdown`, `truncated`, and `source` fields. The worker records truncation when

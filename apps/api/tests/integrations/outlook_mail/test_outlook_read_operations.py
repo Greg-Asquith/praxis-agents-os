@@ -18,9 +18,9 @@ from integrations.outlook_mail.operations.get_message import get_message
 from integrations.outlook_mail.operations.search_messages import search_messages
 from integrations.outlook_mail.settings import outlook_mail_settings
 from services.agents.runtime.untrusted import UntrustedNode
+from services.documents.markdown import TRUNCATION_MARKER
 from services.integrations.microsoft_graph import MicrosoftGraphClient, fixed_access_token
 from tests.support.documents import tiny_pdf
-from utils.document_markdown import TRUNCATION_MARKER
 
 
 @asynccontextmanager

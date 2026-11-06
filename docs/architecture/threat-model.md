@@ -223,10 +223,10 @@ No file content or download annotation enters a link result.
 SharePoint file reads use the same provenance for converted document content.
 Only selected-drive items reach the downloader. Downloads are bounded to
 50 MiB by default. Windows and literal case-insensitive find cover the whole
-converted document inside a cancellable process. Only a UTF-8 window of at most
+converted document inside a document worker with no secrets and a memory limit. Only a UTF-8 window of at most
 64 KiB or up to 25 excerpts leave the worker. Each excerpt includes up to 120
 characters around a query of at most 200 characters and carries the same
-provenance as file content. Query metacharacters are escaped. The 30-second
+provenance as file content. Query metacharacters are escaped. The worker
 deadline covers conversion, windowing, and matching; AnyDoc's fixed parser
 limits remain enabled. The separate bulk conversion seam bounds its Markdown
 at 2 MiB by default before returning it; it does not cap the interactive tools.

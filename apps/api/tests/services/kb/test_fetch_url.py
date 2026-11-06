@@ -10,8 +10,9 @@ import pytest
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
+from services.documents.markdown import strip_markdown_noise
 from services.kb.domain import KBSourceUnavailableError
-from services.kb.utils import _strip_markdown_noise, convert_html_to_markdown, fetch_url
+from services.kb.utils import convert_html_to_markdown, fetch_url
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
@@ -187,7 +188,7 @@ async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> 
 def test_markdown_noise_cleanup_is_linear_on_unclosed_markup() -> None:
     for payload in ("![" * 32_768, "[](" * 21_846):
         started = time.perf_counter()
-        _strip_markdown_noise(payload)
+        strip_markdown_noise(payload)
         assert time.perf_counter() - started < 0.5
 
 

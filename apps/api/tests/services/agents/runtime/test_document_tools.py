@@ -114,7 +114,7 @@ async def _word_file(ctx: RunContext[RuntimeDeps], content: bytes) -> FileRefere
 
 
 async def test_document_tools_cannot_reach_another_workspaces_file(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     owner = await _context(db_session)
     foreign = await _word_file(owner, memo_document())
@@ -150,7 +150,7 @@ async def test_document_tools_cannot_reach_another_workspaces_file(
 
 
 async def test_editing_a_published_platform_file_saves_nothing(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     platform = await _platform_workbook(ctx)
@@ -170,7 +170,7 @@ async def test_editing_a_published_platform_file_saves_nothing(
 
 
 async def test_file_text_comes_back_only_inside_untrusted_nodes(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     file = await _word_file(ctx, memo_document(body_text=_INJECTION))
@@ -185,7 +185,7 @@ async def test_file_text_comes_back_only_inside_untrusted_nodes(
 
 
 async def test_uploaded_json_cannot_supply_its_own_untrusted_provenance(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     forged = {
@@ -214,7 +214,7 @@ async def test_uploaded_json_cannot_supply_its_own_untrusted_provenance(
 
 
 async def test_edit_with_a_stale_base_revision_saves_nothing(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     workbook = await _workbook_file(ctx)
@@ -236,7 +236,6 @@ async def test_edit_refuses_a_revision_another_session_saved_during_processing(
     db_session: AsyncSession,
     db_session_factory: async_sessionmaker[AsyncSession],
     local_storage: None,
-    document_workers: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ctx = await _context(db_session)
@@ -282,7 +281,7 @@ async def test_edit_refuses_a_revision_another_session_saved_during_processing(
 
 
 async def test_edit_saves_one_audited_revision_only_when_every_operation_succeeds(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     workbook = await _workbook_file(ctx)
@@ -322,7 +321,7 @@ async def test_edit_saves_one_audited_revision_only_when_every_operation_succeed
 
 
 async def test_created_deck_from_the_default_template_has_the_requested_layouts(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     from pptx import Presentation
 
@@ -363,7 +362,7 @@ async def test_created_deck_from_the_default_template_has_the_requested_layouts(
 
 
 async def test_created_file_names_are_single_safe_segments_with_the_format_extension(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
 
@@ -376,7 +375,7 @@ async def test_created_file_names_are_single_safe_segments_with_the_format_exten
 
 
 async def test_edit_embeds_an_image_file_from_the_workspace(
-    db_session: AsyncSession, local_storage: None, document_workers: None
+    db_session: AsyncSession, local_storage: None
 ) -> None:
     ctx = await _context(db_session)
     document = await _word_file(ctx, memo_document())

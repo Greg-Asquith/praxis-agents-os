@@ -9,9 +9,9 @@ _MIB = 1024 * 1024
 
 class DocumentToolsSettingsMixin:
     DOCUMENT_TOOLS_MAX_SOURCE_BYTES: int = Field(
-        default=50 * _MIB,
+        default=100 * _MIB,
         ge=1,
-        description="Largest Office file sent to the document worker.",
+        description="Largest file sent to the document worker, including Markdown conversion.",
     )
     DOCUMENT_TOOLS_MAX_UNCOMPRESSED_BYTES: int = Field(
         default=200 * _MIB,

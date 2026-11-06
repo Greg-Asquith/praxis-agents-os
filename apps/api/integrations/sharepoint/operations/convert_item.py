@@ -36,7 +36,6 @@ async def convert_item(
                 if max_bytes is None
                 else max_bytes
             ),
-            timeout_seconds=30,
             strict_utf8=True,
         )
     except DocumentConversionError:

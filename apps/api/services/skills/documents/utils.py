@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.assets.utils import normalize_content_type, parse_content_types
+from services.documents.markdown import TRUNCATION_MARKER
 from services.skills.documents.domain import (
     SKILL_DOC_NAME_PATTERN,
     SkillDocumentConversionError,
@@ -22,7 +23,6 @@ from services.storage.factory import get_storage_provider
 from services.storage.paths import safe_filename, validate_object_key
 from services.storage.provider import StorageProvider
 from utils.document_markdown import (
-    TRUNCATION_MARKER,
     DocumentConversionError,
     convert_document_to_markdown as convert_document_to_markdown_shared,
     document_extension,

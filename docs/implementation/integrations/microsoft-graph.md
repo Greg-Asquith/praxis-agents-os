@@ -218,9 +218,10 @@ capped. A caller can supply its own `max_bytes`. This bulk-output cap prepares
 the conversion seam for Knowledge Base import, which remains pending. It does
 not limit whole-document windows or find.
 
-Conversion uses the shared document helper with a 30-second deadline inside
-the tool's 90-second timeout. Its cancellable AnyIO worker is killed on timeout
-or cancellation. Conversion, windowing, and matching all run inside the deadline;
+Conversion uses the shared document helper, which runs in the document worker
+pool with the `DOCUMENT_TOOLS_TIMEOUT_SECONDS` deadline (60 seconds by default)
+inside the tool's 90-second timeout. The worker is killed on timeout,
+cancellation, or its memory limit. Conversion, windowing, and matching all run inside the deadline;
 only bounded Markdown, a window, or excerpts return to the parent process.
 AnyDoc retains its built-in decompression, nesting, node, and expansion limits.
 No download URL enters the conversion worker. Text and HTML decode once inside
@@ -228,8 +229,7 @@ the worker with strict UTF-8 validation. Valid HTML returns `source="converted"`
 Invalid UTF-8 text or HTML, corrupt or encrypted documents, parser-limit
 failures, and conversion deadlines report
 `conversion_failed`, with copy explaining that the file may be protected or
-damaged. The conversion helper's process deadline is opt-in; other callers
-retain their existing thread execution.
+damaged.
 
 The file-content presenter uses the shared read shell and sanitised Markdown
 renderer. It shows the filename, content type, formatted size, and an
