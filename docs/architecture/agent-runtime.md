@@ -197,7 +197,8 @@ point `execute_run`:
 2. Inspects the committed run row. Only a durable `awaiting_approval` result
    emits `tool.approval_required` and returns actionable deferred requests.
 3. Emits final status from the committed verdict and returns without keeping
-   a long-lived process open.
+   a long-lived process open. Nothing after the commit can change the run's
+   status: a later failure leaves the run waiting for its approval.
 
 For deadline and cancellation handling, see
 [Finalisation and interruption](../implementation/agent-runs.md#finalisation-and-interruption).

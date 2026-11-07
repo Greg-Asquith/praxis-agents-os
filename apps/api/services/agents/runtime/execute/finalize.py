@@ -147,15 +147,22 @@ async def finalize_suspended_run(
         usage_event=usage_event,
         checkpoint=checkpoint,
     )
-    if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL and deferred_tool_requests is not None:
-        if suspended_run.parent_run_id is None:
+    if suspended_run.status != RUN_STATUS_AWAITING_APPROVAL or deferred_tool_requests is None:
+        deferred_tool_requests = None
+    elif suspended_run.parent_run_id is None:
+        # The suspension is committed, so announcing it may fail but never changes the verdict.
+        try:
             projection = await get_agent_run_approval_state(
                 db, actor=deps.user, workspace=deps.workspace, run_id=suspended_run.id
             )
             for event in approval_events_for_projection(projection):
                 await event_sink.emit(event)
-    else:
-        deferred_tool_requests = None
+        except Exception:
+            logger.warning(
+                "Saved approval request could not be announced",
+                exc_info=True,
+                extra={"agent_run_id": str(suspended_run.id)},
+            )
     await emit_final_events(event_sink, suspended_run)
     return ExecuteRunResult(
         run=suspended_run,

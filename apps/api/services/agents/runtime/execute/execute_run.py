@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from services.agent_runs.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
@@ -46,7 +47,7 @@ from services.agents.runtime.persistence import (
     persist_eager_user_prompt,
 )
 from services.agents.runtime.progress_review.grant import RequestGrant
-from services.agents.runtime.sinks import EventSink, NullSink
+from services.agents.runtime.sinks import EventSink, InvocationSink, NullSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
@@ -95,7 +96,7 @@ async def execute_run(
     owner_instance_id = str(invocation_id)
     usage_accumulator = usage if usage is not None else RunUsage()
     usage_baseline = usage_values(usage_accumulator)
-    event_sink = sink or NullSink(run_id=run_id, conversation_id=conversation_id)
+    event_sink = InvocationSink(sink or NullSink(run_id=run_id, conversation_id=conversation_id))
     run_workspace_id = execution_control.workspace_id if execution_control else None
     run_user_id = execution_control.user_id if execution_control else None
     is_delegated = root_execution is not None
@@ -347,6 +348,8 @@ async def execute_run(
             )
             if isinstance(exc, BudgetLimitExceeded) and exc.inherited:
                 raise
+            if failed_run is not None and failed_run.status == RUN_STATUS_AWAITING_APPROVAL:
+                return ExecuteRunResult(run=failed_run, output=None, new_message_count=0)
             if is_delegated and failed_run is not None:
                 return ExecuteRunResult(run=failed_run, output=None, new_message_count=0)
             raise

@@ -472,6 +472,20 @@ A stale execution owner can record its ledger event but cannot overwrite the
 replacement owner's run-row totals. Without a metering context, settlement
 preserves the saved usage.
 
+Suspension has two steps. The first stages `write_file` content, saves
+messages and usage, and commits `awaiting_approval` with its approval state.
+The second announces the approval events and the final `run.status` and
+`done`. A failure in the announce step is logged and the final events are still
+sent from the saved row. A failure, timeout, or process shutdown that escapes
+after the commit reaches failure settlement, which leaves an `awaiting_approval`
+target unchanged; only a person's decision, a person's cancel, or the approval
+expiry sweep moves it on. `execute_run` then returns the waiting run instead of
+raising. A person's cancel still cancels the waiting run.
+
+Each invocation wraps its sink in `InvocationSink`, which drops every event
+after the first `done`. A cancel or failure that arrives after the final events
+were sent can't send a second terminal pair.
+
 Persistence precedes final stream events. A closed or detached stream does
 not prevent settlement. Exhausted accounting persistence produces bounded
 operational evidence containing the run, invocation, provider, model, and

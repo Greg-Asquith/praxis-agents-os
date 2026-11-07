@@ -27,6 +27,7 @@ from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
     RUN_OUTCOME_GATE_FAILED,
     RUN_OUTCOME_SUCCESS,
+    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_EVENT,
     RUN_TRIGGER_SCHEDULED,
@@ -334,6 +335,10 @@ async def persist_failed_run(
     ):
         if metering is not None:
             await record_ai_usage_in_transaction(db, metering.event())
+        await db.commit()
+        return run
+    if run.status == RUN_STATUS_AWAITING_APPROVAL:
+        # The suspension commit already saved messages and usage; a later failure keeps it.
         await db.commit()
         return run
     if interrupted_history is not None:

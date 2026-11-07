@@ -69,6 +69,8 @@ This composes with the `execute_run` contract:
 - **Failure** calls `fail_agent_run` + `db.commit()` inside `execute_run` before
   re-raising. It then emits terminal stream events (`run.status`, `error`, and `done`).
   the worker rolls back any residual state and logs.
+- **One terminal pair** per invocation: `InvocationSink` drops every event after
+  the first `done`, so a late cancel or failure can't send a second one.
 
 ### Background task registry
 

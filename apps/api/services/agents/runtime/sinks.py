@@ -90,6 +90,27 @@ class CollectingSink(SequencedSink):
         return None
 
 
+class InvocationSink:
+    """Forwards one invocation's events and drops everything after its first ``done``."""
+
+    def __init__(self, delegate: EventSink):
+        self._delegate = delegate
+        self._done_sent = False
+
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
+        if self._done_sent:
+            return
+        if payload.event_name == "done":
+            self._done_sent = True
+        await self._delegate.emit(payload)
+
+    async def close(self) -> None:
+        await self._delegate.close()
+
+
 class StreamSink(SequencedSink):
     """Async queue sink that yields formatted SSE frames."""
 
