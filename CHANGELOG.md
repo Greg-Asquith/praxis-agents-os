@@ -12,6 +12,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` can play a segment faster or in slow motion, from 0.5x
+  to 2x with voices at their natural pitch, and hold a segment's last frame
+  for up to 3 seconds. Captions, text overlays, and transitions follow the new
+  timing. The clip card shows each speed change and freeze frame.
 - `cut_video_clips` can mix a track the person provided under every clip, or
   one clip, quietly by default and lowered by about 12 dB while someone
   talks. Workspace Files now accept MP3, M4A, and WAV audio, bounded by

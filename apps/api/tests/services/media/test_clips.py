@@ -14,6 +14,7 @@ from services.media.clips import (
     ClipSource,
     MusicBed,
     MusicOptions,
+    SegmentPace,
     TransitionOptions,
     output_fps,
     output_size,
@@ -276,17 +277,47 @@ def test_a_transition_at_a_videos_start_blends_the_segments_edge_with_a_warning(
     assert whole.warnings == ()
 
 
-def test_a_transition_longer_than_half_a_segment_fails_with_a_reason() -> None:
+def test_a_transition_longer_than_half_a_segment_at_its_speed_fails_with_a_reason() -> None:
     talk = _source(60_000)
 
-    with pytest.raises(ValueError, match="before segment 2 lasts 3 s, more than half"):
+    # 8 s plus 3 s of overlap at 2x plays for 5.5 s, too short for a 3 s transition.
+    with pytest.raises(ValueError, match=r"lasts 3 s, more than half of a 5\.5 s"):
         plan_clip(
-            [(talk, 10_000, 20_000), (talk, 30_000, 34_000)],
+            [(talk, 10_000, 20_000), (talk, 30_000, 38_000)],
             size=(1080, 1920),
             framing="center",
             snap=False,
             transition=TransitionOptions(style="slideleft", duration_ms=3_000),
+            paces=[SegmentPace(), SegmentPace(speed_percent=200)],
         )
+
+
+def test_a_sped_up_segments_captions_and_freeze_follow_its_speed() -> None:
+    talk = _source(60_000, transcript=_transcript())
+    plan = {"size": (1080, 1920), "framing": "center", "snap": False}
+
+    clip = plan_clip(
+        [(talk, 50, 8_050)],
+        **plan,
+        captions=CaptionStyle(preset="bold"),
+        paces=[SegmentPace(speed_percent=200, freeze_end_ms=1_000)],
+    )
+    joined = plan_clip(
+        [(talk, 10_000, 20_000), (talk, 30_000, 40_000)],
+        **plan,
+        transition=TransitionOptions(style="fade"),
+        paces=[SegmentPace(freeze_end_ms=1_000), SegmentPace(speed_percent=200)],
+    )
+
+    # "Pricing" and "You" are 1 s and 5 s into the segment, so half that in the clip.
+    assert [event[0] for event in _dialogue(clip.captions)] == ["0:00:00.50", "0:00:02.50"]
+    assert clip.duration_ms == 5_000
+    assert clip.operation.renderer_arguments()["speed_percents"] == [200]
+    # The freeze covers the first side's 200 ms; the 2x side reads 400 ms of its video.
+    assert [(segment.start_ms, segment.end_ms) for segment in joined.operation.segments] == [
+        (10_000, 20_000),
+        (29_600, 40_000),
+    ]
 
 
 def test_captions_switch_segments_halfway_through_a_transition() -> None:

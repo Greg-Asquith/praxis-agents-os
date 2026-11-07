@@ -179,7 +179,8 @@ export type VideoClip = {
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
-  // Fades and transitions in the order they play, such as "Fade In 0.5 s", then sound.
+  // Fades, transitions, and speed changes in the order they play, such as "Fade In 0.5 s",
+  // then sound.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -284,6 +285,14 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
       typeof transition["duration_ms"] === "number"
     ) {
       effects.push(`${transitionLabel(transition["style"])} ${seconds(transition["duration_ms"])}`)
+    }
+    const speed = segment["speed"]
+    if (typeof speed === "number" && speed !== 1) {
+      effects.push(`${String(speed)}× Speed`)
+    }
+    const freeze = segment["freeze_end_ms"]
+    if (typeof freeze === "number" && freeze > 0) {
+      effects.push(`Freeze Frame ${seconds(freeze)}`)
     }
   }
   fade("fade_out_ms", "Fade Out")

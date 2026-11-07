@@ -299,6 +299,44 @@ def test_music_loops_under_the_clip_and_drops_while_someone_talks(
     assert under_speech <= in_the_pause - 9
 
 
+def test_speed_retimes_video_and_audio_together_and_a_freeze_holds_in_silence(
+    storage: FakeStorage, config: DriverConfig, tmp_path: Path
+) -> None:
+    # sample.mp4 turns blue at 2 s and talk_pause.mp4's voice stops at 3 s; at 2x both
+    # happen twice as soon, then the last frame holds for 500 ms.
+    arguments = {"width": 160, "height": 90, "fps": 30, "fit": False}
+    pace = {"speed_percents": [200], "freeze_end_ms": [500]}
+    colours = _run(
+        storage,
+        config,
+        "cut",
+        outputs=1,
+        arguments={**arguments, **pace, "segments": [[0, 0, 4000]]},
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    cuts = _run(storage, config, "scene_cuts", sources=("clip.mp4",), arguments={"threshold": 0.3})
+    _run(
+        storage, config, "frames", sources=("clip.mp4",), outputs=1, arguments={"times_ms": [2300]}
+    )
+    frozen = cv2.imdecode(np.frombuffer(storage.uploads["out-0"], np.uint8), 1).mean(axis=(0, 1))
+    voice = _run(
+        storage,
+        config,
+        "cut",
+        sources=("talk_pause.mp4",),
+        outputs=1,
+        arguments={**arguments, **pace, "segments": [[0, 0, 6000]]},
+    )
+    upload = storage.uploads["out-0"]
+
+    assert abs(colours["result"]["duration_ms"] - 2500) <= 50
+    assert [round(cut / 100) for cut in cuts["result"]["cuts_ms"]] == [10]
+    assert frozen[0] > 150 > frozen[2]
+    assert abs(voice["result"]["duration_ms"] - 3500) <= 50
+    assert _loudness(tmp_path, upload, "0.2:end=1.3") > -30
+    assert _loudness(tmp_path, upload, "1.7:end=3.4") < -60
+
+
 def test_transition_names_match_the_ffmpeg_build() -> None:
     def names(filter_name: str, option: str) -> set[str]:
         help_text = subprocess.run(

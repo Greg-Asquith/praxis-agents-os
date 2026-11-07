@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200) and `freeze_end_ms` (0 to 3000), one per segment, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -93,6 +93,12 @@ nothing for AAC.
 - **`keep`:** per segment, the output frames to keep. Audio is cut into
   frames one video frame long, so `select` and `aselect` pick the same
   indices and stay in sync.
+- **Speed and freezes:** after `keep`, a segment at another
+  `speed_percents` value is retimed with `setpts` and resampled to `fps`, and
+  its audio with one `atempo` filter, which keeps the pitch; both are padded
+  and trimmed to the sped-up frame count. `freeze_end_ms` then holds the last
+  frame with `tpad` and pads the audio with silence. Reverse playback isn't
+  offered: ffmpeg's `reverse` holds the whole segment in memory.
 - **`captions`:** one extra input after the videos, an ASS file the API
   built. The renderer accepts only its `[Script Info]`, `[V4+ Styles]`, and
   `[Events]` sections, caps it at 4 MiB, and burns it in with the `ass`
@@ -404,6 +410,12 @@ arguments are as follows:
   `fadeblack` and `fadewhite`), and the curve to `tri`. Each clip can also
   take `fade_in_ms` and `fade_out_ms` (0 to 3000). The agent is told to add
   them only when asked.
+- **Speed:** a segment's `speed` (0.5 to 2, default 1) plays it faster or in
+  slow motion with voices at their natural pitch, and `freeze_end_ms` (0 to
+  3000) holds its last frame in silence. Pause removal happens first, at the
+  source's pace. Captions, overlays, transitions, and the clip's length follow
+  the new timing. Each clip's segments report `speed` and `freeze_end_ms`. The
+  agent is told to use them only when asked.
 - **Text overlays:** each clip takes up to five `text_overlays`: `text` (1 to
   200 characters), a `preset` (`bold`, `clean`, or `title`), `style`
   overrides (caption options plus `align` and up to 4 lines), timing, and
@@ -452,7 +464,10 @@ are refused when a video's transcript came from Gemini. A video without
 audio is left uncaptioned, and a clip with no speech reports it.
 
 Each side of a transition extends by half its duration into the surrounding
-footage, so the blend sits over the cut and doesn't eat snapped words. At a
+footage, so the blend sits over the cut and doesn't eat snapped words. A
+sped-up side extends twice as far into its video at 2x, and a freeze before
+a transition counts towards its half. A transition can take at most half of
+a segment's length at its speed. At a
 video's start or end there is nothing to extend into, so the blend takes the
 segment's own edge, with a warning unless the segment is a whole video.
 Captions switch to the next segment's words halfway through a blend.
@@ -540,7 +555,8 @@ The tool rows add the following:
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
 - **`cut_video_clips`:** a grid of stills with each clip's length, name,
-  ranges, fades and transitions in play order, then **Voice Cleaned Up**,
+  ranges, fades, transitions, speeds (such as **2× Speed**), and freezes
+  (**Freeze Frame 1 s**) in play order, then **Voice Cleaned Up**,
   **Music Under Speech** (or **Music Added** without ducking), and **Sound
   Levelled** when applied, and overlay text and times, plus a link to the
   output folder and the music rights notice. Selecting a clip opens a

@@ -42,6 +42,10 @@ MAX_CAPTIONS_BYTES = 4 * 1024 * 1024
 CAPTION_SECTIONS = frozenset({"[Script Info]", "[V4+ Styles]", "[Events]"})
 # A source shorter than its range is padded with its last frame for at most this long.
 END_PAD_SECONDS = 1
+# Segment speed in percent; one atempo filter covers this range with the pitch kept.
+MIN_SPEED_PERCENT = 50
+MAX_SPEED_PERCENT = 200
+MAX_FREEZE_MS = 3000
 
 
 def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -70,12 +74,15 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "music_start_ms": int,
             "music_fade_in_ms": int,
             "music_fade_out_ms": int,
+            "speed_percents": list[int],
+            "freeze_end_ms": list[int],
         },
     )
     inputs = _validate_segments(arguments["segments"])
     _validate_framing(arguments, inputs)
     _validate_output(arguments)
     _validate_keep(arguments)
+    _validate_pace(arguments)
     validate_transitions(arguments)
     validate_music(arguments)
     return arguments
@@ -139,6 +146,22 @@ def _validate_keep(arguments: dict[str, Any]) -> None:
         previous = (position, end)
 
 
+def _validate_pace(arguments: dict[str, Any]) -> None:
+    """Speeds and freezes list one value per segment, when given."""
+    count = len(arguments["segments"])
+    speeds = arguments.get("speed_percents", [100] * count)
+    freezes = arguments.get("freeze_end_ms", [0] * count)
+    if len(speeds) != count or len(freezes) != count:
+        raise OperationError("invalid_request", "Speeds and freezes must list one per segment.")
+    if any(not MIN_SPEED_PERCENT <= speed <= MAX_SPEED_PERCENT for speed in speeds):
+        raise OperationError(
+            "invalid_request",
+            f"speed_percents must be {MIN_SPEED_PERCENT} to {MAX_SPEED_PERCENT}.",
+        )
+    if any(not 0 <= freeze <= MAX_FREEZE_MS for freeze in freezes):
+        raise OperationError("invalid_request", f"freeze_end_ms must be 0 to {MAX_FREEZE_MS}.")
+
+
 def _video_input_count(arguments: dict[str, Any]) -> int:
     return len({item[0] for item in arguments["segments"]})
 
@@ -164,12 +187,17 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
     keep: dict[int, list[tuple[int, int]]] = {}
     for position, first, end in arguments.get("keep", []):
         keep.setdefault(position, []).append((first, end))
+    count = len(arguments["segments"])
+    speeds = arguments.get("speed_percents", [100] * count)
+    freezes = arguments.get("freeze_end_ms", [0] * count)
     options, filters, lengths = [], [], []
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
         start, end = clamp_range(summary, start, end)
         frames = _frame_count(end - start, fps)
-        lengths.append(sum(last - first for first, last in keep.get(position, [])) or frames)
+        kept = sum(last - first for first, last in keep.get(position, [])) or frames
+        pace = _pace_filters(kept, speeds[position], freezes[position], fps)
+        lengths.append(pace[2])
         options += segment_input(start, end, context.input_path(index))
         if arguments["fit"]:
             framing = fit_filter(width, height, position)
@@ -184,6 +212,7 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
             summary["has_audio"],
             frames,
             keep.get(position),
+            pace,
             fps,
         )
     total = join(filters, lengths, arguments.get("transitions", []), fps)
@@ -240,21 +269,51 @@ def _segment_filters(
     has_audio: bool,
     frames: int,
     keep: list[tuple[int, int]] | None,
+    pace: tuple[str, str, int],
     fps: int,
 ) -> list[str]:
-    """Builds [vN] and [aN], each exactly the segment's frames long so joins line up."""
+    """Builds [vN] and [aN], each exactly the segment's output frames long so joins line up."""
     video_keep, audio_keep = _keep_filters(keep, fps)
+    video_pace, audio_pace, _ = pace
     # Silence for an input without audio, so mismatched sources join cleanly.
     audio = f"[{position}:a:0]" if has_audio else f"anullsrc=r={OUTPUT_AUDIO_RATE}:cl=stereo,"
     voice = f"{VOICE_FILTERS}," if enhance_voice else ""
     return [
         f"[{position}:v:0]{framing},fps={fps},format=yuv420p,"
         f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={frames},"
-        f"setpts=PTS-STARTPTS{video_keep}[v{position}]",
+        f"setpts=PTS-STARTPTS{video_keep}{video_pace}[v{position}]",
         f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
         f"{voice}apad,atrim=end_sample={frames * samples_per_frame(fps)},"
-        f"asetpts=PTS-STARTPTS{audio_keep}[a{position}]",
+        f"asetpts=PTS-STARTPTS{audio_keep}{audio_pace}[a{position}]",
     ]
+
+
+def _pace_filters(
+    frames: int, speed_percent: int, freeze_ms: int, fps: int
+) -> tuple[str, str, int]:
+    """Plays a segment's kept frames at a speed, pitch kept, then holds its last frame silent.
+
+    Returns the video and audio filters and the segment's length in output frames.
+    """
+    samples = samples_per_frame(fps)
+    length, video, audio = frames, "", ""
+    if speed_percent != 100:
+        length = max(1, round(frames * 100 / speed_percent))
+        # Retimed frames are resampled to the output rate, then padded and trimmed exactly.
+        video = (
+            f",setpts=PTS*100/{speed_percent},fps={fps},"
+            f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={length},"
+            "setpts=PTS-STARTPTS"
+        )
+        audio = (
+            f",atempo={speed_percent / 100:g},apad,atrim=end_sample={length * samples},"
+            "asetpts=PTS-STARTPTS"
+        )
+    freeze = round(freeze_ms * fps / 1000)
+    if freeze:
+        video += f",tpad=stop_mode=clone:stop={freeze}"
+        audio += f",apad=pad_len={freeze * samples}"
+    return video, audio, length + freeze
 
 
 def _keep_filters(ranges: list[tuple[int, int]] | None, fps: int) -> tuple[str, str]:

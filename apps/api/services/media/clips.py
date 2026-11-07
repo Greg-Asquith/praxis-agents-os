@@ -160,17 +160,28 @@ class ClipSource:
 
 
 @dataclass(frozen=True)
+class SegmentPace:
+    """How fast a segment plays, 50 to 200 percent, and how long its last frame then holds."""
+
+    speed_percent: int = 100
+    freeze_end_ms: int = 0
+
+
+@dataclass(frozen=True)
 class PlannedSegment:
     source: ClipSource
     start_ms: int
     end_ms: int
     # Output frame ranges [first, end) left after removing pauses; empty keeps every frame.
     keep_frames: tuple[tuple[int, int], ...] = ()
+    pace: SegmentPace = SegmentPace()
 
     def output_ms(self, fps: int) -> int:
-        if not self.keep_frames:
-            return self.end_ms - self.start_ms
-        return round(sum(end - first for first, end in self.keep_frames) * 1000 / fps)
+        """The segment's length in the clip: pauses removed, then sped up, then the freeze."""
+        kept = self.end_ms - self.start_ms
+        if self.keep_frames:
+            kept = round(sum(end - first for first, end in self.keep_frames) * 1000 / fps)
+        return _retimed_ms(self, kept) + self.pace.freeze_end_ms
 
 
 @dataclass(frozen=True)
@@ -245,13 +256,15 @@ def plan_clip(
     overlays: Sequence[TextOverlay] = (),
     audio: ClipAudio = DEFAULT_AUDIO,
     music: MusicBed | None = None,
+    paces: Sequence[SegmentPace] = (),
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, builds captions and text
     overlays, and adds any music.
 
     ``transition`` joins every pair of segments unless the later segment's own entry in
-    ``transitions_in`` (one per segment, the first unused) says otherwise. Raises ValueError
-    with a reason to show.
+    ``transitions_in`` (one per segment, the first unused) says otherwise. ``paces`` has one
+    entry per segment, or none to play every segment as it is. Raises ValueError with a reason
+    to show.
     """
     joins = [
         (own or transition or HARD_CUT).cut_transition()
@@ -260,7 +273,7 @@ def plan_clip(
     planned, warnings = [], []
     for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
         segment, warning = _bounded_segment(position, source, start_ms, end_ms, snap=snap)
-        planned.append(segment)
+        planned.append(replace(segment, pace=paces[position - 1]) if paces else segment)
         if warning:
             warnings.append(warning)
     planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
@@ -421,6 +434,8 @@ def _cut_operation(
                 input=inputs[segment.source.revision.id],
                 start_ms=segment.start_ms,
                 end_ms=segment.end_ms,
+                speed_percent=segment.pace.speed_percent,
+                freeze_end_ms=segment.pace.freeze_end_ms,
             )
             for segment in segments
         ),
@@ -449,7 +464,9 @@ def _overlap_joins(
     requested: Sequence[tuple[int | None, int | None]],
     warnings: list[str],
 ) -> list[PlannedSegment]:
-    """Extends each side of a transition by half its length, so the blend sits over the cut.
+    """Extends each side of a transition by half its length in the clip, so the blend sits
+    over the cut. A sped-up side extends further into its video, a slowed one less, and a
+    freeze at the end of the earlier side counts towards its half.
 
     Snapped cuts end and start on whole sentences; without this, the overlap would blend
     away their first and last words. At a video's start or end the overlap takes the
@@ -462,15 +479,17 @@ def _overlap_joins(
         if not half:
             continue
         before, after = extended[position], extended[position + 1]
+        tail = round(max(0, half - before.pace.freeze_end_ms) * before.pace.speed_percent / 100)
+        head = round(half * after.pace.speed_percent / 100)
         room_after = before.source.metadata.duration_ms - before.end_ms
-        extended[position] = replace(before, end_ms=before.end_ms + min(half, room_after))
-        extended[position + 1] = replace(after, start_ms=after.start_ms - min(half, after.start_ms))
-        if room_after < half and requested[position][1] is not None:
+        extended[position] = replace(before, end_ms=before.end_ms + min(tail, room_after))
+        extended[position + 1] = replace(after, start_ms=after.start_ms - min(head, after.start_ms))
+        if room_after < tail and requested[position][1] is not None:
             warnings.append(
                 f"Segment {position + 1} ends at the end of its video, so the transition "
                 "blends its last moments."
             )
-        if after.start_ms < half and requested[position + 1][0] is not None:
+        if after.start_ms < head and requested[position + 1][0] is not None:
             warnings.append(
                 f"Segment {position + 2} starts at the start of its video, so the transition "
                 "blends its first moments."
@@ -540,16 +559,22 @@ def _kept_frames(segment: PlannedSegment, fps: int) -> tuple[tuple[int, int], ..
 
 
 def _timeline_ms(segment: PlannedSegment, time_ms: int, fps: int) -> int:
-    """Maps a source time inside a segment to its time from the segment's start in the output."""
+    """Maps a source time inside a segment to its time from the segment's start in the output:
+    through removed pauses, then at the segment's speed.
+    """
     relative = time_ms - segment.start_ms
     if not segment.keep_frames:
-        return relative
+        return _retimed_ms(segment, relative)
     frame, kept = relative * fps / 1000, 0
     for first, end in segment.keep_frames:
         if frame < end:
-            return round((kept + max(0, frame - first)) * 1000 / fps)
+            return _retimed_ms(segment, round((kept + max(0, frame - first)) * 1000 / fps))
         kept += end - first
-    return round(kept * 1000 / fps)
+    return _retimed_ms(segment, round(kept * 1000 / fps))
+
+
+def _retimed_ms(segment: PlannedSegment, kept_ms: int) -> int:
+    return round(kept_ms * 100 / segment.pace.speed_percent)
 
 
 def _segment_offsets(

@@ -60,6 +60,7 @@ from services.media.clips import (
     MusicBed,
     MusicOptions,
     PlannedClip,
+    SegmentPace,
     TransitionOptions,
     output_size,
     plan_clip,
@@ -67,6 +68,9 @@ from services.media.clips import (
 from services.media.domain import (
     MAX_CUT_SEGMENTS,
     MAX_FADE_MS,
+    MAX_FREEZE_MS,
+    MAX_SPEED_PERCENT,
+    MIN_SPEED_PERCENT,
     MediaOperationResult,
     MediaRendererError,
 )
@@ -105,6 +109,18 @@ class ClipSegmentArgument(BaseModel):
             "How the previous segment joins this one, overriding the clip's transition. "
             "Ignored on the first segment."
         ),
+    )
+    speed: float = Field(
+        default=1.0,
+        ge=MIN_SPEED_PERCENT / 100,
+        le=MAX_SPEED_PERCENT / 100,
+        description="2 plays twice as fast, 0.5 in slow motion; voices keep their pitch.",
+    )
+    freeze_end_ms: int = Field(
+        default=0,
+        ge=0,
+        le=MAX_FREEZE_MS,
+        description="Hold the segment's last frame this long, in silence.",
     )
 
 
@@ -180,7 +196,8 @@ def cut_video_clips_available() -> bool:
         "social apps play at; set audio.enhance_voice when the person asks for clearer sound "
         "from a phone, laptop, or room recording. music mixes a track the person provided "
         "under every clip, or one clip's, and lowers it while someone talks; add it only when "
-        "asked, and only an audio File they gave you. Clips save in a folder named after their "
+        "asked, and only an audio File they gave you. A segment's speed speeds it up or slows "
+        "it down, and freeze_end_ms holds its last frame; use them only when asked. Clips save in a folder named after their "
         "first video unless folder names another. One clip failing doesn't stop the others; "
         "the result reports each clip."
     ),
@@ -439,6 +456,13 @@ def _plan_clips(
                     overlays=clip.text_overlays,
                     audio=audio,
                     music=_clip_music(clip.music or music, tracks),
+                    paces=[
+                        SegmentPace(
+                            speed_percent=round(segment.speed * 100),
+                            freeze_end_ms=segment.freeze_end_ms,
+                        )
+                        for segment in clip.segments
+                    ],
                 )
             )
         except ValueError as exc:
@@ -598,6 +622,8 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
             "end_ms": segment.end_ms,
             "start": format_duration(segment.start_ms),
             "end": format_duration(segment.end_ms),
+            "speed": segment.pace.speed_percent / 100,
+            "freeze_end_ms": segment.pace.freeze_end_ms,
             "transition_in": (
                 transitions[position - 1].model_dump()
                 if position and transitions and transitions[position - 1].duration_ms

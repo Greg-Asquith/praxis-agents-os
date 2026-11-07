@@ -49,7 +49,12 @@ describe("cutVideoClipsResult", () => {
           media_type: "video/mp4",
           segments: [
             segment,
-            { ...segment, transition_in: { style: "wipeleft", duration_ms: 400 } },
+            {
+              ...segment,
+              transition_in: { style: "wipeleft", duration_ms: 400 },
+              speed: 2,
+              freeze_end_ms: 1000,
+            },
           ],
           fade_in_ms: 500,
           fade_out_ms: 0,
@@ -72,6 +77,8 @@ describe("cutVideoClipsResult", () => {
         [
           "Fade In 0.5 s",
           "Wipe Left 0.4 s",
+          "2× Speed",
+          "Freeze Frame 1 s",
           "Voice Cleaned Up",
           "Music Under Speech",
           "Sound Levelled",
