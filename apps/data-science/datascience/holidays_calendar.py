@@ -19,7 +19,8 @@ def daily_shares(region: str, days: set[date]) -> dict[date, tuple[float, str]]:
     """Returns each holiday day's share and the name used by its largest calendar."""
     calendars = WEIGHTS[region]["calendars"]
     total = sum(calendar["population"] for calendar in calendars)
-    years = sorted({day.year for day in days})
+    # Neighbouring years catch a holiday observed across the new year.
+    years = sorted({day.year + offset for day in days for offset in (-1, 0, 1)})
     shares: dict[date, float] = {}
     names: dict[date, tuple[int, str]] = {}
     for calendar in calendars:

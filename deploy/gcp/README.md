@@ -481,7 +481,7 @@ context, and deploys it before the API and worker at its stable
   plus 512 MiB; the deploy script refuses a smaller value. The request
   timeout is `DATA_SCIENCE_TIMEOUT_SECONDS` (default 300) plus 60 seconds.
 - **Start-up:** the service imports PyTorch and runs one forecast in an
-  isolated child before it listens, so the startup probe allows two minutes.
+  isolated child before it listens, so the startup probe allows three minutes.
 - **Licence:** the image ships the Timestral weights' Modified MIT licence.
   Its rights don't apply to a company whose consolidated monthly revenue was
   over $20M the previous month.

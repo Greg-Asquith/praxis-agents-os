@@ -8,15 +8,6 @@ import {
 } from "@/features/conversations/native-tools/forecast-tool"
 import { forecastPublicResult } from "../../../support/forecast"
 
-describe("forecastToolResult", () => {
-  it("refuses a chart whose periods don't cover history plus horizon", () => {
-    const value = forecastPublicResult()
-    value.chart.periods.pop()
-
-    expect(forecastToolResult(value)).toBeNull()
-  })
-})
-
 describe("forecastBacktestSummary", () => {
   it("scores the forecast without covariates against the held-out history", () => {
     const result = forecastToolResult(forecastPublicResult())

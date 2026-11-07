@@ -20,7 +20,7 @@ Compose). See [Video tools](video-tools.md#media-renderer) for the driver.
 
 | Path | Role |
 |---|---|
-| `datascience/__main__.py` | Starts the driver with a 4 MiB request cap, no transfers, and the forecast self-check |
+| `datascience/__main__.py` | Starts the driver with a 8 MiB request cap, no transfers, and the forecast self-check |
 | `datascience/operations.py` | The `OPERATIONS` the service offers |
 | `datascience/forecast.py` | Validates a forecast request and runs it in a child; standard library only |
 | `datascience/child_forecast.py` | The isolated child: holiday covariates, Timestral, backtest metrics |
@@ -48,7 +48,7 @@ Compose). See [Video tools](video-tools.md#media-renderer) for the driver.
 The data science service calls `serve` with three options that the media
 renderer leaves at their defaults:
 
-- `max_request_bytes=4 MiB`: series travel inline in the request. The media
+- `max_request_bytes=8 MiB`: series travel inline in the request. The media
   renderer keeps 64 KiB.
 - `transfers=False`: the service fetches and uploads nothing. Start-up
   refuses `RENDERER_ALLOWED_URL_PREFIXES`, so no URL is ever allowed. Every

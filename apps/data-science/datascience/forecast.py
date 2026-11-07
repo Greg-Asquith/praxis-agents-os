@@ -29,6 +29,8 @@ MAX_COVARIATES = 8
 MIN_HISTORY = 16
 MAX_GAP_SHARE = 0.3
 MAX_CATEGORY_CODE = 2**31
+# Keeps backtest sums finite; larger integers would also overflow math.isfinite.
+MAX_ABS_VALUE = 1e15
 FIRST_YEAR, LAST_YEAR = 1950, 2100
 ARGUMENT_KEYS = {"start", "frequency", "values", "horizon", "holiday_regions", "covariates"}
 SERIES_KEYS = {"median", "low", "high"}
@@ -48,11 +50,10 @@ def validate_forecast(arguments: dict[str, Any]) -> dict[str, Any]:
         raise _invalid("More than 30% of the history is missing.")
     start = _start(arguments["start"], frequency, len(values) + horizon)
     regions = arguments["holiday_regions"]
-    if (
-        not isinstance(regions, list)
-        or len(set(regions)) != len(regions)
-        or len(regions) > len(HOLIDAY_REGIONS)
-    ):
+    if not isinstance(regions, list):
+        raise _invalid("holiday_regions must list each region at most once.")
+    regions = [_choice(region, HOLIDAY_REGIONS, "region") for region in regions]
+    if len(set(regions)) != len(regions):
         raise _invalid("holiday_regions must list each region at most once.")
     covariates = arguments["covariates"]
     if not isinstance(covariates, list) or len(covariates) > MAX_COVARIATES:
@@ -62,7 +63,7 @@ def validate_forecast(arguments: dict[str, Any]) -> dict[str, Any]:
         "frequency": frequency,
         "values": values,
         "horizon": horizon,
-        "holiday_regions": [_choice(region, HOLIDAY_REGIONS, "region") for region in regions],
+        "holiday_regions": regions,
         "covariates": [_covariate(item, len(values), horizon) for item in covariates],
     }
 
@@ -102,8 +103,8 @@ def _numbers(value: Any, name: str, limit: int, *, integral: bool = False) -> li
     for item in value:
         if item is None:
             continue
-        if type(item) not in {int, float} or not math.isfinite(item):
-            raise _invalid(f"{name} must hold finite numbers or null.")
+        if type(item) not in {int, float} or not abs(item) <= MAX_ABS_VALUE:
+            raise _invalid(f"{name} must hold finite numbers below 10^15, or null.")
         if integral and (item != int(item) or abs(item) > MAX_CATEGORY_CODE):
             raise _invalid(f"{name} must hold whole-number category codes.")
     return value

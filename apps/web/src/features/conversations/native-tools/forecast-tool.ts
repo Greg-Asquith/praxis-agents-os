@@ -4,7 +4,7 @@ import { isNullableFiniteNumber, isOneOf, isRecord, isStringArray } from "@/lib/
 
 export const FORECAST_SERIES_TOOL_NAME = "forecast_series"
 
-export type ForecastFrequency = "hourly" | "daily" | "weekly" | "monthly"
+type ForecastFrequency = "hourly" | "daily" | "weekly" | "monthly"
 
 type ForecastBand = { median: number[]; low: number[]; high: number[] }
 

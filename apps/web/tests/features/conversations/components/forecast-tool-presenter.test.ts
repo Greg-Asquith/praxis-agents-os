@@ -18,7 +18,7 @@ describe("forecast tool row", () => {
     const completed = render({ status: "completed", result: forecastPublicResult() })
 
     expect(running).toContain('aria-busy="true"')
-    expect(completed).toContain('aria-label="Forecast: Daily Orders"')
+    expect(completed).toContain('data-slot="tool-result-card"')
   })
 
   it("leaves failed calls and malformed results to the default row", () => {

@@ -31,9 +31,13 @@ def _arguments(**overrides) -> dict:
     [
         {"covariates": [{"timing": "known_future", "kind": "number", "values": [1.0] * 140}]},
         {"values": [1.0] * 20, "horizon": 14},
-        {"values": [1.0] * 139 + [math.inf]},
+        {"values": [1.0] * 139 + [10**400]},
     ],
-    ids=["known-future covariate misses the horizon", "history too short", "non-finite value"],
+    ids=[
+        "known-future covariate misses the horizon",
+        "history too short",
+        "value too large to be finite",
+    ],
 )
 def test_validate_refuses_bad_series(overrides: dict) -> None:
     with pytest.raises(OperationError) as error:

@@ -102,6 +102,7 @@ export function DataChart({ spec }: { spec: ChartSpec }) {
                     setExporting(false)
                   })
               }}
+              aria-label={`Download ${format.toUpperCase()}`}
               size="sm"
               type="button"
               variant="outline"

@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/components/forecast-chart.tsx
 
-import { useMemo, useRef, useState } from "react"
+import { useId, useMemo, useRef, useState } from "react"
 import { DownloadIcon } from "lucide-react"
 import {
   Area,
@@ -51,6 +51,7 @@ export function ForecastChart({
 }) {
   const { chart, frequency } = result
   const figureRef = useRef<HTMLElement>(null)
+  const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const band = useCovariates || !chart.baseline ? chart.forecast : chart.baseline
   const rows = useMemo(() => chartRows(chart.history, chart.periods, band), [band, chart])
@@ -64,6 +65,7 @@ export function ForecastChart({
     if (!figure) {
       return
     }
+    setExporting(true)
     setExportError(null)
     const details = { title: result.title, subtitle: null, caption: null }
     const exported =
@@ -72,9 +74,13 @@ export function ForecastChart({
         : Promise.resolve().then(() => {
             downloadChartSvg(figure, details)
           })
-    exported.catch((error: unknown) => {
-      setExportError(error instanceof Error ? error.message : "The chart could not be exported.")
-    })
+    void exported
+      .catch((error: unknown) => {
+        setExportError(error instanceof Error ? error.message : "The chart could not be exported.")
+      })
+      .finally(() => {
+        setExporting(false)
+      })
   }
 
   return (
@@ -84,6 +90,8 @@ export function ForecastChart({
         <div className="flex gap-1">
           {(["png", "svg"] as const).map((format) => (
             <Button
+              aria-label={`Download ${format.toUpperCase()}`}
+              disabled={exporting}
               key={format}
               onClick={() => {
                 exportChart(format)
@@ -258,16 +266,19 @@ function CovariateStrips({
   periods: string[]
   useCovariates: boolean
 }) {
+  const switchId = useId()
   return (
     <div className="grid min-w-0 gap-1 border-t pt-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-muted-foreground text-xs font-medium">Covariates</span>
         {canToggle ? (
           <span className="flex items-center gap-2 text-xs">
-            <span aria-hidden>Use in Forecast</span>
+            <label className="cursor-pointer" htmlFor={switchId}>
+              Use in Forecast
+            </label>
             <Switch
-              aria-label="Use Covariates in Forecast"
               checked={useCovariates}
+              id={switchId}
               onCheckedChange={onUseCovariatesChange}
               size="sm"
             />
@@ -279,7 +290,11 @@ function CovariateStrips({
           className={cn("min-w-0 transition-opacity", !useCovariates && "opacity-40")}
           key={`${covariate.source}:${covariate.name}`}
         >
-          <span className="text-muted-foreground block truncate text-[11px]">{covariate.name}</span>
+          <span className="text-muted-foreground block truncate text-[11px]">
+            {covariate.name}
+            {/* Category codes follow label order, so the strip steps up through this list. */}
+            {covariate.labels ? ` · ${covariate.labels.join(", ")}` : null}
+          </span>
           <AreaChart
             data={periods.map((period, index) => ({
               period,
@@ -328,11 +343,13 @@ function chartRows(
       }
     }
     const step = index - history.length
+    const low = band.low[step]
+    const high = band.high[step]
     return {
       period,
       history: null,
       median: band.median[step] ?? null,
-      range: [band.low[step] ?? 0, band.high[step] ?? 0],
+      range: low === undefined || high === undefined ? null : [low, high],
     }
   })
 }
