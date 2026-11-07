@@ -5,7 +5,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -78,7 +78,8 @@ class PartialSessionMixin:
 
         Rotates the session token to prevent session fixation: the old partial
         session row is soft-deleted and a brand-new session with
-        twofa_verified=True and the normal session duration is issued.
+        twofa_verified=True and the normal session duration is issued. Only
+        one caller can retire a given partial session.
 
         Args:
             db: Database session
@@ -95,29 +96,26 @@ class PartialSessionMixin:
 
         now = datetime.now(UTC)
 
+        # Compare-and-set, so concurrent verifications can't both upgrade one partial session.
         result = await db.execute(
-            select(Session).where(
-                and_(
-                    Session.token_hash == token_hash,
-                    Session.expires_at > now,
-                    Session.twofa_verified.is_(False),
-                    Session.deleted.is_(False),
-                )
+            update(Session)
+            .where(
+                Session.token_hash == token_hash,
+                Session.expires_at > now,
+                Session.twofa_verified.is_(False),
+                Session.deleted.is_(False),
             )
+            .values(deleted=True, deleted_at=now)
+            .returning(Session.user_id, Session.ip_address, Session.user_agent)
+            .execution_options(synchronize_session=False)
         )
-        session = result.scalar_one_or_none()
-
-        if not session:
+        partial = result.one_or_none()
+        if partial is None:
             return None
 
-        # Capture fields needed for the new session before invalidating the old one
-        user_id = str(session.user_id)
-        ip_address = str(session.ip_address) if session.ip_address is not None else None
-        user_agent = session.user_agent
-
-        # Invalidate the partial session to prevent fixation attacks
-        session.soft_delete(cascade=False)
-        await db.flush()
+        user_id = str(partial.user_id)
+        ip_address = str(partial.ip_address) if partial.ip_address is not None else None
+        user_agent = partial.user_agent
 
         # Issue a fresh full session with a new token
         return await self.create_session(

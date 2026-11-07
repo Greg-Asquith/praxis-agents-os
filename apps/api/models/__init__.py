@@ -49,6 +49,6 @@ from models.scratch import ScratchEntry  # noqa: F401
 from models.security import SecurityEvent  # noqa: F401
 from models.session import Session  # noqa: F401
 from models.skills import Skill  # noqa: F401
-from models.user import PasswordResetToken, User, UserAuth  # noqa: F401
+from models.user import User, UserAuth  # noqa: F401
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership  # noqa: F401
 from models.workspace_tool_settings import WorkspaceToolSetting  # noqa: F401

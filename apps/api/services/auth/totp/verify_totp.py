@@ -75,7 +75,8 @@ async def verify_totp(
         )
         raise AuthenticationError("Invalid or expired partial session")
 
-    await enforce_login_failure_limit(request, user.email)
+    user_id, user_email = user.id, user.email
+    await enforce_login_failure_limit(request, user_email)
 
     if not await verify_and_consume_login_second_factor(
         db,
@@ -83,18 +84,20 @@ async def verify_totp(
         token=payload.token,
         backup_code=payload.backup_code,
     ):
-        await record_login_failure(client_ip, user.email)
+        # Release the user row lock before the failure counter takes it in its own session.
+        await db.rollback()
+        await record_login_failure(client_ip, user_email)
         await record_failed_login_attempt(
-            user_id=user.id,
+            user_id=user_id,
             reason="invalid_totp",
             request=request,
-            user_email=user.email,
+            user_email=user_email,
             revoke_partial_sessions_on_lock=True,
         )
         await record_auth_security_event(
             event_type=SecurityEventType.AUTH_TOTP_FAILED,
             request=request,
-            user_email=user.email,
+            user_email=user_email,
             details={"reason": "invalid_token"},
             committed=True,
         )

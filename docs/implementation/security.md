@@ -29,6 +29,16 @@ The following contracts apply in this area:
   Trust forwarded client IPs only from `TRUSTED_PROXY_CIDRS`. Keep Argon2
   work on the async `User` helpers so it runs outside the event loop. Do not
   widen exempt lists casually.
+- A 2FA step-up retires its partial session with one compare-and-set
+  `UPDATE ... RETURNING` before it creates the full session, so concurrent
+  verifications of one partial session mint one session. TOTP codes use a
+  compare-and-set on `last_totp_counter`. A backup-code attempt re-reads the
+  user `FOR UPDATE` and holds the lock until the consumed list commits, so
+  each code works once. On a failed attempt, `verify_totp` rolls back to
+  release that lock before the failure counter locks the user in its own
+  session.
+- Deactivating a user (`services/users/update_user.py`) revokes all their
+  sessions in the same transaction, so reactivation doesn't revive them.
 - OAuth login state is bound to the initiating browser with a short-lived,
   HttpOnly, host-only cookie. Keep that check at the API callback boundary.
 - Workspace invitations are delivered only through the operator-shared link;

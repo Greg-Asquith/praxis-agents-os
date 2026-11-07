@@ -150,11 +150,12 @@ async def test_totp_failure_budget_revokes_all_partial_sessions(
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        # Wrong backup codes take the user row lock, which must be released before counting.
         for partial_token in partial_tokens:
             response = await client.post(
                 "/api/v1/auth/totp/verify",
                 headers=bearer_headers(partial_token),
-                json={"token": "000000"},
+                json={"backup_code": "00000000"},
             )
             assert response.status_code == 401
 

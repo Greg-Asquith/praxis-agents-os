@@ -31,7 +31,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
+from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from core.exceptions.general import CustomValueError
@@ -43,11 +43,9 @@ from utils.security import (
     hash_password,
     hash_password_async,
     hash_passwords_async,
-    hash_token,
     matching_password_hash_index_async,
     verify_password_hash,
     verify_password_hash_async,
-    verify_token_hash,
 )
 
 
@@ -332,63 +330,6 @@ class User(BaseModel):
 
     __table_args__ = (
         Index("ix_users_default_workspace", "default_workspace_id"),  # For workspace switching
-    )
-
-
-class PasswordResetToken(BaseModel):
-    """Password reset tokens for secure password recovery."""
-
-    __tablename__ = "password_reset_tokens"
-
-    token = Column(String, unique=True, nullable=False, index=True)  # SHA256 hash of reset token
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    used_at = Column(DateTime(timezone=True), nullable=True)  # Track when token was used
-    ip_address = Column(INET, nullable=True)  # Track requesting IP
-    user_agent = Column(Text, nullable=True)  # Track requesting user agent
-
-    # Relationship
-    user = relationship("User", foreign_keys=[user_id])
-
-    @property
-    def is_expired(self) -> bool:
-        """Check if the token has expired."""
-        return datetime.now(UTC) > self.expires_at
-
-    @property
-    def is_used(self) -> bool:
-        """Check if the token has been used."""
-        return self.used_at is not None
-
-    @property
-    def is_valid(self) -> bool:
-        """Check if the token is valid (not expired and not used)."""
-        return not self.is_expired and not self.is_used
-
-    def mark_as_used(self) -> None:
-        """Mark the token as used."""
-        self.used_at = datetime.now(UTC)
-
-    @classmethod
-    def generate_token(cls) -> str:
-        """Generate a secure random token."""
-        return secrets.token_urlsafe(32)
-
-    @classmethod
-    def hash_raw_token(cls, raw_token: str) -> str:
-        """Hash a raw reset token for secure at-rest storage."""
-        return hash_token(raw_token)
-
-    def verify_raw_token(self, raw_token: str) -> bool:
-        """Constant-time verification of raw token against stored hash."""
-        return verify_token_hash(raw_token, self.token)
-
-    def __repr__(self):
-        return f"<PasswordResetToken {self.token[:8]}... user={self.user_id} valid={self.is_valid}>"
-
-    __table_args__ = (
-        Index("ix_password_reset_user_expires", "user_id", "expires_at"),  # Cleanup queries
-        Index("ix_password_reset_expires_used", "expires_at", "used_at"),  # Token validation
     )
 
 

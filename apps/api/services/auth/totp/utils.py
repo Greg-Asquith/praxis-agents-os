@@ -104,7 +104,11 @@ async def verify_and_consume_login_second_factor(
     token: str | None,
     backup_code: str | None,
 ) -> bool:
-    """Verify login TOTP with atomic replay protection, or consume a backup code."""
+    """Verify login TOTP with atomic replay protection, or consume a backup code.
+
+    A backup-code attempt leaves the user row locked; on failure the caller
+    rolls back before recording the failure in another session.
+    """
     if token:
         counter = user.matching_totp_counter(token)
         if counter is not None:
@@ -127,7 +131,11 @@ async def verify_and_consume_login_second_factor(
             )
             return result.scalar_one_or_none() is not None
 
-    if backup_code and await user.verify_backup_code_async(backup_code):
+    if not backup_code:
+        return False
+    # Re-read under a row lock, held until commit, so one backup code works once.
+    await db.refresh(user, with_for_update=True)
+    if await user.verify_backup_code_async(backup_code):
         user.failed_login_attempts = 0
         user.locked_until = None
         user.lockout_reason = None
