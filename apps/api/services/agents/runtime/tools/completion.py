@@ -9,6 +9,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agents.runtime.completion_contract import (
+    COMPLETION_REPORT_KEY,
     MAX_COMPLETION_JSON_BYTES,
     REPORT_COMPLETION_TOOL_NAME,
     completion_contract_from_run_metadata,
@@ -61,7 +62,8 @@ async def report_completion(
     contract = completion_contract_from_run_metadata(ctx.deps.run.metadata_json)
     if ctx.deps.run.trigger != RUN_TRIGGER_SCHEDULED or contract is None or not contract.required:
         raise ModelRetry("This run does not require a completion report.")
-    if ctx.deps.run.completion_json is not None:
+    metadata = ctx.deps.run.metadata_json or {}
+    if metadata.get(COMPLETION_REPORT_KEY) is not None:
         raise ModelRetry(
             "A completion report has already been filed; the first accepted report is authoritative."
         )
@@ -71,6 +73,9 @@ async def report_completion(
         "summary": summary,
         "evidence": evidence,
     }
-    ctx.deps.run.completion_json = validate_completion_json(report)
+    ctx.deps.run.metadata_json = {
+        **metadata,
+        COMPLETION_REPORT_KEY: validate_completion_json(report),
+    }
     await ctx.deps.db.flush()
     return report

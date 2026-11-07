@@ -46,6 +46,7 @@ from services.agents.runtime.approval_state import (
 )
 from services.agents.runtime.checkpoint_messages import MessageCheckpoint
 from services.agents.runtime.completion_contract import (
+    COMPLETION_REPORT_KEY,
     completion_contract_from_run_metadata,
     validate_completion_json,
 )
@@ -462,7 +463,7 @@ def _successful_run_completion(run: AgentRun) -> tuple[RunOutcome, dict[str, Any
     contract = completion_contract_from_run_metadata(run.metadata_json)
     if contract is None or not contract.required:
         return RUN_OUTCOME_SUCCESS, None
-    report = run.completion_json
+    report = (run.metadata_json or {}).get(COMPLETION_REPORT_KEY)
     if report is None:
         return RUN_OUTCOME_GATE_FAILED, {"error_code": "missing_completion_report"}
     if report.get("status") == "pass":

@@ -24,8 +24,10 @@ from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.run_manager import run_task_registry
+from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
+from services.agents.runtime.worker import run_resume_worker
 from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import resume_scenario, scenario_effects
 from tests.support.scenario import (
@@ -296,15 +298,73 @@ async def test_continuation_claim_is_consumed_before_execution(
                 )
                 is not None
             )
+        sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+        await run_resume_worker(
+            run_id=context.run_id,
+            conversation_id=context.conversation_id,
+            workspace_id=context.workspace_id,
+            user_id=context.user_id,
+            sink=sink,
+            owner_instance_id=owner,
+            expected_status="running",
+        )
+        assert [event.event for event in sink.events] == ["run.status", "error", "done"]
+        assert sink.events[1].data["code"] == "agent_run_resume_already_handled"
         async with factory() as db:
-            assert (
-                await claim_approval_continuation(
-                    db, run_id=context.run_id, owner_instance_id=owner
-                )
-                is None
-            )
             run = await db.get(AgentRun, context.run_id)
             assert run.status == "running"
+        assert effects.calls == []
+
+
+async def test_resume_while_previous_task_finishes_leaves_run_resumable(
+    committed_db_session_factory, monkeypatch
+):
+    factory = committed_db_session_factory
+    with scenario_effects() as effects:
+        context = await build_scenario_agent(
+            factory,
+            tool_names=[effects.name],
+            trigger="scheduled",
+            metadata={"envelope": {"side_effect_policy": "require_approval"}},
+        )
+        await run_scenario(
+            factory,
+            context,
+            model=scripted_model(
+                turns=[ToolTurn((ToolCall(effects.name, {"value": "later"}, "write"),))]
+            ),
+        )
+        monkeypatch.setattr(run_task_registry, "is_running", lambda run_id: True)
+        async with factory() as db:
+            actor = await db.get(User, context.user_id)
+            workspace = await db.get(Workspace, context.workspace_id)
+            deadline = (await db.get(AgentRun, context.run_id)).approval_expires_at
+            projection = await get_agent_run_approval_state(
+                db, actor=actor, workspace=workspace, run_id=context.run_id
+            )
+            with pytest.raises(ConflictError) as error:
+                await resume_agent_run_stream(
+                    db,
+                    actor=actor,
+                    workspace=workspace,
+                    run_id=context.run_id,
+                    payload=AgentRunResumeRequest(
+                        approval_revision=projection.approval_revision,
+                        decisions=[
+                            AgentRunResumeDecision(
+                                tool_call_id="write",
+                                approval_id=projection.approvals[0].approval_id,
+                                decision="approved",
+                            )
+                        ],
+                    ),
+                )
+            assert error.value.details["code"] == "agent_run_still_finishing"
+        async with factory() as db:
+            run = await db.get(AgentRun, context.run_id)
+            assert run.status == "awaiting_approval"
+            assert run.approval_expires_at == deadline
+            assert CONTINUATION_KEY not in (run.metadata_json or {})
         assert effects.calls == []
 
 

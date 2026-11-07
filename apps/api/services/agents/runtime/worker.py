@@ -20,6 +20,7 @@ from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_FAILED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
 )
@@ -30,7 +31,8 @@ from services.agents.runtime.heartbeat import (
     agent_run_owner_instance_id,
 )
 from services.agents.runtime.run_persistence import restored_run_usage
-from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.sinks import EventSink, InvocationSink
+from services.agents.runtime.stream_protocol import DoneEvent, ErrorEvent, RunStatusEvent
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +105,10 @@ async def run_resume_worker(
     owner_instance_id = owner_instance_id or agent_run_owner_instance_id()
     session_factory = get_async_db_session_factory()
     session = session_factory()
+    stream = InvocationSink(sink)
 
     try:
-        async with admitted_setup(session, control=execution_control, sink=sink):
+        async with admitted_setup(session, control=execution_control, sink=stream):
             await set_session_tenant_context(
                 session,
                 workspace_id=workspace_id,
@@ -135,7 +138,7 @@ async def run_resume_worker(
             conversation_id=conversation_id,
             run_id=run_id,
             user_prompt=None,
-            sink=sink,
+            sink=stream,
             model=model,
             owner_instance_id=owner_instance_id,
             execution_control=execution_control,
@@ -155,6 +158,11 @@ async def run_resume_worker(
         from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
         from services.agents.runtime.execute.finalize import CANCEL_FINALIZE_TIMEOUT
 
+        if not stream.done_sent:
+            await bounded_finalisation(
+                _end_resume_stream(stream, run_id, workspace_id=workspace_id, user_id=user_id),
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
         await bounded_finalisation(
             _finalize_linked_schedule_run(
                 run_id,
@@ -163,7 +171,35 @@ async def run_resume_worker(
             ),
             max_wait=CANCEL_FINALIZE_TIMEOUT,
         )
-        await sink.close()
+        await stream.close()
+
+
+async def _end_resume_stream(
+    sink: InvocationSink, run_id: UUID, *, workspace_id: UUID, user_id: UUID
+) -> None:
+    """Close a resume stream that ended without ``done`` from the saved run row."""
+    from services.agents.runtime.execute.finalize import emit_final_events
+
+    run: AgentRun | None = None
+    try:
+        async with get_async_db_session_factory()() as db:
+            await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+            run = await db.get(AgentRun, run_id)
+    except Exception:
+        logger.exception("Resumed agent run could not be read", extra={"run_id": str(run_id)})
+    if run is not None and run.status not in {RUN_STATUS_PENDING, RUN_STATUS_RUNNING}:
+        await emit_final_events(sink, run)
+        return
+    # Another invocation owns the run, or it awaits the reaper; the client refreshes.
+    status = run.status if run is not None else RUN_STATUS_FAILED
+    await sink.emit(RunStatusEvent(status=status))
+    await sink.emit(
+        ErrorEvent(
+            code="agent_run_resume_already_handled",
+            message="This approval is already being handled. Refresh the conversation.",
+        )
+    )
+    await sink.emit(DoneEvent(status=status))
 
 
 async def _finalize_linked_schedule_run(

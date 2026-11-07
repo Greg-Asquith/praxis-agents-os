@@ -97,6 +97,10 @@ class InvocationSink:
         self._delegate = delegate
         self._done_sent = False
 
+    @property
+    def done_sent(self) -> bool:
+        return self._done_sent
+
     async def emit(
         self,
         payload: StreamEventPayload,

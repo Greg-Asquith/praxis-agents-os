@@ -89,6 +89,15 @@ async def resume_agent_run_stream(
             conflicting_resource="agent_run",
             details={"run_id": str(run.id), "run_status": run.status},
         )
+    # Only this path spawns a root resume and the reservation excludes a second, so a
+    # task that is still finishing the suspension is the only spawn conflict. Refuse it
+    # here, before anything is reserved, so the run stays resumable.
+    if run_task_registry.is_running(run.id):
+        raise ConflictError(
+            "This conversation is still finishing its last step. Try again in a moment.",
+            conflicting_resource="agent_run",
+            details={"code": "agent_run_still_finishing", "run_id": str(run.id)},
+        )
 
     membership = await db.scalar(
         select(WorkspaceMembership).where(

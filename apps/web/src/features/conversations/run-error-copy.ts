@@ -176,6 +176,9 @@ export function approvalConflictMessage(error: unknown): string | null {
   if (error.problem?.["code"] === "approval_decisions_conflict") {
     return "Different decisions were already accepted. Your latest changes were not applied. Review the refreshed conversation."
   }
+  if (error.problem?.["code"] === "agent_run_still_finishing") {
+    return "The last step is still finishing. Try your decisions again in a moment."
+  }
   if (error.problem?.["code"] === "delegated_run_requires_root_approval") {
     return "Review these requests in the main conversation. Open the main conversation link to continue."
   }

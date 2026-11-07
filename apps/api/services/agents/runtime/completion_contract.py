@@ -16,6 +16,8 @@ from pydantic import (
 )
 
 COMPLETION_CONTRACT_KEY = "completion_contract"
+# The filed report waits here until the final status change copies it to completion_json.
+COMPLETION_REPORT_KEY = "completion_report"
 REPORT_COMPLETION_TOOL_NAME = "report_completion"
 MAX_COMPLETION_CRITERIA = 20
 MAX_COMPLETION_CRITERION_LENGTH = 500

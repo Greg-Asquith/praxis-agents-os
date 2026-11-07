@@ -34,7 +34,10 @@ from services.agent_runs.domain import (
     can_transition,
 )
 from services.agents.runtime.approval_state import clear_suspended_run_metadata
-from services.agents.runtime.completion_contract import validate_completion_json
+from services.agents.runtime.completion_contract import (
+    COMPLETION_REPORT_KEY,
+    validate_completion_json,
+)
 
 if TYPE_CHECKING:
     from services.agents.runtime.approval_projection import DirectApprovalNode
@@ -159,7 +162,9 @@ async def transition_run_status(
     if target in TERMINAL_RUN_STATUSES:
         reservation = (run.metadata_json or {}).get("approval_continuation")
         # Clear before the audit write autoflushes a final status with a reservation.
-        run.metadata_json = clear_suspended_run_metadata(run)
+        metadata = clear_suspended_run_metadata(run) or {}
+        metadata.pop(COMPLETION_REPORT_KEY, None)
+        run.metadata_json = metadata or None
         run.outcome = resolved_outcome
         run.completion_json = validated_completion_json
         run.lease_expires_at = None

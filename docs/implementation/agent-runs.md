@@ -38,13 +38,20 @@ The following contracts apply in this area:
   Terminal lifecycle transitions stamp a separate six-value `outcome` and
   bounded `completion_json` at the shared agent-run transition choke point;
   the transition refreshes under a row lock so the first terminal verdict is
-  authoritative. Do not widen the six run statuses to represent completion
+  authoritative. `transition_run_status` is the only writer of
+  `AgentRun.status`, including the claim that resumes a parked approval; a
+  contract test rejects direct writes in the agent-run packages. Final
+  changes clear the lease but keep `owner_instance_id`, which records the
+  invocation that settled the run and lets finalisation tell its own output
+  from a stale invocation's. Do not widen the six run statuses to represent completion
   verdicts. Required schedule completion contracts are copied into server-owned
   run metadata, inject their bounded criteria as a dedicated runtime system-
   instruction block (never into the visible user prompt), and
   mount the non-configurable internal `report_completion` tool only for that
-  run; its pass/fail/missing-report verdict is resolved during successful
-  finalisation. Once mounted, the tool is always available and auto-executed
+  run. The tool saves its report under `completion_report` in run metadata,
+  and the final status change copies it into `completion_json`, so only
+  finished runs carry `completion_json`. Its pass/fail/missing-report verdict
+  is resolved during successful finalisation. Once mounted, the tool is always available and auto-executed
   regardless of workspace tool settings, role write policy, or the run
   side-effect envelope. The first accepted report is authoritative; later
   report attempts fail without replacing its evidence.
@@ -522,6 +529,19 @@ parent reaches their delegation calls. Identical repeated submissions return
 `approval_decisions_conflict`. Both responses refresh the client reads without
 retrying the approval POST. Fresh suspension replaces the reservation and
 installs a fresh batch.
+
+Resume checks the process task registry under the family lock before it
+reserves anything. If the task that parked the run is still finishing, the
+request returns `agent_run_still_finishing` and the run stays
+`awaiting_approval` with its original deadline. Only this path spawns a root
+resume and the reservation excludes a second one, so the spawn after the
+commit can't collide. Any other handoff failure after the commit leaves the
+reservation for the sweep or the lease reaper.
+
+Every resume stream ends with `done`. When the worker returns without one
+(the continuation was already started, or setup failed before execution), it
+reads the saved run: a settled or parked run gets its final events, and a run
+still `running` gets `agent_run_resume_already_handled` and `done`.
 
 Resume and the expiry sweep apply the same earliest pending family deadline.
 The sweep also settles a running root whose reservation outlived its owner

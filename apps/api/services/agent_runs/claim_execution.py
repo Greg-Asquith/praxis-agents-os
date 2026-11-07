@@ -14,6 +14,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
 )
+from services.agent_runs.utils import transition_run_status
 
 
 async def claim_agent_run_execution(
@@ -41,9 +42,7 @@ async def claim_agent_run_execution(
             "Agent run execution lease has expired", conflicting_resource="agent_run"
         )
     if resumable:
-        run.status = RUN_STATUS_RUNNING
-        run.started_at = now_utc
-        run.approval_expires_at = None
+        await transition_run_status(db, run, RUN_STATUS_RUNNING)
     elif run.started_at is None:
         run.started_at = run.created_at
     run.owner_instance_id = owner_instance_id
