@@ -23,8 +23,10 @@ from services.media.domain import (
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
     MAX_TRANSITION_MS,
+    MAX_ZOOM_PERCENT,
     MIN_OUTPUT_FPS,
     MIN_TRANSITION_MS,
+    MIN_ZOOM_PERCENT,
     AudioCurve,
     CutMusic,
     CutOperation,
@@ -140,6 +142,22 @@ class MusicOptions(BaseModel):
     fade_out_ms: int = Field(default=1000, ge=0, le=MAX_FADE_MS)
 
 
+class SegmentZoom(BaseModel):
+    """How close a segment's picture is at its start and end; it moves smoothly between."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    from_percent: int = Field(default=MIN_ZOOM_PERCENT, ge=MIN_ZOOM_PERCENT, le=MAX_ZOOM_PERCENT)
+    to_percent: int = Field(
+        ge=MIN_ZOOM_PERCENT,
+        le=MAX_ZOOM_PERCENT,
+        description="100 is the whole frame; 115 is a gentle push-in, 150 the closest.",
+    )
+
+
+NO_ZOOM = SegmentZoom(to_percent=MIN_ZOOM_PERCENT)
+
+
 @dataclass(frozen=True)
 class MusicBed:
     """An authorised workspace audio revision to mix under a clip."""
@@ -175,6 +193,7 @@ class PlannedSegment:
     # Output frame ranges [first, end) left after removing pauses; empty keeps every frame.
     keep_frames: tuple[tuple[int, int], ...] = ()
     pace: SegmentPace = SegmentPace()
+    zoom: SegmentZoom = NO_ZOOM
 
     def output_ms(self, fps: int) -> int:
         """The segment's length in the clip: pauses removed, then sped up, then the freeze."""
@@ -257,14 +276,17 @@ def plan_clip(
     audio: ClipAudio = DEFAULT_AUDIO,
     music: MusicBed | None = None,
     paces: Sequence[SegmentPace] = (),
+    zooms: Sequence[SegmentZoom | None] = (),
+    punch_ins: bool = False,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, builds captions and text
     overlays, and adds any music.
 
     ``transition`` joins every pair of segments unless the later segment's own entry in
-    ``transitions_in`` (one per segment, the first unused) says otherwise. ``paces`` has one
-    entry per segment, or none to play every segment as it is. Raises ValueError with a reason
-    to show.
+    ``transitions_in`` (one per segment, the first unused) says otherwise. ``paces`` and
+    ``zooms`` have one entry per segment, or none to play every segment as it is.
+    ``punch_ins`` zooms in at every other jump cut that pause removal makes. Raises ValueError
+    with a reason to show.
     """
     joins = [
         (own or transition or HARD_CUT).cut_transition()
@@ -273,7 +295,11 @@ def plan_clip(
     planned, warnings = [], []
     for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
         segment, warning = _bounded_segment(position, source, start_ms, end_ms, snap=snap)
-        planned.append(replace(segment, pace=paces[position - 1]) if paces else segment)
+        if paces:
+            segment = replace(segment, pace=paces[position - 1])
+        if zooms:
+            segment = replace(segment, zoom=zooms[position - 1] or NO_ZOOM)
+        planned.append(segment)
         if warning:
             warnings.append(warning)
     planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
@@ -284,6 +310,9 @@ def plan_clip(
         planned = [replace(segment, keep_frames=_kept_frames(segment, fps)) for segment in planned]
     if sum(len(segment.keep_frames) for segment in planned) > MAX_CUT_KEEP_RANGES:
         raise ValueError("The clip has too many pauses to remove. Cut it shorter or keep pauses.")
+    jump_cuts = any(len(segment.keep_frames) > 1 for segment in planned)
+    if punch_ins and not jump_cuts:
+        warnings.append("There are no jump cuts from removed pauses, so there are no punch-ins.")
     _require_room_for_joins(planned, joins, fps)
     offsets = _segment_offsets(planned, joins, fps)
     clip_ms = offsets[-1] + planned[-1].output_ms(fps)
@@ -308,6 +337,7 @@ def plan_clip(
         fps=fps,
         framing=framing,
         captions=caption_text is not None,
+        punch_ins=punch_ins and jump_cuts,
         fade_in_ms=fade_in_ms,
         fade_out_ms=fade_out_ms,
         audio=audio,
@@ -403,6 +433,7 @@ def _cut_operation(
     fps: int,
     framing: Framing,
     captions: bool,
+    punch_ins: bool,
     fade_in_ms: int,
     fade_out_ms: int,
     audio: ClipAudio,
@@ -436,6 +467,8 @@ def _cut_operation(
                 end_ms=segment.end_ms,
                 speed_percent=segment.pace.speed_percent,
                 freeze_end_ms=segment.pace.freeze_end_ms,
+                zoom_from_percent=segment.zoom.from_percent,
+                zoom_to_percent=segment.zoom.to_percent,
             )
             for segment in segments
         ),
@@ -446,6 +479,7 @@ def _cut_operation(
         reframe=framing == "auto",
         shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
         keep_frames=keep,
+        punch_ins=punch_ins,
         captions=captions,
         transitions=tuple(joins) if any(join.duration_ms for join in joins) else (),
         fade_in_ms=fade_in_ms,

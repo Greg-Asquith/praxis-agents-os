@@ -23,6 +23,7 @@ from media.ffmpeg import (
 from media.framing import fill_filter, fit_filter, follow_filter, subject_tracks
 from media.music import mix_music, music_input, validate_music
 from media.transitions import fades, join, validate_transitions
+from media.zoom import MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT, zoom_filter
 
 MAX_SEGMENTS = 10
 MAX_SHOT_CUTS = 500
@@ -76,6 +77,8 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "music_fade_out_ms": int,
             "speed_percents": list[int],
             "freeze_end_ms": list[int],
+            "zooms": list[list[int]],
+            "punch_ins": bool,
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -83,6 +86,7 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
     _validate_output(arguments)
     _validate_keep(arguments)
     _validate_pace(arguments)
+    _validate_zooms(arguments)
     validate_transitions(arguments)
     validate_music(arguments)
     return arguments
@@ -162,6 +166,22 @@ def _validate_pace(arguments: dict[str, Any]) -> None:
         raise OperationError("invalid_request", f"freeze_end_ms must be 0 to {MAX_FREEZE_MS}.")
 
 
+def _validate_zooms(arguments: dict[str, Any]) -> None:
+    """Zooms list one [from, to] percent per segment, when given."""
+    zooms = arguments.get("zooms")
+    if zooms is None:
+        return
+    if len(zooms) != len(arguments["segments"]) or any(
+        len(zoom) != 2 or not all(MIN_ZOOM_PERCENT <= value <= MAX_ZOOM_PERCENT for value in zoom)
+        for zoom in zooms
+    ):
+        raise OperationError(
+            "invalid_request",
+            f"zooms must list one [from, to] per segment, {MIN_ZOOM_PERCENT} to "
+            f"{MAX_ZOOM_PERCENT}.",
+        )
+
+
 def _video_input_count(arguments: dict[str, Any]) -> int:
     return len({item[0] for item in arguments["segments"]})
 
@@ -190,6 +210,7 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
     count = len(arguments["segments"])
     speeds = arguments.get("speed_percents", [100] * count)
     freezes = arguments.get("freeze_end_ms", [0] * count)
+    zooms = arguments.get("zooms", [[MIN_ZOOM_PERCENT, MIN_ZOOM_PERCENT]] * count)
     options, filters, lengths = [], [], []
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
@@ -205,9 +226,13 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
             framing = follow_filter(width, height, *tracks[position])
         else:
             framing = fill_filter(width, height)
+        # Punch-ins alternate from the second kept range, so every jump cut changes the zoom.
+        punched = keep.get(position, [])[1::2] if arguments.get("punch_ins") else []
+        zoom = zoom_filter(frames, zooms[position], punched)
         filters += _segment_filters(
             position,
             framing,
+            zoom,
             arguments.get("enhance_voice", False),
             summary["has_audio"],
             frames,
@@ -265,6 +290,7 @@ def _frame_count(duration_ms: int, fps: int) -> int:
 def _segment_filters(
     position: int,
     framing: str,
+    zoom: str,
     enhance_voice: bool,
     has_audio: bool,
     frames: int,
@@ -272,7 +298,10 @@ def _segment_filters(
     pace: tuple[str, str, int],
     fps: int,
 ) -> list[str]:
-    """Builds [vN] and [aN], each exactly the segment's output frames long so joins line up."""
+    """Builds [vN] and [aN], each exactly the segment's output frames long so joins line up.
+
+    The zoom counts the segment's frames before pauses are removed, as ``keep`` does.
+    """
     video_keep, audio_keep = _keep_filters(keep, fps)
     video_pace, audio_pace, _ = pace
     # Silence for an input without audio, so mismatched sources join cleanly.
@@ -281,7 +310,7 @@ def _segment_filters(
     return [
         f"[{position}:v:0]{framing},fps={fps},format=yuv420p,"
         f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={frames},"
-        f"setpts=PTS-STARTPTS{video_keep}{video_pace}[v{position}]",
+        f"setpts=PTS-STARTPTS{zoom}{video_keep}{video_pace}[v{position}]",
         f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
         f"{voice}apad,atrim=end_sample={frames * samples_per_frame(fps)},"
         f"asetpts=PTS-STARTPTS{audio_keep}{audio_pace}[a{position}]",

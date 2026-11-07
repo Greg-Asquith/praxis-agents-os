@@ -42,6 +42,8 @@ MAX_MUSIC_VOLUME = 100
 MIN_SPEED_PERCENT = 50
 MAX_SPEED_PERCENT = 200
 MAX_FREEZE_MS = 3000
+MIN_ZOOM_PERCENT = 100
+MAX_ZOOM_PERCENT = 150
 # Every named xfade style in the renderer's ffmpeg, and "none" for a hard cut.
 TransitionStyle = Literal[
     "none", "fade", "fadeblack", "fadewhite", "fadegrays", "fadefast", "fadeslow", "dissolve",
@@ -110,7 +112,8 @@ class SceneCutsOperation(_Range):
 
 class CutSegment(_Range):
     """A range of one input, by its position in the operation's sources, played at
-    ``speed_percent`` and then held on its last frame for ``freeze_end_ms``.
+    ``speed_percent`` and then held on its last frame for ``freeze_end_ms``. Its picture zooms
+    from ``zoom_from_percent`` to ``zoom_to_percent`` across it.
     """
 
     input: int = Field(ge=0, lt=MAX_CUT_SEGMENTS)
@@ -118,6 +121,8 @@ class CutSegment(_Range):
     end_ms: int = Field(gt=0)
     speed_percent: int = Field(default=100, ge=MIN_SPEED_PERCENT, le=MAX_SPEED_PERCENT)
     freeze_end_ms: int = Field(default=0, ge=0, le=MAX_FREEZE_MS)
+    zoom_from_percent: int = Field(default=100, ge=MIN_ZOOM_PERCENT, le=MAX_ZOOM_PERCENT)
+    zoom_to_percent: int = Field(default=100, ge=MIN_ZOOM_PERCENT, le=MAX_ZOOM_PERCENT)
 
 
 class CutTransition(BaseModel):
@@ -157,7 +162,8 @@ class CutOperation(_Operation):
     ``fit`` shows each whole frame over a blurred fill. ``reframe`` crops to follow the
     largest face in each shot, jumping only at ``shot_cuts_ms`` (input, time) pairs.
     Otherwise frames are centre-cropped. ``keep_frames`` lists (segment, first, end) output
-    frames to keep, dropping the rest with their audio, before any speed change. ``captions`` adds a staged ASS
+    frames to keep, dropping the rest with their audio, before any speed change. ``punch_ins``
+    zooms in on every other kept range of a segment. ``captions`` adds a staged ASS
     file as the last input, burned in on the joined timeline. ``transitions`` has one entry
     per junction, or none for hard cuts throughout; the fades run from and to black and silence.
     ``enhance_voice`` cleans up each segment's sound before the join, and
@@ -177,6 +183,7 @@ class CutOperation(_Operation):
     keep_frames: tuple[tuple[int, int, int], ...] = Field(
         default=(), max_length=MAX_CUT_KEEP_RANGES
     )
+    punch_ins: bool = False
     captions: bool = False
     transitions: tuple[CutTransition, ...] = Field(default=(), max_length=MAX_CUT_SEGMENTS - 1)
     fade_in_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
@@ -236,6 +243,9 @@ class CutOperation(_Operation):
             ],
             "speed_percents": [segment.speed_percent for segment in self.segments],
             "freeze_end_ms": [segment.freeze_end_ms for segment in self.segments],
+            "zooms": [
+                [segment.zoom_from_percent, segment.zoom_to_percent] for segment in self.segments
+            ],
             "width": self.width,
             "height": self.height,
             "fps": self.fps,
@@ -243,6 +253,7 @@ class CutOperation(_Operation):
             "reframe": self.reframe,
             "shot_cuts": [list(cut) for cut in self.shot_cuts_ms],
             "keep": [list(keep) for keep in self.keep_frames],
+            "punch_ins": self.punch_ins,
             "captions": self.captions,
             "transitions": [
                 [transition.style, transition.duration_ms, transition.audio_curve]

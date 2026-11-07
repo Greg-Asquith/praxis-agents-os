@@ -337,6 +337,42 @@ def test_speed_retimes_video_and_audio_together_and_a_freeze_holds_in_silence(
     assert _loudness(tmp_path, upload, "1.7:end=3.4") < -60
 
 
+def test_a_push_in_and_punch_ins_zoom_about_the_centre_of_a_vertical_crop(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # centre_box.mp4 is 640x360 with a 120-pixel white box in the middle, about 107 pixels
+    # wide in a 180x320 crop. Segment 1 pushes in to 150%; segment 2 keeps two ranges, and
+    # punches in on the second.
+    _run(
+        storage,
+        config,
+        "cut",
+        sources=("centre_box.mp4",),
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 2000], [0, 0, 3000]],
+            "width": 180,
+            "height": 320,
+            "fps": 30,
+            "fit": False,
+            "keep": [[1, 0, 30], [1, 60, 90]],
+            "zooms": [[100, 150], [100, 100]],
+            "punch_ins": True,
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    times = [0, 1950, 2500, 3500]
+    _run(storage, config, "frames", sources=("clip.mp4",), outputs=4, arguments={"times_ms": times})
+
+    boxes = []
+    for index in range(len(times)):
+        row = cv2.imdecode(np.frombuffer(storage.uploads[f"out-{index}"], np.uint8), 0)[160]
+        columns = np.flatnonzero(row > 128)
+        boxes.append((len(columns), (columns[0] + columns[-1]) / 2))
+    assert [width for width, _ in boxes] == pytest.approx([107, 159, 107, 117], abs=5)
+    assert [centre for _, centre in boxes] == pytest.approx([90] * 4, abs=3)
+
+
 def test_transition_names_match_the_ffmpeg_build() -> None:
     def names(filter_name: str, option: str) -> set[str]:
         help_text = subprocess.run(

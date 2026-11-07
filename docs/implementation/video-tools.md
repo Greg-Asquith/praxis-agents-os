@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200) and `freeze_end_ms` (0 to 3000), one per segment, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -93,6 +93,16 @@ nothing for AAC.
 - **`keep`:** per segment, the output frames to keep. Audio is cut into
   frames one video frame long, so `select` and `aselect` pick the same
   indices and stay in sync.
+- **Zooms:** a segment's `zooms` entry enlarges the centre of the framed
+  picture from one percent to the other across the segment's frames, and
+  `punch_ins` makes every other `keep` range of a segment 10% closer (up to
+  150% in all), so each jump cut changes the zoom. The `perspective` filter
+  applies it after framing and before `keep`, with per-frame expressions of
+  the frame number and sub-pixel sampling, so a slow push-in doesn't judder.
+  The zoomed area is always inside the framed picture, so a zoom never shows
+  the frame's edge or uncovers more of `fit`'s blurred fill. With `reframe`,
+  the zoom centres on the crop that follows the face. `crop` can't change
+  size per frame, and `zoompan` steps in whole source pixels.
 - **Speed and freezes:** after `keep`, a segment at another
   `speed_percents` value is retimed with `setpts` and resampled to `fps`, and
   its audio with one `atempo` filter, which keeps the pitch; both are padded
@@ -416,6 +426,14 @@ arguments are as follows:
   source's pace. Captions, overlays, transitions, and the clip's length follow
   the new timing. Each clip's segments report `speed` and `freeze_end_ms`. The
   agent is told to use them only when asked.
+- **Zooms:** a segment's `zoom` (`{from_percent, to_percent}`, 100 to 150,
+  `from_percent` 100 by default) pushes in slowly across it; the agent is told
+  to use it only when asked. The call's `punch_ins: "auto"` (default `off`)
+  zooms in to 110% on every other jump cut that `remove_silences` makes, which
+  hides the jump; the agent is told to use it when the person wants punchier
+  pacing. Without jump cuts the clip warns that it has no punch-ins and
+  renders without them. Each clip reports `punch_ins`, and its segments their
+  `zoom`.
 - **Text overlays:** each clip takes up to five `text_overlays`: `text` (1 to
   200 characters), a `preset` (`bold`, `clean`, or `title`), `style`
   overrides (caption options plus `align` and up to 4 lines), timing, and
@@ -555,8 +573,9 @@ The tool rows add the following:
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
 - **`cut_video_clips`:** a grid of stills with each clip's length, name,
-  ranges, fades, transitions, speeds (such as **2× Speed**), and freezes
-  (**Freeze Frame 1 s**) in play order, then **Voice Cleaned Up**,
+  ranges, fades, transitions, speeds (such as **2× Speed**), freezes
+  (**Freeze Frame 1 s**), and zooms (**Zoom 100% to 120%**) in play order,
+  then **Punch-In Zooms**, **Voice Cleaned Up**,
   **Music Under Speech** (or **Music Added** without ducking), and **Sound
   Levelled** when applied, and overlay text and times, plus a link to the
   output folder and the music rights notice. Selecting a clip opens a

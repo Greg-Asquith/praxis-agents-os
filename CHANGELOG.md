@@ -12,6 +12,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` can zoom in on every other jump cut that removing pauses
+  makes, which hides the jump, and push in slowly across a segment, up to
+  150%. Zooms stay inside the framed picture and follow the face when framing
+  is automatic. The clip card shows each zoom and **Punch-In Zooms**.
 - `cut_video_clips` can play a segment faster or in slow motion, from 0.5x
   to 2x with voices at their natural pitch, and hold a segment's last frame
   for up to 3 seconds. Captions, text overlays, and transitions follow the new

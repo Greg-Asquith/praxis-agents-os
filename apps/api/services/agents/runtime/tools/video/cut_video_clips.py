@@ -53,6 +53,7 @@ from services.media.captions import (
 )
 from services.media.clips import (
     DEFAULT_AUDIO,
+    NO_ZOOM,
     AspectRatio,
     ClipAudio,
     ClipSource,
@@ -61,6 +62,7 @@ from services.media.clips import (
     MusicOptions,
     PlannedClip,
     SegmentPace,
+    SegmentZoom,
     TransitionOptions,
     output_size,
     plan_clip,
@@ -121,6 +123,9 @@ class ClipSegmentArgument(BaseModel):
         ge=0,
         le=MAX_FREEZE_MS,
         description="Hold the segment's last frame this long, in silence.",
+    )
+    zoom: SegmentZoom | None = Field(
+        default=None, description="A slow push-in across the segment. Omit for none."
     )
 
 
@@ -197,9 +202,11 @@ def cut_video_clips_available() -> bool:
         "from a phone, laptop, or room recording. music mixes a track the person provided "
         "under every clip, or one clip's, and lowers it while someone talks; add it only when "
         "asked, and only an audio File they gave you. A segment's speed speeds it up or slows "
-        "it down, and freeze_end_ms holds its last frame; use them only when asked. Clips save in a folder named after their "
-        "first video unless folder names another. One clip failing doesn't stop the others; "
-        "the result reports each clip."
+        "it down, freeze_end_ms holds its last frame, and zoom pushes in slowly; use them only "
+        "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
+        "makes, which hides the jump; use it when the person wants punchier pacing. Clips save "
+        "in a folder named after their first video unless folder names another. One clip "
+        "failing doesn't stop the others; the result reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -272,6 +279,10 @@ async def cut_video_clips(
             )
         ),
     ] = False,
+    punch_ins: Annotated[
+        Literal["off", "auto"],
+        Field(description="'auto' zooms in at every other jump cut. Needs remove_silences."),
+    ] = "off",
     transition: Annotated[
         TransitionOptions | None,
         Field(
@@ -323,6 +334,7 @@ async def cut_video_clips(
         framing=framing,
         captions=style,
         remove_silences=remove_silences,
+        punch_ins=punch_ins == "auto",
         transition=transition,
         audio=audio,
         music=music,
@@ -429,6 +441,7 @@ def _plan_clips(
     framing: Framing,
     captions: CaptionStyle | None,
     remove_silences: bool,
+    punch_ins: bool,
     transition: TransitionOptions | None,
     audio: ClipAudio,
     music: MusicArgument | None,
@@ -463,6 +476,8 @@ def _plan_clips(
                         )
                         for segment in clip.segments
                     ],
+                    zooms=[segment.zoom for segment in clip.segments],
+                    punch_ins=punch_ins,
                 )
             )
         except ValueError as exc:
@@ -606,6 +621,7 @@ def _plan_output(request: PlannedClip) -> dict[str, object]:
         "segments": _segments(request),
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,
+        "punch_ins": request.operation.punch_ins,
         "enhance_voice": request.operation.enhance_voice,
         "music": _music(request),
         "text_overlays": _overlays(request.overlays),
@@ -624,6 +640,7 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
             "end": format_duration(segment.end_ms),
             "speed": segment.pace.speed_percent / 100,
             "freeze_end_ms": segment.pace.freeze_end_ms,
+            "zoom": segment.zoom.model_dump() if segment.zoom != NO_ZOOM else None,
             "transition_in": (
                 transitions[position - 1].model_dump()
                 if position and transitions and transitions[position - 1].duration_ms

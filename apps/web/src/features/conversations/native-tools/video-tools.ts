@@ -179,8 +179,8 @@ export type VideoClip = {
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
-  // Fades, transitions, and speed changes in the order they play, such as "Fade In 0.5 s",
-  // then sound.
+  // Fades, transitions, speed changes, and zooms in the order they play, such as
+  // "Fade In 0.5 s", then punch-ins and sound.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -294,8 +294,21 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
     if (typeof freeze === "number" && freeze > 0) {
       effects.push(`Freeze Frame ${seconds(freeze)}`)
     }
+    const zoom = segment["zoom"]
+    if (isRecord(zoom) && typeof zoom["from_percent"] === "number") {
+      const from = zoom["from_percent"]
+      const to = zoom["to_percent"]
+      effects.push(
+        typeof to === "number" && to !== from
+          ? `Zoom ${String(from)}% to ${String(to)}%`
+          : `Zoom ${String(from)}%`
+      )
+    }
   }
   fade("fade_out_ms", "Fade Out")
+  if (clip["punch_ins"] === true) {
+    effects.push("Punch-In Zooms")
+  }
   if (clip["enhance_voice"] === true) {
     effects.push("Voice Cleaned Up")
   }

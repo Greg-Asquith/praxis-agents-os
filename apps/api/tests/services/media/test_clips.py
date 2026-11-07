@@ -190,6 +190,21 @@ def test_removed_pauses_shorten_the_clip_and_captions_keep_to_the_words() -> Non
     assert starts == ["0:00:00.15", "0:00:01.65"]
 
 
+def test_punch_ins_go_to_the_renderer_only_where_pauses_left_jump_cuts() -> None:
+    talk = _source(60_000, transcript=_transcript())
+    plan = {"size": (1080, 1920), "framing": "center", "snap": False, "punch_ins": True}
+
+    tightened = plan_clip([(talk, 0, 8_000)], **plan, remove_silences=True)
+    untouched = plan_clip([(talk, 0, 8_000)], **plan)
+
+    assert tightened.operation.renderer_arguments()["punch_ins"] is True
+    assert tightened.warnings == ()
+    assert untouched.operation.punch_ins is False
+    assert untouched.warnings == (
+        "There are no jump cuts from removed pauses, so there are no punch-ins.",
+    )
+
+
 def test_word_highlighting_and_pause_removal_need_exact_word_times() -> None:
     talk = _source(60_000, transcript=_transcript(model="gemini-3.8-flash"))
     plan = {"size": (1080, 1920), "framing": "center", "snap": False}
