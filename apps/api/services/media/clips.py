@@ -93,6 +93,29 @@ class TransitionOptions(BaseModel):
 HARD_CUT = TransitionOptions(style="none")
 
 
+class ClipAudio(BaseModel):
+    """How every clip sounds: levelled loudness by default, voice clean-up when asked."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    normalize: bool = Field(
+        default=True,
+        description=(
+            "Level each clip to the loudness Reels, Shorts, and TikTok play at. Leave on."
+        ),
+    )
+    enhance_voice: bool = Field(
+        default=False,
+        description=(
+            "Reduce background noise and make voices clearer, for phone, laptop, or room "
+            "recordings. Only when the person asks for clearer sound."
+        ),
+    )
+
+
+DEFAULT_AUDIO = ClipAudio()
+
+
 @dataclass(frozen=True)
 class ClipSource:
     """An authorised workspace video revision with what snapping, framing, and captions read."""
@@ -186,6 +209,7 @@ def plan_clip(
     fade_in_ms: int = 0,
     fade_out_ms: int = 0,
     overlays: Sequence[TextOverlay] = (),
+    audio: ClipAudio = DEFAULT_AUDIO,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions and
     text overlays.
@@ -238,6 +262,7 @@ def plan_clip(
         captions=caption_text is not None,
         fade_in_ms=fade_in_ms,
         fade_out_ms=fade_out_ms,
+        audio=audio,
     )
     clip = PlannedClip(
         segments=tuple(planned),
@@ -317,6 +342,7 @@ def _cut_operation(
     captions: bool,
     fade_in_ms: int,
     fade_out_ms: int,
+    audio: ClipAudio,
 ) -> tuple[CutOperation, tuple[FileRevision, ...]]:
     """Returns the renderer operation and its sources, one input per distinct revision."""
     keep = tuple(
@@ -356,6 +382,8 @@ def _cut_operation(
         transitions=tuple(joins) if any(join.duration_ms for join in joins) else (),
         fade_in_ms=fade_in_ms,
         fade_out_ms=fade_out_ms,
+        enhance_voice=audio.enhance_voice,
+        normalize_loudness=audio.normalize,
     )
     return operation, tuple(revisions.values())
 

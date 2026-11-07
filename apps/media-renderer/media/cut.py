@@ -8,6 +8,7 @@ from typing import Any
 
 from driver.server import OperationContext, OperationError
 
+from media.audio import VOICE_FILTERS, normalize_loudness
 from media.ffmpeg import (
     OUTPUT_AUDIO_RATE,
     check_arguments,
@@ -60,6 +61,8 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "transitions": list[tuple[str, int, str]],
             "fade_in_ms": int,
             "fade_out_ms": int,
+            "enhance_voice": bool,
+            "normalize_loudness": bool,
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -163,7 +166,13 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         else:
             framing = fill_filter(width, height)
         filters += _segment_filters(
-            position, framing, summary["has_audio"], frames, keep.get(position), fps
+            position,
+            framing,
+            arguments.get("enhance_voice", False),
+            summary["has_audio"],
+            frames,
+            keep.get(position),
+            fps,
         )
     total = join(filters, lengths, arguments.get("transitions", []), fps)
     video = "[joined]"
@@ -173,6 +182,9 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         video = "[captioned]"
     filters += fades(video, arguments, total, fps)
     output = context.output_path(0)
+    normalize = arguments.get("normalize_loudness", False)
+    # Loudness is measured on the finished mix, so it renders to a working file first.
+    rendered = context.workdir / "mixed.mp4" if normalize else output
     run_ffmpeg(
         context,
         *options,
@@ -190,9 +202,12 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         "+faststart",
         "-f",
         "mp4",
-        output.name,
+        rendered.name,
     )
-    return probe_file(context, output.name)
+    loudness = (
+        normalize_loudness(context, rendered, output, OUTPUT_AUDIO_OPTIONS) if normalize else None
+    )
+    return {**probe_file(context, output.name), "loudness_lufs": loudness}
 
 
 def _frame_count(duration_ms: int, fps: int) -> int:
@@ -202,6 +217,7 @@ def _frame_count(duration_ms: int, fps: int) -> int:
 def _segment_filters(
     position: int,
     framing: str,
+    enhance_voice: bool,
     has_audio: bool,
     frames: int,
     keep: list[tuple[int, int]] | None,
@@ -211,12 +227,13 @@ def _segment_filters(
     video_keep, audio_keep = _keep_filters(keep, fps)
     # Silence for an input without audio, so mismatched sources join cleanly.
     audio = f"[{position}:a:0]" if has_audio else f"anullsrc=r={OUTPUT_AUDIO_RATE}:cl=stereo,"
+    voice = f"{VOICE_FILTERS}," if enhance_voice else ""
     return [
         f"[{position}:v:0]{framing},fps={fps},format=yuv420p,"
         f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={frames},"
         f"setpts=PTS-STARTPTS{video_keep}[v{position}]",
         f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
-        f"apad,atrim=end_sample={frames * samples_per_frame(fps)},"
+        f"{voice}apad,atrim=end_sample={frames * samples_per_frame(fps)},"
         f"asetpts=PTS-STARTPTS{audio_keep}[a{position}]",
     ]
 

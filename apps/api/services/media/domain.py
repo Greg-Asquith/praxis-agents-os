@@ -132,6 +132,8 @@ class CutOperation(_Operation):
     frames to keep, dropping the rest with their audio. ``captions`` adds a staged ASS
     file as the last input, burned in on the joined timeline. ``transitions`` has one entry
     per junction, or none for hard cuts throughout; the fades run from and to black and silence.
+    ``enhance_voice`` cleans up each segment's sound before the join, and
+    ``normalize_loudness`` brings the finished clip to -14 LUFS in a second, audio-only pass.
     """
 
     name: Literal["cut"] = "cut"
@@ -150,6 +152,8 @@ class CutOperation(_Operation):
     transitions: tuple[CutTransition, ...] = Field(default=(), max_length=MAX_CUT_SEGMENTS - 1)
     fade_in_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
     fade_out_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
+    enhance_voice: bool = False
+    normalize_loudness: bool = False
 
     @model_validator(mode="after")
     def require_every_input(self):
@@ -198,6 +202,8 @@ class CutOperation(_Operation):
             ],
             "fade_in_ms": self.fade_in_ms,
             "fade_out_ms": self.fade_out_ms,
+            "enhance_voice": self.enhance_voice,
+            "normalize_loudness": self.normalize_loudness,
         }
 
 

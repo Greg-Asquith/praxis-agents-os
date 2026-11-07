@@ -12,6 +12,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Clips from `cut_video_clips` are levelled to -14 LUFS, the loudness Reels,
+  Shorts, and TikTok play at, unless `audio.normalize` is off. With
+  `audio.enhance_voice`, the agent can also reduce background noise and make
+  voices clearer. The clip card shows **Sound Levelled** and **Voice Cleaned
+  Up** when they apply.
 - Agents can forecast a time series with `forecast_series`, which runs
   Mistral's Timestral 123M on CPU in the isolated data science service
   (`apps/data-science`). It returns each period's median and likely range, a

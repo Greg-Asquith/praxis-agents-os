@@ -50,7 +50,9 @@ from services.media.captions import (
     TextOverlay,
 )
 from services.media.clips import (
+    DEFAULT_AUDIO,
     AspectRatio,
+    ClipAudio,
     ClipSource,
     Framing,
     PlannedClip,
@@ -160,9 +162,11 @@ def cut_video_clips_available() -> bool:
         "segment's transition_in; any ffmpeg xfade style, 400 ms by default. Use transitions "
         "and fade_in_ms or fade_out_ms only when the person asks for them. A clip's "
         "text_overlays add text such as a hook or a call to action, at the top by default; "
-        "the 'title' preset suits a hook. Clips save in a folder named after their first video "
-        "unless folder names another. One clip failing doesn't stop the others; the result "
-        "reports each clip."
+        "the 'title' preset suits a hook. Every clip's sound is levelled to the loudness "
+        "social apps play at; set audio.enhance_voice when the person asks for clearer sound "
+        "from a phone, laptop, or room recording. Clips save in a folder named after their "
+        "first video unless folder names another. One clip failing doesn't stop the others; "
+        "the result reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -243,6 +247,12 @@ async def cut_video_clips(
             )
         ),
     ] = None,
+    audio: Annotated[
+        ClipAudio,
+        Field(
+            description="Sound for every clip. Omit to level loudness and leave voices as they are."
+        ),
+    ] = DEFAULT_AUDIO,
     folder: Annotated[
         str | None,
         Field(
@@ -276,6 +286,7 @@ async def cut_video_clips(
         captions=style,
         remove_silences=remove_silences,
         transition=transition,
+        audio=audio,
     )
 
     for file, revision in videos.values():
@@ -343,6 +354,7 @@ def _plan_clips(
     captions: CaptionStyle | None,
     remove_silences: bool,
     transition: TransitionOptions | None,
+    audio: ClipAudio,
 ) -> list[PlannedClip]:
     planned = []
     for index, clip in enumerate(clips, start=1):
@@ -364,6 +376,7 @@ def _plan_clips(
                     fade_in_ms=clip.fade_in_ms,
                     fade_out_ms=clip.fade_out_ms,
                     overlays=clip.text_overlays,
+                    audio=audio,
                 )
             )
         except ValueError as exc:
@@ -461,6 +474,7 @@ async def _save_clip(
         "width": metadata.width,
         "height": metadata.height,
         "size_bytes": saved.revision.size_bytes,
+        "loudness_lufs": metadata.loudness_lufs,
         "folder": {"id": str(folder.id), "name": folder.name},
         **_plan_output(request),
     }
@@ -506,6 +520,7 @@ def _plan_output(request: PlannedClip) -> dict[str, object]:
         "segments": _segments(request),
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,
+        "enhance_voice": request.operation.enhance_voice,
         "text_overlays": _overlays(request.overlays),
         "warnings": list(request.warnings),
     }

@@ -179,7 +179,7 @@ export type VideoClip = {
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
-  // Fades and transitions in the order they play, such as "Fade In 0.5 s".
+  // Fades and transitions in the order they play, such as "Fade In 0.5 s", then sound.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -280,6 +280,12 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
     }
   }
   fade("fade_out_ms", "Fade Out")
+  if (clip["enhance_voice"] === true) {
+    effects.push("Voice Cleaned Up")
+  }
+  if (typeof clip["loudness_lufs"] === "number") {
+    effects.push("Sound Levelled")
+  }
   return effects
 }
 

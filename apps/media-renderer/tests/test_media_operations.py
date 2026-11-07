@@ -2,8 +2,10 @@
 
 """Media operations through the driver, against real ffmpeg on Linux."""
 
+import json
 import re
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -205,6 +207,60 @@ def test_a_transition_overlaps_its_segments_and_fades_start_from_black(
     assert red[2] > 150 > red[0]
     assert blend[0] > 60 and blend[2] > 60
     assert blue[0] > 150 > blue[2]
+
+
+def test_cut_normalises_loudness_and_leaves_a_silent_clip_silent(
+    storage: FakeStorage, config: DriverConfig, tmp_path: Path
+) -> None:
+    # sample.mp4's tone plays at about -22 LUFS; sample.webm has no audio.
+    arguments = {"width": 320, "height": 180, "fps": 30, "fit": False, "normalize_loudness": True}
+    tone = _run(
+        storage, config, "cut", outputs=1, arguments={**arguments, "segments": [[0, 0, 4000]]}
+    )
+    tone_lufs = _loudness(tmp_path, storage.uploads["out-0"])
+    silent = _run(
+        storage,
+        config,
+        "cut",
+        sources=("sample.webm",),
+        outputs=1,
+        arguments={**arguments, "segments": [[0, 0, 1000]]},
+    )
+
+    assert abs(tone_lufs + 14) <= 1
+    assert abs(tone["result"]["loudness_lufs"] + 14) <= 1
+    assert abs(tone["result"]["duration_ms"] - 4000) <= 100
+    assert silent["result"]["loudness_lufs"] is None
+    assert _loudness(tmp_path, storage.uploads["out-0"]) < -70
+
+
+def test_enhance_voice_lowers_the_noise_floor(
+    storage: FakeStorage, config: DriverConfig, tmp_path: Path
+) -> None:
+    # noisy_tone.mp4 is a tone over steady hiss for 2 s, then the hiss alone.
+    levels = []
+    for enhance in (False, True):
+        _run(
+            storage,
+            config,
+            "cut",
+            sources=("noisy_tone.mp4",),
+            outputs=1,
+            arguments={
+                "segments": [[0, 0, 4000]],
+                "width": 160,
+                "height": 90,
+                "fps": 30,
+                "fit": False,
+                "enhance_voice": enhance,
+            },
+        )
+        upload = storage.uploads["out-0"]
+        levels.append((_loudness(tmp_path, upload), _loudness(tmp_path, upload, "2.3:end=3.8")))
+
+    (tone, hiss), (enhanced_tone, enhanced_hiss) = levels
+    assert enhanced_hiss <= hiss - 5
+    assert abs(enhanced_tone - tone) <= 3
 
 
 def test_transition_names_match_the_ffmpeg_build() -> None:
@@ -413,6 +469,22 @@ def _captions(events: str) -> bytes:
         f"[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, "
         f"Text\n{events}\n"
     ).encode()
+
+
+def _loudness(tmp_path: Path, clip: bytes, trim: str = "0") -> float:
+    """Integrated loudness of a clip's audio from `trim` (atrim start and options) to its end."""
+    path = tmp_path / "measured.mp4"
+    path.write_bytes(clip)
+    log = subprocess.run(
+        [
+            FFMPEG, "-hide_banner", "-nostats", "-i", str(path), "-vn",
+            "-af", f"atrim=start={trim},loudnorm=print_format=json", "-f", "null", "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr  # fmt: skip
+    return float(json.loads(re.findall(r"\{[^{}]*\}", log)[-1])["input_i"])
 
 
 def _dimensions(jpeg: bytes) -> tuple[int, int]:

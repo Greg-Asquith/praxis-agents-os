@@ -53,6 +53,8 @@ describe("cutVideoClipsResult", () => {
           ],
           fade_in_ms: 500,
           fade_out_ms: 0,
+          enhance_voice: true,
+          loudness_lufs: -14,
         },
         {
           index: 2,
@@ -65,7 +67,7 @@ describe("cutVideoClipsResult", () => {
     })
 
     expect(result?.clips.map((clip) => [clip.effects, clip.error])).toEqual([
-      [["Fade In 0.5 s", "Wipe Left 0.4 s"], null],
+      [["Fade In 0.5 s", "Wipe Left 0.4 s", "Voice Cleaned Up", "Sound Levelled"], null],
       [[], "Unreadable."],
     ])
   })

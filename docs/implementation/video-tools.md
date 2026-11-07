@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000) | one H.264 and AAC MP4 |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `enhance_voice`, `normalize_loudness` | one H.264 and AAC MP4, with its loudness when normalised |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -106,6 +106,19 @@ nothing for AAC.
   against the pinned ffmpeg's help output.
 - **Fades:** `fade_in_ms` and `fade_out_ms` fade the finished clip, captions
   included, from and to black and silence.
+- **`enhance_voice`:** cleans up each segment's sound before the join: an
+  80 Hz high-pass, `afftdn` noise reduction (up to 12 dB below a -45 dB
+  floor), a 3 dB presence lift at 3 kHz, and gentle compression
+  (`media/audio.py`).
+- **`normalize_loudness`:** brings the finished clip to -14 LUFS integrated
+  and -1.5 dBTP, the level Reels, Shorts, and TikTok play at. The clip renders
+  to a working file, a `loudnorm` pass measures its audio, and a second pass
+  re-encodes the audio only (video copied) with the measured values in
+  linear mode. `loudnorm` switches to its limiter when a linear gain would
+  pass the peak ceiling. A clip below -70 LUFS, such as one from a video with
+  no audio, is kept as it is and reports no loudness. The working file
+  doubles the clip's space in the instance's memory until the second pass
+  ends.
 
 ### Isolation
 
@@ -341,7 +354,7 @@ minutes and low beyond that. It doesn't read the transcript.
 ### Clips
 
 `cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?,
-remove_silences?, transition?, folder?)` renders up to five clips and saves
+remove_silences?, transition?, audio?, folder?)` renders up to five clips and saves
 each as a new video File. It is an internal write, `auto` by default. Its
 arguments are as follows:
 
@@ -384,6 +397,12 @@ arguments are as follows:
   mapped through the same timeline as captions. Overlays sit at the `top` by
   default, on a layer above the captions, and one at the captions' edge moves
   past the tallest cue with a warning.
+- **`audio`:** `{normalize, enhance_voice}` for every clip. `normalize`
+  (default true) levels each clip to -14 LUFS; the clip result reports
+  `loudness_lufs`, also stored in the revision's media metadata.
+  `enhance_voice` (default false) reduces background noise and makes voices
+  clearer; the agent is told to use it for phone, laptop, or room recordings
+  when the person asks for clearer sound.
 - **`folder`:** names the output folder, created in the caller's workspace if
   needed. Otherwise clips go in the first segment's video's
   [output folder](#output-folders).
@@ -492,7 +511,8 @@ The tool rows add the following:
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
 - **`cut_video_clips`:** a grid of stills with each clip's length, name,
-  ranges, fades and transitions in play order, and overlay text and times,
+  ranges, fades and transitions in play order, then **Voice Cleaned Up** and
+  **Sound Levelled** when applied, and overlay text and times,
   plus a link to the output folder. Selecting a clip opens a player; a failed
   clip shows its reason.
 

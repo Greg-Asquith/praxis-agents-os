@@ -153,6 +153,7 @@ class VideoMetadata(BaseModel):
     has_audio: bool
     audio_codec: str | None = Field(default=None, max_length=32)
     rotation: int = Field(ge=0, lt=360)
+    loudness_lufs: float | None = Field(default=None, ge=-99, le=0)
 
 
 class FileRead(BaseModel):
