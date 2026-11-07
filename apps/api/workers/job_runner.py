@@ -108,10 +108,11 @@ async def run_once(
         await db.commit()
 
     async def claim_and_execute_one() -> bool:
-        job_id = await _claim_one_job(owner_instance_id=owner_id)
-        if job_id is None:
+        claimed = await _claim_one_job(owner_instance_id=owner_id)
+        if claimed is None:
             return False
-        await _execute_claimed_job(job_id, owner_instance_id=owner_id)
+        job_id, lease_token = claimed
+        await _execute_claimed_job(job_id, lease_token=lease_token)
         return True
 
     return await run_worker_batch(
@@ -121,13 +122,13 @@ async def run_once(
     )
 
 
-async def execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
+async def execute_claimed_job(job_id: UUID, *, lease_token: UUID) -> None:
     """Execute one claimed job and finalize the attempt."""
     async with worker_run_slot():
-        await _execute_claimed_job(job_id, owner_instance_id=owner_instance_id)
+        await _execute_claimed_job(job_id, lease_token=lease_token)
 
 
-async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
+async def _execute_claimed_job(job_id: UUID, *, lease_token: UUID) -> None:
     """Executes one claimed job after the caller reserves worker capacity."""
     maintenance_session_factory = get_maintenance_async_db_session_factory()
     async with maintenance_session_factory() as maintenance_db:
@@ -135,7 +136,7 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
             select(Job).where(
                 Job.id == job_id,
                 Job.status == JOB_STATUS_RUNNING,
-                Job.locked_by == owner_instance_id,
+                Job.lease_token == lease_token,
                 Job.lock_expires_at.is_not(None),
                 Job.lock_expires_at > datetime.now(UTC),
             )
@@ -143,11 +144,12 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
         if claimed_job is None:
             logger.warning(
                 "Claimed job is no longer executable by this worker",
-                extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+                extra={"job_id": str(job_id), "lease_token": str(lease_token)},
             )
             return
         workspace_id = claimed_job.workspace_id
         user_id = claimed_job.concurrency_user_id
+        lease_expires_at = claimed_job.lock_expires_at
 
     heartbeat_stop = asyncio.Event()
     lease_lost = asyncio.Event()
@@ -172,7 +174,7 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 select(Job).where(
                     Job.id == job_id,
                     Job.status == JOB_STATUS_RUNNING,
-                    Job.locked_by == owner_instance_id,
+                    Job.lease_token == lease_token,
                     Job.lock_expires_at.is_not(None),
                     Job.lock_expires_at > now_utc,
                 )
@@ -181,7 +183,7 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 await db.rollback()
                 logger.warning(
                     "Claimed job is no longer executable by this worker",
-                    extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+                    extra={"job_id": str(job_id), "lease_token": str(lease_token)},
                 )
                 return
 
@@ -191,14 +193,14 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 finalized = await finalize_job_failure(
                     db,
                     job,
-                    owner_instance_id=owner_instance_id,
+                    lease_token=lease_token,
                     code="unknown_kind",
                     message=f"No handler is registered for job kind '{job.kind}'",
                     force_terminal=True,
                 )
                 if finalized is None:
                     await db.rollback()
-                    _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                    _log_stale_job_result(job_id, lease_token=lease_token)
                     return
                 await db.commit()
                 logger.error(
@@ -216,7 +218,8 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 heartbeat_task = asyncio.create_task(
                     heartbeat_job_lease(
                         job_id=job_id,
-                        owner_instance_id=owner_instance_id,
+                        lease_token=lease_token,
+                        lease_expires_at=lease_expires_at,
                         stop=heartbeat_stop,
                         lease_lost=lease_lost,
                         cancel_target=handler_task,
@@ -228,11 +231,11 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 finalized = await finalize_job_success(
                     db,
                     job,
-                    owner_instance_id=owner_instance_id,
+                    lease_token=lease_token,
                 )
                 if not finalized:
                     await db.rollback()
-                    _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                    _log_stale_job_result(job_id, lease_token=lease_token)
                     return
                 await db.commit()
                 logger.info(
@@ -247,14 +250,14 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                     current_task is not None and current_task.cancelling() > 0
                 ):
                     raise
-                _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                _log_stale_job_result(job_id, lease_token=lease_token)
                 return
             except TimeoutError:
                 heartbeat_stop.set()
                 await db.rollback()
                 await _record_job_failure(
                     job_id,
-                    owner_instance_id=owner_instance_id,
+                    lease_token=lease_token,
                     code="handler_timeout",
                     message=f"Job handler exceeded timeout for kind '{definition.kind}'",
                 )
@@ -267,7 +270,7 @@ async def _execute_claimed_job(job_id: UUID, *, owner_instance_id: str) -> None:
                 )
                 await _record_job_failure(
                     job_id,
-                    owner_instance_id=owner_instance_id,
+                    lease_token=lease_token,
                     code=exc.__class__.__name__,
                     message=str(exc) or exc.__class__.__name__,
                 )
@@ -335,7 +338,7 @@ async def run_drain(
     return total_claimed
 
 
-async def _claim_one_job(*, owner_instance_id: str) -> UUID | None:
+async def _claim_one_job(*, owner_instance_id: str) -> tuple[UUID, UUID] | None:
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         claimed = await claim_jobs(
@@ -344,9 +347,9 @@ async def _claim_one_job(*, owner_instance_id: str) -> UUID | None:
             batch_size=1,
             lock_ttl_seconds=settings.JOBS_LOCK_TTL_SECONDS,
         )
-        job_id = claimed[0].id if claimed else None
+        result = (claimed[0].id, claimed[0].lease_token) if claimed else None
         await db.commit()
-        return job_id
+        return result
 
 
 async def main(argv: Sequence[str] | None = None) -> int:
@@ -379,7 +382,7 @@ async def main(argv: Sequence[str] | None = None) -> int:
 async def _record_job_failure(
     job_id: UUID,
     *,
-    owner_instance_id: str,
+    lease_token: UUID,
     code: str,
     message: str,
 ) -> None:
@@ -391,7 +394,7 @@ async def _record_job_failure(
                 .where(
                     Job.id == job_id,
                     Job.status == JOB_STATUS_RUNNING,
-                    Job.locked_by == owner_instance_id,
+                    Job.lease_token == lease_token,
                 )
                 .with_for_update()
             )
@@ -399,19 +402,19 @@ async def _record_job_failure(
                 await db.rollback()
                 logger.warning(
                     "Skipped recording failure for job no longer owned by this worker",
-                    extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+                    extra={"job_id": str(job_id), "lease_token": str(lease_token)},
                 )
                 return
             terminal = await finalize_job_failure(
                 db,
                 job,
-                owner_instance_id=owner_instance_id,
+                lease_token=lease_token,
                 code=code,
                 message=message,
             )
             if terminal is None:
                 await db.rollback()
-                _log_stale_job_result(job_id, owner_instance_id=owner_instance_id)
+                _log_stale_job_result(job_id, lease_token=lease_token)
                 return
             await db.commit()
             logger.warning(
@@ -428,10 +431,10 @@ async def _record_job_failure(
             logger.exception("Failed to record generic job failure", extra={"job_id": str(job_id)})
 
 
-def _log_stale_job_result(job_id: UUID, *, owner_instance_id: str) -> None:
+def _log_stale_job_result(job_id: UUID, *, lease_token: UUID) -> None:
     logger.warning(
         "Dropped generic job result because this worker no longer owns the lease",
-        extra={"job_id": str(job_id), "owner_instance_id": owner_instance_id},
+        extra={"job_id": str(job_id), "lease_token": str(lease_token)},
     )
 
 

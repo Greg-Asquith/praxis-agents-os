@@ -102,7 +102,8 @@ async def _attempt(session_factory: async_sessionmaker[AsyncSession], job_id: UU
         job.locked_at = now
         job.lock_expires_at = now + timedelta(minutes=1)
         await db.commit()
-    await job_runner.execute_claimed_job(job_id, owner_instance_id=_OWNER)
+        lease_token = job.lease_token
+    await job_runner.execute_claimed_job(job_id, lease_token=lease_token)
 
 
 async def _persist_extractable_file(db: AsyncSession) -> tuple[File, FileRevision, object]:

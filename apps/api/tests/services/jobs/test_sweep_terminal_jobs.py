@@ -14,7 +14,6 @@ from services.artifacts.domain import (
     CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND,
 )
 from services.jobs.domain import (
-    JOB_STATUS_CANCELLED,
     JOB_STATUS_FAILED,
     JOB_STATUS_PENDING,
     JOB_STATUS_RUNNING,
@@ -75,8 +74,7 @@ async def test_terminal_retention_preserves_unfinished_artifact_cleanup(
     kind: str,
 ) -> None:
     cleanup_jobs = [
-        build_job(kind=kind, status=status)
-        for status in (JOB_STATUS_FAILED, JOB_STATUS_CANCELLED, JOB_STATUS_SUCCEEDED)
+        build_job(kind=kind, status=status) for status in (JOB_STATUS_FAILED, JOB_STATUS_SUCCEEDED)
     ]
     unrelated = build_job(kind="test.unrelated", status=JOB_STATUS_FAILED)
     current = build_job(status=JOB_STATUS_RUNNING)
@@ -89,4 +87,4 @@ async def test_terminal_retention_preserves_unfinished_artifact_cleanup(
 
     tested_ids = {job.id for job in [*cleanup_jobs, unrelated]}
     remaining = set(await db_session.scalars(select(Job.id).where(Job.id.in_(tested_ids))))
-    assert remaining == {cleanup_jobs[0].id, cleanup_jobs[1].id}
+    assert remaining == {cleanup_jobs[0].id}

@@ -642,7 +642,8 @@ async def test_staged_cleanup_worker_retries_without_losing_terminal_evidence(
             job.lock_expires_at = datetime.now(UTC) + timedelta(seconds=90)
             job.attempts = attempt
             await db.commit()
-        await _execute_claimed_job(job_id, owner_instance_id="cleanup-rehearsal")
+            lease_token = job.lease_token
+        await _execute_claimed_job(job_id, lease_token=lease_token)
         async with factory() as db:
             assert (await db.get(AgentRun, parked.run.id)).completion_json == evidence
     async with factory() as db:

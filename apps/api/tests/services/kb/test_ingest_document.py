@@ -514,7 +514,7 @@ async def test_unavailable_url_finishes_job_and_later_refresh_restores_content(
     finalized = await finalize_job_success(
         db_session,
         job,
-        owner_instance_id=owner_id,
+        lease_token=job.lease_token,
     )
 
     await db_session.refresh(document)

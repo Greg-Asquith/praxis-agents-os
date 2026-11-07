@@ -583,7 +583,7 @@ It also removes each revision's deterministic copy stage. The sweep uses
 `FILES_DELETED_RETENTION_DAYS` and `FILES_SWEEP_INTERVAL_SECONDS`, shared with
 private File retention. Workspace artifacts remain outside this maintenance job.
 
-Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
+Failed orphan-cleanup jobs remain outside ordinary terminal-job
 retention. Their payload retains the object identity after automatic retries are
 exhausted. Successful cleanup jobs follow normal job retention.
 
@@ -664,7 +664,7 @@ resource and audit commit. A workspace-owned `artifacts.cleanup_copy` job
 reserves deterministic object ownership before copying. After a five-minute
 grace period, cleanup removes uncommitted destination and staging bytes.
 Claimed or completed reservations cannot restart an incomplete copy; use a new
-request ID. Failed or cancelled cleanup jobs retain their ownership evidence.
+request ID. Failed cleanup jobs retain their ownership evidence.
 
 ## SharePoint File sources
 

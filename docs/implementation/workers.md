@@ -11,12 +11,20 @@ with heartbeats, terminal failure states) and the generic jobs runner over
 the SKIP-LOCKED `jobs` table. `WORKER_MODE=forever` is the local/service
 default; `WORKER_MODE=drain` runs both queues to empty without polling sleeps
 and exits 0 when drained or when `WORKER_DRAIN_MAX_SECONDS` requests a clean
-stop. Both queues share `WORKER_MAX_CONCURRENT_RUNS` execution slots. Generic
-jobs renew their owner-bound leases while handlers run, and stale owners
-cannot persist success or failure results. When a heartbeat confirms
-ownership loss, the worker cancels that handler and rolls back its open
-transaction. Handlers that commit intermediate work or call external systems
-must remain idempotent because cancellation cannot undo completed effects.
+stop. Both queues share `WORKER_MAX_CONCURRENT_RUNS` execution slots.
+
+Each claim of a generic job writes a fresh `jobs.lease_token`. Renewal,
+success, and failure match the job ID, `running` status, and that token, so
+an attempt that lost its lease can't renew, finish, or fail a later attempt,
+even one claimed by the same process. `locked_by` (`host:pid`) is kept only
+for diagnostics. Renewal also requires the lease to be unexpired. The
+heartbeat cancels the handler when renewal reports a newer attempt, or when
+renewal keeps failing until the lease expires. A handler cancelled for lease
+loss rolls back its open transaction and doesn't finalise the job; the stale
+reclaim pass retries it. Handlers that commit intermediate work or call
+external systems must remain idempotent because cancellation can't undo
+completed effects. Job statuses are `pending`, `running`, `succeeded`, and
+`failed`.
 Each admission reserves a shared
 execution slot before claiming one row, so shutdown cannot strand claimed work
 behind the concurrency bound. The supervisor repeats both runners until they
@@ -82,7 +90,7 @@ commit response cannot make the cleanup remove committed content. Both job kinds
 require explicit maintenance access and reject workspace or user concurrency
 ownership before storage work.
 
-Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
+Failed orphan-cleanup jobs remain outside ordinary terminal-job
 retention. Their payload retains the object identity after automatic retries are
 exhausted. Successful cleanup jobs follow normal job retention.
 
@@ -91,4 +99,4 @@ Workspace Artifact copies reserve their immutable destination through
 checking whether the exact local revision committed. It deletes only missing
 revision output and the deterministic copy stage. Copy saves hold the pending
 job row through commit, so cleanup cannot race the destination write. Failed
-or cancelled cleanup jobs stay outside terminal retention.
+cleanup jobs stay outside terminal retention.

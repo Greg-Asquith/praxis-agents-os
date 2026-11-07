@@ -3,6 +3,7 @@
 """Claim generic background jobs for execution."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -113,6 +114,7 @@ async def claim_jobs(
     for job in jobs:
         job.status = JOB_STATUS_RUNNING
         job.locked_by = owner_instance_id
+        job.lease_token = uuid4()
         job.locked_at = now_utc
         job.lock_expires_at = expires_at
         job.attempts = (job.attempts or 0) + 1

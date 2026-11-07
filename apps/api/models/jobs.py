@@ -2,6 +2,8 @@
 
 """Generic background job queue model."""
 
+from uuid import uuid4
+
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -45,6 +47,13 @@ class Job(Base, UUIDMixin, TimestampMixin):
     locked_by = Column(String(255), nullable=True)
     locked_at = Column(DateTime(timezone=True), nullable=True)
     lock_expires_at = Column(DateTime(timezone=True), nullable=True)
+    # Rotated on every claim, so only the current attempt can renew or finish the job.
+    lease_token = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
     initiated_by_user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
@@ -57,7 +66,7 @@ class Job(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')",
+            "status IN ('pending', 'running', 'succeeded', 'failed')",
             name="jobs_status_check",
         ),
         CheckConstraint("attempts >= 0", name="jobs_attempts_check"),

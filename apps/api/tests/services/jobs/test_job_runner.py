@@ -133,20 +133,20 @@ async def test_heartbeat_extends_lease_past_original_expiry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _clear_jobs(committed_db_session_factory)
-    owner_instance_id = "heartbeat-worker"
     original_expiry = datetime.now(UTC) + timedelta(seconds=5)
     async with committed_db_session_factory() as db:
         job = Job(
             kind="tests.job_runner.heartbeat",
             status=JOB_STATUS_RUNNING,
             attempts=1,
-            locked_by=owner_instance_id,
+            locked_by="heartbeat-worker",
             locked_at=datetime.now(UTC),
             lock_expires_at=original_expiry,
         )
         db.add(job)
         await db.commit()
         job_id = job.id
+        lease_token = job.lease_token
 
     renewed = asyncio.Event()
 
@@ -161,7 +161,8 @@ async def test_heartbeat_extends_lease_past_original_expiry(
     heartbeat_task = asyncio.create_task(
         heartbeat_job_lease(
             job_id=job_id,
-            owner_instance_id=owner_instance_id,
+            lease_token=lease_token,
+            lease_expires_at=original_expiry,
             stop=stop,
             interval_seconds=0.01,
             lock_ttl_seconds=60,
@@ -179,12 +180,12 @@ async def test_heartbeat_extends_lease_past_original_expiry(
     await _clear_jobs(committed_db_session_factory)
 
 
-async def test_runner_cancels_handler_after_lease_ownership_changes(
+async def test_runner_cancels_handler_after_a_newer_attempt_takes_the_lease(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     kind = f"tests.job_runner.lease_loss.{uuid4().hex}"
-    owner_instance_id = "stale-worker"
+    owner_instance_id = "same-worker"
     handler_started = asyncio.Event()
     handler_cancelled = asyncio.Event()
     handler_completed = False
@@ -222,19 +223,17 @@ async def test_runner_cancels_handler_after_lease_ownership_changes(
             db.add(job)
             await db.commit()
             job_id = job.id
+            stale_token = job.lease_token
 
         execution_task = asyncio.create_task(
-            job_runner.execute_claimed_job(
-                job_id,
-                owner_instance_id=owner_instance_id,
-            )
+            job_runner.execute_claimed_job(job_id, lease_token=stale_token)
         )
         await asyncio.wait_for(handler_started.wait(), timeout=1)
 
         async with committed_db_session_factory() as db:
             persisted = await db.get(Job, job_id)
             assert persisted is not None
-            persisted.locked_by = "replacement-worker"
+            persisted.lease_token = uuid4()
             persisted.locked_at = datetime.now(UTC)
             persisted.lock_expires_at = datetime.now(UTC) + timedelta(minutes=1)
             await db.commit()
@@ -246,8 +245,66 @@ async def test_runner_cancels_handler_after_lease_ownership_changes(
             persisted = await db.get(Job, job_id)
             assert persisted is not None
             assert persisted.status == JOB_STATUS_RUNNING
-            assert persisted.locked_by == "replacement-worker"
+            assert persisted.lease_token != stale_token
         assert handler_completed is False
+    finally:
+        JOB_HANDLERS.pop(kind, None)
+        await _clear_jobs(committed_db_session_factory)
+
+
+async def test_runner_cancels_handler_when_renewal_keeps_failing_past_expiry(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kind = f"tests.job_runner.renewal_outage.{uuid4().hex}"
+    renewal_attempts = 0
+    handler_cancelled = asyncio.Event()
+
+    async def handler(_db: AsyncSession, _job: Job) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            handler_cancelled.set()
+            raise
+
+    async def failing_renewal(*_args, **_kwargs) -> bool:
+        nonlocal renewal_attempts
+        renewal_attempts += 1
+        raise OSError("database unreachable")
+
+    async def fast_heartbeat(**kwargs) -> None:
+        await heartbeat_job_lease(**kwargs, interval_seconds=0.01)
+
+    job_handler(kind=kind, timeout=5.0)(handler)
+    monkeypatch.setattr(heartbeat_module, "renew_job_lease", failing_renewal)
+    monkeypatch.setattr(job_runner, "heartbeat_job_lease", fast_heartbeat)
+    await _clear_jobs(committed_db_session_factory)
+    try:
+        async with committed_db_session_factory() as db:
+            job = Job(
+                kind=kind,
+                status=JOB_STATUS_RUNNING,
+                attempts=1,
+                locked_by="outage-worker",
+                locked_at=datetime.now(UTC),
+                lock_expires_at=datetime.now(UTC) + timedelta(milliseconds=200),
+            )
+            db.add(job)
+            await db.commit()
+            job_id = job.id
+            lease_token = job.lease_token
+
+        await asyncio.wait_for(
+            job_runner.execute_claimed_job(job_id, lease_token=lease_token), timeout=2
+        )
+
+        assert handler_cancelled.is_set()
+        assert renewal_attempts > 0
+        async with committed_db_session_factory() as db:
+            persisted = await db.get(Job, job_id)
+            assert persisted is not None
+            assert persisted.status == JOB_STATUS_RUNNING
+            assert persisted.last_error_code is None
     finally:
         JOB_HANDLERS.pop(kind, None)
         await _clear_jobs(committed_db_session_factory)
@@ -425,8 +482,9 @@ async def test_execute_claimed_job_skips_expired_lease(
         db.add(job)
         await db.commit()
         job_id = job.id
+        lease_token = job.lease_token
 
-    await job_runner.execute_claimed_job(job_id, owner_instance_id="test-worker")
+    await job_runner.execute_claimed_job(job_id, lease_token=lease_token)
 
     async with committed_db_session_factory() as db:
         job = await db.scalar(select(Job).where(Job.id == job_id))

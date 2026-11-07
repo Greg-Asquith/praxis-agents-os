@@ -824,7 +824,7 @@ async def test_definitive_access_loss_finishes_the_ingestion_job_successfully(
     finalized = await finalize_job_success(
         db_session,
         job,
-        owner_instance_id=owner_id,
+        lease_token=job.lease_token,
     )
 
     document = await db_session.get(KBDocument, imported.id)

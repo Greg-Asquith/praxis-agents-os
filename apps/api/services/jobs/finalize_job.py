@@ -3,6 +3,7 @@
 """Finalize generic background job attempts."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,17 +23,17 @@ async def finalize_job_success(
     db: AsyncSession,
     job: Job,
     *,
-    owner_instance_id: str,
+    lease_token: UUID,
     now: datetime | None = None,
 ) -> bool:
-    """Marks an owned job attempt as successful and terminal."""
+    """Marks the job successful when the caller still holds the running attempt."""
     now_utc = now or datetime.now(UTC)
     result = await db.execute(
         update(Job)
         .where(
             Job.id == job.id,
             Job.status == JOB_STATUS_RUNNING,
-            Job.locked_by == owner_instance_id,
+            Job.lease_token == lease_token,
         )
         .values(
             status=JOB_STATUS_SUCCEEDED,
@@ -55,13 +56,13 @@ async def finalize_job_failure(
     db: AsyncSession,
     job: Job,
     *,
-    owner_instance_id: str,
+    lease_token: UUID,
     code: str,
     message: str,
     now: datetime | None = None,
     force_terminal: bool = False,
 ) -> bool | None:
-    """Records an owned failure, returning its terminal state or None after ownership loss."""
+    """Records the attempt's failure, returning its terminal state or None after lease loss."""
     now_utc = now or datetime.now(UTC)
     error_code = code[:64]
     error_message = sanitize_error_message(message)
@@ -82,7 +83,7 @@ async def finalize_job_failure(
         .where(
             Job.id == job.id,
             Job.status == JOB_STATUS_RUNNING,
-            Job.locked_by == owner_instance_id,
+            Job.lease_token == lease_token,
         )
         .values(**values)
         .returning(Job.id)
