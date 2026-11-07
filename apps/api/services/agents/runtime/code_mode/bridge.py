@@ -36,6 +36,7 @@ from services.agents.runtime.code_mode.approval import (
 )
 from services.agents.runtime.code_mode.executor import (
     MontyExecutor,
+    QueuedCall,
     ScriptExecution,
     ScriptSuspension,
     get_code_mode_executor,
@@ -292,7 +293,7 @@ class CodeModeBridge:
                     tool_name,
                     _workspace_definitions(self._ctx.deps),
                 ),
-                "status": "failed",
+                "status": "running",
                 "excerpt": None,
                 "started_at": datetime.now(UTC).isoformat(),
             }
@@ -374,9 +375,17 @@ class CodeModeBridge:
                 error = CodeModeBoundaryError(tool_name, str(exc))
                 await self._record_nested_failure(trace_entry, error, status="failed")
                 raise error from exc
-            except Exception:
+            except asyncio.CancelledError:
+                await self._record_interrupted_call(
+                    trace_entry, call=call, args_sha256=args_sha256, metadata=call_metadata
+                )
+                raise
+            except Exception as exc:
                 if call_metadata.get(CODE_MODE_HANDLER_STARTED_METADATA_KEY) is True:
                     self._record_effect(call=call, args_sha256=args_sha256)
+                await self._record_nested_failure(
+                    trace_entry, CodeModeBoundaryError(tool_name, str(exc)), status="failed"
+                )
                 raise
 
             if isinstance(result, ToolDenied):
@@ -485,6 +494,12 @@ class CodeModeBridge:
                 wrap_validation_errors=False,
             )
         except asyncio.CancelledError:
+            await self._record_interrupted_call(
+                self._trace_entry(state.nested_call_id),
+                call=call,
+                args_sha256=args_sha256,
+                metadata=call_metadata,
+            )
             raise
         except CodeModeStateError:
             raise
@@ -622,6 +637,23 @@ class CodeModeBridge:
                 CodeModeExecutedEffect(call.tool_call_id, call.tool_name, args_sha256)
             )
 
+    async def _record_interrupted_call(
+        self,
+        trace_entry: dict[str, Any],
+        *,
+        call: ToolCallPart,
+        args_sha256: str,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        # A handler stopped mid-call may have acted, so recovery treats it as executed.
+        if metadata.get(CODE_MODE_HANDLER_STARTED_METADATA_KEY) is True:
+            self._record_effect(call=call, args_sha256=args_sha256)
+        await self._record_nested_failure(
+            trace_entry,
+            CodeModeBoundaryError(call.tool_name, "stopped before the result came back"),
+            status="cancelled",
+        )
+
     async def _record_nested_failure(
         self,
         trace_entry: dict[str, Any],
@@ -653,11 +685,104 @@ async def execute_code_mode_workflow(
     executor: MontyExecutor | None = None,
 ) -> ToolReturn:
     """Execute one tool workflow against a wrapped per-run catalog."""
-    state: CodeModeState | None = None
+    await ctx.deps.sink.emit(
+        WorkflowStateEvent(tool_call_id=outer_tool_call_id, state="started"),
+    )
+    closing = WorkflowStateEvent(tool_call_id=outer_tool_call_id, state="cancelled")
+    try:
+        result, closing = await _run_workflow(
+            ctx=ctx,
+            wrapped_toolset=wrapped_toolset,
+            outer_tool_call_id=outer_tool_call_id,
+            code=code,
+            reason=reason,
+            executor=executor,
+        )
+        return result
+    except ApprovalRequired:
+        closing = WorkflowStateEvent(tool_call_id=outer_tool_call_id, state="suspended")
+        raise
+    except Exception as exc:
+        closing = WorkflowStateEvent(
+            tool_call_id=outer_tool_call_id,
+            state="failed",
+            error_excerpt=_bounded_excerpt(str(exc)),
+        )
+        raise
+    finally:
+        await ctx.deps.sink.emit(closing)
+
+
+async def _run_workflow(
+    *,
+    ctx: RunContext[RuntimeDeps],
+    wrapped_toolset: FunctionToolset[RuntimeDeps],
+    outer_tool_call_id: str,
+    code: str,
+    reason: str | None,
+    executor: MontyExecutor | None,
+) -> tuple[ToolReturn, WorkflowStateEvent]:
     decision_metadata = (
         ctx.tool_call_metadata if isinstance(ctx.tool_call_metadata, Mapping) else {}
     )
-    run_metadata = getattr(ctx.deps.run, "metadata_json", None)
+    state = await _load_continuation(
+        deps=ctx.deps,
+        outer_tool_call_id=outer_tool_call_id,
+        decision_metadata=decision_metadata,
+    )
+    if isinstance(state, ToolReturn):
+        return _failed_outcome(outer_tool_call_id, state)
+    bridge = await CodeModeBridge.create(
+        ctx=ctx,
+        wrapped_toolset=wrapped_toolset,
+        outer_tool_call_id=outer_tool_call_id,
+        state=state,
+    )
+    resolved_executor = executor or await get_code_mode_executor()
+    started = monotonic()
+    if state is None:
+        execution = await resolved_executor.execute(code, external_lookup=bridge.external_lookup())
+        elapsed_seconds = monotonic() - started
+    else:
+        execution = await _resume_script(
+            deps=ctx.deps,
+            bridge=bridge,
+            executor=resolved_executor,
+            state=state,
+            decision_metadata=decision_metadata,
+        )
+        if isinstance(execution, ToolReturn):
+            return _failed_outcome(outer_tool_call_id, execution)
+        elapsed_seconds = state.consumed_budget.elapsed_seconds + monotonic() - started
+        if isinstance(execution, ScriptExecution):
+            _clear_code_mode_state(ctx.deps.run)
+    if isinstance(execution, ScriptSuspension):
+        refused = await _suspend_script(
+            deps=ctx.deps,
+            bridge=bridge,
+            execution=execution,
+            outer_tool_call_id=outer_tool_call_id,
+            code=code,
+            reason=reason,
+            elapsed_seconds=elapsed_seconds,
+        )
+        return _failed_outcome(outer_tool_call_id, refused)
+    result = bridge.finalize(execution)
+    return result, WorkflowStateEvent(
+        tool_call_id=outer_tool_call_id,
+        state="completed",
+        **({"output_excerpt": _bounded_excerpt(execution.output)} if execution.output else {}),
+    )
+
+
+async def _load_continuation(
+    *,
+    deps: RuntimeDeps,
+    outer_tool_call_id: str,
+    decision_metadata: Mapping[str, Any],
+) -> CodeModeState | ToolReturn | None:
+    """Return the saved state this call resumes, a redraft result, or None for a new script."""
+    run_metadata = getattr(deps.run, "metadata_json", None)
     raw_persisted_state = (
         run_metadata.get(CODE_MODE_STATE_METADATA_KEY)
         if isinstance(run_metadata, Mapping)
@@ -667,7 +792,8 @@ async def execute_code_mode_workflow(
         isinstance(raw_persisted_state, Mapping)
         and raw_persisted_state.get("outer_tool_call_id") == outer_tool_call_id
     )
-    is_continuation = CODE_MODE_DECISION_KEY in decision_metadata or persisted_state_matches_call
+    if CODE_MODE_DECISION_KEY not in decision_metadata and not persisted_state_matches_call:
+        return None
     raw_decision = decision_metadata.get(CODE_MODE_DECISION_KEY)
     raw_state_nested_call_id = (
         raw_persisted_state.get("nested_call_id")
@@ -683,198 +809,209 @@ async def execute_code_mode_workflow(
         )
     )
     if (
-        is_continuation
-        and isinstance(raw_decision, Mapping)
+        isinstance(raw_decision, Mapping)
         and raw_decision.get("decision") == "denied"
         and decision_matches_state
     ):
         await _settle_denied_decision_evidence(
-            deps=ctx.deps,
+            deps=deps,
             outer_tool_call_id=outer_tool_call_id,
             decision_metadata=decision_metadata,
         )
-    if is_continuation:
+    try:
+        state = load_code_mode_state(
+            deps.run,
+            outer_tool_call_id=outer_tool_call_id,
+            snapshot_max_bytes=settings.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES,
+        )
+    except CodeModeStateError as exc:
+        effects, evidence_valid = _recoverable_effects(deps.run.metadata_json)
+        await _cleanup_unclaimable_approved_content(
+            deps=deps,
+            decision_metadata=decision_metadata,
+        )
+        _clear_code_mode_state(deps.run)
+        if effects or not evidence_valid:
+            raise CodeModeResumeRequiresRecoveryError(exc.reason, tuple(effects)) from exc
+        return _redraft_result(exc.reason)
+    if not isinstance(raw_decision, Mapping):
+        _clear_code_mode_state(deps.run)
+        if state.executed_effects:
+            raise CodeModeResumeRequiresRecoveryError("schema_mismatch", state.executed_effects)
+        return _redraft_result("schema_mismatch")
+    return state
+
+
+async def _resume_script(
+    *,
+    deps: RuntimeDeps,
+    bridge: CodeModeBridge,
+    executor: MontyExecutor,
+    state: CodeModeState,
+    decision_metadata: Mapping[str, Any],
+) -> ScriptExecution | ScriptSuspension | ToolReturn:
+    """Settle the saved decision and continue the script, or degrade safely."""
+    remaining = max(
+        0.001,
+        settings.AGENT_CODE_MODE_TIMEOUT_SECONDS - state.consumed_budget.elapsed_seconds,
+    )
+
+    async def settle_pending() -> dict[str, Any]:
+        # Label operational failures during settlement as resume crashes, not corrupt snapshots.
         try:
-            state = load_code_mode_state(
-                ctx.deps.run,
-                outer_tool_call_id=outer_tool_call_id,
-                snapshot_max_bytes=settings.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES,
-            )
-        except CodeModeStateError as exc:
-            effects, evidence_valid = _recoverable_effects(ctx.deps.run.metadata_json)
-            await _cleanup_unclaimable_approved_content(
-                deps=ctx.deps,
+            return await bridge.settle_pending_decision(
+                state=state,
                 decision_metadata=decision_metadata,
             )
-            _clear_code_mode_state(ctx.deps.run)
-            if effects or not evidence_valid:
-                raise CodeModeResumeRequiresRecoveryError(exc.reason, tuple(effects)) from exc
-            return _redraft_result(exc.reason)
-        if not isinstance(decision_metadata.get(CODE_MODE_DECISION_KEY), Mapping):
-            _clear_code_mode_state(ctx.deps.run)
-            if state.executed_effects:
-                raise CodeModeResumeRequiresRecoveryError("schema_mismatch", state.executed_effects)
-            return _redraft_result("schema_mismatch")
-    bridge = await CodeModeBridge.create(
-        ctx=ctx,
-        wrapped_toolset=wrapped_toolset,
-        outer_tool_call_id=outer_tool_call_id,
-        state=state,
-    )
-    resolved_executor = executor or await get_code_mode_executor()
-    await ctx.deps.sink.emit(
-        WorkflowStateEvent(tool_call_id=outer_tool_call_id, state="started"),
-    )
+        except (asyncio.CancelledError, CodeModeStateError):
+            raise
+        except Exception as exc:
+            raise CodeModeStateError(
+                "resume_crash",
+                f"Code Mode settlement failed after restore: {type(exc).__name__}",
+            ) from exc
+
     try:
-        started = monotonic()
-        if state is None:
-            execution = await resolved_executor.execute(
-                code, external_lookup=bridge.external_lookup()
-            )
-            elapsed_seconds = monotonic() - started
-        else:
-            remaining = max(
-                0.001,
-                settings.AGENT_CODE_MODE_TIMEOUT_SECONDS - state.consumed_budget.elapsed_seconds,
-            )
-
-            async def settle_pending() -> dict[str, Any]:
-                # Label operational failures during settlement as resume crashes, not corrupt snapshots.
-                try:
-                    return await bridge.settle_pending_decision(
-                        state=state,
-                        decision_metadata=decision_metadata,
-                    )
-                except (asyncio.CancelledError, CodeModeStateError):
-                    raise
-                except Exception as exc:
-                    raise CodeModeStateError(
-                        "resume_crash",
-                        f"Code Mode settlement failed after restore: {type(exc).__name__}",
-                    ) from exc
-
-            try:
-                execution = await resolved_executor.resume(
-                    state.snapshot,
-                    external_lookup=bridge.external_lookup(),
-                    settle_pending=settle_pending,
-                    timeout_seconds=remaining,
-                    prior_output=state.output,
-                    prior_output_truncated=state.output_truncated,
-                )
-            except Exception as exc:
-                failure = (
-                    exc
-                    if isinstance(exc, CodeModeStateError)
-                    else classify_snapshot_load_failure(exc)
-                )
-                await _cleanup_unclaimable_approved_content(
-                    deps=ctx.deps,
-                    decision_metadata=decision_metadata,
-                )
-                _clear_code_mode_state(ctx.deps.run)
-                completed_effects = tuple(bridge.executed_effects)
-                if completed_effects:
-                    raise CodeModeResumeRequiresRecoveryError(
-                        failure.reason,
-                        completed_effects,
-                    ) from exc
-                return _redraft_result(failure.reason)
-            elapsed_seconds = state.consumed_budget.elapsed_seconds + monotonic() - started
-            if isinstance(execution, ScriptExecution):
-                _clear_code_mode_state(ctx.deps.run)
-        if isinstance(execution, ScriptSuspension):
-            # One durable suspension per run: refuse to overwrite another workflow's snapshot.
-            current_metadata = getattr(ctx.deps.run, "metadata_json", None)
-            existing_state = (
-                current_metadata.get(CODE_MODE_STATE_METADATA_KEY)
-                if isinstance(current_metadata, Mapping)
-                else None
-            )
-            if (
-                isinstance(existing_state, Mapping)
-                and existing_state.get("outer_tool_call_id") != outer_tool_call_id
-            ):
-                return ToolReturn(
-                    return_value={
-                        "status": "failed",
-                        "error": (
-                            "Another script is already paused for approval in this run. "
-                            "Retry after that decision, or call the tool directly."
-                        ),
-                    }
-                )
-            raw_approval_metadata = execution.approval.metadata
-            if not isinstance(raw_approval_metadata, dict):
-                raise CodeModeBoundaryError(
-                    RUN_CODE_TOOL_NAME, "nested approval metadata is invalid"
-                )
-            approval_metadata = {
-                **raw_approval_metadata,
-                "executed_effects": [effect.__dict__ for effect in bridge.executed_effects],
-            }
-            nested_call_id = str(approval_metadata.get("nested_tool_call_id") or "")
-            try:
-                ctx.deps.run.metadata_json = build_code_mode_state_metadata(
-                    run=ctx.deps.run,
-                    outer_tool_call_id=outer_tool_call_id,
-                    nested_call_id=nested_call_id,
-                    code=code,
-                    reason=reason,
-                    snapshot=execution.snapshot,
-                    executed_call_count=bridge._call_count,
-                    elapsed_seconds=elapsed_seconds,
-                    executed_effects=[effect.__dict__ for effect in bridge.executed_effects],
-                    nested_trace=bridge.trace,
-                    tainted=bridge._taint.tainted,
-                    taint_sources=bridge._taint.sources,
-                    taint_sources_overflow=bridge._taint.overflow,
-                    output=execution.output,
-                    output_truncated=execution.output_truncated,
-                    snapshot_max_bytes=settings.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES,
-                    state_max_bytes=settings.AGENT_CODE_MODE_STATE_MAX_BYTES,
-                )
-            except CodeModeStateError as exc:
-                _clear_code_mode_state(ctx.deps.run)
-                await _record_failed_suspension_audit(
-                    deps=ctx.deps,
-                    outer_tool_call_id=outer_tool_call_id,
-                    approval_metadata=approval_metadata,
-                )
-                if bridge.executed_effects:
-                    raise CodeModeResumeRequiresRecoveryError(
-                        exc.reason,
-                        tuple(bridge.executed_effects),
-                    ) from exc
-                return ToolReturn(
-                    return_value={
-                        "status": "failed",
-                        "error": "The script state was too large to pause on. Call the tool directly.",
-                    }
-                )
-            raise ApprovalRequired(metadata=approval_metadata)
-        result = bridge.finalize(execution)
-    except asyncio.CancelledError:
-        raise
-    except ApprovalRequired:
-        raise
-    except Exception as exc:
-        await ctx.deps.sink.emit(
-            WorkflowStateEvent(
-                tool_call_id=outer_tool_call_id,
-                state="failed",
-                error_excerpt=_bounded_excerpt(str(exc)),
-            ),
+        return await executor.resume(
+            state.snapshot,
+            pending_call_id=state.pending_call_id,
+            queued_calls=state.queued_calls,
+            external_lookup=bridge.external_lookup(),
+            settle_pending=settle_pending,
+            timeout_seconds=remaining,
+            prior_output=state.output,
+            prior_output_truncated=state.output_truncated,
         )
-        raise
-    await ctx.deps.sink.emit(
-        WorkflowStateEvent(
-            tool_call_id=outer_tool_call_id,
-            state="completed",
-            **({"output_excerpt": _bounded_excerpt(execution.output)} if execution.output else {}),
-        ),
+    except Exception as exc:
+        failure = (
+            exc if isinstance(exc, CodeModeStateError) else classify_snapshot_load_failure(exc)
+        )
+        await _cleanup_unclaimable_approved_content(
+            deps=deps,
+            decision_metadata=decision_metadata,
+        )
+        _clear_code_mode_state(deps.run)
+        completed_effects = tuple(bridge.executed_effects)
+        if completed_effects:
+            raise CodeModeResumeRequiresRecoveryError(
+                failure.reason,
+                completed_effects,
+            ) from exc
+        return _redraft_result(failure.reason)
+
+
+async def _suspend_script(
+    *,
+    deps: RuntimeDeps,
+    bridge: CodeModeBridge,
+    execution: ScriptSuspension,
+    outer_tool_call_id: str,
+    code: str,
+    reason: str | None,
+    elapsed_seconds: float,
+) -> ToolReturn:
+    """Save the paused script and raise its approval, or return why it can't pause."""
+    # One durable suspension per run: refuse to overwrite another workflow's snapshot.
+    current_metadata = getattr(deps.run, "metadata_json", None)
+    existing_state = (
+        current_metadata.get(CODE_MODE_STATE_METADATA_KEY)
+        if isinstance(current_metadata, Mapping)
+        else None
     )
-    return result
+    if (
+        isinstance(existing_state, Mapping)
+        and existing_state.get("outer_tool_call_id") != outer_tool_call_id
+    ):
+        return ToolReturn(
+            return_value={
+                "status": "failed",
+                "error": (
+                    "Another script is already paused for approval in this run. "
+                    "Retry after that decision, or call the tool directly."
+                ),
+            }
+        )
+    raw_approval_metadata = execution.approval.metadata
+    if not isinstance(raw_approval_metadata, dict):
+        raise CodeModeBoundaryError(RUN_CODE_TOOL_NAME, "nested approval metadata is invalid")
+    approval_metadata = {
+        **raw_approval_metadata,
+        "executed_effects": [effect.__dict__ for effect in bridge.executed_effects],
+    }
+    try:
+        deps.run.metadata_json = build_code_mode_state_metadata(
+            run=deps.run,
+            outer_tool_call_id=outer_tool_call_id,
+            nested_call_id=str(approval_metadata.get("nested_tool_call_id") or ""),
+            pending_call_id=execution.pending_call_id,
+            queued_calls=[
+                _queued_call_record(call, max_bytes=bridge._value_max_bytes)
+                for call in execution.queued_calls
+            ],
+            code=code,
+            reason=reason,
+            snapshot=execution.snapshot,
+            executed_call_count=bridge._call_count,
+            elapsed_seconds=elapsed_seconds,
+            executed_effects=[effect.__dict__ for effect in bridge.executed_effects],
+            nested_trace=bridge.trace,
+            tainted=bridge._taint.tainted,
+            taint_sources=bridge._taint.sources,
+            taint_sources_overflow=bridge._taint.overflow,
+            output=execution.output,
+            output_truncated=execution.output_truncated,
+            snapshot_max_bytes=settings.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES,
+            state_max_bytes=settings.AGENT_CODE_MODE_STATE_MAX_BYTES,
+        )
+    except CodeModeStateError as exc:
+        _clear_code_mode_state(deps.run)
+        await _record_failed_suspension_audit(
+            deps=deps,
+            outer_tool_call_id=outer_tool_call_id,
+            approval_metadata=approval_metadata,
+        )
+        if bridge.executed_effects:
+            raise CodeModeResumeRequiresRecoveryError(
+                exc.reason,
+                tuple(bridge.executed_effects),
+            ) from exc
+        return ToolReturn(
+            return_value={
+                "status": "failed",
+                "error": "The script state was too large to pause on. Call the tool directly.",
+            }
+        )
+    raise ApprovalRequired(metadata=approval_metadata)
+
+
+def _queued_call_record(call: QueuedCall, *, max_bytes: int) -> dict[str, Any]:
+    """Save a not-yet-started call, keeping the boundary failure it would raise."""
+    record: dict[str, Any] = {"call_id": call.call_id, "function_name": call.function_name}
+    if call.error is not None:
+        return {**record, "error": call.error}
+    if call.args:
+        error = CodeModeBoundaryError(
+            call.function_name, "tool arguments must be passed by keyword"
+        )
+        return {**record, "error": str(error)}
+    try:
+        kwargs = _normalize_boundary_value(
+            call.kwargs, tool_name=call.function_name, max_bytes=max_bytes
+        )
+    except CodeModeBoundaryError as exc:
+        return {**record, "error": str(exc)}
+    return {**record, "kwargs": kwargs}
+
+
+def _failed_outcome(
+    outer_tool_call_id: str, result: ToolReturn
+) -> tuple[ToolReturn, WorkflowStateEvent]:
+    error = result.return_value.get("error") if isinstance(result.return_value, dict) else None
+    return result, WorkflowStateEvent(
+        tool_call_id=outer_tool_call_id,
+        state="failed",
+        error_excerpt=_bounded_excerpt(error) if isinstance(error, str) else None,
+    )
 
 
 async def _settle_denied_decision_evidence(

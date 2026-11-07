@@ -37,8 +37,10 @@
     ],
     "workflow_states": [
       "started",
+      "suspended",
       "completed",
-      "failed"
+      "failed",
+      "cancelled"
     ]
   },
   "event_names": [
@@ -1318,8 +1320,10 @@
         "WorkflowState": {
           "enum": [
             "started",
+            "suspended",
             "completed",
-            "failed"
+            "failed",
+            "cancelled"
           ],
           "type": "string"
         }

@@ -153,8 +153,15 @@ classification, taint, bounds, and durable audit remain independent controls.
 ### 4. Nested calls are serial
 
 The runtime protects one run-scoped SQLAlchemy `AsyncSession` with Pydantic
-AI's sequential tool-execution mode, so the bridge holds one dispatch lock. A
-script may use `asyncio.gather`, but its external tool calls execute serially.
+AI's sequential tool-execution mode, so at most one external call runs per
+script. A script may use `asyncio.gather`, but its external tool calls execute
+serially. The executor (`code_mode/executor.py`) queues each call when the
+script makes it and starts it only when Monty waits on it, one at a time; the
+bridge's dispatch lock is a second guard. No call starts while another is
+running or after one has asked for approval, so suspension never cancels a
+handler that has started. If a handler is cancelled after it started (a
+timeout or a stopped run), the bridge records it in the executed-effects
+ledger, because it may have acted, and recovery treats it as executed.
 The token and composition benefit does not depend on parallelism; parallel
 nested dispatch requires a session-isolation or per-tool-barrier design first.
 
@@ -190,13 +197,18 @@ items.
 
 When a nested call requires approval, the outer `run_code` tool suspends
 through the existing deferred-tool machinery (`agent-runtime.md`). The bridge
-captures the **pre-call** interpreter snapshot and persists a bounded resume
-artifact in run metadata (`code_mode_state`, built and validated by
-`code_mode/state.py`): the snapshot, the script, executed-call counts and
-consumed budget, the nested trace so far, taint state, bounded print output,
-and an executed-effects ledger (nested call id, tool name, effective-arguments
-digest). The artifact is stamped with a state version and the exact Monty
-version.
+captures the interpreter snapshot from the moment the script waited on that
+call, before its result, and persists a bounded resume artifact in run
+metadata (`code_mode_state`, built and validated by `code_mode/state.py`): the
+snapshot, the Monty id of the waiting call, the calls the script had made but
+that hadn't started (tool name and keyword arguments, or the boundary error
+they would raise), the script, executed-call counts and consumed budget, the
+nested trace so far, taint state, bounded print output, and an
+executed-effects ledger (nested call id, tool name, effective-arguments
+digest). Every other call the snapshot waits on is in that not-started list,
+so resume settles the decision, runs the rest once, and neither repeats nor
+loses an effect under `asyncio.gather`. The artifact is stamped with a state
+version and the exact Monty version.
 
 Postgres stays authoritative: run status, `approval_state`, audit events,
 usage, and terminal evidence are the records of what happened. The snapshot is
@@ -315,7 +327,10 @@ trace metadata attached to the outer `run_code` result
 (`code_mode_trace`). Each entry carries stable order, the nested and parent
 call ids, tool name, an effective-arguments digest (never unrestricted
 arguments), a presentation-resolvable summary, status (succeeded, failed,
-pending, denied), and a bounded result or failure excerpt.
+pending, denied), and a bounded result or failure excerpt. An entry is
+`running` while its call runs and `cancelled` if the call is stopped; neither
+is ever persisted, because a script only saves its trace when it suspends or
+completes.
 
 The completed run trace also retains the complete normalized nested result as
 **application-only presentation evidence**. Replay shows the governed value
@@ -333,7 +348,10 @@ and legacy turns. Pending approvals are never hidden behind a collapsed
 container. Live progress streams over the existing SSE protocol
 (`workflow.state` plus the ordinary `tool.*` events); the client accepts new
 event names before the server may emit them, so protocol changes deploy
-client-first.
+client-first. Every `run_code` call sends `workflow.state` `started` and then
+exactly one closing state: `completed`, `suspended` (waiting for approval),
+`failed` (including a refused second suspension, an oversized state, or a
+redraft after a failed restore), or `cancelled`.
 
 ## Model guidance
 

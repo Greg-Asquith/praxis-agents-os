@@ -41,7 +41,7 @@ type StreamEnvelope = {
 
 export type MessageChannel = "text" | "thinking"
 
-export type WorkflowState = "started" | "completed" | "failed"
+export type WorkflowState = "started" | "suspended" | "completed" | "failed" | "cancelled"
 export type ProgressReviewVerdict =
   "continue" | "steer_wrap_up" | "steer_stop_repeating" | "steer_refocus" | "ask_person"
 export type StreamRunStatus = AgentRunStatus | "queued"

@@ -906,15 +906,9 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
     async def crash_after_settlement(
         _self: MontyExecutor,
         _snapshot_bytes: bytes,
-        *,
-        external_lookup: Any,
-        settle_pending: Any,
-        timeout_seconds: float,
-        prior_output: str = "",
-        prior_output_truncated: bool = False,
+        **kwargs: Any,
     ) -> None:
-        del external_lookup, timeout_seconds, prior_output, prior_output_truncated
-        await settle_pending()
+        await kwargs["settle_pending"]()
         raise TimeoutError("interpreter crashed after settlement")
 
     monkeypatch.setattr(MontyExecutor, "resume", crash_after_settlement)

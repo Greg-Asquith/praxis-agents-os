@@ -323,6 +323,92 @@ async def test_nested_calls_are_serial_and_counter_is_cumulative(executor: Monty
         await call(value=2)
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import asyncio\nawait asyncio.gather(other(), gated())",
+        "import asyncio\nawait asyncio.gather(gated(), other())",
+    ],
+)
+async def test_gathered_calls_run_once_across_approval_and_resume(
+    executor: MontyExecutor, code: str
+) -> None:
+    calls: list[str] = []
+
+    async def gated() -> str:
+        calls.append("gated")
+        return "g"
+
+    async def other() -> str:
+        calls.append("other")
+        return "o"
+
+    toolset = FunctionToolset([Tool(gated, requires_approval=True), Tool(other)])
+    ctx = _ctx(toolset)
+    with pytest.raises(ApprovalRequired) as pending:
+        await execute_code_mode_workflow(
+            ctx=ctx,
+            wrapped_toolset=toolset,
+            outer_tool_call_id="outer",
+            code=code,
+            executor=executor,
+        )
+    saved_trace = ctx.deps.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
+    assert {entry["status"] for entry in saved_trace} <= {"succeeded", "pending"}
+
+    digest, _ = digest_args({})
+    ctx.tool_call_metadata = build_code_mode_decision_metadata(
+        approval_metadata=pending.value.metadata,
+        decision="approved",
+        effective_args={},
+        args_sha256=digest,
+        message=None,
+    )
+    result = await execute_code_mode_workflow(
+        ctx=ctx,
+        wrapped_toolset=toolset,
+        outer_tool_call_id="outer",
+        code=code,
+        executor=executor,
+    )
+
+    assert sorted(result.return_value) == ["g", "o"]
+    assert sorted(calls) == ["gated", "other"]
+
+
+async def test_cancelled_started_write_is_kept_as_an_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool_name = f"code_mode_write_{uuid4().hex}"
+    handler_started = asyncio.Event()
+
+    async def write(ctx: RunContext[Any]) -> str:
+        # Dispatch sets this flag just before a real handler runs.
+        ctx.tool_call_metadata[bridge_module.CODE_MODE_HANDLER_STARTED_METADATA_KEY] = True
+        handler_started.set()
+        await asyncio.Event().wait()
+        return "unreachable"
+
+    definition = RuntimeToolDefinition(
+        name=tool_name,
+        function=write,
+        description="Write that never returns.",
+        effect=TOOL_EFFECT_WRITE,
+    )
+    monkeypatch.setitem(RUNTIME_TOOL_CATALOG, tool_name, definition)
+    toolset = FunctionToolset([Tool(write, name=tool_name, takes_ctx=True)])
+    bridge = await _bridge(toolset)
+    call = asyncio.create_task(bridge.external_lookup()[tool_name]())
+    await handler_started.wait()
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+
+    assert [effect.tool_name for effect in bridge.executed_effects] == [tool_name]
+    [entry] = bridge.trace
+    assert entry["status"] == "cancelled"
+
+
 async def test_nested_trace_excerpt_is_redacted_and_bounded(executor: MontyExecutor) -> None:
     secret = "secret-marker"
 
@@ -487,6 +573,19 @@ async def test_second_workflow_suspension_fails_closed_without_overwriting_first
     assert resumed.return_value == 1
     assert calls == [1]
     assert CODE_MODE_STATE_METADATA_KEY not in (ctx.deps.run.metadata_json or {})
+    workflow_states = [
+        (event.data["tool_call_id"], event.data["state"])
+        for event in ctx.deps.sink.events
+        if event.event == "workflow.state"
+    ]
+    assert workflow_states == [
+        ("first-outer", "started"),
+        ("first-outer", "suspended"),
+        ("second-outer", "started"),
+        ("second-outer", "failed"),
+        ("first-outer", "started"),
+        ("first-outer", "completed"),
+    ]
 
 
 @pytest.mark.parametrize("decision_metadata", [{}, {CODE_MODE_DECISION_KEY: "invalid"}])

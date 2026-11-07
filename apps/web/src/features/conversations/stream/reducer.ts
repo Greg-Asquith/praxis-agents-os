@@ -356,12 +356,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
     case "workflow.state": {
       const existing = nextState.toolCalls[streamToolKey(streamEvent.data)]
       const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
-      const workflowStatus =
-        streamEvent.data.state === "failed"
-          ? "failed"
-          : streamEvent.data.state === "completed"
-            ? "completed"
-            : "running"
+      const workflowStatus = workflowToolStatus(streamEvent.data.state, existing?.status)
       return {
         ...nextState,
         nextTimelineSequence: existing
@@ -535,6 +530,29 @@ export function selectChildToolCalls(
 
 const childToolCallCache = new WeakMap<ToolCallState[], Map<string, ToolCallState[]>>()
 const EMPTY_TOOL_CALLS: ToolCallState[] = []
+
+function workflowToolStatus(
+  state: WorkflowState,
+  current: ToolCallState["status"] | undefined
+): ToolCallState["status"] {
+  switch (state) {
+    case "started":
+      return "running"
+    case "suspended":
+      return "awaiting_approval"
+    case "completed":
+      return "completed"
+    case "failed":
+      return "failed"
+    case "cancelled":
+      // A stopped run settles its rows through the run status; keep what is shown.
+      return current ?? "running"
+    default: {
+      const unhandled: never = state
+      return unhandled
+    }
+  }
+}
 
 function resultStatus(
   result: unknown,

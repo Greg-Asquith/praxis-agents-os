@@ -90,6 +90,7 @@ def workflow(run):
         run=run,
         outer_tool_call_id="workflow",
         nested_call_id="same-id",
+        pending_call_id=0,
         code="await update(value=2)",
         reason="Review update",
         snapshot=b"private-snapshot",

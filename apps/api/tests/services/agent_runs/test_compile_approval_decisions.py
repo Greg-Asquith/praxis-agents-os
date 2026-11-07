@@ -56,6 +56,7 @@ def saved_run(parent=None, *, workflow=False):
             run=run,
             outer_tool_call_id="outer",
             nested_call_id="same",
+            pending_call_id=0,
             code="await update(value=1)",
             reason=None,
             snapshot=b"snapshot",

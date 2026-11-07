@@ -38,8 +38,10 @@ export const CONVERSATION_SOURCES: ReadonlySet<Conversation["source"]> = new Set
 export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set(["text", "thinking"])
 export const WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set([
   "started",
+  "suspended",
   "completed",
   "failed",
+  "cancelled",
 ])
 
 export const PROGRESS_REVIEW_VERDICTS: ReadonlySet<ProgressReviewVerdict> = new Set([

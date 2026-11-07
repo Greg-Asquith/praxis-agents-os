@@ -14,9 +14,10 @@ from typing import Any, Literal
 
 from core.settings import settings
 from models.agent_run import AgentRun
+from services.agents.runtime.code_mode.executor import QueuedCall
 
 CODE_MODE_STATE_METADATA_KEY = "code_mode_state"
-CODE_MODE_STATE_VERSION = 1
+CODE_MODE_STATE_VERSION = 2
 CODE_MODE_MONTY_VERSION = version("pydantic-monty")
 CODE_MODE_STATE_TRACE_LIMIT = settings.AGENT_CODE_MODE_MAX_NESTED_CALLS
 CODE_MODE_STATE_EFFECT_LIMIT = settings.AGENT_CODE_MODE_MAX_NESTED_CALLS
@@ -52,6 +53,8 @@ class CodeModeState:
     agent_id: str
     outer_tool_call_id: str
     nested_call_id: str
+    pending_call_id: int
+    queued_calls: tuple[QueuedCall, ...]
     code: str
     reason: str | None
     executed_call_count: int
@@ -98,6 +101,8 @@ def build_code_mode_state_metadata(
     run: AgentRun,
     outer_tool_call_id: str,
     nested_call_id: str,
+    pending_call_id: int,
+    queued_calls: Sequence[Mapping[str, object]] = (),
     code: str,
     reason: str | None,
     snapshot: bytes,
@@ -125,6 +130,7 @@ def build_code_mode_state_metadata(
     if taint_sources_overflow < 0:
         raise ValueError("Code Mode taint overflow cannot be negative")
 
+    queued = [_normalize_queued_call(item) for item in queued_calls]
     effects = [_normalize_effect(item) for item in executed_effects]
     if len(effects) > CODE_MODE_STATE_EFFECT_LIMIT:
         raise ValueError("Code Mode executed-effects ledger exceeds its bound")
@@ -142,6 +148,8 @@ def build_code_mode_state_metadata(
         "agent_id": str(run.agent_id),
         "outer_tool_call_id": outer_tool_call_id,
         "nested_call_id": nested_call_id,
+        "pending_call_id": pending_call_id,
+        "queued_calls": queued,
         "code": code,
         "reason": reason,
         "executed_call_count": executed_call_count,
@@ -280,6 +288,10 @@ def _parse_state(raw: Mapping[str, Any], *, snapshot_max_bytes: int) -> CodeMode
         agent_id=_required_str(raw, "agent_id"),
         outer_tool_call_id=_required_str(raw, "outer_tool_call_id"),
         nested_call_id=_required_str(raw, "nested_call_id"),
+        pending_call_id=_nonnegative_int(raw, "pending_call_id"),
+        queued_calls=tuple(
+            QueuedCall(**_normalize_queued_call(item)) for item in raw["queued_calls"]
+        ),
         code=_required_str(raw, "code"),
         reason=raw.get("reason") if isinstance(raw.get("reason"), str) else None,
         executed_call_count=_nonnegative_int(raw, "executed_call_count"),
@@ -308,6 +320,21 @@ def _normalize_effect(item: Mapping[str, object]) -> dict[str, str]:
         "tool_name": _required_str(item, "tool_name"),
         "args_sha256": _required_str(item, "args_sha256"),
     }
+
+
+def _normalize_queued_call(item: Mapping[str, object]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {
+        "call_id": _nonnegative_int(item, "call_id"),
+        "function_name": _required_str(item, "function_name"),
+    }
+    if item.get("error") is not None:
+        normalized["error"] = _required_str(item, "error")
+        return normalized
+    kwargs = item["kwargs"]
+    if not isinstance(kwargs, dict) or not all(isinstance(key, str) for key in kwargs):
+        raise TypeError("kwargs must be an object")
+    normalized["kwargs"] = dict(kwargs)
+    return normalized
 
 
 def _normalize_taint_source(item: Mapping[str, object]) -> dict[str, str]:

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from pydantic_ai import ApprovalRequired, CallDeferred
@@ -39,10 +39,24 @@ class ScriptExecution:
 
 
 @dataclass(frozen=True)
+class QueuedCall:
+    """An external call the script has made that the host hasn't started."""
+
+    call_id: int
+    function_name: str
+    args: tuple[Any, ...] = ()
+    kwargs: dict[str, Any] = field(default_factory=dict)
+    # Set when a restored call can't be rebuilt; the script receives this failure.
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class ScriptSuspension:
-    """A pre-call interpreter snapshot paired with its nested approval request."""
+    """An interpreter snapshot waiting on one nested approval, plus calls not yet started."""
 
     snapshot: bytes
+    pending_call_id: int
+    queued_calls: tuple[QueuedCall, ...]
     approval: ApprovalRequired | CallDeferred
     output: str
     output_truncated: bool
@@ -137,13 +151,8 @@ class MontyExecutor:
                 finally:
                     if worker_pid is not None:
                         self._active_worker_pids.discard(worker_pid)
-        if isinstance(completed, _DriverSuspension):
-            return ScriptSuspension(
-                snapshot=completed.snapshot,
-                approval=completed.approval,
-                output=output.value(),
-                output_truncated=output.truncated,
-            )
+        if isinstance(completed, ScriptSuspension):
+            return replace(completed, output=output.value(), output_truncated=output.truncated)
         return ScriptExecution(
             result=completed.output, output=output.value(), output_truncated=output.truncated
         )
@@ -152,6 +161,8 @@ class MontyExecutor:
         self,
         snapshot_bytes: bytes,
         *,
+        pending_call_id: int,
+        queued_calls: tuple[QueuedCall, ...],
         external_lookup: Mapping[str, ExternalFunction],
         settle_pending: PendingSettlement,
         timeout_seconds: float,
@@ -173,18 +184,19 @@ class MontyExecutor:
                     external_lookup=dict(external_lookup),
                     print_callback=output.write,
                 )
-                if not isinstance(restored, AsyncFunctionSnapshot):
-                    raise TypeError("Code Mode snapshot is not paused at an external call")
-                future = await restored.resume({"future": ...})
-                if not isinstance(future, AsyncFutureSnapshot):
-                    raise TypeError("Code Mode snapshot did not produce a pending future")
+                if not isinstance(restored, AsyncFutureSnapshot):
+                    raise TypeError("Code Mode snapshot is not waiting on an external call")
+                queued = {call.call_id: call for call in queued_calls}
+                if set(restored.pending_call_ids) != {pending_call_id, *queued}:
+                    raise TypeError("Code Mode snapshot does not match its saved calls")
                 initial_result = await settle_pending()
-                snapshot = await future.resume({restored.call_id: initial_result})
-                completed = await _drive_script(snapshot, external_lookup=external_lookup)
-        if isinstance(completed, _DriverSuspension):
-            return ScriptSuspension(
-                snapshot=completed.snapshot,
-                approval=completed.approval,
+                snapshot = await restored.resume({pending_call_id: initial_result})
+                completed = await _drive_script(
+                    snapshot, external_lookup=external_lookup, queued=queued
+                )
+        if isinstance(completed, ScriptSuspension):
+            return replace(
+                completed,
                 output=prior_output + output.value(),
                 output_truncated=output.truncated,
             )
@@ -219,65 +231,76 @@ async def _drive_script(
     snapshot: Any,
     *,
     external_lookup: Mapping[str, ExternalFunction],
-) -> MontyComplete | _DriverSuspension:
-    """Drive awaited external calls while retaining each pre-call snapshot."""
-    pending: dict[int, tuple[asyncio.Task[Any], bytes]] = {}
-    try:
-        while not isinstance(snapshot, MontyComplete):
-            if isinstance(snapshot, AsyncFunctionSnapshot):
-                external_function = external_lookup.get(snapshot.function_name)
-                if external_function is None:
-                    snapshot = await snapshot.resume(
-                        {
-                            "exc_type": "NameError",
-                            "message": f"Unknown sandbox function: {snapshot.function_name}",
-                        }
-                    )
-                    continue
-                pending[snapshot.call_id] = (
-                    asyncio.create_task(external_function(*snapshot.args, **snapshot.kwargs)),
-                    snapshot.dump(),
-                )
-                snapshot = await snapshot.resume({"future": ...})
-                continue
+    queued: dict[int, QueuedCall] | None = None,
+) -> MontyComplete | ScriptSuspension:
+    """Run each external call only when the script awaits it, one at a time.
 
-            if isinstance(snapshot, AsyncFutureSnapshot):
-                call_id = next(
-                    (call_id for call_id in snapshot.pending_call_ids if call_id in pending),
-                    None,
+    Calls are queued when the script makes them and started only from a future
+    snapshot. When a call needs approval, that future snapshot is the resume
+    point: every other call it waits on is queued and hasn't started, so resume
+    neither repeats nor loses an effect.
+    """
+    queued = dict(queued or {})
+    while not isinstance(snapshot, MontyComplete):
+        if isinstance(snapshot, AsyncFunctionSnapshot):
+            if snapshot.function_name not in external_lookup:
+                snapshot = await snapshot.resume(
+                    {
+                        "exc_type": "NameError",
+                        "message": f"Unknown sandbox function: {snapshot.function_name}",
+                    }
                 )
-                if call_id is None:
-                    raise RuntimeError("Monty requested an unknown pending external call")
-                task, pre_call_snapshot = pending.pop(call_id)
-                try:
-                    settled = await _settle_external_task(task)
-                except (ApprovalRequired, CallDeferred) as exc:
-                    return _DriverSuspension(snapshot=pre_call_snapshot, approval=exc)
-                snapshot = await snapshot.resume({call_id: settled})
                 continue
-
-            snapshot = await snapshot.resume_auto()
-        return snapshot
-    finally:
-        for task, _snapshot in pending.values():
-            task.cancel()
-        if pending:
-            await asyncio.gather(
-                *(task for task, _snapshot in pending.values()), return_exceptions=True
+            queued[snapshot.call_id] = QueuedCall(
+                call_id=snapshot.call_id,
+                function_name=str(snapshot.function_name),
+                args=tuple(snapshot.args),
+                kwargs=dict(snapshot.kwargs),
             )
+            snapshot = await snapshot.resume({"future": ...})
+            continue
+
+        if isinstance(snapshot, AsyncFutureSnapshot):
+            call_id = next(
+                (call_id for call_id in snapshot.pending_call_ids if call_id in queued),
+                None,
+            )
+            if call_id is None:
+                raise RuntimeError("Monty requested an unknown pending external call")
+            call = queued.pop(call_id)
+            try:
+                settled = await _run_queued_call(call, external_lookup=external_lookup)
+            except (ApprovalRequired, CallDeferred) as exc:
+                return ScriptSuspension(
+                    snapshot=snapshot.dump(),
+                    pending_call_id=call_id,
+                    queued_calls=tuple(queued.values()),
+                    approval=exc,
+                    output="",
+                    output_truncated=False,
+                )
+            snapshot = await snapshot.resume({call_id: settled})
+            continue
+
+        snapshot = await snapshot.resume_auto()
+    return snapshot
 
 
-@dataclass(frozen=True)
-class _DriverSuspension:
-    snapshot: bytes
-    approval: ApprovalRequired | CallDeferred
-
-
-async def _settle_external_task(task: asyncio.Task[Any]) -> ExternalSettledResult:
+async def _run_queued_call(
+    call: QueuedCall,
+    *,
+    external_lookup: Mapping[str, ExternalFunction],
+) -> ExternalSettledResult:
+    if call.error is not None:
+        return {"exc_type": "RuntimeError", "message": call.error}
+    external_function = external_lookup.get(call.function_name)
+    if external_function is None:
+        return {
+            "exc_type": "NameError",
+            "message": f"Unknown sandbox function: {call.function_name}",
+        }
     try:
-        return {"return_value": await task}
-    except asyncio.CancelledError:
-        raise
+        return {"return_value": await external_function(*call.args, **call.kwargs)}
     except (ApprovalRequired, CallDeferred):
         raise
     except Exception as exc:

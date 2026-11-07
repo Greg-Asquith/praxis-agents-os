@@ -20,7 +20,7 @@ STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
 
 type MessageChannel = Literal["text", "thinking"]
 type StreamRunStatus = RunStatus | Literal["queued"]
-type WorkflowState = Literal["started", "completed", "failed"]
+type WorkflowState = Literal["started", "suspended", "completed", "failed", "cancelled"]
 
 
 class StreamEventPayload(BaseModel):
