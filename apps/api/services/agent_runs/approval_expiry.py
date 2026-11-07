@@ -13,17 +13,14 @@ from models.agent_run import AgentRun
 from services.agent_runs.continuation_state import load_approval_continuation
 
 
-def approval_family_deadline(
-    family: list[AgentRun], *, expiry_days: int | None = None
-) -> datetime | None:
+def approval_family_deadline(family: list[AgentRun]) -> datetime | None:
     """Returns the earliest pending deadline; zero disables approval expiry."""
-    days = settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS if expiry_days is None else expiry_days
-    if days == 0:
+    if settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS == 0:
         return None
-    if days < 0:
-        raise ValueError("expiry_days must be greater than or equal to zero")
     deadlines = [
-        run.updated_at + timedelta(days=days) for run in family if run.status == "awaiting_approval"
+        run.approval_expires_at
+        for run in family
+        if run.status == "awaiting_approval" and run.approval_expires_at is not None
     ]
     return min(deadlines, default=None)
 

@@ -2,7 +2,7 @@
 
 """Helpers specific to the agent_runs service."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
+from core.settings import settings
 from models.agent import Agent, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
@@ -149,14 +150,21 @@ async def transition_run_status(
         run.failed_at = now
         run.error_code = error_code
         run.error_message = sanitize_error_message(error_message)
+    expiry_days = settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS
+    run.approval_expires_at = (
+        now + timedelta(days=expiry_days)
+        if target == RUN_STATUS_AWAITING_APPROVAL and expiry_days
+        else None
+    )
     if target in TERMINAL_RUN_STATUSES:
         reservation = (run.metadata_json or {}).get("approval_continuation")
-        if isinstance(reservation, dict):
-            await _audit_approval_completion(db, run, reservation, target, resolved_outcome)
+        # Clear before the audit write autoflushes a final status with a reservation.
         run.metadata_json = clear_suspended_run_metadata(run)
         run.outcome = resolved_outcome
         run.completion_json = validated_completion_json
         run.lease_expires_at = None
+        if isinstance(reservation, dict):
+            await _audit_approval_completion(db, run, reservation, target, resolved_outcome)
     elif target == RUN_STATUS_AWAITING_APPROVAL:
         run.lease_expires_at = None
 

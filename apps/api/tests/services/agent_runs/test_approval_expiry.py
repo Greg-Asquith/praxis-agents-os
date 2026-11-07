@@ -80,7 +80,7 @@ async def _park_approval(
     db: AsyncSession,
     *,
     now: datetime,
-    age_days: int,
+    age_days: int | None,
     stage_write: bool = False,
     trigger: str = "interactive",
     user: User | None = None,
@@ -158,7 +158,8 @@ async def _park_approval(
         deferred_tool_requests=deferred_requests,
     )
     await mark_run_awaiting_approval(db, run)
-    run.updated_at = now - timedelta(days=age_days)
+    if age_days is not None:
+        run.approval_expires_at = now + timedelta(days=7 - age_days)
     await db.flush()
     return ApprovalContext(
         user=user,
@@ -188,13 +189,11 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
         workspace=expired.workspace,
         agent=expired.agent,
     )
-    expired.run.updated_at = now - timedelta(days=8)
     await db_session.flush()
 
     result = await sweep_expired_agent_run_approvals(
         db_session,
         now=now,
-        expiry_days=7,
     )
 
     assert result.expired_run_ids == [expired.run.id]
@@ -240,7 +239,6 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
     repeated = await sweep_expired_agent_run_approvals(
         db_session,
         now=now,
-        expiry_days=7,
     )
     assert repeated.expired_run_ids == []
 
@@ -284,7 +282,7 @@ async def test_sweep_deletes_staged_write_content(
         == "private staged content"
     )
 
-    await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+    await sweep_expired_agent_run_approvals(db_session, now=now)
 
     cleanup_job = await db_session.scalar(
         select(Job).where(
@@ -341,7 +339,7 @@ async def test_cleanup_enqueue_failure_rolls_back_expiry_without_deleting_conten
     )
 
     with pytest.raises(RuntimeError, match="cleanup enqueue unavailable"):
-        await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+        await sweep_expired_agent_run_approvals(db_session, now=now)
     await db_session.rollback()
     await db_session.refresh(parked.run)
 
@@ -419,7 +417,7 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
         if competitor == "resume":
             return await resume_concurrently(db)
         if competitor == "expiry":
-            await sweep_expired_agent_run_approvals(db, expiry_days=7)
+            await sweep_expired_agent_run_approvals(db)
         else:
             from services.agent_runs.request_cancel import request_agent_run_cancellation
 
@@ -496,14 +494,72 @@ async def test_child_deadline_expires_whole_family(db_session: AsyncSession) -> 
     child.run.parent_run_id = root.run.id
     child.run.delegation_depth = 1
     await db_session.flush()
-    child.run.updated_at = now - timedelta(days=8)
-    await db_session.flush()
     assert await read_approval_family_deadline(db_session, run=root.run) == now - timedelta(days=1)
 
-    result = await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+    result = await sweep_expired_agent_run_approvals(db_session, now=now)
     assert set(result.expired_run_ids) == {root.run.id, child.run.id}
     assert root.run.error_code == "approval_expired"
     assert child.run.status == "failed"
+
+
+async def test_unrelated_write_does_not_move_approval_deadline(db_session: AsyncSession) -> None:
+    parked = await _park_approval(db_session, now=datetime.now(UTC), age_days=None)
+    deadline = parked.run.approval_expires_at
+    assert deadline is not None
+
+    parked.run.metadata_json = {**(parked.run.metadata_json or {}), "audit_context": {"ip": "x"}}
+    await db_session.flush()
+    await db_session.refresh(parked.run)
+
+    assert parked.run.approval_expires_at == deadline
+    early = await sweep_expired_agent_run_approvals(db_session, now=deadline - timedelta(seconds=1))
+    assert early.expired_run_ids == []
+    result = await sweep_expired_agent_run_approvals(db_session, now=deadline)
+    assert result.expired_run_ids == [parked.run.id]
+
+
+async def test_sweep_settles_running_root_whose_reservation_outlived_its_lease(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.agent_runs.get_approval_state import get_agent_run_approval_state
+
+    parked = await _park_approval(db_session, now=datetime.now(UTC), age_days=1)
+    monkeypatch.setattr(
+        run_task_registry, "spawn", lambda _run_id, coroutine, **_kwargs: coroutine.close()
+    )
+    approval = await get_agent_run_approval_state(
+        db_session, actor=parked.user, workspace=parked.workspace, run_id=parked.run.id
+    )
+    await resume_agent_run_stream(
+        db_session,
+        actor=parked.user,
+        workspace=parked.workspace,
+        run_id=parked.run.id,
+        payload=AgentRunResumeRequest(
+            approval_revision=approval.approval_revision,
+            decisions=[
+                AgentRunResumeDecision(
+                    tool_call_id=parked.tool_call_id,
+                    approval_id=approval.approvals[0].approval_id,
+                    decision="approved",
+                )
+            ],
+        ),
+    )
+    assert parked.run.status == "running"
+    assert parked.run.approval_expires_at is None
+    assert parked.run.lease_expires_at is not None
+
+    still_leased = await sweep_expired_agent_run_approvals(db_session)
+    assert still_leased.expired_run_ids == []
+    result = await sweep_expired_agent_run_approvals(
+        db_session, now=parked.run.lease_expires_at + timedelta(seconds=1)
+    )
+
+    assert result.expired_run_ids == [parked.run.id]
+    await db_session.refresh(parked.run)
+    assert parked.run.status == "failed"
+    assert parked.run.error_code == "agent_run_resume_requires_recovery"
 
 
 @pytest.mark.parametrize("child_first", [False, True])

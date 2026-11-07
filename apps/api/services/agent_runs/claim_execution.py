@@ -43,6 +43,7 @@ async def claim_agent_run_execution(
     if resumable:
         run.status = RUN_STATUS_RUNNING
         run.started_at = now_utc
+        run.approval_expires_at = None
     elif run.started_at is None:
         run.started_at = run.created_at
     run.owner_instance_id = owner_instance_id

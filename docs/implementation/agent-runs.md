@@ -64,7 +64,11 @@ The following contracts apply in this area:
   Parked approvals expire through the generic jobs harness after
   `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
   clears durable approval state, and transactionally enqueues retryable staged
-  write-content cleanup. Lease reaping also queues that cleanup before clearing
+  write-content cleanup. The deadline is `agent_runs.approval_expires_at`,
+  which `transition_run_status` sets on entry to `awaiting_approval` and
+  clears on every other change, so no later write to a waiting run can extend
+  consent. Check constraints allow the deadline only on `awaiting_approval`
+  rows and the `approval_continuation` reservation only on `running` rows. Lease reaping also queues that cleanup before clearing
   a resumed run's approval state. Resume reserves the locked run as `running`
   before its SSE response begins. The conversation active-run read exposes the
   parked run's expiry deadline and always treats an existing active run as the
@@ -520,6 +524,9 @@ retrying the approval POST. Fresh suspension replaces the reservation and
 installs a fresh batch.
 
 Resume and the expiry sweep apply the same earliest pending family deadline.
+The sweep also settles a running root whose reservation outlived its owner
+(lease gone or past the maximum run duration), even when no child is waiting,
+so a stuck reservation doesn't wait for the lease reaper.
 An unexpired reservation protects its referenced queued children from separate
 approval expiry. Execution lease loss, cancellation, or an uncertain effect
 still stops the family. `agent_run_resume_requires_recovery` maps to the

@@ -66,6 +66,7 @@ class AgentRun(BaseModel):
     failed_at = Column(DateTime(timezone=True), nullable=True)
     lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     owner_instance_id = Column(String(128), nullable=True)
+    approval_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # Hot usage columns for billing/audit queries; usage_json keeps the full RunUsage.
     input_tokens = Column(BigInteger, nullable=True)
@@ -125,6 +126,14 @@ class AgentRun(BaseModel):
             "completion_json IS NULL OR octet_length(completion_json::text) <= 73728",
             name="agent_runs_completion_json_size_check",
         ),
+        CheckConstraint(
+            "approval_expires_at IS NULL OR status = 'awaiting_approval'",
+            name="agent_runs_approval_expires_at_check",
+        ),
+        CheckConstraint(
+            "metadata IS NULL OR NOT (metadata ? 'approval_continuation') OR status = 'running'",
+            name="agent_runs_approval_continuation_check",
+        ),
         Index("ix_agent_runs_conversation_created", "conversation_id", "created_at"),
         Index(
             "uq_agent_runs_active_conversation",
@@ -145,6 +154,11 @@ class AgentRun(BaseModel):
             "ix_agent_runs_lease_expiry",
             "lease_expires_at",
             postgresql_where=text("deleted = false AND status IN ('pending', 'running')"),
+        ),
+        Index(
+            "ix_agent_runs_approval_expiry",
+            "approval_expires_at",
+            postgresql_where=text("deleted = false AND status = 'awaiting_approval'"),
         ),
         Index(
             "ix_agent_runs_parent_created",

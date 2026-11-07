@@ -37,7 +37,7 @@ async def test_review_one_delegated_leaf_preserves_sibling_and_replays_selection
     root, runs = family(workflow=workflow)
     for run in runs.values():
         run.trigger = "interactive"
-        run.updated_at = datetime.now(UTC)
+        run.approval_expires_at = datetime.now(UTC) + timedelta(days=7)
     child = next(run for run in runs.values() if run.id != root.id)
     source = FileReference(entity_id=uuid4(), label="Chosen File").model_dump(mode="json")
     canonical = {"value": 9, "source": source}
@@ -133,7 +133,7 @@ async def test_review_one_delegated_leaf_preserves_sibling_and_replays_selection
             run_id=root.id,
             payload=payload,
         )
-    root.updated_at = datetime.now(UTC) - timedelta(days=365)
+    root.approval_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     with pytest.raises(ConflictError, match="expired"):
         await review_agent_run_approval(
             db,

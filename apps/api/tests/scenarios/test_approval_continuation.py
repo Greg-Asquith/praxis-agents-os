@@ -357,6 +357,7 @@ async def test_unavailable_child_stops_public_resume_without_replacement(
                 child.deleted = True
             else:
                 child.status = child_status
+                child.approval_expires_at = None
             await db.commit()
             with pytest.raises(ConflictError) as error:
                 await resume_agent_run_stream(

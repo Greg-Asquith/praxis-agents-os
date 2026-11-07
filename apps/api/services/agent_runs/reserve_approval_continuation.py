@@ -50,9 +50,9 @@ async def reserve_approval_continuation(
         },
         deferred_tool_results=to_jsonable_python(results),
     )
-    # Validate the complete envelope before changing any run or execution clock.
-    store_approval_continuation(run, reservation)
+    # Only a running row can hold a reservation; a failed store raises before commit.
     await start_agent_run_with_lease(db, run, owner_instance_id=str(reservation.owner_instance_id))
+    store_approval_continuation(run, reservation)
     await safe_record_operation_audit_event(
         db,
         workspace_id=run.workspace_id,

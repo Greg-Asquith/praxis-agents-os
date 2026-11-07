@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
@@ -82,29 +82,39 @@ async def sweep_expired_agent_run_approvals(
     db: AsyncSession,
     *,
     now: datetime | None = None,
-    expiry_days: int | None = None,
     batch_size: int = DEFAULT_APPROVAL_SWEEP_BATCH_SIZE,
 ) -> SweepExpiredApprovalsResult:
-    """Fail one locked batch of approval waits older than the configured TTL."""
+    """Fail one locked batch of expired approval waits and stuck reservations."""
     from services.agent_runs.approval_expiry import (
         approval_family_deadline,
         has_live_approval_reservation,
     )
-    from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+    from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
     from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 
-    configured_days = (
-        settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS if expiry_days is None else expiry_days
-    )
-    if configured_days < 0:
-        raise ValueError("expiry_days must be greater than or equal to zero")
+    configured_days = settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
     if configured_days == 0:
         return SweepExpiredApprovalsResult(expired_run_ids=[])
 
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
-    cutoff = now_utc - timedelta(days=configured_days)
+    expired_wait = and_(
+        AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
+        AgentRun.approval_expires_at <= now_utc,
+    )
+    # A reservation outlives its owner when the lease or the run's duration ran out.
+    stuck_reservation = and_(
+        AgentRun.status == RUN_STATUS_RUNNING,
+        AgentRun.parent_run_id.is_(None),
+        AgentRun.metadata_json.has_key("approval_continuation"),
+        or_(
+            AgentRun.lease_expires_at.is_(None),
+            AgentRun.lease_expires_at <= now_utc,
+            AgentRun.started_at
+            <= now_utc - timedelta(seconds=settings.AGENT_RUN_MAX_DURATION_SECONDS),
+        ),
+    )
     expired_run_ids: list[UUID] = []
     visited: set[UUID] = set()
     while len(visited) < batch_size:
@@ -112,11 +122,10 @@ async def sweep_expired_agent_run_approvals(
             select(AgentRun)
             .where(
                 AgentRun.deleted == False,  # noqa: E712
-                AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
-                AgentRun.updated_at <= cutoff,
+                or_(expired_wait, stuck_reservation),
                 AgentRun.id.not_in(visited),
             )
-            .order_by(AgentRun.updated_at, AgentRun.id)
+            .order_by(AgentRun.created_at, AgentRun.id)
             .limit(1)
             .execution_options(populate_existing=True)
         )
@@ -134,8 +143,8 @@ async def sweep_expired_agent_run_approvals(
             await db.commit()
             continue
         reservation = (root.metadata_json or {}).get("approval_continuation")
-        deadline = approval_family_deadline(family, expiry_days=configured_days)
-        if reservation is not None and root.status == "running":
+        deadline = approval_family_deadline(family)
+        if reservation is not None and root.status == RUN_STATUS_RUNNING:
             code = "agent_run_resume_requires_recovery"
             message = "The approved work stopped before its result could be confirmed."
         elif (

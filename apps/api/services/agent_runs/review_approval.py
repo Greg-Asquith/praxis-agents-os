@@ -8,7 +8,6 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import flag_modified
 
 from core.exceptions.general import ConflictError, NotFoundError
 from models.agent_run import AgentRun
@@ -137,9 +136,6 @@ async def review_agent_run_approval(
     root_metadata = deepcopy(root.metadata_json)
     root_metadata[APPROVAL_STATE_METADATA_KEY][APPROVAL_REVISION_KEY] = updated.approval_revision
     root.metadata_json = root_metadata
-    # Reviewing a selection preserves the original approval expiry deadline.
-    for run in {root.id: root, owner.id: owner}.values():
-        flag_modified(run, "updated_at")
     await safe_record_operation_audit_event(
         db,
         workspace_id=workspace.id,
