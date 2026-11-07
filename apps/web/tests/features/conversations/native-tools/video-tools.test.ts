@@ -54,6 +54,7 @@ describe("cutVideoClipsResult", () => {
           fade_in_ms: 500,
           fade_out_ms: 0,
           enhance_voice: true,
+          music: { file_id: "track", volume: 25, duck: true, start_ms: 0 },
           loudness_lufs: -14,
         },
         {
@@ -67,7 +68,16 @@ describe("cutVideoClipsResult", () => {
     })
 
     expect(result?.clips.map((clip) => [clip.effects, clip.error])).toEqual([
-      [["Fade In 0.5 s", "Wipe Left 0.4 s", "Voice Cleaned Up", "Sound Levelled"], null],
+      [
+        [
+          "Fade In 0.5 s",
+          "Wipe Left 0.4 s",
+          "Voice Cleaned Up",
+          "Music Under Speech",
+          "Sound Levelled",
+        ],
+        null,
+      ],
       [[], "Unreadable."],
     ])
   })

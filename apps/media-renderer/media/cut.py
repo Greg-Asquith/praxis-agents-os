@@ -21,6 +21,7 @@ from media.ffmpeg import (
     segment_input,
 )
 from media.framing import fill_filter, fit_filter, follow_filter, subject_tracks
+from media.music import mix_music, music_input, validate_music
 from media.transitions import fades, join, validate_transitions
 
 MAX_SEGMENTS = 10
@@ -63,6 +64,12 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "fade_out_ms": int,
             "enhance_voice": bool,
             "normalize_loudness": bool,
+            "music": bool,
+            "music_volume": int,
+            "music_duck": bool,
+            "music_start_ms": int,
+            "music_fade_in_ms": int,
+            "music_fade_out_ms": int,
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -70,6 +77,7 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
     _validate_output(arguments)
     _validate_keep(arguments)
     validate_transitions(arguments)
+    validate_music(arguments)
     return arguments
 
 
@@ -136,8 +144,12 @@ def _video_input_count(arguments: dict[str, Any]) -> int:
 
 
 def cut_input_count(arguments: dict[str, Any]) -> int:
-    # The captions file, when there is one, follows the videos.
-    return _video_input_count(arguments) + int(arguments.get("captions", False))
+    # The music, then the captions file, follow the videos.
+    return (
+        _video_input_count(arguments)
+        + int(arguments.get("music", False))
+        + int(arguments.get("captions", False))
+    )
 
 
 def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -175,12 +187,19 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
             fps,
         )
     total = join(filters, lengths, arguments.get("transitions", []), fps)
+    audio, extra = "[mixed]", len(summaries)
+    # Music runs under the joined clip, so it plays straight through the transitions.
+    if arguments.get("music"):
+        options += music_input(context, arguments, extra, total, fps)
+        # ffmpeg opens each segment as its own input, so the music follows the segments.
+        audio = mix_music(filters, arguments, len(arguments["segments"]), total, fps)
+        extra += 1
     video = "[joined]"
     if arguments.get("captions"):
-        captions = _captions_input(context, len(summaries))
+        captions = _captions_input(context, extra)
         filters.append(f"{video}ass=filename={captions.name}[captioned]")
         video = "[captioned]"
-    filters += fades(video, arguments, total, fps)
+    filters += fades(video, audio, arguments, total, fps)
     output = context.output_path(0)
     normalize = arguments.get("normalize_loudness", False)
     # Loudness is measured on the finished mix, so it renders to a working file first.

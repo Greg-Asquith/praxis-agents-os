@@ -31,12 +31,14 @@ async def create_file_preview(
         db, workspace_id=workspace.id, file=file, revision_id=revision_id
     )
     entry = contract_for_content_type(revision.content_type)
-    previewable = entry.category in {FileCategory.IMAGE, FileCategory.VIDEO} or (
-        entry.content_type == "application/pdf"
-    )
+    previewable = entry.category in {
+        FileCategory.IMAGE,
+        FileCategory.VIDEO,
+        FileCategory.AUDIO,
+    } or (entry.content_type == "application/pdf")
     if not previewable:
         raise AppValidationError(
-            "Previews are available for images, videos, and PDFs",
+            "Previews are available for images, videos, audio, and PDFs",
             field="file_id",
             details={"file_id": str(file.id), "content_type": revision.content_type},
         )

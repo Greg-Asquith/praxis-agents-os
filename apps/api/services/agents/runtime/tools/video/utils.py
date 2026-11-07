@@ -1,6 +1,8 @@
 # apps/api/services/agents/runtime/tools/video/utils.py
 
-"""Steps the video tools share: the caller's own video, progress, transcripts, and shot cuts."""
+"""Steps the video tools share: the caller's own video and audio, progress, transcripts, and
+shot cuts.
+"""
 
 import re
 from collections.abc import Awaitable, Callable
@@ -83,6 +85,18 @@ async def workspace_video(
         raise ModelRetry(f"{tool_name} requires a video file from workspace Files.")
     if revision.workspace_id != ctx.deps.workspace.id:
         raise ModelRetry(f"{tool_name} can only read this workspace's own videos.")
+    return file, revision
+
+
+async def workspace_audio(
+    ctx: RunContext[RuntimeDeps], file_id: FileReference, *, tool_name: str
+) -> tuple[File, FileRevision]:
+    """Returns the current revision of one of the workspace's own audio Files."""
+    file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
+    if file.category != FileCategory.AUDIO.value:
+        raise ModelRetry(f"{tool_name} music must be an audio file from workspace Files.")
+    if revision.workspace_id != ctx.deps.workspace.id:
+        raise ModelRetry(f"{tool_name} can only use this workspace's own audio.")
     return file, revision
 
 

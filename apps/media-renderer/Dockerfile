@@ -37,13 +37,13 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o ffmpeg.tar.xz "https://ffmpeg.org
         --enable-libass \
         --enable-libopus \
         --enable-protocol=file,pipe \
-        --enable-demuxer=mov,matroska,ogg \
+        --enable-demuxer=mov,matroska,ogg,mp3,wav \
         --enable-muxer=mp4,mov,ipod,ogg,image2,null,rawvideo \
         --enable-decoder=h264,hevc,vp8,vp9,mpeg4,prores,mjpeg,aac,mp3float,opus,vorbis,flac,alac,ac3,eac3,pcm_s16le,pcm_s24le,pcm_f32le \
         --enable-encoder=libx264,libopus,aac,mjpeg,wrapped_avframe,rawvideo,pcm_s16le \
         --enable-parser=h264,hevc,vp8,vp9,aac,opus,vorbis,mpegaudio,ac3,mjpeg \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
-        --enable-filter=highpass,afftdn,equalizer,acompressor,loudnorm,scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip,aselect,asetnsamples,tpad,xfade,acrossfade,fade,afade \
+        --enable-filter=highpass,afftdn,equalizer,acompressor,loudnorm,volume,asplit,sidechaincompress,amix,scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip,aselect,asetnsamples,tpad,xfade,acrossfade,fade,afade \
     && make -j"$(nproc)" \
     && make install \
     && ! /opt/ffmpeg/bin/ffmpeg -hide_banner -protocols | grep -qE '^\s+(https?|tcp|udp|tls|rtmp|rtp)$'

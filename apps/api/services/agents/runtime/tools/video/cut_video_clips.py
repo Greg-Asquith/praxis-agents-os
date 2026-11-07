@@ -32,6 +32,7 @@ from services.agents.runtime.tools.video.utils import (
     progress,
     video_shot_cuts,
     video_transcript,
+    workspace_audio,
     workspace_video,
 )
 from services.files import (
@@ -39,8 +40,9 @@ from services.files import (
     ensure_source_file_folder,
     resolve_folder_by_name,
 )
+from services.files.domain import VideoMetadata
 from services.files.revision_actor import FileRevisionActor
-from services.files.utils import format_duration
+from services.files.utils import format_duration, revision_video_metadata
 from services.media import discard_staged_outputs, save_media_output
 from services.media.captions import (
     CaptionPreset,
@@ -55,6 +57,8 @@ from services.media.clips import (
     ClipAudio,
     ClipSource,
     Framing,
+    MusicBed,
+    MusicOptions,
     PlannedClip,
     TransitionOptions,
     output_size,
@@ -74,6 +78,13 @@ from utils.validation import normalize_optional_text
 MAX_CLIPS = 5
 MAX_TEXT_OVERLAYS = 5
 MAX_CLIP_NAME_CHARS = 120
+MUSIC_RIGHTS_NOTICE = "The user is responsible for having the rights to use the music."
+
+
+class MusicArgument(MusicOptions):
+    file_id: FileReference = Field(
+        description="An audio File the user attached or uploaded. Never pick a track yourself."
+    )
 
 
 class ClipSegmentArgument(BaseModel):
@@ -135,6 +146,9 @@ class ClipArgument(BaseModel):
             "Each shows for the whole clip unless given times."
         ),
     )
+    music: MusicArgument | None = Field(
+        default=None, description="Music under this clip, overriding the call's."
+    )
 
 
 def cut_video_clips_available() -> bool:
@@ -164,7 +178,9 @@ def cut_video_clips_available() -> bool:
         "text_overlays add text such as a hook or a call to action, at the top by default; "
         "the 'title' preset suits a hook. Every clip's sound is levelled to the loudness "
         "social apps play at; set audio.enhance_voice when the person asks for clearer sound "
-        "from a phone, laptop, or room recording. Clips save in a folder named after their "
+        "from a phone, laptop, or room recording. music mixes a track the person provided "
+        "under every clip, or one clip's, and lowers it while someone talks; add it only when "
+        "asked, and only an audio File they gave you. Clips save in a folder named after their "
         "first video unless folder names another. One clip failing doesn't stop the others; "
         "the result reports each clip."
     ),
@@ -253,6 +269,10 @@ async def cut_video_clips(
             description="Sound for every clip. Omit to level loudness and leave voices as they are."
         ),
     ] = DEFAULT_AUDIO,
+    music: Annotated[
+        MusicArgument | None,
+        Field(description="Music under every clip. Omit for none."),
+    ] = None,
     folder: Annotated[
         str | None,
         Field(
@@ -266,6 +286,7 @@ async def cut_video_clips(
 ) -> dict[str, object]:
     """Renders each clip from the caller's own videos and saves it in its output folder."""
     videos = await _workspace_videos(ctx, clips)
+    tracks = await _workspace_tracks(ctx, clips, music)
     style = (
         None
         if captions == "none"
@@ -287,9 +308,17 @@ async def cut_video_clips(
         remove_silences=remove_silences,
         transition=transition,
         audio=audio,
+        music=music,
+        tracks=tracks,
     )
 
-    for file, revision in videos.values():
+    # A call's track that every clip overrides never plays, so only played tracks are sent.
+    played = {request.music.revision.file_id for request in planned if request.music}
+    read = [
+        *videos.values(),
+        *((file, revision) for file, revision, _ in tracks.values() if file.id in played),
+    ]
+    for file, revision in read:
         await record_media_read_audit(
             ctx,
             file.id,
@@ -328,7 +357,9 @@ async def cut_video_clips(
             "No clips were saved. "
             + " ".join(f"Clip {result['index']}: {result['error']}" for result in results)
         )
-    return {"count": len(results), "saved": saved, "failed": len(results) - saved, "clips": results}
+    summary = {"count": len(results), "saved": saved, "failed": len(results) - saved}
+    notice = {"music_notice": MUSIC_RIGHTS_NOTICE} if played else {}
+    return {**summary, **notice, "clips": results}
 
 
 async def _workspace_videos(
@@ -345,6 +376,34 @@ async def _workspace_videos(
     return videos
 
 
+async def _workspace_tracks(
+    ctx: RunContext[RuntimeDeps], clips: list[ClipArgument], music: MusicArgument | None
+) -> dict[UUID, tuple[File, FileRevision, VideoMetadata]]:
+    """Resolves each music File once, as the workspace's own measured audio."""
+    tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]] = {}
+    for argument in [music, *(clip.music for clip in clips)]:
+        if argument is None or argument.file_id.entity_id in tracks:
+            continue
+        file, revision = await workspace_audio(ctx, argument.file_id, tool_name="cut_video_clips")
+        metadata = revision_video_metadata(revision)
+        if metadata is None and file.processing_status == "error":
+            raise ToolFailed(f"The music couldn't be prepared: {file.processing_error}")
+        if metadata is None:
+            raise ToolFailed("The music is still being prepared. Try again in a minute.")
+        tracks[argument.file_id.entity_id] = (file, revision, metadata)
+    return tracks
+
+
+def _clip_music(
+    argument: MusicArgument | None, tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]]
+) -> MusicBed | None:
+    if argument is None:
+        return None
+    _, revision, metadata = tracks[argument.file_id.entity_id]
+    options = MusicOptions(**argument.model_dump(exclude={"file_id"}))
+    return MusicBed(revision=revision, metadata=metadata, options=options)
+
+
 def _plan_clips(
     clips: list[ClipArgument],
     sources: dict[UUID, ClipSource],
@@ -355,6 +414,8 @@ def _plan_clips(
     remove_silences: bool,
     transition: TransitionOptions | None,
     audio: ClipAudio,
+    music: MusicArgument | None,
+    tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]],
 ) -> list[PlannedClip]:
     planned = []
     for index, clip in enumerate(clips, start=1):
@@ -377,6 +438,7 @@ def _plan_clips(
                     fade_out_ms=clip.fade_out_ms,
                     overlays=clip.text_overlays,
                     audio=audio,
+                    music=_clip_music(clip.music or music, tracks),
                 )
             )
         except ValueError as exc:
@@ -521,6 +583,7 @@ def _plan_output(request: PlannedClip) -> dict[str, object]:
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,
         "enhance_voice": request.operation.enhance_voice,
+        "music": _music(request),
         "text_overlays": _overlays(request.overlays),
         "warnings": list(request.warnings),
     }
@@ -543,6 +606,18 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
         }
         for position, segment in enumerate(request.segments)
     ]
+
+
+def _music(request: PlannedClip) -> dict[str, object] | None:
+    if request.music is None:
+        return None
+    options = request.music.options
+    return {
+        "file_id": str(request.music.revision.file_id),
+        "volume": options.volume,
+        "duck": options.duck,
+        "start_ms": options.start_ms,
+    }
 
 
 def _overlays(overlays: tuple[PlacedOverlay, ...]) -> list[dict[str, object]]:

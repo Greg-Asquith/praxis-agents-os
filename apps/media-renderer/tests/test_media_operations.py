@@ -263,6 +263,42 @@ def test_enhance_voice_lowers_the_noise_floor(
     assert abs(enhanced_tone - tone) <= 3
 
 
+def test_music_loops_under_the_clip_and_drops_while_someone_talks(
+    storage: FakeStorage, config: DriverConfig, tmp_path: Path
+) -> None:
+    # talk_pause.mp4 is a 250 Hz "voice" at about -20 dBFS for 3 s, then 3 s of silence;
+    # music.mp3 is a 1.5 s 4 kHz tone at about -9 dBFS, so it has to loop to fill the clip.
+    # Highpass filters keep only the music. Two segments of one video are two ffmpeg inputs.
+    response = _run(
+        storage,
+        config,
+        "cut",
+        sources=("talk_pause.mp4", "music.mp3"),
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 3000], [0, 3000, 6000]],
+            "width": 160,
+            "height": 90,
+            "fps": 30,
+            "fit": False,
+            "music": True,
+            "music_volume": 25,
+            "music_duck": True,
+            "music_start_ms": 0,
+            "music_fade_in_ms": 0,
+            "music_fade_out_ms": 1000,
+        },
+    )
+    upload = storage.uploads["out-0"]
+    music_only = ",highpass=f=1500,highpass=f=1500,highpass=f=1500"
+    under_speech = _loudness(tmp_path, upload, "0.5:end=2.5", music_only)
+    in_the_pause = _loudness(tmp_path, upload, "3.8:end=4.8", music_only)
+
+    assert abs(response["result"]["duration_ms"] - 6000) <= 100
+    assert in_the_pause > -45
+    assert under_speech <= in_the_pause - 9
+
+
 def test_transition_names_match_the_ffmpeg_build() -> None:
     def names(filter_name: str, option: str) -> set[str]:
         help_text = subprocess.run(
@@ -471,14 +507,16 @@ def _captions(events: str) -> bytes:
     ).encode()
 
 
-def _loudness(tmp_path: Path, clip: bytes, trim: str = "0") -> float:
-    """Integrated loudness of a clip's audio from `trim` (atrim start and options) to its end."""
+def _loudness(tmp_path: Path, clip: bytes, trim: str = "0", filters: str = "") -> float:
+    """Integrated loudness of a clip's audio from `trim` (atrim start and options) to its end,
+    after any extra `filters`.
+    """
     path = tmp_path / "measured.mp4"
     path.write_bytes(clip)
     log = subprocess.run(
         [
             FFMPEG, "-hide_banner", "-nostats", "-i", str(path), "-vn",
-            "-af", f"atrim=start={trim},loudnorm=print_format=json", "-f", "null", "-",
+            "-af", f"atrim=start={trim}{filters},loudnorm=print_format=json", "-f", "null", "-",
         ],
         capture_output=True,
         text=True,

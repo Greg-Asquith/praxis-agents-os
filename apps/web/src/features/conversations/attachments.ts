@@ -17,7 +17,7 @@ export type MessageAttachment = {
 
 export function chatAttachmentAcceptValue(videoToolsAvailable: boolean) {
   return Object.entries(WORKSPACE_FILE_MIME_TYPES)
-    .filter(([, contentType]) => videoToolsAvailable || !contentType.startsWith("video/"))
+    .filter(([, contentType]) => videoToolsAvailable || !isMediaType(contentType))
     .map(([extension]) => `.${extension}`)
     .join(",")
 }
@@ -29,13 +29,21 @@ export function chatAttachmentRefusal(file: File, videoToolsAvailable: boolean) 
     ? WORKSPACE_FILE_MIME_TYPES[extension]
     : undefined
   if (contentType === undefined) {
-    const kinds = videoToolsAvailable ? "images, videos, or text files" : "images, or text files"
+    const kinds = videoToolsAvailable
+      ? "images, videos, audio, or text files"
+      : "images, or text files"
     return `${file.name} can't be attached. Attach documents, spreadsheets, presentations, ${kinds}.`
   }
-  if (contentType.startsWith("video/") && !videoToolsAvailable) {
-    return "Video can't be attached to messages yet. Upload it to Files instead."
+  if (isMediaType(contentType) && !videoToolsAvailable) {
+    const kind = contentType.startsWith("audio/") ? "Audio" : "Video"
+    return `${kind} can't be attached to messages yet. Upload it to Files instead.`
   }
   return null
+}
+
+// Video and audio are only useful in chat to the video tools.
+function isMediaType(contentType: string) {
+  return contentType.startsWith("video/") || contentType.startsWith("audio/")
 }
 
 function hasMediaTypeFamily(mediaType: string | null | undefined, family: "image" | "video") {

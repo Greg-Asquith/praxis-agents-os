@@ -18,12 +18,15 @@ from services.media.captions import CaptionStyle, PlacedOverlay, TextOverlay, su
 from services.media.domain import (
     MAX_CUT_KEEP_RANGES,
     MAX_CUT_SHOT_CUTS,
+    MAX_FADE_MS,
+    MAX_MUSIC_VOLUME,
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
     MAX_TRANSITION_MS,
     MIN_OUTPUT_FPS,
     MIN_TRANSITION_MS,
     AudioCurve,
+    CutMusic,
     CutOperation,
     CutSegment,
     CutTransition,
@@ -116,6 +119,36 @@ class ClipAudio(BaseModel):
 DEFAULT_AUDIO = ClipAudio()
 
 
+class MusicOptions(BaseModel):
+    """How a music track plays under a clip."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    volume: int = Field(
+        default=25,
+        ge=0,
+        le=MAX_MUSIC_VOLUME,
+        description="0 to 100. 25 sits quietly under speech; above 50 competes with voices.",
+    )
+    duck: bool = Field(
+        default=True, description="Lower the music while someone talks. Leave on under speech."
+    )
+    start_ms: int = Field(
+        default=0, ge=0, description="Where in the track to start, such as at the chorus."
+    )
+    fade_in_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
+    fade_out_ms: int = Field(default=1000, ge=0, le=MAX_FADE_MS)
+
+
+@dataclass(frozen=True)
+class MusicBed:
+    """An authorised workspace audio revision to mix under a clip."""
+
+    revision: FileRevision
+    metadata: VideoMetadata
+    options: MusicOptions
+
+
 @dataclass(frozen=True)
 class ClipSource:
     """An authorised workspace video revision with what snapping, framing, and captions read."""
@@ -153,6 +186,7 @@ class PlannedClip:
     # The ASS file with the clip's captions and text overlays.
     captions: str | None = None
     overlays: tuple[PlacedOverlay, ...] = ()
+    music: MusicBed | None = None
 
     @property
     def duration_ms(self) -> int:
@@ -210,9 +244,10 @@ def plan_clip(
     fade_out_ms: int = 0,
     overlays: Sequence[TextOverlay] = (),
     audio: ClipAudio = DEFAULT_AUDIO,
+    music: MusicBed | None = None,
 ) -> PlannedClip:
-    """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions and
-    text overlays.
+    """Bounds, snaps, and numbers a clip's segments, removes pauses, builds captions and text
+    overlays, and adds any music.
 
     ``transition`` joins every pair of segments unless the later segment's own entry in
     ``transitions_in`` (one per segment, the first unused) says otherwise. Raises ValueError
@@ -263,6 +298,7 @@ def plan_clip(
         fade_in_ms=fade_in_ms,
         fade_out_ms=fade_out_ms,
         audio=audio,
+        music=music,
     )
     clip = PlannedClip(
         segments=tuple(planned),
@@ -271,6 +307,7 @@ def plan_clip(
         warnings=tuple(warnings),
         captions=caption_text,
         overlays=placed,
+        music=music,
     )
     limit_ms = max_clip_ms()
     if clip.duration_ms > limit_ms:
@@ -280,7 +317,20 @@ def plan_clip(
         )
     if fade_in_ms + fade_out_ms > clip.duration_ms:
         raise ValueError("The fades are longer than the clip.")
+    if music:
+        _require_music_fits(music, clip.duration_ms)
     return clip
+
+
+def _require_music_fits(music: MusicBed, clip_ms: int) -> None:
+    track_ms = music.metadata.duration_ms
+    if music.options.start_ms >= track_ms:
+        raise ValueError(
+            f"The music starts at {format_duration(music.options.start_ms)}, after the end of "
+            f"its {format_duration(track_ms)} track."
+        )
+    if music.options.fade_in_ms + music.options.fade_out_ms > clip_ms:
+        raise ValueError("The music fades are longer than the clip.")
 
 
 def _bounded_segment(
@@ -343,8 +393,11 @@ def _cut_operation(
     fade_in_ms: int,
     fade_out_ms: int,
     audio: ClipAudio,
+    music: MusicBed | None,
 ) -> tuple[CutOperation, tuple[FileRevision, ...]]:
-    """Returns the renderer operation and its sources, one input per distinct revision."""
+    """Returns the renderer operation and its sources: one input per distinct video revision,
+    then the music.
+    """
     keep = tuple(
         (position, first, end)
         for position, segment in enumerate(segments)
@@ -384,8 +437,10 @@ def _cut_operation(
         fade_out_ms=fade_out_ms,
         enhance_voice=audio.enhance_voice,
         normalize_loudness=audio.normalize,
+        music=CutMusic(**music.options.model_dump()) if music else None,
     )
-    return operation, tuple(revisions.values())
+    music_source = (music.revision,) if music else ()
+    return operation, (*revisions.values(), *music_source)
 
 
 def _overlap_joins(

@@ -5,7 +5,12 @@
 from models.files import File, FileRevision
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 from services.assets.utils import normalize_content_type
-from services.files.utils import describe_video, file_revision_ref, revision_video_metadata
+from services.files.utils import (
+    describe_video,
+    file_revision_ref,
+    format_duration,
+    revision_video_metadata,
+)
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
 
@@ -23,10 +28,13 @@ DOCUMENT_FORMAT_LABELS: dict[str, str] = {
     "text/plain": "Text",
 }
 
-VIDEO_FORMAT_LABELS: dict[str, str] = {
+MEDIA_FORMAT_LABELS: dict[str, str] = {
     "video/mp4": "MP4",
     "video/quicktime": "QuickTime",
     "video/webm": "WebM",
+    "audio/mpeg": "MP3",
+    "audio/mp4": "M4A",
+    "audio/wav": "WAV",
 }
 
 
@@ -70,35 +78,43 @@ def attachment_text_payload(
     return f"{header}\n\n{markdown}".encode()
 
 
-def video_attachment_note(file: File, revision: FileRevision) -> bytes:
-    """Returns a reference to an attached video for the model, without its bytes."""
+def media_attachment_note(file: File, revision: FileRevision, *, audio: bool = False) -> bytes:
+    """Returns a reference to an attached video or audio File for the model, without its bytes."""
     content_type = normalize_content_type(revision.content_type)
-    format_label = VIDEO_FORMAT_LABELS.get(content_type, content_type)
+    format_label = MEDIA_FORMAT_LABELS.get(content_type, content_type)
+    kind = "Audio" if audio else "Video"
     # The name is uploader-controlled, so it is framed like other untrusted File content.
     name = frame_untrusted_content(
         UntrustedContent(
             source_kind="file",
             source_ref=f"file:{file.id}/revision:{revision.id}",
-            content=f"Video name: {file.name}",
+            content=f"{kind} name: {file.name}",
         )
     )
+    use = (
+        "To put it under video clips as music, pass the file id to cut_video_clips."
+        if audio
+        else "To work with it, pass the file id to the video tools."
+    )
     return (
-        "Attached video\n"
+        f"Attached {kind.lower()}\n"
         f"File id: {file.id}\n"
         f"Format: {format_label} ({content_type}), {revision.size_bytes:,} bytes\n"
-        f"{_video_state_line(file, revision)}"
+        f"{_media_state_line(file, revision, kind)}"
         f"{name}\n"
-        "The video itself isn't included in this message. To work with it, pass the file id "
-        "to the video tools."
+        f"The {kind.lower()} itself isn't included in this message. {use}"
     ).encode()
 
 
-def _video_state_line(file: File, revision: FileRevision) -> str:
+def _media_state_line(file: File, revision: FileRevision, kind: str) -> str:
     metadata = revision_video_metadata(revision)
     if metadata is not None:
-        return f"Video: {describe_video(metadata)}\n"
+        summary = (
+            format_duration(metadata.duration_ms) if kind == "Audio" else describe_video(metadata)
+        )
+        return f"{kind}: {summary}\n"
     if file.processing_status == "error":
-        return f"Video couldn't be prepared: {file.processing_error}\n"
+        return f"{kind} couldn't be prepared: {file.processing_error}\n"
     if file.processing_status in ("pending", "processing"):
-        return "Video is still being prepared; its duration isn't known yet.\n"
+        return f"{kind} is still being prepared; its duration isn't known yet.\n"
     return ""

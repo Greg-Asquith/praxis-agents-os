@@ -1,6 +1,6 @@
 # apps/api/services/jobs/handlers/probe_video.py
 
-"""Measures workspace video revisions on the media renderer."""
+"""Measures workspace video and audio revisions on the media renderer."""
 
 import logging
 
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from models.files import File, FileRevision
 from models.jobs import Job
+from services.files.contract import FileCategory, contract_for_content_type
 from services.files.domain import VIDEO_PROBE_JOB_KIND, VideoMetadata
 from services.files.utils import format_duration, parse_extraction_payload_ids
 from services.jobs.registry import job_handler
@@ -25,6 +26,7 @@ JOB_ALLOWANCE_SECONDS = 60
 PERMANENT_FAILURES: dict[str, str | None] = {
     "invalid_media": "The video couldn't be read. Check that it plays, then upload it again.",
     "no_video": "The file has no video.",
+    "no_audio": "The file has no sound.",
     "resource_limit": "The video is too large or complex to prepare.",
     "input_too_large": "The video is too large to prepare.",
     "forbidden": None,
@@ -44,7 +46,7 @@ class VideoRejectedError(Exception):
     max_attempts=3,
 )
 async def probe_video(db: AsyncSession, job: Job) -> None:
-    """Stores one video revision's probe result, or fails its File with a plain reason."""
+    """Stores one video or audio revision's probe result, or fails its File with a plain reason."""
     if job.workspace_id is None:
         return
     file_id, revision_id = parse_extraction_payload_ids(job.payload)
@@ -109,13 +111,17 @@ async def _probe(revision: FileRevision) -> dict[str, object]:
     result = operation.result
     if not isinstance(result, VideoMetadata):
         raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)
-    if result.video_codec is None or result.duration_ms <= 0:
+    audio = contract_for_content_type(revision.content_type).category == FileCategory.AUDIO
+    if audio and (not result.has_audio or result.duration_ms <= 0):
+        raise VideoRejectedError(PERMANENT_FAILURES["no_audio"])
+    if not audio and (result.video_codec is None or result.duration_ms <= 0):
         raise VideoRejectedError(PERMANENT_FAILURES["no_video"])
     limit_ms = settings.VIDEO_MAX_SOURCE_DURATION_SECONDS * 1000
     if result.duration_ms > limit_ms:
+        kind, kinds = ("audio", "Audio files") if audio else ("video", "Videos")
         raise VideoRejectedError(
-            f"The video is {format_duration(result.duration_ms)} long. "
-            f"Videos can be up to {format_duration(limit_ms)}."
+            f"The {kind} is {format_duration(result.duration_ms)} long. "
+            f"{kinds} can be up to {format_duration(limit_ms)}."
         )
     return result.model_dump(mode="json")
 

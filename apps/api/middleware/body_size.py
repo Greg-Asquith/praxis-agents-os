@@ -53,6 +53,7 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
             settings.MAX_FILE_SIZE_AGENT_FILE,
             settings.MAX_FILE_SIZE_DOCUMENT,
             settings.MAX_FILE_SIZE_VIDEO,
+            settings.MAX_FILE_SIZE_AUDIO,
         ),
         f"{settings.API_V1_PREFIX}/integrations/events/": (
             settings.INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES

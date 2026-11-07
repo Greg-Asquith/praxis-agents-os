@@ -12,6 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` can mix a track the person provided under every clip, or
+  one clip, quietly by default and lowered by about 12 dB while someone
+  talks. Workspace Files now accept MP3, M4A, and WAV audio, bounded by
+  `MAX_FILE_SIZE_AUDIO`, which the renderer probes like video. Chat takes
+  audio attachments where it takes video, and the Files page plays them. The
+  clip card shows **Music Under Speech** and a note that the person is
+  responsible for the music's rights.
 - Clips from `cut_video_clips` are levelled to -14 LUFS, the loudness Reels,
   Shorts, and TikTok play at, unless `audio.normalize` is off. With
   `audio.enhance_voice`, the agent can also reduce background noise and make

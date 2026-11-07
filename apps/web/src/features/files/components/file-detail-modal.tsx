@@ -550,6 +550,14 @@ function SignedMediaPreview({ file }: { file: WorkspaceFile }) {
     )
   }
 
+  if (file.category === "audio") {
+    return (
+      <audio aria-label={`Play ${file.name}`} className="w-full" controls src={previewUrl}>
+        <track kind="captions" />
+      </audio>
+    )
+  }
+
   return (
     <object
       aria-label={`Preview of ${file.name}`}
@@ -620,6 +628,7 @@ function isSignedPreview(file: WorkspaceFile) {
   return (
     file.category === "image" ||
     file.category === "video" ||
+    file.category === "audio" ||
     file.content_type === "application/pdf"
   )
 }

@@ -119,8 +119,8 @@ def _validate_chat_attachment(file: File, *, agent: Agent, workspace: Workspace)
     if entry.category in {FileCategory.INGESTIBLE_DOCUMENT, FileCategory.EDITABLE_TEXT}:
         _validate_document_attachment(file, media_type=media_type)
         return
-    if entry.category == FileCategory.VIDEO:
-        _validate_video_attachment(file)
+    if entry.category in {FileCategory.VIDEO, FileCategory.AUDIO}:
+        _validate_media_attachment(file, kind=entry.category.value.capitalize())
         return
 
     raise AppValidationError(
@@ -171,16 +171,16 @@ def _validate_document_attachment(file: File, *, media_type: str) -> None:
     )
 
 
-def _validate_video_attachment(file: File) -> None:
+def _validate_media_attachment(file: File, *, kind: str) -> None:
     if not video_tools_available():
         raise AppValidationError(
-            "Video can't be attached to messages yet. Upload it to Files instead.",
+            f"{kind} can't be attached to messages yet. Upload it to Files instead.",
             field="attachments",
             details={"file_id": str(file.id), "content_type": file.content_type},
         )
     _require_attachment_size(
         file,
-        kind="Video",
+        kind=kind,
         max_size_bytes=upload_max_size_bytes(contract_for_content_type(file.content_type)),
     )
 

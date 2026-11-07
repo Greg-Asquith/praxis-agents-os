@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `enhance_voice`, `normalize_loudness` | one H.264 and AAC MP4, with its loudness when normalised |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -119,6 +119,20 @@ nothing for AAC.
   no audio, is kept as it is and reports no loudness. The working file
   doubles the clip's space in the instance's memory until the second pass
   ends.
+- **`music`:** mixes an audio input, after the videos and before any
+  captions file, under the joined clip, so it plays straight through
+  transitions (`media/music.py`). The track starts at `music_start_ms` and
+  loops from its beginning (`-stream_loop`) until the clip ends. Its volume
+  maps to gain as `(volume / 100)²`, so 50 is 12 dB under the track and the
+  default 25 is 24 dB under. `music_fade_in_ms` and `music_fade_out_ms` fade
+  the track alone. With `music_duck`, `sidechaincompress` keyed on the speech
+  compresses the music hard over -50 dBFS and blends a fifth of it back
+  unchanged, which caps the drop near 14 dB. Speech at about -20 dBFS lowers
+  the music by about 13 dB; speech at -40 dBFS lowers it by about 7 dB. The
+  clip's fades then apply to the mix, and loudness normalisation measures it.
+  The renderer refuses music options without `music`, a track with no sound,
+  and a start past the track's end. MP3 and WAV inputs use their own
+  demuxers; M4A uses `mov`.
 
 ### Isolation
 
@@ -170,10 +184,12 @@ and error mapping are shared with the data science client in
 
 - `run_media_operation(workspace_id, sources, operation, staged_inputs?)`
   takes the File revisions the caller resolved for the workspace, one per
-  video input, then any files the API staged itself, such as captions
-  (`stage_media_input`). It refuses the request if any revision is from
-  another workspace or isn't a video, or any staged file is outside the
-  workspace's staging prefix. It signs one download per input and one
+  media input, then any files the API staged itself, such as captions
+  (`stage_media_input`). Each operation lists the File categories each
+  source may be (`source_categories`): a video for every input, except an
+  audio File for a cut's music and either for a probe. It refuses the request
+  if any revision is from another workspace or isn't a category its position
+  takes, or any staged file is outside the workspace's staging prefix. It signs one download per input and one
   size-bounded staging upload per output, validates the result against the
   operation's schema, and trusts an output only when the staged object
   exists at the reported size. On any failure it deletes the staged objects.
@@ -202,10 +218,10 @@ The client settings are as follows:
 
 ## Video probe
 
-The renderer's `probe` operation measures each workspace video revision once,
-in the background. `queue_video_probe` (`services/files/`) runs wherever a
-revision becomes a File's current revision. Unless the File isn't a workspace
-video or the renderer is unavailable, it marks the File `pending` and
+The renderer's `probe` operation measures each workspace video and audio
+revision once, in the background. `queue_video_probe` (`services/files/`) runs
+wherever a revision becomes a File's current revision. Unless the File isn't a
+workspace video or audio File, or the renderer is unavailable, it marks the File `pending` and
 enqueues a `video.probe` job. The `probe_video` handler stores the result in
 the revision's `media_metadata` (`VideoMetadata` in
 `services/files/domain.py`). A restore copies the measurement from the
@@ -213,8 +229,8 @@ revision it restores.
 
 | Outcome | File | Retried |
 |---|---|---|
-| Measured, with a video stream, within `VIDEO_MAX_SOURCE_DURATION_SECONDS` (default 4 hours) | `ready` | No |
-| No video stream, too long, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
+| Measured, with a video stream (an audio stream for an audio File), within `VIDEO_MAX_SOURCE_DURATION_SECONDS` (default 4 hours) | `ready` | No |
+| No video stream (no sound for an audio File), too long, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
 | Renderer unreachable, timed out, or another renderer failure | `error` until the next attempt | Up to 3 attempts |
 
 The job's timeout is `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 120 seconds. Tools
@@ -403,6 +419,19 @@ arguments are as follows:
   `enhance_voice` (default false) reduces background noise and makes voices
   clearer; the agent is told to use it for phone, laptop, or room recordings
   when the person asks for clearer sound.
+- **`music`:** `{file_id, volume?, duck?, start_ms?, fade_in_ms?,
+  fade_out_ms?}` under every clip, or a clip's own `music` to override it.
+  `file_id` must be one of the workspace's own audio Files (MP3, M4A, or WAV,
+  probed like a video); a video, another workspace's File, or a published
+  platform File is refused. `volume` defaults to 25, quiet under speech;
+  `duck` (default true) lowers it while someone talks; `start_ms` is where in
+  the track to start; `fade_out_ms` defaults to 1000. The track has to start
+  inside its length, and its fades must fit the clip. There is no music
+  library and no generated music: the agent is told to add music only when
+  asked, and only a track the person gave it. A call with music returns
+  `music_notice`, which says the person is responsible for the music's
+  rights, and each clip reports its `music`. The music File gets the same
+  `video_clips` audit event as the source videos.
 - **`folder`:** names the output folder, created in the caller's workspace if
   needed. Otherwise clips go in the first segment's video's
   [output folder](#output-folders).
@@ -511,14 +540,18 @@ The tool rows add the following:
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
 - **`cut_video_clips`:** a grid of stills with each clip's length, name,
-  ranges, fades and transitions in play order, then **Voice Cleaned Up** and
-  **Sound Levelled** when applied, and overlay text and times,
-  plus a link to the output folder. Selecting a clip opens a player; a failed
-  clip shows its reason.
+  ranges, fades and transitions in play order, then **Voice Cleaned Up**,
+  **Music Under Speech** (or **Music Added** without ducking), and **Sound
+  Levelled** when applied, and overlay text and times, plus a link to the
+  output folder and the music rights notice. Selecting a clip opens a
+  player; a failed clip shows its reason.
 
 In the composer, a video attachment shows its upload percentage, then
 "Preparing video", then its duration and dimensions. The person can send once
-the upload is confirmed.
+the upload is confirmed. On the same deployments, chat also takes audio
+Files, so a person can attach a track for `music`. The agent gets a note with
+the File id, format, and duration, never the bytes, and the Files page plays
+audio in its preview.
 
 ## Deployment
 

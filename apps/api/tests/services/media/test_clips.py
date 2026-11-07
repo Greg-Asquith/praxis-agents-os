@@ -1,8 +1,10 @@
 # apps/api/tests/services/media/test_clips.py
 
 """Planning clips: bounds, snapping, input numbering, framing, pauses, captions, transitions,
-text overlays, and size.
+text overlays, music, and size.
 """
+
+from dataclasses import replace
 
 import pytest
 
@@ -10,6 +12,8 @@ from services.files.domain import VideoMetadata
 from services.media.captions import CaptionStyle, OverlayTextStyle, TextOverlay, subtitle_file
 from services.media.clips import (
     ClipSource,
+    MusicBed,
+    MusicOptions,
     TransitionOptions,
     output_fps,
     output_size,
@@ -120,6 +124,36 @@ def test_a_clip_longer_than_the_renderer_can_write_fails_before_rendering() -> N
             framing="center",
             snap=False,
         )
+
+
+def test_music_is_the_input_after_the_videos_and_must_start_inside_its_track() -> None:
+    talk, broll = _source(60_000), _source(5_000)
+    file = build_file(workspace=build_workspace(), category="audio", content_type="audio/mpeg")
+    track = MusicBed(
+        revision=build_file_revision(file),
+        metadata=VideoMetadata(duration_ms=30_000, has_audio=True, rotation=0),
+        options=MusicOptions(volume=40),
+    )
+
+    clip = plan_clip(
+        [(talk, 0, 5_000), (broll, None, None), (talk, 10_000, 15_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        music=track,
+    )
+    with pytest.raises(ValueError, match="after the end of its 0:30 track"):
+        plan_clip(
+            [(talk, 0, 5_000)],
+            size=(1080, 1920),
+            framing="center",
+            snap=False,
+            music=replace(track, options=MusicOptions(start_ms=30_000)),
+        )
+
+    assert clip.sources == (talk.revision, broll.revision, track.revision)
+    assert clip.operation.input_count() == 3
+    assert clip.operation.renderer_arguments()["music_volume"] == 40
 
 
 def test_output_is_1080_on_the_short_side_upright_at_the_source_frame_rate() -> None:

@@ -96,7 +96,7 @@ def join(filters: list[str], lengths: list[int], transitions: list[list[Any]], f
     return elapsed
 
 
-def fades(video: str, arguments: dict[str, Any], total: int, fps: int) -> list[str]:
+def fades(video: str, audio: str, arguments: dict[str, Any], total: int, fps: int) -> list[str]:
     """Fades the clip in from black and silence, and out to them, ending at [v] and [a]."""
     fade_in = round(arguments.get("fade_in_ms", 0) * fps / 1000)
     fade_out = round(arguments.get("fade_out_ms", 0) * fps / 1000)
@@ -112,5 +112,5 @@ def fades(video: str, arguments: dict[str, Any], total: int, fps: int) -> list[s
         audio_fades.append(f"afade=t=out:ss={(total - fade_out) * samples}:ns={fade_out * samples}")
     return [
         f"{video}{','.join(video_fades) or 'null'}[v]",
-        f"[mixed]{','.join(audio_fades) or 'anull'}[a]",
+        f"{audio}{','.join(audio_fades) or 'anull'}[a]",
     ]

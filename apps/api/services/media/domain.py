@@ -12,6 +12,7 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from services.files.contract import FileCategory
 from services.files.domain import VideoMetadata
 from services.storage.domain import StorageObjectRef
 from utils.isolated_service import IsolatedServiceError
@@ -37,6 +38,7 @@ MAX_OUTPUT_FPS = 60
 MIN_TRANSITION_MS = 100
 MAX_TRANSITION_MS = 3000
 MAX_FADE_MS = 3000
+MAX_MUSIC_VOLUME = 100
 # Every named xfade style in the renderer's ffmpeg, and "none" for a hard cut.
 TransitionStyle = Literal[
     "none", "fade", "fadeblack", "fadewhite", "fadegrays", "fadefast", "fadeslow", "dissolve",
@@ -74,6 +76,10 @@ class _Operation(BaseModel):
     def input_count(self) -> int:
         return 1
 
+    def source_categories(self) -> tuple[frozenset[FileCategory], ...]:
+        """The File categories each source may be, in input order."""
+        return (frozenset({FileCategory.VIDEO}),)
+
 
 class _Range(_Operation):
     start_ms: int | None = Field(default=None, ge=0)
@@ -88,6 +94,9 @@ class _Range(_Operation):
 
 class ProbeOperation(_Operation):
     name: Literal["probe"] = "probe"
+
+    def source_categories(self) -> tuple[frozenset[FileCategory], ...]:
+        return (frozenset({FileCategory.VIDEO, FileCategory.AUDIO}),)
 
 
 class SceneCutsOperation(_Range):
@@ -123,6 +132,18 @@ class CutTransition(BaseModel):
         return self
 
 
+class CutMusic(BaseModel):
+    """A track from an audio source mixed under the clip; ``duck`` lowers it under speech."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    volume: int = Field(ge=0, le=MAX_MUSIC_VOLUME)
+    duck: bool
+    start_ms: int = Field(ge=0)
+    fade_in_ms: int = Field(ge=0, le=MAX_FADE_MS)
+    fade_out_ms: int = Field(ge=0, le=MAX_FADE_MS)
+
+
 class CutOperation(_Operation):
     """Joins segments of one or more sources into one H.264 and AAC MP4 of a fixed size.
 
@@ -134,6 +155,7 @@ class CutOperation(_Operation):
     per junction, or none for hard cuts throughout; the fades run from and to black and silence.
     ``enhance_voice`` cleans up each segment's sound before the join, and
     ``normalize_loudness`` brings the finished clip to -14 LUFS in a second, audio-only pass.
+    ``music`` mixes an audio source, which follows the videos, under the joined clip.
     """
 
     name: Literal["cut"] = "cut"
@@ -154,6 +176,7 @@ class CutOperation(_Operation):
     fade_out_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
     enhance_voice: bool = False
     normalize_loudness: bool = False
+    music: CutMusic | None = None
 
     @model_validator(mode="after")
     def require_every_input(self):
@@ -181,9 +204,25 @@ class CutOperation(_Operation):
         return len({segment.input for segment in self.segments})
 
     def input_count(self) -> int:
-        return self.video_count() + int(self.captions)
+        return self.video_count() + int(self.music is not None) + int(self.captions)
+
+    def source_categories(self) -> tuple[frozenset[FileCategory], ...]:
+        videos = (frozenset({FileCategory.VIDEO}),) * self.video_count()
+        return (*videos, frozenset({FileCategory.AUDIO})) if self.music else videos
 
     def renderer_arguments(self) -> dict[str, object]:
+        music = (
+            {
+                "music": True,
+                "music_volume": self.music.volume,
+                "music_duck": self.music.duck,
+                "music_start_ms": self.music.start_ms,
+                "music_fade_in_ms": self.music.fade_in_ms,
+                "music_fade_out_ms": self.music.fade_out_ms,
+            }
+            if self.music
+            else {}
+        )
         return {
             "segments": [
                 [segment.input, segment.start_ms, segment.end_ms] for segment in self.segments
@@ -204,6 +243,7 @@ class CutOperation(_Operation):
             "fade_out_ms": self.fade_out_ms,
             "enhance_voice": self.enhance_voice,
             "normalize_loudness": self.normalize_loudness,
+            **music,
         }
 
 

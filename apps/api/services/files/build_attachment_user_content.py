@@ -16,7 +16,7 @@ from services.assets.utils import normalize_content_type
 from services.files.attachment_text import (
     attachment_text_payload,
     markdown_for_revision,
-    video_attachment_note,
+    media_attachment_note,
 )
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.resolve_chat_attachments import PDF_MEDIA_TYPE
@@ -78,9 +78,9 @@ async def _build_revision_content(*, file: File, revision: FileRevision) -> Bina
             media_type=media_type,
             identifier=str(file.id),
         )
-    if category == FileCategory.VIDEO:
+    if category in {FileCategory.VIDEO, FileCategory.AUDIO}:
         return BinaryContent(
-            data=video_attachment_note(file, revision),
+            data=media_attachment_note(file, revision, audio=category == FileCategory.AUDIO),
             media_type="text/plain",
             identifier=str(file.id),
         )

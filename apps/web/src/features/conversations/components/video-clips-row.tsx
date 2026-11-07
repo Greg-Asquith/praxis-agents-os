@@ -70,6 +70,9 @@ export function CutVideoClipsRow({
         ))}
       </ol>
       {result.folders.length > 0 ? <ClipFolders folders={result.folders} /> : null}
+      {result.musicNotice ? (
+        <p className="text-muted-foreground pt-2 text-xs">{result.musicNotice}</p>
+      ) : null}
     </ToolResultCard>
   )
 }

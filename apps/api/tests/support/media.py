@@ -125,3 +125,41 @@ async def persist_analysed_video(
         file.current_revision_id = revision.id
         await db.commit()
         return file
+
+
+async def persist_audio(
+    db_session_factory, *, workspace_id: UUID, user_id: UUID, name: str, duration_ms: int
+) -> File:
+    """Stores a probed MP3 in the workspace, such as a music track."""
+    async with db_session_factory() as db:
+        workspace = await db.get_one(Workspace, workspace_id)
+        content = name.encode()
+        digest = sha256(content).hexdigest()
+        file = build_file(
+            workspace=workspace,
+            name=name,
+            category="audio",
+            content_type="audio/mpeg",
+            extension=".mp3",
+            size_bytes=len(content),
+            content_hash=digest,
+        )
+        db.add(file)
+        await db.flush()
+        revision = build_file_revision(
+            file, created_by_user_id=user_id, size_bytes=len(content), content_hash=digest
+        )
+        revision.media_metadata = {
+            "duration_ms": duration_ms,
+            "has_audio": True,
+            "audio_codec": "mp3float",
+            "rotation": 0,
+        }
+        await get_storage_provider().put_object(
+            private_ref_from_key(revision.object_key), content, content_type="audio/mpeg"
+        )
+        db.add(revision)
+        await db.flush()
+        file.current_revision_id = revision.id
+        await db.commit()
+        return file

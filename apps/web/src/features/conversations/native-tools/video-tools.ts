@@ -195,6 +195,8 @@ export type CutVideoClipsResult = {
   clips: VideoClip[]
   // Where the saved clips went, in order of first use.
   folders: ClipFolder[]
+  // Who is responsible for the music's rights, when any clip has music.
+  musicNotice: string | null
   saved: number
 }
 
@@ -217,7 +219,12 @@ export function cutVideoClipsResult(value: unknown): CutVideoClipsResult | null 
       folders.set(folder["id"], { id: folder["id"], name: folder["name"] })
     }
   }
-  return { clips: clips as VideoClip[], folders: [...folders.values()], saved: value["saved"] }
+  return {
+    clips: clips as VideoClip[],
+    folders: [...folders.values()],
+    musicNotice: typeof value["music_notice"] === "string" ? value["music_notice"] : null,
+    saved: value["saved"],
+  }
 }
 
 function videoClip(value: unknown): VideoClip | null {
@@ -282,6 +289,9 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
   fade("fade_out_ms", "Fade Out")
   if (clip["enhance_voice"] === true) {
     effects.push("Voice Cleaned Up")
+  }
+  if (isRecord(clip["music"])) {
+    effects.push(clip["music"]["duck"] === false ? "Music Added" : "Music Under Speech")
   }
   if (typeof clip["loudness_lufs"] === "number") {
     effects.push("Sound Levelled")

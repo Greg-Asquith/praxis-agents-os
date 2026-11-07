@@ -1,6 +1,6 @@
 # apps/api/services/files/queue_video_probe.py
 
-"""Queues the renderer probe for a new workspace video revision."""
+"""Queues the renderer probe for a new workspace video or audio revision."""
 
 from uuid import UUID
 
@@ -13,6 +13,8 @@ from services.files.domain import VIDEO_PROBE_JOB_KIND
 from services.jobs.enqueue_job import enqueue_job
 from utils.content import ContentScope
 
+PROBED_CATEGORIES = frozenset({FileCategory.VIDEO, FileCategory.AUDIO})
+
 
 async def queue_video_probe(
     db: AsyncSession,
@@ -21,10 +23,10 @@ async def queue_video_probe(
     revision: FileRevision,
     initiated_by_user_id: UUID | None,
 ) -> bool:
-    """Marks a workspace video pending and queues its probe, or returns False and changes nothing."""
+    """Marks a workspace video or audio File pending and queues its probe, or returns False."""
     if (
         revision.scope != ContentScope.WORKSPACE
-        or contract_for_content_type(revision.content_type).category != FileCategory.VIDEO
+        or contract_for_content_type(revision.content_type).category not in PROBED_CATEGORIES
         or not settings.media_renderer_available
     ):
         return False

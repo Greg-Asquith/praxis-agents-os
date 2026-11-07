@@ -36,10 +36,14 @@ String-returning callers retain their existing contract. For byte caps smaller
 than the marker, bounding returns only the marker prefix that fits. A zero cap
 returns empty text; negative caps are rejected.
 
-## Video uploads and attachments
+## Video and audio uploads and attachments
 
 Workspace Files accept MP4 (`video/mp4`), QuickTime (`video/quicktime`,
-`.mov`), and WebM (`video/webm`). Two settings bound video size:
+`.mov`), and WebM (`video/webm`) video, and MP3 (`audio/mpeg`), M4A
+(`audio/mp4`), and WAV (`audio/wav`) audio, such as a music track for video
+clips. `MAX_FILE_SIZE_AUDIO` (default `104857600`, up to `524288000`) bounds
+every audio File; the GCP deploy keeps it at or under the renderer's input
+limit. Two settings bound video size:
 
 | Setting | Default | Purpose |
 |---|---:|---|
@@ -73,11 +77,12 @@ source outside `platform/` and any destination outside a workspace bucket.
 object at a committed reservation's key, after the caller has checked its
 size and streamed SHA-256.
 
-When the media renderer is available, every new workspace video revision
-starts `pending` until a background probe stores its duration, dimensions,
-frame rate, codecs, audio presence, and rotation in the revision's set-once
-`media_metadata`; without the renderer, videos are `ready` with no
-measurement. File responses carry the measurement as `video`, and
+When the media renderer is available, every new workspace video or audio
+revision starts `pending` until a background probe stores its duration,
+dimensions, frame rate, codecs, audio presence, and rotation in the
+revision's set-once `media_metadata`; without the renderer, they are `ready`
+with no measurement. Chat takes audio attachments only where it takes video,
+and the Files page previews audio with a player. File responses carry the measurement as `video`, and
 `list_files`, `read_file`, and the chat attachment note describe it to the
 model, with portrait recordings shown upright. For the probe's outcomes, see
 [Video tools](video-tools.md#video-probe).
@@ -451,7 +456,8 @@ For supported documents and images, **Add to chat** opens a new conversation wit
 the File ready in the composer. Choose an agent and enter a message before
 sending. The route checks fresh File access before preparing the attachment;
 the normal send path pins the published revision when it accepts the File.
-Editable text, including HTML, supports attachments. Audio and video do not.
+Editable text, including HTML, supports attachments. Video and audio do on
+deployments with video tools.
 
 Super admins upload directly through **Upload Files** in the **Shared** tab.
 The tab states that uploads become available in every workspace after processing.

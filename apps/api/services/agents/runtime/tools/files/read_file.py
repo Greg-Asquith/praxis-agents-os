@@ -150,15 +150,18 @@ async def read_file(
             metadata={"file_id": str(file.id), "revision_id": str(revision.id)},
         )
 
-    if file.category == FileCategory.VIDEO.value:
+    if file.category in {FileCategory.VIDEO.value, FileCategory.AUDIO.value}:
+        kind = file.category
         if file.processing_status == "error":
-            message = f"The video couldn't be prepared: {file.processing_error}"
+            message = f"The {kind} couldn't be prepared: {file.processing_error}"
         elif file.processing_status in ("pending", "processing"):
-            message = "The video is still being prepared. Its duration isn't known yet."
+            message = f"The {kind} is still being prepared. Its duration isn't known yet."
+        elif kind == FileCategory.AUDIO.value:
+            message = "Audio can't be read as text. Pass the file id to cut_video_clips as music."
         else:
             message = "Video can't be read as text. Pass the file id to the video tools."
         return {
-            **file_metadata(file, revision, source="video"),
+            **file_metadata(file, revision, source=kind),
             "status": file.processing_status,
             "message": message,
         }

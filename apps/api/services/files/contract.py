@@ -184,6 +184,30 @@ FILE_CONTRACT: tuple[FileContractEntry, ...] = (
         ingestible=False,
         upload_max_size_setting="MAX_FILE_SIZE_SOURCE_VIDEO",
     ),
+    FileContractEntry(
+        category=FileCategory.AUDIO,
+        content_type="audio/mpeg",
+        extensions=(".mp3",),
+        max_size_setting="MAX_FILE_SIZE_AUDIO",
+        editable=False,
+        ingestible=False,
+    ),
+    FileContractEntry(
+        category=FileCategory.AUDIO,
+        content_type="audio/mp4",
+        extensions=(".m4a",),
+        max_size_setting="MAX_FILE_SIZE_AUDIO",
+        editable=False,
+        ingestible=False,
+    ),
+    FileContractEntry(
+        category=FileCategory.AUDIO,
+        content_type="audio/wav",
+        extensions=(".wav",),
+        max_size_setting="MAX_FILE_SIZE_AUDIO",
+        editable=False,
+        ingestible=False,
+    ),
 )
 
 _CONTRACT_BY_CONTENT_TYPE = {entry.content_type: entry for entry in FILE_CONTRACT}

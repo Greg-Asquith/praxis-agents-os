@@ -18,6 +18,7 @@ from services.files.revision_actor import FileRevisionActor
 from services.files.utils import sha256_hex
 from services.media import run_media_operation, save_media_output
 from services.media.domain import (
+    CutMusic,
     CutOperation,
     CutSegment,
     FramesOperation,
@@ -88,6 +89,17 @@ def _video(workspace):
     return build_file_revision(file)
 
 
+def _track(workspace):
+    file = build_file(
+        workspace=workspace,
+        name="track.mp3",
+        category="audio",
+        content_type="audio/mpeg",
+        extension=".mp3",
+    )
+    return build_file_revision(file)
+
+
 async def test_renderer_receives_only_server_built_urls_and_numeric_arguments(
     renderer: list[dict],
 ) -> None:
@@ -130,6 +142,33 @@ async def test_video_from_another_workspace_never_reaches_the_renderer(
         )
 
     assert error.value.code == "forbidden"
+    assert renderer == []
+
+
+@pytest.mark.parametrize(
+    ("music", "code"),
+    [(lambda workspace: _track(build_workspace()), "forbidden"), (_video, "unsupported")],
+    ids=["another workspace's track", "a video as music"],
+)
+async def test_music_must_be_audio_from_the_callers_workspace(
+    renderer: list[dict], music, code: str
+) -> None:
+    workspace = build_workspace()
+    operation = CutOperation(
+        segments=(CutSegment(input=0, start_ms=0, end_ms=1000),),
+        width=1080,
+        height=1920,
+        music=CutMusic(volume=25, duck=True, start_ms=0, fade_in_ms=0, fade_out_ms=1000),
+    )
+
+    with pytest.raises(MediaRendererError) as error:
+        await run_media_operation(
+            workspace_id=workspace.id,
+            sources=[_video(workspace), music(workspace)],
+            operation=operation,
+        )
+
+    assert error.value.code == code
     assert renderer == []
 
 

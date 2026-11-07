@@ -14,7 +14,12 @@ from services.files.utils import sha256_hex
 from services.media.domain import MediaRendererError
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from tests.support.media import persist_analysed_video, staged_ref, use_fake_renderer
+from tests.support.media import (
+    persist_analysed_video,
+    persist_audio,
+    staged_ref,
+    use_fake_renderer,
+)
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -159,7 +164,8 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
     assert {file.folder_id for file, _ in saved} == {folder.id}
     # The renderer measured each clip, so it is ready without a probe.
     assert all(
-        file.processing_status == "ready" and revision.media_metadata == CLIP
+        file.processing_status == "ready"
+        and revision.media_metadata == {**CLIP, "loudness_lufs": None}
         for file, revision in saved
     )
 
@@ -274,3 +280,62 @@ async def test_a_named_folder_is_created_once_in_the_callers_workspace(
     assert ours.name == "reels" and ours.id != theirs.id
     assert clip_folders == {ours.id}
     assert their_files is None
+
+
+async def test_the_persons_track_plays_under_every_clip_with_a_rights_notice(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(),
+    )
+    track = await persist_audio(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Upbeat.mp3",
+        duration_ms=90_000,
+    )
+    music = FileReference(entity_id=track.id, label=track.name).model_dump(mode="json")
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once(
+            {
+                "clips": [
+                    {"segments": [segment(talk, 0, 5_000)], "snap": False},
+                    {
+                        "segments": [segment(talk, 5_000, 10_000)],
+                        "snap": False,
+                        "music": {"file_id": music, "volume": 10, "duck": False},
+                    },
+                ],
+                "music": {"file_id": music},
+            }
+        ),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    assert output["saved"] == 2
+    assert output["music_notice"]
+    # The track follows the video as a second input; a clip's own music overrides the call's.
+    first, second = sorted(renderer, key=lambda request: request["arguments"]["segments"][0][1])
+    assert [len(first["inputs"]), len(second["inputs"])] == [2, 2]
+    assert (first["arguments"]["music_volume"], first["arguments"]["music_duck"]) == (25, True)
+    assert (second["arguments"]["music_volume"], second["arguments"]["music_duck"]) == (10, False)
+    assert {clip["music"]["file_id"] for clip in output["clips"]} == {str(track.id)}
+    # Sending the track to the renderer is recorded like the video.
+    assert any(
+        row.resource_id == str(track.id) and row.details["operation"] == "video_clips"
+        for row in result.audit_rows
+    )

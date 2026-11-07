@@ -94,6 +94,12 @@ class FilesSettingsMixin:
         le=524288000,
         description="Max video size outside direct workspace uploads, including tool writes (100MB)",
     )
+    MAX_FILE_SIZE_AUDIO: int = Field(
+        default=104857600,
+        ge=1048576,
+        le=524288000,
+        description="Max audio file size, such as a music track for video clips (100MB)",
+    )
     MAX_FILE_SIZE_SOURCE_VIDEO: int = Field(
         default=4294967296,
         ge=1048576,

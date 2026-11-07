@@ -27,6 +27,7 @@ PROBE = {
     "audio_codec": "aac",
     "rotation": 0,
 }
+SOUND_ONLY = {**PROBE, "width": None, "height": None, "fps": None, "video_codec": None}
 
 
 @pytest.fixture
@@ -48,14 +49,14 @@ def renderer_answers(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list
         reset_storage_provider_cache()
 
 
-async def _pending_video(db: AsyncSession):
+async def _pending_video(db: AsyncSession, *, audio: bool = False):
     workspace = build_workspace(slug=f"probe-{uuid4().hex[:8]}")
     file = build_file(
         workspace=workspace,
-        name="source.mp4",
-        category="video",
-        content_type="video/mp4",
-        extension=".mp4",
+        name="track.mp3" if audio else "source.mp4",
+        category="audio" if audio else "video",
+        content_type="audio/mpeg" if audio else "video/mp4",
+        extension=".mp3" if audio else ".mp4",
         processing_status="pending",
     )
     db.add(workspace)
@@ -94,18 +95,16 @@ async def test_probe_stores_the_measurement_and_marks_the_file_ready(
     await db_session.refresh(file)
     await db_session.refresh(revision)
 
-    assert revision.media_metadata == PROBE
+    assert revision.media_metadata == {**PROBE, "loudness_lufs": None}
     assert file.processing_status == "ready"
     assert file.processing_error is None
 
 
-async def test_audio_only_file_fails_processing_without_a_retry(
+async def test_audio_only_video_fails_processing_without_a_retry(
     db_session: AsyncSession, renderer_answers: list[object]
 ) -> None:
     file, revision, job = await _pending_video(db_session)
-    renderer_answers.append(
-        {**PROBE, "width": None, "height": None, "fps": None, "video_codec": None}
-    )
+    renderer_answers.append(SOUND_ONLY)
 
     await _run(db_session, job)
     await db_session.refresh(file)
@@ -113,6 +112,20 @@ async def test_audio_only_file_fails_processing_without_a_retry(
 
     assert file.processing_status == "error"
     assert revision.media_metadata is None
+
+
+async def test_an_audio_file_is_ready_with_sound_alone(
+    db_session: AsyncSession, renderer_answers: list[object]
+) -> None:
+    file, revision, job = await _pending_video(db_session, audio=True)
+    renderer_answers.append(SOUND_ONLY)
+
+    await _run(db_session, job)
+    await db_session.refresh(file)
+    await db_session.refresh(revision)
+
+    assert file.processing_status == "ready"
+    assert revision.media_metadata == {**SOUND_ONLY, "loudness_lufs": None}
 
 
 async def test_video_over_the_duration_limit_fails_processing(
@@ -152,4 +165,4 @@ async def test_renderer_outage_fails_the_attempt_so_the_job_retries(
     await db_session.refresh(revision)
 
     assert file.processing_status == "ready"
-    assert revision.media_metadata == PROBE
+    assert revision.media_metadata == {**PROBE, "loudness_lufs": None}

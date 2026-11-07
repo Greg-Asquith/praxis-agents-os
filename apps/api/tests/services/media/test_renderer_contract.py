@@ -35,6 +35,7 @@ SHARED = (
     "MIN_TRANSITION_MS",
     "MAX_TRANSITION_MS",
     "MAX_FADE_MS",
+    "MAX_MUSIC_VOLUME",
 )
 
 
