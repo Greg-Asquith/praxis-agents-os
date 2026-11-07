@@ -3,15 +3,19 @@
 """Shared programmatic evaluators for agent-behavior datasets."""
 
 import ast
+import csv
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import ValidationError
 from pydantic_ai import Tool
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+
+FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 
 
 @dataclass(frozen=True)
@@ -129,6 +133,25 @@ class ExpectedClips(Evaluator[dict, EvalOutput, dict]):
 
 
 @dataclass
+class ExpectedForecast(Evaluator[dict, EvalOutput, dict]):
+    """Checks the first call forecasts once, directly or in a script, with the expected
+    settings, and that any literal history is the fixture's history unchanged."""
+
+    def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
+        expected = (ctx.metadata or {}).get("expected_forecast")
+        if not expected:
+            return EvaluationReason(value=True)
+        if not ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="no tool was called")
+        arguments, source, errors = _forecast_arguments(
+            ctx.output.called_tools[0], ctx.output.tool_arguments[0]
+        )
+        if arguments is not None:
+            errors = _forecast_argument_errors(arguments, source, expected)
+        return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+@dataclass
 class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
     """Checks that a workflow calls the expected tools with valid keyword arguments."""
 
@@ -144,6 +167,79 @@ class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
             return EvaluationReason(value=False, reason="run_code arguments aren't JSON")
         errors = workflow_argument_errors(code, code_eligible_tools(), expected)
         return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+def _forecast_arguments(name: str, arguments: str) -> tuple[dict | None, str, tuple[str, ...]]:
+    """Returns a direct call's arguments, or a script's literal ones and its source."""
+    if name == "forecast_series":
+        errors = _direct_argument_errors(name, arguments)
+        return (None, "", errors) if errors else (json.loads(arguments), "", ())
+    if name != "run_code":
+        return None, "", (f"first call was {name}",)
+    code = _script_code(arguments)
+    if code is None:
+        return None, "", ("run_code arguments aren't JSON",)
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return None, "", (f"syntax error: {exc.msg}",)
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "forecast_series"
+    ]
+    if len(calls) != 1:
+        return None, "", (f"the script calls forecast_series {len(calls)} times",)
+    # A keyword that names a variable takes the literal assigned to it, if any.
+    assigned = {
+        target.id: node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    literal: dict = {}
+    for keyword in calls[0].keywords:
+        value = keyword.value
+        if isinstance(value, ast.Name):
+            value = assigned.get(value.id, value)
+        try:
+            literal[keyword.arg] = ast.literal_eval(value)
+        except ValueError:
+            # Values computed at run time are only checked against the source.
+            continue
+    return literal, code, ()
+
+
+def _forecast_argument_errors(arguments: dict, source: str, expected: Mapping) -> tuple[str, ...]:
+    errors = []
+    for key in ("frequency", "horizon"):
+        if key in arguments:
+            found = arguments[key] == expected[key]
+        else:
+            found = repr(expected[key]) in source or json.dumps(expected[key]) in source
+        if not found:
+            errors.append(f"{key} isn't {expected[key]!r}")
+    for region in expected["holiday_regions"]:
+        if "holiday_regions" in arguments:
+            found = region in (arguments["holiday_regions"] or [])
+        else:
+            found = repr(region) in source or json.dumps(region) in source
+        if not found:
+            errors.append(f"holiday_regions lacks {region!r}")
+    start = arguments.get("start")
+    if start is not None and not str(start).startswith(expected["start"]):
+        errors.append(f"start is {start!r}, expected {expected['start']!r}")
+    values = arguments.get("values")
+    if values is not None:
+        path = (FIXTURE_ROOT / expected["history_fixture_path"]).resolve()
+        with path.open(encoding="utf-8") as handle:
+            history = [float(row[expected["history_column"]]) for row in csv.DictReader(handle)]
+        if [None if value is None else float(value) for value in values] != history:
+            errors.append(f"values aren't the {len(history)}-period history")
+    return tuple(errors)
 
 
 def _script_code(arguments: str) -> str | None:

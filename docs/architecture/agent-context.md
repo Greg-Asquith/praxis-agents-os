@@ -88,7 +88,9 @@ Reusable _procedural_ knowledge: how an agent should perform a class of task.
   to interview the user, draft a skill, and save it. `platform-knowledge` is a
   user-point-of-view guide to the product's screens, roles, and flows.
   `office-documents` holds the working rules for reading, editing, and
-  creating Office files and for totalling saved rows.
+  creating Office files and for totalling saved rows. `forecasting` covers
+  gathering history for `forecast_series`, holidays and planned events, when
+  not to forecast, and explaining the range and backtest.
 - **Agent authoring.** Agents find and read skills with `search_skills` and
   `load_skill`. Auto-mounted `create_skill` creates a workspace skill,
   or a platform skill when the user ticks the required share option on the

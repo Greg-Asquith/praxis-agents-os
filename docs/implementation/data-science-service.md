@@ -251,6 +251,22 @@ to the default row.
 - **PNG** and **SVG** export the main chart through `lib/chart-export.ts`,
   which `build_chart` cards also use.
 
+### Forecasting skill and evals
+
+The internal skill `runtime/internal_skills/forecasting.md` holds the longer
+working rules: what a forecast can't answer, gathering and lining up history
+without inventing values, choosing the frequency and horizon, holiday regions
+and `known_future` covariates (retail events such as Black Friday aren't
+public holidays), when not to forecast, and explaining the range, typical
+error, and covariate change in plain words. Update it when the tool's
+arguments, limits, or result change.
+
+The `forecast_*` cases in `apps/api/evals/datasets/agent_behavior.yaml` check
+that an agent forecasts a read CSV once with the right frequency, horizon, and
+holiday region and the history unchanged, and that it reports the range and
+backtest error. They need `DATA_SCIENCE_URL`; see the
+[evals README](../../apps/api/evals/README.md).
+
 ## Local development
 
 To run it by hand:

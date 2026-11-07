@@ -20,7 +20,9 @@ minor release. Patch releases contain backward-compatible fixes only.
   `DATA_SCIENCE_URL` is set; the deploy sets it on GCP. Conversations show
   each forecast as a card with the history, the forecast and its likely
   range, holiday markers, and covariate strips, with a switch to compare the
-  forecast without covariates.
+  forecast without covariates. A built-in Forecasting skill guides agents
+  through gathering history, adding holidays and planned events, and
+  explaining the range and accuracy.
 - Charts from `build_chart` and forecast cards download as SVG as well as PNG.
 - An isolated media renderer (`apps/media-renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command

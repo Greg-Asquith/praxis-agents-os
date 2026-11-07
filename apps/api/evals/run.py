@@ -30,9 +30,11 @@ from pydantic_evals.evaluators import LLMJudge
 
 import services.agents.runtime.capabilities as runtime_capabilities
 from evals.evaluators import (
+    FIXTURE_ROOT,
     AcceptedToolCall,
     EvalOutput,
     ExpectedClips,
+    ExpectedForecast,
     ExpectedTools,
     ForbiddenArgumentText,
     ForbiddenTools,
@@ -56,7 +58,6 @@ from services.integrations.context.domain import ResolvedActiveContext, Resolved
 from services.runtime_catalogs import assemble_runtime_catalogs
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
-FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 type EvalInputs = dict[str, Any]
 type EvalMetadata = dict[str, Any]
 type BehaviorDataset = Dataset[EvalInputs, EvalOutput, EvalMetadata]
@@ -263,6 +264,7 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
         custom_evaluator_types=[
             AcceptedToolCall,
             ExpectedClips,
+            ExpectedForecast,
             ExpectedTools,
             ForbiddenArgumentText,
             ForbiddenTools,
@@ -272,8 +274,18 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
         ],
     )
     for case in dataset.cases:
-        if (case.metadata or {}).get("judge_response", True):
+        metadata = case.metadata or {}
+        if metadata.get("judge_response", True):
             case.evaluators.extend(_response_judges(judge_model))
+        if metadata.get("judge_rubric"):
+            case.evaluators.append(
+                LLMJudge(
+                    metadata["judge_rubric"],
+                    model=judge_model,
+                    include_input=True,
+                    assertion={"evaluation_name": "case_rubric", "include_reason": True},
+                )
+            )
     return dataset
 
 

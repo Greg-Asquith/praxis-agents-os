@@ -65,6 +65,20 @@ fixture, so its untrusted titles are framed as in production) and checks with
 person named, as separate clips with the result's exact times. Fixtures live
 in `tests/fixtures/video_evals/`.
 
+The `forecast_*` cases need `DATA_SCIENCE_URL` set so `forecast_series`
+mounts; nothing is forecast, because the runner stops at the first call.
+`forecast_daily_orders_with_uk_holidays` puts a `read_table` result for a
+168-day orders CSV in history and asks for an eight-week forecast with UK
+bank holidays. `ExpectedForecast` checks that the first call is one
+`forecast_series` call, directly or in a script, with `daily`, a horizon of
+56, and `uk`, and that any history written literally (or assigned to a
+variable the call names) is the CSV's values unchanged.
+`forecast_explain_range_and_error` puts a forecast result in history and asks
+for a summary. A case's `judge_rubric` adds a judge with that rubric; this
+case uses it in place of the general judges, which see only the prompt and
+would treat the result's figures as invented. Fixtures live in
+`tests/fixtures/forecast_evals/`.
+
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`
 run normally, `search_skills` finds no workspace skills, `read_todos` finds no

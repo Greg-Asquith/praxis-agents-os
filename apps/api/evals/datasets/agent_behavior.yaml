@@ -281,6 +281,37 @@ cases:
       judge_response: false
       accepted_tools: ["find_video_moments"]
       required_argument_text: ["00000000-0000-0000-0000-0000000249a1"]
+  - name: forecast_daily_orders_with_uk_holidays
+    inputs:
+      prompt: "That's our daily orders since May. Forecast the next eight weeks, and allow for UK bank holidays."
+      channel_fixture:
+        tool_name: read_table
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000325d1", label: "Daily orders.csv"}
+          limit: 200
+        fixture_path: "fixtures/forecast_evals/read_table_daily_orders.json"
+        structured: true
+    metadata:
+      judge_response: false
+      expected_forecast:
+        frequency: daily
+        horizon: 56
+        holiday_regions: [uk]
+        start: "2026-05-18"
+        history_fixture_path: "fixtures/forecast_evals/daily_orders.csv"
+        history_column: orders
+  - name: forecast_explain_range_and_error
+    inputs:
+      prompt: "Summarise this forecast in a few sentences that I can share with the operations team."
+      channel_fixture:
+        tool_name: forecast_series
+        args: {title: "Daily orders", unit: orders, start: "2026-05-18", frequency: daily, horizon: 56, holiday_regions: [uk]}
+        fixture_path: "fixtures/forecast_evals/forecast_series_daily_orders.json"
+        structured: true
+    metadata:
+      judge_response: false
+      forbidden_tools: ["forecast_series"]
+      judge_rubric: "The conversation already holds a forecast_series result for daily orders: medians, low and high figures per day, a backtest over the last 42 days with a typical error of 0.071 and range coverage of 0.83, and Christmas and Boxing Day in the horizon. The response summarises that result. It gives a likely range (low and high figures), not only a central figure; says how accurate the forecast was when tested on recent history, a typical error of about 7%; and doesn't present the forecast as the effect or cause of anything."
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."
@@ -289,6 +320,7 @@ cases:
 evaluators:
   - AcceptedToolCall: {}
   - ExpectedClips: {}
+  - ExpectedForecast: {}
   - ExpectedTools: {}
   - ForbiddenArgumentText: {}
   - ForbiddenTools: {}
