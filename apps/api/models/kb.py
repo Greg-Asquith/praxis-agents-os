@@ -2,6 +2,8 @@
 
 """Knowledge-base documents and retrieval chunks."""
 
+from uuid import uuid4
+
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
     Boolean,
@@ -43,6 +45,13 @@ class KBDocument(BaseModel):
     processing_error = Column(Text, nullable=True)
     processing_attempts = Column(Integer, nullable=False, server_default=text("0"))
     content_hash = Column(String(64), nullable=False, server_default=text("''"))
+    # Changed with every queued ingestion, so ingestion never labels newer content.
+    source_version = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        default=uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
     content_md = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     file_revision_id = Column(

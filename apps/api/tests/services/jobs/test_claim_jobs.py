@@ -36,6 +36,24 @@ async def test_claim_jobs_orders_by_priority_then_run_after(db_session: AsyncSes
     assert first.locked_by == "worker"
 
 
+async def test_follow_up_waits_for_the_running_job_it_follows(db_session: AsyncSession) -> None:
+    await db_session.execute(delete(Job))
+    subject_id = uuid4()
+    running = build_job(status=JOB_STATUS_RUNNING, subject_type="file", subject_id=subject_id)
+    follow_up = build_job(subject_type="file", subject_id=subject_id)
+    other_subject = build_job(subject_type="file", subject_id=uuid4())
+    db_session.add_all([running, follow_up, other_subject])
+    await db_session.flush()
+
+    claimed = await claim_jobs(db_session, owner_instance_id="worker", batch_size=10)
+
+    assert [job.id for job in claimed] == [other_subject.id]
+    running.status = JOB_STATUS_SUCCEEDED
+    await db_session.flush()
+    claimed = await claim_jobs(db_session, owner_instance_id="worker", batch_size=10)
+    assert [job.id for job in claimed] == [follow_up.id]
+
+
 async def test_concurrent_claims_split_without_overlap(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

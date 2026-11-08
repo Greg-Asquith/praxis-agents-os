@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.jobs import Job
-from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
+from services.jobs.domain import JOB_STATUS_PENDING
 from services.jobs.registry import get_job_handler
 from services.jobs.utils import (
     compute_content_hash,
-    is_jobs_in_flight_integrity_error,
+    is_pending_job_duplicate_error,
     normalize_content_hash,
 )
 
@@ -36,7 +36,7 @@ async def enqueue_job(
     max_attempts: int | None = None,
     initiated_by_user_id: UUID | None = None,
 ) -> Job:
-    """Enqueue a registered job, returning an existing in-flight duplicate when present."""
+    """Enqueue a registered job, returning an existing pending duplicate when present."""
     handler = get_job_handler(kind)
     if handler is None:
         raise AppValidationError(
@@ -86,9 +86,9 @@ async def enqueue_job(
             db.add(job)
             await db.flush()
     except IntegrityError as exc:
-        if not is_jobs_in_flight_integrity_error(exc):
+        if not is_pending_job_duplicate_error(exc):
             raise
-        existing = await _get_existing_in_flight_job(
+        existing = await _get_pending_duplicate(
             db,
             kind=kind,
             workspace_id=workspace_id,
@@ -104,7 +104,7 @@ async def enqueue_job(
     return job
 
 
-async def _get_existing_in_flight_job(
+async def _get_pending_duplicate(
     db: AsyncSession,
     *,
     kind: str,
@@ -117,7 +117,7 @@ async def _get_existing_in_flight_job(
     stmt = select(Job).where(
         Job.kind == kind,
         Job.content_hash == content_hash,
-        Job.status.in_(IN_FLIGHT_JOB_STATUSES),
+        Job.status == JOB_STATUS_PENDING,
     )
     if workspace_id is None:
         stmt = stmt.where(Job.workspace_id.is_(None))

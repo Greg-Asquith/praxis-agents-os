@@ -2,7 +2,7 @@
 
 """Queue a knowledge document for fresh ingestion."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +62,7 @@ async def reprocess_document(
         is_private=document.is_private,
         existing=document,
     )
+    document.source_version = uuid4()
     document.status = KB_STATUS_PENDING
     if document.source_type in KB_REFRESHABLE_SOURCE_TYPES:
         document.source_sync_status = KB_SYNC_PENDING

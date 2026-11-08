@@ -6,9 +6,11 @@ from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from models.files import File, FileRevision
 from services.jobs.handlers.probe_video import probe_video
 from services.media.domain import MediaRendererError
 from tests.factories import build_file, build_file_revision, build_job, build_workspace
@@ -156,7 +158,7 @@ async def test_renderer_outage_fails_the_attempt_so_the_job_retries(
         await _run(db_session, job)
     await db_session.refresh(file)
 
-    assert file.processing_status == "error"
+    assert file.processing_status == "processing"
     assert file.processing_attempts == 1
 
     renderer_answers.append(PROBE)
@@ -166,3 +168,36 @@ async def test_renderer_outage_fails_the_attempt_so_the_job_retries(
 
     assert file.processing_status == "ready"
     assert revision.media_metadata == {**PROBE, "loudness_lufs": None}
+
+
+async def test_probe_of_a_replaced_revision_leaves_the_new_revision_status(
+    db_session: AsyncSession,
+    renderer_answers: list[object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import services.jobs.handlers.probe_video as probe_module
+
+    file, revision, job = await _pending_video(db_session)
+    newer = build_file_revision(file, revision_number=2, created_by_system=True)
+    db_session.add(newer)
+    await db_session.flush()
+    measure = probe_module._probe
+
+    async def replace_during_probe(probed: FileRevision) -> dict[str, object]:
+        await db_session.execute(
+            update(File)
+            .where(File.id == file.id)
+            .values(current_revision_id=newer.id, processing_status="pending")
+        )
+        return await measure(probed)
+
+    monkeypatch.setattr(probe_module, "_probe", replace_during_probe)
+    renderer_answers.append(PROBE)
+
+    await _run(db_session, job)
+    await db_session.refresh(file)
+    await db_session.refresh(revision)
+
+    assert revision.media_metadata == {**PROBE, "loudness_lufs": None}
+    assert file.current_revision_id == newer.id
+    assert file.processing_status == "pending"

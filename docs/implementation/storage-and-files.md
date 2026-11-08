@@ -87,6 +87,14 @@ and the Files page previews audio with a player. File responses carry the measur
 model, with portrait recordings shown upright. For the probe's outcomes, see
 [Video tools](video-tools.md#video-probe).
 
+Ingestible workspace revisions enqueue `files.extract`. The File moves from
+`pending` to `processing` to `ready` or `error`. Each status write locks the
+File and checks that the extracted revision is still current, so work for a
+replaced revision can't relabel the newer one. A failed attempt keeps the
+File `processing` while the job retries. After the last attempt fails,
+including by timeout, the job's `on_final_failure` hook
+(`services/files/fail_file_processing.py`) marks the File `error`.
+
 Gemini reads workspace video by `gs://` URI on Vertex with GCS
 (`StorageProvider.model_input_uri`), or through a Gemini Files API upload when
 the deployment uses `GOOGLE_API_KEY`. The upload's name, URI, and expiry are
@@ -304,7 +312,8 @@ initiating user's concurrency ownership. The handler verifies their live
 super-admin authority before maintenance access. Conversion reads bounded
 bytes outside the write transaction. A locked recheck of the parent, current
 revision, content hash, and publication state prevents stale, deleted, or
-withdrawn work from persisting.
+withdrawn work from persisting. A failed attempt leaves the File `pending`;
+the same final-failure hook marks it `error` after the last attempt.
 
 Extraction publishes only when platform confirmation explicitly requests
 `publish_when_ready`. The request defaults to false and is unavailable on the

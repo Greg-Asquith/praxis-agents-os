@@ -3,6 +3,7 @@
 """Tests for workspace file markdown extraction jobs."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -10,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from services.documents.markdown import TRUNCATION_MARKER
+from services.files.fail_file_processing import SLOW_FAILURE_MESSAGE
 from services.files.utils import private_ref_from_key, revision_object_key
+from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_RUNNING
 from services.jobs.handlers.extract_file_markdown import extract_file_markdown
+from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from tests.factories import build_file, build_file_revision, build_job, build_workspace
 from tests.support.documents import tiny_pdf
 from tests.support.storage import reset_storage_provider_cache
-from utils.document_markdown import DocumentConversionError
 
 pytestmark = pytest.mark.asyncio
 
@@ -167,24 +170,23 @@ async def test_extract_file_markdown_does_not_clobber_newer_current_revision(
     assert file.processing_status == "ready"
 
 
-async def test_extract_file_markdown_failure_marks_current_file_error(
+async def test_final_attempt_lost_to_a_timeout_fails_the_file(
     db_session: AsyncSession,
     local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import services.jobs.handlers.extract_file_markdown as extract_module
+    _workspace, file, _revision, job = await _persist_pdf_file(
+        db_session, processing_status="processing"
+    )
+    now = datetime.now(UTC)
+    job.status = JOB_STATUS_RUNNING
+    job.attempts = job.max_attempts
+    job.lock_expires_at = now - timedelta(seconds=1)
+    db_session.add(job)
+    await db_session.flush()
 
-    _workspace, file, _revision, job = await _persist_pdf_file(db_session)
-
-    async def fail_convert(*_args, **_kwargs):
-        raise DocumentConversionError("very noisy conversion failure")
-
-    monkeypatch.setattr(extract_module, "convert_document_to_markdown", fail_convert)
-
-    with pytest.raises(DocumentConversionError):
-        await extract_file_markdown(db_session, job)
-
+    await reclaim_stale_jobs(db_session, now=now)
     await db_session.refresh(file)
+
+    assert job.status == JOB_STATUS_FAILED
     assert file.processing_status == "error"
-    assert file.processing_attempts == 1
-    assert file.processing_error == "very noisy conversion failure"
+    assert file.processing_error == SLOW_FAILURE_MESSAGE

@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.notification import Notification
 from services.jobs.claim_jobs import claim_jobs
 from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING, JOB_STATUS_RUNNING
-from services.jobs.finalize_job import finalize_job_failure, finalize_job_success
+from services.jobs.finalize_job import (
+    SUPERSEDED_ERROR_CODE,
+    finalize_job_failure,
+    finalize_job_success,
+)
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.renew_job_lease import renew_job_lease
 from tests.factories import build_job, build_user, build_workspace
@@ -44,6 +48,39 @@ async def test_retryable_failure_requeues_with_backoff(
     assert job.run_after == now + timedelta(seconds=45)
     assert job.locked_by is None
     assert job.last_error_message == "exploded"
+
+
+async def test_retry_behind_a_pending_follow_up_closes_without_notifying(
+    db_session: AsyncSession,
+) -> None:
+    user = build_user(email=f"superseded-{uuid4().hex}@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    running = build_job(
+        status=JOB_STATUS_RUNNING,
+        attempts=1,
+        max_attempts=3,
+        payload={"same": True},
+        initiated_by_user_id=user.id,
+    )
+    follow_up = build_job(payload={"same": True})
+    db_session.add_all([running, follow_up])
+    await db_session.flush()
+
+    terminal = await finalize_job_failure(
+        db_session, running, lease_token=running.lease_token, code="boom", message="exploded"
+    )
+
+    assert terminal is True
+    assert running.status == JOB_STATUS_FAILED
+    assert running.last_error_code == SUPERSEDED_ERROR_CODE
+    assert follow_up.status == JOB_STATUS_PENDING
+    assert (
+        await db_session.scalar(
+            select(Notification).where(Notification.recipient_user_id == user.id)
+        )
+        is None
+    )
 
 
 async def test_final_failure_creates_notification_for_initiator(

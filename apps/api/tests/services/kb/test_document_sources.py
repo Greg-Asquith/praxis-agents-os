@@ -13,7 +13,7 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from models.jobs import Job
 from models.kb import KBChunk, KBDocument
 from models.workspace import WorkspaceRole
-from services.jobs.domain import JOB_STATUS_SUCCEEDED
+from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_RUNNING, JOB_STATUS_SUCCEEDED
 from services.kb.documents import (
     create_document_from_file,
     create_document_from_url,
@@ -312,3 +312,70 @@ async def test_delete_removes_chunks_and_reprocess_enqueues_fresh_job(
         )
         == 2
     )
+
+
+async def test_edit_during_ingestion_is_ingested_by_the_follow_up_job(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import services.kb.ingest_document as ingest_module
+
+    membership = await _membership(db_session, kb_actors)
+    created = await create_manual_document(
+        db_session,
+        request=_request(),
+        actor=kb_actors.user,
+        workspace=kb_actors.workspace,
+        membership=membership,
+        payload=KBManualDocumentCreateRequest(title="Policy", content_md="Original policy."),
+    )
+    document_id, workspace_id, user_id = created.id, kb_actors.workspace.id, kb_actors.user.id
+    first_job = await db_session.scalar(select(Job).where(Job.subject_id == document_id))
+    assert first_job is not None
+    first_job.status = JOB_STATUS_RUNNING
+    await db_session.commit()
+    load_markdown = ingest_module._load_markdown
+
+    async def edit_while_reading(db: AsyncSession, document: KBDocument):
+        loaded = await load_markdown(db, document)
+        await update_document(
+            db,
+            request=_request(),
+            actor=kb_actors.user,
+            workspace=kb_actors.workspace,
+            membership=membership,
+            document_id=document_id,
+            payload=KBDocumentUpdateRequest(content_md="Edited policy."),
+        )
+        await db.commit()
+        return loaded
+
+    async def ingest() -> None:
+        await ingest_module.ingest_kb_document(
+            db_session,
+            document_id=document_id,
+            workspace_id=workspace_id,
+            initiated_by_user_id=user_id,
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ingest_module, "_load_markdown", edit_while_reading)
+        await ingest()
+
+    document = await db_session.get(KBDocument, document_id, populate_existing=True)
+    assert document is not None
+    assert (document.status, document.content_md) == ("pending", "Edited policy.")
+    follow_up = await db_session.scalar(
+        select(Job).where(Job.subject_id == document_id, Job.status == JOB_STATUS_PENDING)
+    )
+    assert follow_up is not None
+
+    await ingest()
+
+    await db_session.refresh(document)
+    chunks = await db_session.scalars(
+        select(KBChunk.content).where(KBChunk.document_id == document_id)
+    )
+    assert document.status == "ready"
+    assert list(chunks) == ["Edited policy."]

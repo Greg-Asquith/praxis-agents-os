@@ -66,7 +66,7 @@ async def ingest_kb_document(
 ) -> None:
     """Replace one document's chunks and queue additive embeddings."""
     workspace_id = require_kb_workspace_id(workspace_id)
-    document = await _load_live_document(
+    document = await _lock_live_document(
         db,
         document_id=document_id,
         workspace_id=workspace_id,
@@ -74,6 +74,8 @@ async def ingest_kb_document(
     if document is None:
         return
 
+    # A later edit changes the version, so every write below stops and leaves it to the follow-up.
+    source_version = document.source_version
     document.status = KB_STATUS_PROCESSING
     document.processing_attempts = (document.processing_attempts or 0) + 1
     document.processing_error = None
@@ -83,6 +85,7 @@ async def ingest_kb_document(
         await _ingest_live_document(
             db,
             document=document,
+            source_version=source_version,
             initiated_by_user_id=initiated_by_user_id,
             annotation_model=annotation_model,
         )
@@ -91,6 +94,7 @@ async def ingest_kb_document(
             db,
             document_id=document_id,
             workspace_id=workspace_id,
+            source_version=source_version,
             sync_status=KB_SYNC_UNAVAILABLE,
             error_code=exc.error_code,
             message="This page is no longer available at its URL.",
@@ -100,6 +104,7 @@ async def ingest_kb_document(
             db,
             document_id=document_id,
             workspace_id=workspace_id,
+            source_version=source_version,
             sync_status=KB_SYNC_UNAVAILABLE,
             error_code="access_lost",
             message="This source is no longer accessible through its connected account.",
@@ -109,6 +114,7 @@ async def ingest_kb_document(
             db,
             document_id=document_id,
             workspace_id=workspace_id,
+            source_version=source_version,
             sync_status=KB_SYNC_DISCONNECTED,
             error_code="disconnected",
             message="The connection for this source is no longer available.",
@@ -118,6 +124,7 @@ async def ingest_kb_document(
             db,
             document_id=document_id,
             workspace_id=workspace_id,
+            source_version=source_version,
             exc=exc,
         )
         raise
@@ -127,10 +134,13 @@ async def _ingest_live_document(
     db: AsyncSession,
     *,
     document: KBDocument,
+    source_version: UUID,
     initiated_by_user_id: UUID | None,
     annotation_model: Model | None,
 ) -> None:
     loaded = await _load_markdown(db, document)
+    if not await _relock_version(db, document, source_version):
+        return
     if loaded.not_modified:
         if not document.content_md or document.chunk_count <= 0:
             raise AppValidationError(
@@ -194,6 +204,8 @@ async def _ingest_live_document(
             model=annotation_model,
         )
 
+    if not await _relock_version(db, document, source_version):
+        return
     await _complete_source_success(db, document, loaded, content_changed=content_changed)
     from services.jobs.enqueue_job import enqueue_job
 
@@ -225,15 +237,17 @@ async def _record_transient_source_failure(
     *,
     document_id: UUID,
     workspace_id: UUID,
+    source_version: UUID,
     exc: Exception,
 ) -> None:
     await db.rollback()
-    failed_document = await _load_live_document(
+    failed_document = await _lock_live_document(
         db,
         document_id=document_id,
         workspace_id=workspace_id,
+        source_version=source_version,
     )
-    if failed_document is None or failed_document.deleted:
+    if failed_document is None:
         return
     failed_document.status = KB_STATUS_ERROR
     failed_document.processing_error = sanitize_error_message(str(exc) or exc.__class__.__name__)
@@ -252,15 +266,17 @@ async def _record_definitive_source_failure(
     *,
     document_id: UUID,
     workspace_id: UUID,
+    source_version: UUID,
     sync_status: str,
     error_code: str,
     message: str,
 ) -> None:
     await db.rollback()
-    failed_document = await _load_live_document(
+    failed_document = await _lock_live_document(
         db,
         document_id=document_id,
         workspace_id=workspace_id,
+        source_version=source_version,
     )
     if failed_document is None:
         await db.rollback()
@@ -311,19 +327,35 @@ def _transient_source_error_code(exc: Exception) -> str:
     return "refresh_failed"
 
 
-async def _load_live_document(
+async def _lock_live_document(
     db: AsyncSession,
     *,
     document_id: UUID,
     workspace_id: UUID,
+    source_version: UUID | None = None,
 ) -> KBDocument | None:
-    return await db.scalar(
-        select(KBDocument).where(
-            KBDocument.id == document_id,
-            KBDocument.workspace_id == workspace_id,
-            KBDocument.deleted.is_(False),
-        )
+    statement = select(KBDocument).where(
+        KBDocument.id == document_id,
+        KBDocument.workspace_id == workspace_id,
+        KBDocument.deleted.is_(False),
     )
+    if source_version is not None:
+        statement = statement.where(KBDocument.source_version == source_version)
+    return await db.scalar(statement.with_for_update().execution_options(populate_existing=True))
+
+
+async def _relock_version(db: AsyncSession, document: KBDocument, source_version: UUID) -> bool:
+    """Locks the document until commit if it still holds the version this ingestion started on."""
+    current = await _lock_live_document(
+        db,
+        document_id=document.id,
+        workspace_id=document.workspace_id,
+        source_version=source_version,
+    )
+    if current is None:
+        await db.rollback()
+        return False
+    return True
 
 
 async def _load_markdown(db: AsyncSession, document: KBDocument) -> "_LoadedMarkdown":

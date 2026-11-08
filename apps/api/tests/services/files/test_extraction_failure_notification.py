@@ -40,7 +40,7 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
         reset_storage_provider_cache()
 
 
-async def test_extraction_final_failure_notifies_only_after_attempts_exhaust(
+async def test_extraction_fails_the_file_and_notifies_only_after_attempts_exhaust(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     local_storage_settings: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -74,6 +74,9 @@ async def test_extraction_final_failure_notifies_only_after_attempts_exhaust(
         assert job is not None
         assert job.status == JOB_STATUS_PENDING
         assert await db.scalar(select(Notification).where(Notification.source == "jobs")) is None
+        unfinished = await db.get(File, file.id)
+        assert unfinished is not None
+        assert unfinished.processing_status == "processing"
 
     await _attempt(committed_db_session_factory, job_id)
     async with committed_db_session_factory() as db:

@@ -90,8 +90,9 @@ class Job(Base, UUIDMixin, TimestampMixin):
         ),
         Index("ix_jobs_workspace_status", "workspace_id", "status"),
         Index("ix_jobs_concurrency_user_status", "concurrency_user_id", "status"),
+        # Pending only, so a re-enqueue while a job runs queues one follow-up.
         Index(
-            "uq_jobs_in_flight",
+            "uq_jobs_pending",
             text("coalesce(workspace_id::text, '')"),
             text("coalesce(concurrency_user_id::text, '')"),
             text("kind"),
@@ -99,6 +100,6 @@ class Job(Base, UUIDMixin, TimestampMixin):
             text("coalesce(subject_id::text, '')"),
             text("content_hash"),
             unique=True,
-            postgresql_where=text("status IN ('pending', 'running')"),
+            postgresql_where=text("status = 'pending'"),
         ),
     )

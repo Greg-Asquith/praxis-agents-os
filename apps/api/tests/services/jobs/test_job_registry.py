@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from services.jobs.registry import JOB_HANDLERS, job_handler
 from services.jobs.utils import (
     compute_content_hash,
-    is_jobs_in_flight_integrity_error,
+    is_pending_job_duplicate_error,
     normalize_content_hash,
     retry_backoff,
 )
@@ -74,12 +74,12 @@ def test_retry_backoff_grows_caps_and_jitters(monkeypatch: pytest.MonkeyPatch) -
     assert retry_backoff(3) == 25
 
 
-def test_jobs_in_flight_integrity_error_classifier() -> None:
+def test_pending_job_duplicate_error_classifier() -> None:
     class FakeDiag:
-        constraint_name = "uq_jobs_in_flight"
+        constraint_name = "uq_jobs_pending"
 
     class FakeOrig:
         diag = FakeDiag()
 
-    assert is_jobs_in_flight_integrity_error(IntegrityError("insert", {}, FakeOrig()))
-    assert not is_jobs_in_flight_integrity_error(IntegrityError("insert", {}, RuntimeError()))
+    assert is_pending_job_duplicate_error(IntegrityError("insert", {}, FakeOrig()))
+    assert not is_pending_job_duplicate_error(IntegrityError("insert", {}, RuntimeError()))

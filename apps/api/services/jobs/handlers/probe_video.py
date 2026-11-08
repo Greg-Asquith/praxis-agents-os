@@ -12,7 +12,12 @@ from models.files import File, FileRevision
 from models.jobs import Job
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.domain import VIDEO_PROBE_JOB_KIND, VideoMetadata
-from services.files.utils import format_duration, parse_extraction_payload_ids
+from services.files.fail_file_processing import fail_file_processing
+from services.files.utils import (
+    format_duration,
+    lock_current_revision_file,
+    parse_extraction_payload_ids,
+)
 from services.jobs.registry import job_handler
 from services.media.domain import INVALID_RESPONSE_MESSAGE, MediaRendererError, ProbeOperation
 from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS, run_media_operation
@@ -44,6 +49,7 @@ class VideoRejectedError(Exception):
     + REQUEST_ALLOWANCE_SECONDS
     + JOB_ALLOWANCE_SECONDS,
     max_attempts=3,
+    on_final_failure=fail_file_processing,
 )
 async def probe_video(db: AsyncSession, job: Job) -> None:
     """Stores one video or audio revision's probe result, or fails its File with a plain reason."""
@@ -72,36 +78,41 @@ async def probe_video(db: AsyncSession, job: Job) -> None:
         logger.info("Skipping video probe for a missing file", extra={"job_id": str(job.id)})
         return
 
-    is_current = file.current_revision_id == revision.id
     if revision.media_metadata is None:
         metadata = await _restored_metadata(db, revision)
         if metadata is None:
-            metadata = await _measure(db, file, revision, is_current=is_current)
+            metadata = await _measure(db, file, revision)
         if metadata is None:
             return
         revision.media_metadata = metadata
-    if is_current:
+    if await _lock_current(db, file, revision) is not None:
         file.processing_status = "ready"
         file.processing_error = None
     await db.flush()
 
 
-async def _measure(
-    db: AsyncSession, file: File, revision: FileRevision, *, is_current: bool
-) -> dict[str, object] | None:
+async def _measure(db: AsyncSession, file: File, revision: FileRevision) -> dict | None:
     """Returns the probe result, None after a permanent failure, or raises to retry."""
-    if is_current:
+    if await _lock_current(db, file, revision) is not None:
         file.processing_status = "processing"
         file.processing_attempts = (file.processing_attempts or 0) + 1
         file.processing_error = None
-        await db.commit()
+    await db.commit()
     try:
         return await _probe(revision)
-    except (MediaRendererError, VideoRejectedError) as exc:
-        await _fail(db, file, is_current=is_current, exc=exc)
-        if isinstance(exc, MediaRendererError) and exc.code not in PERMANENT_FAILURES:
+    except VideoRejectedError as exc:
+        await _fail(db, file, revision, str(exc))
+    except MediaRendererError as exc:
+        if exc.code not in PERMANENT_FAILURES:
             raise
-        return None
+        await _fail(db, file, revision, PERMANENT_FAILURES[exc.code] or exc.message)
+    return None
+
+
+async def _lock_current(db: AsyncSession, file: File, revision: FileRevision) -> File | None:
+    return await lock_current_revision_file(
+        db, file_id=file.id, revision_id=revision.id, workspace_id=revision.workspace_id
+    )
 
 
 async def _probe(revision: FileRevision) -> dict[str, object]:
@@ -138,15 +149,9 @@ async def _restored_metadata(db: AsyncSession, revision: FileRevision) -> dict |
     )
 
 
-async def _fail(
-    db: AsyncSession, file: File, *, is_current: bool, exc: MediaRendererError | VideoRejectedError
-) -> None:
-    if not is_current:
+async def _fail(db: AsyncSession, file: File, revision: FileRevision, message: str) -> None:
+    if await _lock_current(db, file, revision) is None:
         return
-    if isinstance(exc, MediaRendererError):
-        message = PERMANENT_FAILURES.get(exc.code) or exc.message
-    else:
-        message = str(exc)
     file.processing_status = "error"
     file.processing_error = message
     await db.commit()

@@ -41,6 +41,23 @@ def parse_extraction_payload_ids(payload: dict[str, Any]) -> tuple[UUID | None, 
     return file_id, revision_id
 
 
+async def lock_current_revision_file(
+    db: AsyncSession, *, file_id: UUID, revision_id: UUID, workspace_id: UUID | None
+) -> File | None:
+    """Locks a live File until commit while the revision is still its current one."""
+    return await db.scalar(
+        select(File)
+        .where(
+            File.id == file_id,
+            File.workspace_id.is_not_distinct_from(workspace_id),
+            File.current_revision_id == revision_id,
+            File.deleted.is_(False),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 def normalize_required_text(value: str, *, field: str = "name", max_length: int = 255) -> str:
     """Trim required labels and enforce their persisted length."""
     normalized = value.strip()

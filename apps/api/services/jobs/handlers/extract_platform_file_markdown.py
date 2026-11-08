@@ -15,10 +15,10 @@ from core.settings import settings
 from models.files import File, FileRevision
 from models.jobs import Job
 from models.user import User
+from services.files.fail_file_processing import fail_file_processing
 from services.files.platform.utils import publish_locked_revision
 from services.files.utils import parse_extraction_payload_ids
 from services.jobs.registry import job_handler
-from services.jobs.utils import sanitize_error_message
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from utils.digests import sha256_hex
@@ -28,7 +28,12 @@ logger = logging.getLogger(__name__)
 EXTRACT_PLATFORM_FILE_MARKDOWN_KIND = "files.extract_platform"
 
 
-@job_handler(kind=EXTRACT_PLATFORM_FILE_MARKDOWN_KIND, timeout=300.0, max_attempts=3)
+@job_handler(
+    kind=EXTRACT_PLATFORM_FILE_MARKDOWN_KIND,
+    timeout=300.0,
+    max_attempts=3,
+    on_final_failure=fail_file_processing,
+)
 async def extract_platform_file_markdown(db: AsyncSession, job: Job) -> None:
     """Persists markdown only while the exact platform draft remains unchanged."""
     file_id, revision_id = _validate_job(job)
@@ -44,40 +49,28 @@ async def extract_platform_file_markdown(db: AsyncSession, job: Job) -> None:
         filename, content_type = file.name, revision.content_type
         object_key, size_bytes = revision.object_key, revision.size_bytes
 
+    # Failures raise, so the job retries; fail_file_processing marks the File after the last one.
     provider = get_storage_provider()
-    try:
-        source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, object_key)
-        if size_bytes > settings.MAX_FILE_SIZE_DOCUMENT:
-            raise ValueError("Platform file exceeds the document size limit")
-        data = bytearray()
-        async for chunk in provider.stream_object(source):
-            if len(data) + len(chunk) > size_bytes:
-                raise ValueError("Platform file size differs from its revision")
-            data.extend(chunk)
-        if len(data) != size_bytes or sha256_hex(bytes(data)) != job.content_hash:
-            raise ValueError("Platform file content differs from its revision")
-        markdown = await convert_document_to_markdown(
-            bytes(data),
-            content_type=content_type,
-            filename=filename,
-            max_bytes=settings.FILES_MAX_MARKDOWN_BYTES,
-        )
-        markdown_bytes = markdown.encode("utf-8")
-        if len(markdown_bytes) > settings.FILES_MAX_MARKDOWN_BYTES:
-            raise ValueError("Extracted markdown exceeds its size limit")
-        await _persist_markdown(job, file_id, revision_id, version, markdown_bytes)
-    except Exception as exc:
-        async with maintenance_async_db_session() as db:
-            subject = await _load_subject(db, job, file_id, revision_id, lock=True)
-            if subject is not None and _same_version(subject, version):
-                file, revision = subject
-                if not revision.markdown_object_key:
-                    file.processing_status = "error"
-                    file.processing_error = sanitize_error_message(
-                        str(exc) or exc.__class__.__name__
-                    )
-                    file.processing_attempts = (file.processing_attempts or 0) + 1
-        raise
+    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, object_key)
+    if size_bytes > settings.MAX_FILE_SIZE_DOCUMENT:
+        raise ValueError("Platform file exceeds the document size limit")
+    data = bytearray()
+    async for chunk in provider.stream_object(source):
+        if len(data) + len(chunk) > size_bytes:
+            raise ValueError("Platform file size differs from its revision")
+        data.extend(chunk)
+    if len(data) != size_bytes or sha256_hex(bytes(data)) != job.content_hash:
+        raise ValueError("Platform file content differs from its revision")
+    markdown = await convert_document_to_markdown(
+        bytes(data),
+        content_type=content_type,
+        filename=filename,
+        max_bytes=settings.FILES_MAX_MARKDOWN_BYTES,
+    )
+    markdown_bytes = markdown.encode("utf-8")
+    if len(markdown_bytes) > settings.FILES_MAX_MARKDOWN_BYTES:
+        raise ValueError("Extracted markdown exceeds its size limit")
+    await _persist_markdown(job, file_id, revision_id, version, markdown_bytes)
 
 
 def _validate_job(job: Job) -> tuple[UUID, UUID]:

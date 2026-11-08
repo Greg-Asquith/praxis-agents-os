@@ -155,6 +155,17 @@ provider reads before they persist content. Definitive access loss clears
 canonical content and chunks before completing without retry, so document
 reads return no cached content after definitive loss. Search excludes every
 refreshable source that is not `ready`.
+
+### Source version
+
+`kb_documents.source_version` changes whenever a write queues fresh
+ingestion: a content edit or a reprocess. Ingestion records the version it
+starts on and locks the document with a check on that version before each
+write, including failure records. If the version has changed, the attempt
+rolls back and ends without writing, and the follow-up job queued by the
+edit ingests the new content. Platform documents keep their own
+`meta.ingestion_version`, carried in the job payload.
+
 ### Management and reconciliation
 
 `GET /kb/integration-sources/search`, `POST /kb/integration-sources/preview`,
@@ -164,8 +175,9 @@ management routes. Manual refresh uses
 `kb.reconcile_sources` maintenance job uses `services/kb/reconcile_sources.py`
 and `services/kb/ensure_reconcile_job.py` to select due URL and integration
 documents, then coalesces ordinary workspace-owned `kb.ingest_document` jobs
-with manual refreshes. Keep both job shapes unchanged so the in-flight job
-constraint continues to coalesce them.
+with manual refreshes. Keep both job shapes unchanged so the pending-job
+constraint continues to coalesce them; a refresh queued while one runs
+becomes a single follow-up.
 Successful and failed refresh attempts advance the source synchronisation
 timestamp so persistently unavailable sources cannot monopolise later scans.
 `KB_SOURCE_REFRESH_INTERVAL_SECONDS` controls the scan interval, and

@@ -2,10 +2,12 @@
 
 """Finalize generic background job attempts."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.jobs import Job
@@ -15,8 +17,17 @@ from services.jobs.domain import (
     JOB_STATUS_RUNNING,
     JOB_STATUS_SUCCEEDED,
 )
-from services.jobs.utils import retry_backoff, sanitize_error_message
+from services.jobs.registry import get_job_handler
+from services.jobs.utils import (
+    is_pending_job_duplicate_error,
+    retry_backoff,
+    sanitize_error_message,
+)
 from services.notifications import create_notification
+
+logger = logging.getLogger(__name__)
+
+SUPERSEDED_ERROR_CODE = "superseded"
 
 
 async def finalize_job_success(
@@ -27,29 +38,18 @@ async def finalize_job_success(
     now: datetime | None = None,
 ) -> bool:
     """Marks the job successful when the caller still holds the running attempt."""
-    now_utc = now or datetime.now(UTC)
-    result = await db.execute(
-        update(Job)
-        .where(
-            Job.id == job.id,
-            Job.status == JOB_STATUS_RUNNING,
-            Job.lease_token == lease_token,
-        )
-        .values(
-            status=JOB_STATUS_SUCCEEDED,
-            finished_at=now_utc,
-            locked_by=None,
-            locked_at=None,
-            lock_expires_at=None,
-            last_error_code=None,
-            last_error_message=None,
-        )
-        .returning(Job.id)
+    return await _update_running_attempt(
+        db,
+        job,
+        lease_token=lease_token,
+        status=JOB_STATUS_SUCCEEDED,
+        finished_at=now or datetime.now(UTC),
+        locked_by=None,
+        locked_at=None,
+        lock_expires_at=None,
+        last_error_code=None,
+        last_error_message=None,
     )
-    if result.scalar_one_or_none() is None:
-        return False
-    await db.refresh(job)
-    return True
 
 
 async def finalize_job_failure(
@@ -78,21 +78,30 @@ async def finalize_job_failure(
     }
     if not terminal:
         values["run_after"] = now_utc + timedelta(seconds=retry_backoff(job.attempts or 1))
-    result = await db.execute(
-        update(Job)
-        .where(
-            Job.id == job.id,
-            Job.status == JOB_STATUS_RUNNING,
-            Job.lease_token == lease_token,
+    try:
+        async with db.begin_nested():
+            finalized = await _update_running_attempt(db, job, lease_token=lease_token, **values)
+    except IntegrityError as exc:
+        if not is_pending_job_duplicate_error(exc):
+            raise
+        # A pending follow-up repeats this work, so the attempt closes instead of retrying.
+        superseded = await _update_running_attempt(
+            db,
+            job,
+            lease_token=lease_token,
+            **{
+                **values,
+                "status": JOB_STATUS_FAILED,
+                "finished_at": now_utc,
+                "last_error_code": SUPERSEDED_ERROR_CODE,
+            },
         )
-        .values(**values)
-        .returning(Job.id)
-    )
-    if result.scalar_one_or_none() is None:
+        return True if superseded else None
+    if not finalized:
         return None
-    await db.refresh(job)
 
     if terminal:
+        await _run_final_failure_hook(db, job)
         if job.initiated_by_user_id is not None:
             await create_notification(
                 db,
@@ -107,3 +116,35 @@ async def finalize_job_failure(
         await db.flush()
         return True
     return False
+
+
+async def _update_running_attempt(
+    db: AsyncSession, job: Job, *, lease_token: UUID, **values: object
+) -> bool:
+    result = await db.execute(
+        update(Job)
+        .where(
+            Job.id == job.id,
+            Job.status == JOB_STATUS_RUNNING,
+            Job.lease_token == lease_token,
+        )
+        .values(**values)
+        .returning(Job.id)
+    )
+    if result.scalar_one_or_none() is None:
+        return False
+    await db.refresh(job)
+    return True
+
+
+async def _run_final_failure_hook(db: AsyncSession, job: Job) -> None:
+    definition = get_job_handler(job.kind)
+    if definition is None or definition.on_final_failure is None:
+        return
+    try:
+        async with db.begin_nested():
+            await definition.on_final_failure(db, job)
+    except Exception:
+        logger.exception(
+            "Final failure hook failed", extra={"job_id": str(job.id), "kind": job.kind}
+        )

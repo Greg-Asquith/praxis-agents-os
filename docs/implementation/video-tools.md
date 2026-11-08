@@ -247,7 +247,13 @@ revision it restores.
 |---|---|---|
 | Measured, with a video stream (an audio stream for an audio File), within `VIDEO_MAX_SOURCE_DURATION_SECONDS` (default 4 hours) | `ready` | No |
 | No video stream (no sound for an audio File), too long, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
-| Renderer unreachable, timed out, or another renderer failure | `error` until the next attempt | Up to 3 attempts |
+| Renderer unreachable, timed out, or another renderer failure | `processing` until the last attempt, then `error` | Up to 3 attempts |
+
+The handler locks the File and checks that the probed revision is still its
+current revision before each status write, so a probe for a replaced
+revision stores its measurement but leaves the newer revision's status alone.
+After the last attempt fails, including by timeout, the job's
+`on_final_failure` hook marks the File `error`.
 
 The job's timeout is `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 120 seconds. Tools
 read duration and size from `media_metadata` and never probe inline.

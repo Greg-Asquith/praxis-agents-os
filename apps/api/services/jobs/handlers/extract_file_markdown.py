@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from models.files import File, FileRevision
 from models.jobs import Job
+from services.files.fail_file_processing import fail_file_processing
 from services.files.utils import (
+    lock_current_revision_file,
     parse_extraction_payload_ids,
     private_ref_from_key,
     revision_markdown_key,
 )
 from services.jobs.registry import job_handler
-from services.jobs.utils import sanitize_error_message
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import convert_document_to_markdown
 
@@ -25,7 +26,12 @@ logger = logging.getLogger(__name__)
 EXTRACT_FILE_MARKDOWN_KIND = "files.extract"
 
 
-@job_handler(kind=EXTRACT_FILE_MARKDOWN_KIND, timeout=300.0, max_attempts=3)
+@job_handler(
+    kind=EXTRACT_FILE_MARKDOWN_KIND,
+    timeout=300.0,
+    max_attempts=3,
+    on_final_failure=fail_file_processing,
+)
 async def extract_file_markdown(db: AsyncSession, job: Job) -> None:
     """Extract one file revision to markdown and backfill the revision."""
     if job.workspace_id is None:
@@ -74,39 +80,38 @@ async def extract_file_markdown(db: AsyncSession, job: Job) -> None:
     if await _copy_restored_markdown(db, file=file, revision=revision):
         return
 
-    is_current_revision = file.current_revision_id == revision.id
-    if is_current_revision:
+    if await _lock_current(db, file, revision) is not None:
         file.processing_status = "processing"
         file.processing_attempts = (file.processing_attempts or 0) + 1
         file.processing_error = None
-        await db.commit()
+    await db.commit()
 
+    # Failures raise, so the job retries; fail_file_processing marks the File after the last one.
     provider = get_storage_provider()
-    try:
-        data = await provider.get_object(private_ref_from_key(revision.object_key))
-        markdown = await convert_document_to_markdown(
-            data,
-            content_type=revision.content_type,
-            filename=file.name,
-            max_bytes=settings.FILES_MAX_MARKDOWN_BYTES,
-        )
-        markdown_ref = private_ref_from_key(
-            revision_markdown_key(revision.workspace_id, revision.file_id, revision.id)
-        )
-        markdown_bytes = markdown.encode("utf-8")
-        await provider.put_object(markdown_ref, markdown_bytes, content_type="text/markdown")
-        revision.markdown_object_key = markdown_ref.key
-        revision.markdown_size_bytes = len(markdown_bytes)
-        if is_current_revision:
-            file.processing_status = "ready"
-            file.processing_error = None
-        await db.flush()
-    except Exception as exc:
-        if is_current_revision:
-            file.processing_status = "error"
-            file.processing_error = sanitize_error_message(str(exc) or exc.__class__.__name__)
-            await db.commit()
-        raise
+    data = await provider.get_object(private_ref_from_key(revision.object_key))
+    markdown = await convert_document_to_markdown(
+        data,
+        content_type=revision.content_type,
+        filename=file.name,
+        max_bytes=settings.FILES_MAX_MARKDOWN_BYTES,
+    )
+    markdown_ref = private_ref_from_key(
+        revision_markdown_key(revision.workspace_id, revision.file_id, revision.id)
+    )
+    markdown_bytes = markdown.encode("utf-8")
+    await provider.put_object(markdown_ref, markdown_bytes, content_type="text/markdown")
+    revision.markdown_object_key = markdown_ref.key
+    revision.markdown_size_bytes = len(markdown_bytes)
+    if await _lock_current(db, file, revision) is not None:
+        file.processing_status = "ready"
+        file.processing_error = None
+    await db.flush()
+
+
+async def _lock_current(db: AsyncSession, file: File, revision: FileRevision) -> File | None:
+    return await lock_current_revision_file(
+        db, file_id=file.id, revision_id=revision.id, workspace_id=revision.workspace_id
+    )
 
 
 async def _copy_restored_markdown(

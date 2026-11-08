@@ -25,6 +25,20 @@ reclaim pass retries it. Handlers that commit intermediate work or call
 external systems must remain idempotent because cancellation can't undo
 completed effects. Job statuses are `pending`, `running`, `succeeded`, and
 `failed`.
+
+`enqueue_job` dedupes on workspace, concurrency user, kind, subject, and
+content hash, against `pending` jobs only (`uq_jobs_pending`). A matching
+enqueue while a job runs queues one `pending` follow-up, and later matches
+merge into that follow-up. The claim skips a pending job while a running job
+shares its key, so the follow-up runs after the attempt it follows, never
+beside it. A failed attempt that would retry while a follow-up is pending
+closes as `failed` with `superseded` and no notification, because the
+follow-up repeats the work. Handlers must be safe to run twice in a row.
+
+A handler can register `on_final_failure`. `finalize_job_failure` runs it in
+the transaction that fails the job for good, in a savepoint, whether the last
+attempt raised, timed out, or lost its lease. File extraction and the video
+probe use it to mark the current revision's File `error`.
 Each admission reserves a shared
 execution slot before claiming one row, so shutdown cannot strand claimed work
 behind the concurrency bound. The supervisor repeats both runners until they

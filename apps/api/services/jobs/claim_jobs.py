@@ -5,7 +5,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -50,6 +50,17 @@ async def claim_jobs(
         .group_by(user_running_job.concurrency_user_id)
         .subquery()
     )
+    running_twin = aliased(Job)
+    # A follow-up waits for the attempt it follows, so one key never runs twice at once.
+    has_running_twin = exists().where(
+        running_twin.status == JOB_STATUS_RUNNING,
+        running_twin.kind == Job.kind,
+        running_twin.content_hash == Job.content_hash,
+        running_twin.workspace_id.is_not_distinct_from(Job.workspace_id),
+        running_twin.concurrency_user_id.is_not_distinct_from(Job.concurrency_user_id),
+        running_twin.subject_type.is_not_distinct_from(Job.subject_type),
+        running_twin.subject_id.is_not_distinct_from(Job.subject_id),
+    )
     concurrency_limit = settings.JOBS_WORKSPACE_CONCURRENCY_LIMIT
     running_count = func.coalesce(
         workspace_running_counts.c.running_count,
@@ -82,6 +93,7 @@ async def claim_jobs(
         .where(
             Job.status == JOB_STATUS_PENDING,
             Job.run_after <= now_utc,
+            ~has_running_twin,
             or_(
                 has_no_concurrency_owner,
                 running_count < concurrency_limit,

@@ -12,7 +12,7 @@ from core.settings import settings
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
 MAX_CONTENT_HASH_LENGTH = 64
-JOBS_IN_FLIGHT_UNIQUE_INDEX = "uq_jobs_in_flight"
+JOBS_PENDING_UNIQUE_INDEX = "uq_jobs_pending"
 
 
 def compute_content_hash(payload: dict[str, object] | None) -> str:
@@ -52,12 +52,10 @@ def sanitize_error_message(message: str | None) -> str | None:
     return normalized[:MAX_ERROR_MESSAGE_LENGTH]
 
 
-def is_jobs_in_flight_integrity_error(exc: IntegrityError) -> bool:
-    """Return whether an integrity error came from the in-flight dedup index."""
+def is_pending_job_duplicate_error(exc: IntegrityError) -> bool:
+    """Return whether an integrity error came from the pending-job dedup index."""
     constraint_names = _integrity_constraint_names(exc)
-    return JOBS_IN_FLIGHT_UNIQUE_INDEX in constraint_names or JOBS_IN_FLIGHT_UNIQUE_INDEX in str(
-        exc
-    )
+    return JOBS_PENDING_UNIQUE_INDEX in constraint_names or JOBS_PENDING_UNIQUE_INDEX in str(exc)
 
 
 def _integrity_constraint_names(exc: IntegrityError) -> set[str]:

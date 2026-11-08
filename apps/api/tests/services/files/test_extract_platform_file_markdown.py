@@ -196,7 +196,7 @@ async def test_platform_extraction_recovers_output_after_database_failure(
         stored = await db.get(FileRevision, revision.id)
         parent = await db.get(File, file.id)
         assert stored.markdown_object_key is None
-        assert parent.processing_status == "error"
+        assert parent.processing_status == "pending"
 
     put = AsyncMock(side_effect=AssertionError("Retry overwrote immutable output"))
     monkeypatch.setattr(provider, "put_object", put)

@@ -2,7 +2,6 @@
 
 """Tests for generic job enqueueing."""
 
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -10,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
-from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING
+from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_RUNNING
 from services.jobs.enqueue_job import enqueue_job
 from tests.factories import build_job, build_user, build_workspace
 
@@ -123,24 +122,21 @@ async def test_enqueue_job_rejects_multiple_concurrency_owners(
         )
 
 
-async def test_terminal_job_does_not_block_reenqueue(db_session: AsyncSession) -> None:
-    existing = build_job(
+async def test_running_job_gets_one_pending_follow_up(db_session: AsyncSession) -> None:
+    running = build_job(
         kind="jobs.sweep_terminal",
-        status=JOB_STATUS_FAILED,
+        status=JOB_STATUS_RUNNING,
         payload={"same": True},
     )
-    existing.finished_at = datetime.now(UTC)
-    db_session.add(existing)
+    db_session.add(running)
     await db_session.flush()
 
-    created = await enqueue_job(
-        db_session,
-        kind="jobs.sweep_terminal",
-        payload={"same": True},
-    )
+    follow_up = await enqueue_job(db_session, kind="jobs.sweep_terminal", payload={"same": True})
+    merged = await enqueue_job(db_session, kind="jobs.sweep_terminal", payload={"same": True})
 
-    assert created.id != existing.id
-    assert created.status == JOB_STATUS_PENDING
+    assert follow_up.id != running.id
+    assert follow_up.status == JOB_STATUS_PENDING
+    assert merged.id == follow_up.id
 
 
 async def test_null_subject_jobs_dedup_against_each_other(db_session: AsyncSession) -> None:

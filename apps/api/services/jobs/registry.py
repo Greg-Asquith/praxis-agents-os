@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 
 JobHandler = Callable[[AsyncSession, "Job"], Awaitable[None]]
+# Runs in the transaction that fails the job for good, including after a timeout or lost lease.
+FinalFailureHook = Callable[[AsyncSession, "Job"], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class JobHandlerDefinition:
     function: JobHandler
     timeout: float | None = None
     max_attempts: int | None = None
+    on_final_failure: FinalFailureHook | None = None
 
 
 JOB_HANDLERS: dict[str, JobHandlerDefinition] = {}
@@ -34,6 +37,7 @@ def job_handler(
     kind: str,
     timeout: float | None = None,
     max_attempts: int | None = None,
+    on_final_failure: FinalFailureHook | None = None,
 ) -> Callable[[JobHandler], JobHandler]:
     """Register an async handler for a job kind."""
     if not is_valid_job_kind(kind):
@@ -53,6 +57,7 @@ def job_handler(
             function=function,
             timeout=timeout,
             max_attempts=max_attempts,
+            on_final_failure=on_final_failure,
         )
         return function
 

@@ -3,7 +3,7 @@
 """Update editable knowledge-document fields."""
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +90,7 @@ async def update_document(
     if content_changed and document.content_md != content_md:
         document.content_md = content_md
         document.source_updated_at = datetime.now(UTC)
+        document.source_version = uuid4()
         document.status = KB_STATUS_PENDING
         document.processing_error = None
         document.processing_attempts = 0
