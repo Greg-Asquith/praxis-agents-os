@@ -89,8 +89,13 @@ describe("Google Ads positive keyword presenter", () => {
       googleAdsCreatePositiveKeywordsPresenter.render(
         props(
           activity("awaiting_approval", {
-            _account_currencies: [
-              { currency_code: "GBP", customer_id: "1234567890", label: "UK account" },
+            _accounts: [
+              {
+                customer_id: "1234567890",
+                name: "UK account",
+                currency: "GBP",
+                time_zone: "Europe/London",
+              },
             ],
             ad_groups: [
               adGroup("10", "Brand exact", "Brand campaign"),

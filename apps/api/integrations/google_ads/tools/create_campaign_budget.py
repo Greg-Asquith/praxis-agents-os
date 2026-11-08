@@ -48,6 +48,7 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
+from .utils.accounts import account_facts, approval_accounts
 from .utils.money import micros_to_money, money_to_micros
 from .utils.mutation_evidence import (
     audit_status,
@@ -71,11 +72,7 @@ async def google_ads_create_campaign_budget(
     )
 
     async def operation(entry: ResolvedContextEntry) -> Any:
-        currency_code = str(entry.permissions_metadata.get("currency_code", "")).strip()
-        if not currency_code:
-            raise ModelRetry(
-                "The selected Google Ads account has no currency information. Refresh the connection and retry."
-            )
+        currency_code = account_facts(entry).currency
         canonical_amount = micros_to_money(amount_micros)
         pending_detail = _pending_operation_detail(
             entry,
@@ -320,25 +317,16 @@ def _exception_outcome(
 
 
 def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """Adds trusted account currencies to the approval-only argument projection."""
+    """Adds trusted account facts to the approval-only argument projection."""
     entries = (
         deps.active_context.compatible_entries(GOOGLE_ADS_WRITE_BINDING)
         if deps.active_context
         else ()
     )
-    accounts = [
-        {
-            "label": entry.display_name,
-            "currency_code": str(entry.permissions_metadata["currency_code"]).strip(),
-        }
-        for entry in entries
-        if entry.write_allowed
-        and isinstance(entry.permissions_metadata.get("currency_code"), str)
-        and str(entry.permissions_metadata["currency_code"]).strip()
-    ]
+    accounts = approval_accounts(entry for entry in entries if entry.write_allowed)
     if not accounts:
-        raise RuntimeError("Google Ads campaign budget approval requires account currencies")
-    return {**args, "_account_currencies": accounts}
+        raise RuntimeError("Google Ads campaign budget approval requires a writable account")
+    return {**args, "_accounts": accounts}
 
 
 DEFINITION = RuntimeToolDefinition(

@@ -52,7 +52,11 @@ def entry() -> ResolvedContextEntry:
         connection_label="Google Ads",
         connection_status="active",
         write_allowed=True,
-        permissions_metadata={"login_customer_id": "111", "currency_code": "GBP"},
+        permissions_metadata={
+            "login_customer_id": "111",
+            "currency_code": "GBP",
+            "time_zone": "Europe/London",
+        },
     )
 
 

@@ -19,7 +19,7 @@ import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
-import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import { parseAdGroupReference } from "@/integrations/google_ads/lib/ad-groups"
 import { parseCampaignReference } from "@/integrations/google_ads/lib/campaigns"
 import {
@@ -248,17 +248,22 @@ describe("Google Ads reference parsers", () => {
     expect(parseKeywordRow({ text: "example", match_type: "ANY" })).toBeNull()
     expect(parseKeywordRow({ text: "example", match_type: "ANY" }, true)?.matchType).toBe("ANY")
   })
-  it("keeps valid account currencies and ignores unavailable metadata", () => {
+  it("keeps complete account facts and ignores accounts missing a currency or time zone", () => {
+    const account = {
+      customer_id: "1",
+      name: "Account",
+      currency: "GBP",
+      time_zone: "Europe/London",
+    }
     expect([
-      ...parseAccountCurrencies([
-        { customer_id: "1", label: "Account", currency_code: "GBP" },
-        { customer_id: "2", label: "Other", currency_code: "bad" },
-        { customer_id: "3", label: "   ", currency_code: "GBP" },
-        { customer_id: "4", label: "", currency_code: "GBP" },
+      ...parseApprovalAccounts([
+        account,
+        { ...account, customer_id: "2", currency: "bad" },
+        { ...account, customer_id: "3", time_zone: "" },
+        { ...account, customer_id: "4", name: "   " },
         null,
       ]),
-    ]).toEqual([["1", { currencyCode: "GBP", label: "Account" }]])
-    expect(parseAccountCurrencies(undefined).size).toBe(0)
+    ]).toEqual([["1", { currencyCode: "GBP", label: "Account", timeZone: "Europe/London" }]])
   })
 })
 

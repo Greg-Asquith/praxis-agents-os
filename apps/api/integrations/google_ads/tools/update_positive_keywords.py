@@ -74,6 +74,7 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
+from .utils.accounts import account_facts, approval_accounts
 from .utils.money import micros_to_money
 from .utils.mutation_evidence import (
     audit_status,
@@ -541,7 +542,7 @@ def _validate_pre_dispatch_bounds(
             variants.append(_result_rows(references, changes, ledger))
         if (
             positive_keyword_update_result_upper_bound(
-                variants, currency_code=_currency_code(entry)
+                variants, currency_code=account_facts(entry).currency
             )
             > public_result_chars
         ):
@@ -579,7 +580,7 @@ def _split_result(
     ledger: GoogleAdsMutationLedger,
 ) -> dict[str, Any]:
     rows = _result_rows(references, changes, ledger)
-    currency_code = _currency_code(entry)
+    currency_code = account_facts(entry).currency
     return {
         "model_result": bounded_positive_keyword_update_result(rows, currency_code=currency_code),
         "display_result": display_positive_keyword_update_result(rows, currency_code=currency_code),
@@ -670,13 +671,6 @@ def _exception_outcome(
     )
 
 
-def _currency_code(entry: ResolvedContextEntry) -> str:
-    currency_code = str(entry.permissions_metadata.get("currency_code", "")).strip()
-    if not currency_code:
-        raise ValueError("Google Ads positive keyword result requires an account currency")
-    return currency_code
-
-
 def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
     """Adds trusted account context and render scalar clears as editable blanks."""
     raw_patches = args.get("patches")
@@ -705,21 +699,12 @@ def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str,
         if deps.active_context
         else ()
     )
-    accounts = [
-        {
-            "customer_id": entry.external_id,
-            "label": entry.display_name,
-            "currency_code": str(entry.permissions_metadata["currency_code"]).strip(),
-        }
-        for entry in entries
-        if entry.external_id in customer_ids
-        and entry.write_allowed
-        and isinstance(entry.permissions_metadata.get("currency_code"), str)
-        and str(entry.permissions_metadata["currency_code"]).strip()
-    ]
-    if customer_ids and {account["customer_id"] for account in accounts} != customer_ids:
-        raise RuntimeError("Google Ads positive keyword approval requires account currencies")
-    return {**args, "patches": display_patches, "_account_currencies": accounts}
+    accounts = approval_accounts(
+        entry for entry in entries if entry.external_id in customer_ids and entry.write_allowed
+    )
+    if {account["customer_id"] for account in accounts} != customer_ids:
+        raise RuntimeError("Google Ads positive keyword approval requires every selected account")
+    return {**args, "patches": display_patches, "_accounts": accounts}
 
 
 DEFINITION = RuntimeToolDefinition(

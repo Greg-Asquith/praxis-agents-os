@@ -25,6 +25,7 @@ SELECT
   customer_client.manager,
   customer_client.descriptive_name,
   customer_client.currency_code,
+  customer_client.time_zone,
   customer_client.status
 FROM customer_client
 WHERE customer_client.level <= 1
@@ -133,6 +134,7 @@ async def discover_google_ads_resources(
                     "parent_external_id": parent_external_id,
                     "level": level,
                     "currency_code": str(customer.get("currencyCode", "")),
+                    "time_zone": str(customer.get("timeZone", "")),
                     "descriptive_name": str(customer.get("descriptiveName", "")),
                     "status": str(customer.get("status", "")),
                     "login_customer_id": root_id,

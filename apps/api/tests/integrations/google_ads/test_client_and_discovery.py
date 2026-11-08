@@ -148,6 +148,7 @@ async def test_discovery_preserves_root_routing_and_immediate_parent() -> None:
     assert by_id["333"].parent_external_id == "222"
     assert by_id["333"].permissions_metadata["login_customer_id"] == "111"
     assert by_id["333"].permissions_metadata["level"] == 2
+    assert by_id["333"].permissions_metadata["time_zone"] == "Europe/London"
     assert by_id["111"].writable is False
     assert by_id["222"].writable is False
     assert by_id["333"].writable is True

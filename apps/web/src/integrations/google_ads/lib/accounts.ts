@@ -1,72 +1,88 @@
 // apps/web/src/integrations/google_ads/lib/accounts.ts
 
 import { CURRENCY_CODE_PATTERN, googleAdsId } from "@/integrations/google_ads/lib/field-values"
-import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
-export type GoogleAdsAccount = {
-  currencyCode: string
+export type GoogleAdsApprovalAccount = { currencyCode: string; label: string; timeZone: string }
+
+export type GoogleAdsAccountOverview = {
+  autoTaggingEnabled: boolean | null
+  costThisMonth: string | null
+  costToday: string | null
+  currency: string
   customerId: string
-  displayName: string
-  enabled: boolean
   manager: boolean
-  parentCustomerId: string | null
+  name: string | null
   status: string
-  writable: boolean
+  timeZone: string
 }
 
-export function parseAccountCurrencies(
-  value: unknown
-): Map<string, { currencyCode: string; label: string }> {
-  const accounts = new Map<string, { currencyCode: string; label: string }>()
+const MONEY_PATTERN = /^-?\d+(?:\.\d+)?$/
+
+// Reads the trusted `_accounts` approval projection, keyed by customer ID.
+export function parseApprovalAccounts(value: unknown): Map<string, GoogleAdsApprovalAccount> {
+  const accounts = new Map<string, GoogleAdsApprovalAccount>()
   if (!Array.isArray(value)) return accounts
   for (const item of value) {
     if (!isRecord(item)) continue
     const customerId = googleAdsId(item["customer_id"])
-    const currencyCode = item["currency_code"]
-    const label = item["label"]
+    const { currency, name, time_zone: timeZone } = item
     if (
       !customerId ||
-      typeof label !== "string" ||
-      !label.trim() ||
-      typeof currencyCode !== "string" ||
-      !CURRENCY_CODE_PATTERN.test(currencyCode)
+      typeof name !== "string" ||
+      !name.trim() ||
+      typeof currency !== "string" ||
+      !CURRENCY_CODE_PATTERN.test(currency) ||
+      typeof timeZone !== "string" ||
+      !timeZone.trim()
     )
       continue
-    accounts.set(customerId, { currencyCode, label })
+    accounts.set(customerId, { currencyCode: currency, label: name.trim(), timeZone })
   }
   return accounts
 }
 
-export function parseGoogleAdsAccounts(value: unknown): GoogleAdsAccount[] | null {
-  if (!isRecord(value) || !Array.isArray(value["accounts"])) {
+export function accountContextLine(account: GoogleAdsApprovalAccount | undefined): string {
+  return account
+    ? `${account.label} · ${account.currencyCode} · ${account.timeZone}`
+    : "Google Ads account · Currency unavailable"
+}
+
+export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountOverview | null {
+  if (!isRecord(value)) return null
+  const customerId = googleAdsId(value["customer_id"])
+  const { currency, status, time_zone: timeZone, manager } = value
+  const name = value["name"] ?? null
+  const autoTagging = value["auto_tagging_enabled"] ?? null
+  const costToday = value["cost_today"] ?? null
+  const costThisMonth = value["cost_this_month"] ?? null
+  if (
+    !customerId ||
+    (name !== null && typeof name !== "string") ||
+    typeof status !== "string" ||
+    typeof currency !== "string" ||
+    !CURRENCY_CODE_PATTERN.test(currency) ||
+    typeof timeZone !== "string" ||
+    typeof manager !== "boolean" ||
+    (autoTagging !== null && typeof autoTagging !== "boolean") ||
+    !isMoneyOrNull(costToday) ||
+    !isMoneyOrNull(costThisMonth)
+  ) {
     return null
   }
-  const accounts: GoogleAdsAccount[] = []
-  for (const item of value["accounts"]) {
-    if (
-      !isRecord(item) ||
-      typeof item["customer_id"] !== "string" ||
-      typeof item["display_name"] !== "string" ||
-      (item["parent_customer_id"] !== null && typeof item["parent_customer_id"] !== "string") ||
-      typeof item["manager"] !== "boolean" ||
-      typeof item["currency_code"] !== "string" ||
-      typeof item["status"] !== "string" ||
-      typeof item["writable"] !== "boolean" ||
-      typeof item["enabled"] !== "boolean"
-    ) {
-      return null
-    }
-    accounts.push({
-      currencyCode: item["currency_code"],
-      customerId: formatGoogleAdsAccountId(item["customer_id"]),
-      displayName: item["display_name"],
-      enabled: item["enabled"],
-      manager: item["manager"],
-      parentCustomerId: item["parent_customer_id"],
-      status: item["status"],
-      writable: item["writable"],
-    })
+  return {
+    autoTaggingEnabled: autoTagging,
+    costThisMonth,
+    costToday,
+    currency,
+    customerId,
+    manager,
+    name,
+    status,
+    timeZone,
   }
-  return accounts
+}
+
+function isMoneyOrNull(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && MONEY_PATTERN.test(value))
 }

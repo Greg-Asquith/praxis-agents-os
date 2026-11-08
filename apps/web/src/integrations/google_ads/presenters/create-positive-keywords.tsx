@@ -18,7 +18,11 @@ import {
   GoogleAdsEntityGroup,
 } from "@/integrations/google_ads/components/entity-card"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
-import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import {
+  accountContextLine,
+  parseApprovalAccounts,
+  type GoogleAdsApprovalAccount,
+} from "@/integrations/google_ads/lib/accounts"
 import {
   parseAdGroupReference,
   type AdGroupReference,
@@ -44,7 +48,7 @@ const OUTCOMES = ["added", "skipped_existing", "failed", "unverified"] as const
 type KeywordOutcome = (typeof OUTCOMES)[number]
 
 type CreateKeywordArgs = {
-  accounts: Map<string, { currencyCode: string; label: string }>
+  accounts: Map<string, GoogleAdsApprovalAccount>
   adGroups: AdGroupReference[]
   keywords: PositiveKeywordInput[]
 }
@@ -147,7 +151,7 @@ function renderApprovalSummary(args: CreateKeywordArgs) {
           <GoogleAdsEntityGroup
             key={key}
             title={first.campaignLabel ?? "Campaign"}
-            meta={`${account?.label ?? "Google Ads account"} · ${account?.currencyCode ?? "Currency unavailable"}`}
+            meta={accountContextLine(account)}
           >
             {adGroups.map((adGroup) => (
               <GoogleAdsEntityCard
@@ -211,7 +215,7 @@ function createKeywordArgs(value: unknown): CreateKeywordArgs | null {
   const adGroups = parseAdGroups(value["ad_groups"])
   const keywords = parseKeywords(value["keywords"])
   if (!adGroups || !keywords || adGroups.length * keywords.length > 2500) return null
-  const accounts = parseAccountCurrencies(value["_account_currencies"])
+  const accounts = parseApprovalAccounts(value["_accounts"])
   if (!allBidCurrenciesAvailable(adGroups, keywords, accounts)) return null
   return { accounts, adGroups, keywords }
 }

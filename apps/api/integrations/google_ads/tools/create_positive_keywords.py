@@ -68,6 +68,7 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
+from .utils.accounts import account_facts, approval_accounts
 from .utils.money import micros_to_money
 from .utils.mutation_evidence import (
     audit_status,
@@ -141,6 +142,7 @@ async def google_ads_create_keywords(
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
             nonlocal client, live_references, existing_rows, creates, pending_detail
+            account_facts(entry)
             client = await google_ads_client(ctx, entry)
             live_references, create_contexts = await _live_ad_groups(client, entry, references)
             _validate_bid_compatibility(create_contexts, normalized_keywords)
@@ -181,7 +183,7 @@ async def google_ads_create_keywords(
                     existing_rows,
                     pending_detail,
                     exc,
-                    currency_code=_currency_code(entry),
+                    currency_code=account_facts(entry).currency,
                     disposition=disposition,
                 )
                 exc.failure_disposition = disposition
@@ -197,7 +199,7 @@ async def google_ads_create_keywords(
                     existing_rows,
                     pending_detail,
                     exc,
-                    currency_code=_currency_code(entry),
+                    currency_code=account_facts(entry).currency,
                     disposition=disposition,
                 )
             detail = terminal_operation_detail(
@@ -443,7 +445,7 @@ def _split_result(
     ledger: GoogleAdsMutationLedger,
 ) -> dict[str, Any]:
     rows = _result_rows(ad_groups, existing_rows, ledger)
-    currency_code = _currency_code(entry)
+    currency_code = account_facts(entry).currency
     return {
         "model_result": bounded_positive_keyword_result(rows, currency_code=currency_code),
         "display_result": display_positive_keyword_result(rows, currency_code=currency_code),
@@ -651,15 +653,8 @@ def _exception_outcome(
     )
 
 
-def _currency_code(entry: ResolvedContextEntry) -> str:
-    currency_code = str(entry.permissions_metadata.get("currency_code", "")).strip()
-    if not currency_code:
-        raise ValueError("Google Ads positive keyword result requires an account currency")
-    return currency_code
-
-
 def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """Adds trusted account currencies to the approval argument projection."""
+    """Adds trusted account facts to the approval argument projection."""
     selected = args.get("ad_groups")
     customer_ids = (
         {
@@ -675,20 +670,11 @@ def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str,
         if deps.active_context
         else ()
     )
-    accounts = [
-        {
-            "customer_id": entry.external_id,
-            "label": entry.display_name,
-            "currency_code": str(entry.permissions_metadata["currency_code"]).strip(),
-        }
-        for entry in entries
-        if entry.external_id in customer_ids
-        and entry.write_allowed
-        and isinstance(entry.permissions_metadata.get("currency_code"), str)
-        and str(entry.permissions_metadata["currency_code"]).strip()
-    ]
-    if customer_ids and {account["customer_id"] for account in accounts} != customer_ids:
-        raise RuntimeError("Google Ads positive keyword approval requires account currencies")
+    accounts = approval_accounts(
+        entry for entry in entries if entry.external_id in customer_ids and entry.write_allowed
+    )
+    if {account["customer_id"] for account in accounts} != customer_ids:
+        raise RuntimeError("Google Ads positive keyword approval requires every selected account")
     keywords = args.get("keywords")
     optional_defaults: dict[str, object] = {
         "status": "ENABLED",
@@ -708,7 +694,7 @@ def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str,
         if isinstance(keywords, list)
         else keywords
     )
-    return {**args, "keywords": display_keywords, "_account_currencies": accounts}
+    return {**args, "keywords": display_keywords, "_accounts": accounts}
 
 
 DEFINITION = RuntimeToolDefinition(

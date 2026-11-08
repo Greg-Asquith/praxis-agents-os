@@ -12,14 +12,24 @@ import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_a
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
 
 describe("Google Ads campaign budget presenters", () => {
-  it("shows trusted account currencies in the create approval", () => {
+  it("shows trusted account currencies and time zones in the create approval", () => {
     const html = render(
       googleAdsCreateCampaignBudgetPresenter.render(
         props(
           activity("google_ads_create_campaign_budget", "awaiting_approval", {
-            _account_currencies: [
-              { label: "UK account", currency_code: "GBP" },
-              { label: "EU account", currency_code: "EUR" },
+            _accounts: [
+              {
+                customer_id: "1234567890",
+                name: "UK account",
+                currency: "GBP",
+                time_zone: "Europe/London",
+              },
+              {
+                customer_id: "2345678901",
+                name: "EU account",
+                currency: "EUR",
+                time_zone: "Europe/Dublin",
+              },
             ],
             amount: { daily_amount: "12.50" },
             delivery_method: "STANDARD",
@@ -39,6 +49,7 @@ describe("Google Ads campaign budget presenters", () => {
 
     expect(html).toMatch(/£12\.50|GBP\s*12\.50/)
     expect(html).toMatch(/€12\.50|EUR\s*12\.50/)
+    expect(html).toContain("Europe/Dublin")
   })
 
   it("blocks invalid total-budget combinations and decimal precision before approval", () => {
@@ -46,7 +57,14 @@ describe("Google Ads campaign budget presenters", () => {
       googleAdsCreateCampaignBudgetPresenter.render(
         props(
           activity("google_ads_create_campaign_budget", "awaiting_approval", {
-            _account_currencies: [{ label: "UK account", currency_code: "GBP" }],
+            _accounts: [
+              {
+                customer_id: "1234567890",
+                name: "UK account",
+                currency: "GBP",
+                time_zone: "Europe/London",
+              },
+            ],
             amount: { total_amount: "50" },
             delivery_method: "STANDARD",
             explicitly_shared: true,
@@ -60,7 +78,14 @@ describe("Google Ads campaign budget presenters", () => {
       googleAdsCreateCampaignBudgetPresenter.render(
         props(
           activity("google_ads_create_campaign_budget", "awaiting_approval", {
-            _account_currencies: [{ label: "UK account", currency_code: "GBP" }],
+            _accounts: [
+              {
+                customer_id: "1234567890",
+                name: "UK account",
+                currency: "GBP",
+                time_zone: "Europe/London",
+              },
+            ],
             amount: { daily_amount: "1.0000001" },
             delivery_method: "STANDARD",
             explicitly_shared: false,

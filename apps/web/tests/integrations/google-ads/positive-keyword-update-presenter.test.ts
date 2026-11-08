@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import type * as SelectModule from "@/components/ui/select"
 import type { ToolUi } from "@/features/tools/types"
-import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import {
   updateKeywordArgs,
   replacePositiveKeywordPatch,
@@ -137,16 +137,15 @@ describe("Google Ads positive keyword update presenter", () => {
   })
 
   it.each([
-    [{ customer_id: "1234567890", label: "Account", currency_code: "bad" }],
-    [{ customer_id: "1234567890", label: "   ", currency_code: "GBP" }],
-    [{ customer_id: "1234567890", label: "Account", currency_code: "GBP" }],
+    [[{ customer_id: "1234567890", name: "Account", currency: "GBP", time_zone: "" }]],
+    [[{ customer_id: "1234567890", name: "Account", currency: "GBP", time_zone: "Europe/London" }]],
   ])("uses shared account eligibility for %j", (accounts) => {
     const args = updateKeywordArgs({
       keywords: [keyword("PAUSED")],
       patches: [{ status: "ENABLED" }],
-      _account_currencies: accounts,
+      _accounts: accounts,
     })
-    const shared = parseAccountCurrencies(accounts)
+    const shared = parseApprovalAccounts(accounts)
     expect(args !== null).toBe(shared.has("1234567890"))
     if (args) expect(args.accounts).toEqual(shared)
   })
@@ -385,8 +384,13 @@ function activity(status: ToolActivity["status"], args: unknown): ToolActivity {
     status === "awaiting_approval" && args && typeof args === "object" && !Array.isArray(args)
       ? {
           ...args,
-          _account_currencies: [
-            { currency_code: "GBP", customer_id: "1234567890", label: "UK account" },
+          _accounts: [
+            {
+              customer_id: "1234567890",
+              name: "UK account",
+              currency: "GBP",
+              time_zone: "Europe/London",
+            },
           ],
         }
       : args

@@ -2,6 +2,7 @@
 
 """Google Ads report and provider read-operation contracts."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -12,6 +13,7 @@ from pydantic_ai import (
 )
 
 from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
+from integrations.google_ads.operations.get_account import get_account
 from integrations.google_ads.operations.get_report_field import (
     get_report_field,
     get_report_fields,
@@ -32,6 +34,7 @@ from integrations.google_ads.tools.schemas.report_fields import (
     GoogleAdsGetReportFieldOutput,
     GoogleAdsListReportFieldsOutput,
 )
+from integrations.google_ads.tools.utils.accounts import account_facts
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_ads.support import (
@@ -457,3 +460,86 @@ async def test_list_report_fields_retains_all_pages_and_compatibility_by_default
     assert "LIMIT" not in calls[0].kwargs["json"]["query"]
     assert calls[1].kwargs["json"]["pageToken"] == "last"
     assert calls[1].kwargs["max_response_bytes"] < calls[0].kwargs["max_response_bytes"]
+
+
+class _AccountClient:
+    def __init__(self, customer: dict, cost_rows: list[dict]) -> None:
+        self.customer = customer
+        self.cost_rows = cost_rows
+        self.queries: list[str] = []
+
+    async def post(self, _path: str, **kwargs):
+        query = kwargs["json"]["query"]
+        self.queries.append(query)
+        if "metrics.cost_micros" in query:
+            return [{"results": self.cost_rows}]
+        return [{"results": [{"customer": self.customer}]}]
+
+
+_CUSTOMER = {
+    "id": "333",
+    "descriptiveName": "Northwind Outdoor UK",
+    "status": "ENABLED",
+    "currencyCode": "GBP",
+    "timeZone": "Europe/London",
+    "manager": False,
+    "autoTaggingEnabled": True,
+}
+
+
+async def test_get_account_counts_today_in_the_account_time_zone() -> None:
+    # 23:30 UTC on 31 October is already 1 November in Asia/Tokyo.
+    client = _AccountClient(
+        {**_CUSTOMER, "timeZone": "Asia/Tokyo", "currencyCode": "JPY"},
+        [
+            {"segments": {"date": "2026-11-01"}, "metrics": {"costMicros": "1284100000"}},
+            {"segments": {"date": "2026-10-31"}, "metrics": {"costMicros": "5000000"}},
+        ],
+    )
+
+    account = await get_account(
+        client,  # type: ignore[arg-type]
+        customer_id="333",
+        login_customer_id="111",
+        max_response_bytes=100_000,
+        now=datetime(2026, 10, 31, 23, 30, tzinfo=UTC),
+    )
+
+    assert account["cost_today"] == "1284.1"
+    assert account["cost_this_month"] == "1289.1"
+    assert account["time_zone"] == "Asia/Tokyo"
+    assert account["auto_tagging_enabled"] is True
+
+
+async def test_get_account_skips_cost_for_manager_accounts() -> None:
+    client = _AccountClient({**_CUSTOMER, "manager": True}, [])
+
+    account = await get_account(
+        client,  # type: ignore[arg-type]
+        customer_id="111",
+        login_customer_id="111",
+        max_response_bytes=100_000,
+    )
+
+    assert len(client.queries) == 1
+    assert account["manager"] is True
+    assert account["cost_today"] is None
+    assert account["cost_this_month"] is None
+
+
+def test_account_facts_require_a_refresh_when_time_zone_is_missing() -> None:
+    entry = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="333",
+        display_name="Client account",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"currency_code": "GBP", "login_customer_id": "111"},
+    )
+
+    with pytest.raises(ModelRetry, match="Refresh the connection and retry"):
+        account_facts(entry)

@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import type { GoogleAdsApprovalAccount } from "@/integrations/google_ads/lib/accounts"
 import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
 import {
   budgetPeriodLabel,
@@ -14,7 +15,7 @@ import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { formatCurrencyAmount } from "@/lib/format"
 
 export type CreateBudgetArgs = {
-  accounts: { currencyCode: string; label: string }[]
+  accounts: GoogleAdsApprovalAccount[]
   amount: string
   deliveryMethod: "ACCELERATED" | "STANDARD"
   explicitlyShared: boolean
@@ -41,9 +42,12 @@ export function renderCreateBudgetApprovalSummary(args: CreateBudgetArgs) {
         <GoogleAdsEntityCard
           key={`${account.label}:${account.currencyCode}`}
           title={account.label}
-          meta={
-            args.period === "DAILY" ? formatDailyEstimate(args.amount, account.currencyCode) : null
-          }
+          meta={[
+            `${account.currencyCode} · ${account.timeZone}`,
+            args.period === "DAILY" ? formatDailyEstimate(args.amount, account.currencyCode) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           trailing={
             <>
               {formatCurrencyAmount(args.amount, account.currencyCode)}

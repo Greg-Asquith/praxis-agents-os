@@ -1,6 +1,9 @@
 // apps/web/src/integrations/google_ads/lib/positive-keyword-update.ts
 
-import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import {
+  parseApprovalAccounts,
+  type GoogleAdsApprovalAccount,
+} from "@/integrations/google_ads/lib/accounts"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import {
   parseGoogleAdsCustomParameters,
@@ -89,7 +92,7 @@ export type MutableKeywordState = {
 export type KeywordPatch = Partial<MutableKeywordState>
 
 export type PositiveKeywordUpdateArgs = {
-  accounts: Map<string, { currencyCode: string; label: string }>
+  accounts: Map<string, GoogleAdsApprovalAccount>
   keywords: PositiveKeywordReference[]
   patches: KeywordPatch[]
 }
@@ -173,7 +176,7 @@ export function updateKeywordArgs(
   const keywords = parseKeywordReferences(arrays.keywords)
   const patches = parseKeywordPatches(arrays.patches, parseRow)
   if (!keywords || !patches) return null
-  const accounts = parseAccountCurrencies(value["_account_currencies"])
+  const accounts = parseApprovalAccounts(value["_accounts"])
   if (keywords.some((keyword) => !accounts.has(keyword.customerId))) return null
   return { accounts, keywords, patches }
 }

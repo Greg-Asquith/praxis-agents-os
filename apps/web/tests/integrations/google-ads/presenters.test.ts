@@ -14,6 +14,7 @@ import {
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
+import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
@@ -27,6 +28,49 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
 describe("Google Ads tool presenters", () => {
+  it("renders one accounts table with each account's own currency", () => {
+    const account = {
+      auto_tagging_enabled: true,
+      cost_this_month: "24906.55",
+      cost_today: "1284.1",
+      currency: "GBP",
+      customer_id: "4821930571",
+      manager: false,
+      name: "Northwind Outdoor UK",
+      status: "ENABLED",
+      time_zone: "Europe/London",
+    }
+    const html = render(
+      googleAdsAccountsPresenter.render(
+        props({
+          id: "accounts-1",
+          kind: "result",
+          name: "google_ads_get_accounts",
+          status: "completed",
+          args: {},
+          result: {
+            results: [
+              entry(account),
+              entry({
+                ...account,
+                cost_this_month: "8115.2",
+                cost_today: "402.88",
+                currency: "EUR",
+                customer_id: "7315520094",
+                name: "Northwind Outdoor IE",
+                time_zone: "Europe/Dublin",
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toMatch(/£1,284\.10/)
+    expect(html).toMatch(/€8,115\.20/)
+    expect(html).toContain("482-193-0571")
+  })
+
   it("renders a compact, exportable report table with clean headers and raw values", () => {
     const html = render(
       googleAdsReportPresenter.render(

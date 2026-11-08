@@ -10,6 +10,7 @@ import {
   budgetPeriodLabel,
   parseCampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
+import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -45,8 +46,6 @@ function createBudgetArgs(value: unknown): CreateBudgetArgs | null {
     !isRecord(value) ||
     typeof value["name"] !== "string" ||
     !value["name"].trim() ||
-    !Array.isArray(value["_account_currencies"]) ||
-    value["_account_currencies"].length === 0 ||
     typeof value["explicitly_shared"] !== "boolean" ||
     (value["delivery_method"] !== "STANDARD" && value["delivery_method"] !== "ACCELERATED") ||
     !isRecord(value["amount"])
@@ -64,18 +63,9 @@ function createBudgetArgs(value: unknown): CreateBudgetArgs | null {
   ) {
     return null
   }
-  const accounts: { currencyCode: string; label: string }[] = []
-  for (const account of value["_account_currencies"]) {
-    if (
-      !isRecord(account) ||
-      typeof account["label"] !== "string" ||
-      !account["label"].trim() ||
-      typeof account["currency_code"] !== "string" ||
-      !/^[A-Z]{3}$/.test(account["currency_code"])
-    ) {
-      return null
-    }
-    accounts.push({ currencyCode: account["currency_code"], label: account["label"].trim() })
+  const accounts = [...parseApprovalAccounts(value["_accounts"]).values()]
+  if (accounts.length === 0) {
+    return null
   }
   return {
     accounts,

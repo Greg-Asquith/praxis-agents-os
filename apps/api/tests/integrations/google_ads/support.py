@@ -371,6 +371,7 @@ def _hierarchy_page(*customers: tuple[str, int, bool]) -> dict:
                     "manager": manager,
                     "descriptiveName": f"Account {customer_id}",
                     "currencyCode": "GBP",
+                    "timeZone": "Europe/London",
                     "status": "ENABLED",
                 }
             }

@@ -7,6 +7,23 @@ relative to `apps/api/`; frontend paths to `apps/web/`.
 Start with the [backend package](../../../apps/api/integrations/google_ads/)
 and [frontend module](../../../apps/web/src/integrations/google_ads/index.ts).
 
+## Account facts
+
+Discovery stores each account's `currency_code` and `time_zone` in
+`permissions_metadata`. Write tools read both through `account_facts` in
+`tools/utils/accounts.py`, which asks the operator to refresh the
+connection when either is missing. Approval display arguments carry the
+trusted `_accounts` list: `customer_id`, `name`, `currency`, and
+`time_zone` for each account the call touches. The web reads it with
+`parseApprovalAccounts` and shows it with `accountContextLine`.
+
+`google_ads_get_accounts` reads, for each selected account, its name,
+status, currency, time zone, manager flag, auto-tagging, and today's and
+this month's cost. Costs are exact decimal strings in the account currency.
+Today is the current date in the account time zone. Manager accounts have
+no cost of their own, so the tool skips the cost query and returns null
+costs. Billing and spending limits are pending (plan 314).
+
 ## Backend writes
 
 Google Ads contributes report and field discovery plus approval-only
@@ -150,7 +167,7 @@ associations Google Ads removed with it.
 Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
 types and parsers belong to their domain modules: `campaign-budgets.ts`,
 `campaigns.ts`, `ad-groups.ts`, `positive-keywords.ts`, `negative-keywords.ts`,
-and `recommendations.ts`. Account-currency metadata belongs to `accounts.ts`.
+and `recommendations.ts`. Account facts and the account overview parser belong to `accounts.ts`.
 Import directly from those modules. Shared scalar and URL-field validation
 lives in `field-values.ts`; callers own normalisation, defaults, and clears.
 Label draft parsing, approval validation, and the label-reference guard
@@ -202,7 +219,9 @@ ad-group negative keywords each declare their add and remove variants directly.
 Presenters compose `google_ads/components` and `google_ads/lib`: a new tool
 adds no outcome table, approval section, or lifecycle template. Architecture
 checks forbid direct Stat and Badge imports, and only the two report
-presenters import the generic DataTable. Bid adjustment formatting belongs
+presenters import the generic DataTable. The accounts card reaches DataTable
+through `components/accounts-table.tsx`: one table across all accounts, with
+money in each row's own currency. Bid adjustment formatting belongs
 to `lib/bid-modifiers.ts`. Tool-specific summaries stay inside the shared
 approval section. Construct presenters using this shared kit.
 

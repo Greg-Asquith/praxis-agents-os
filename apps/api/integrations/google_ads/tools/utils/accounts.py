@@ -1,0 +1,50 @@
+# apps/api/integrations/google_ads/tools/utils/accounts.py
+
+"""Discovered Google Ads account facts that every write and approval card needs."""
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any
+
+from pydantic_ai import ModelRetry
+
+from services.integrations.context.domain import ResolvedContextEntry
+
+
+@dataclass(frozen=True, slots=True)
+class GoogleAdsAccountFacts:
+    customer_id: str
+    name: str
+    currency: str
+    time_zone: str
+
+    def display(self) -> dict[str, Any]:
+        return {
+            "customer_id": self.customer_id,
+            "name": self.name,
+            "currency": self.currency,
+            "time_zone": self.time_zone,
+        }
+
+
+def account_facts(entry: ResolvedContextEntry) -> GoogleAdsAccountFacts:
+    """Reads the discovered currency and time zone, which discovery stores together."""
+    metadata = entry.permissions_metadata
+    currency = str(metadata.get("currency_code") or "").strip()
+    time_zone = str(metadata.get("time_zone") or "").strip()
+    if not currency or not time_zone:
+        raise ModelRetry(
+            f"Google Ads account {entry.external_id} is missing its currency or time zone. "
+            "Refresh the connection and retry."
+        )
+    return GoogleAdsAccountFacts(
+        customer_id=entry.external_id,
+        name=entry.display_name,
+        currency=currency,
+        time_zone=time_zone,
+    )
+
+
+def approval_accounts(entries: Iterable[ResolvedContextEntry]) -> list[dict[str, Any]]:
+    """Builds the trusted `_accounts` approval projection for the given accounts."""
+    return [account_facts(entry).display() for entry in entries]

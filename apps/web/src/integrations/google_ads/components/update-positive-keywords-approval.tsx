@@ -1,5 +1,9 @@
 // apps/web/src/integrations/google_ads/components/update-positive-keywords-approval.tsx
 
+import {
+  accountContextLine,
+  type GoogleAdsApprovalAccount,
+} from "@/integrations/google_ads/lib/accounts"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
@@ -93,8 +97,7 @@ export function UpdatePositiveKeywordsApproval({
             visibleKeywords[visibleIndex - 1]?.scopeLabel !== keyword.scopeLabel ? (
               <div className="border-border mt-1 border-b pb-2">
                 <p className="text-muted-foreground text-xs wrap-anywhere">
-                  {account?.label ?? "Google Ads account"} ·{" "}
-                  {account?.currencyCode ?? "Currency unavailable"}
+                  {accountContextLine(account)}
                 </p>
                 <p className="mt-1 text-xs wrap-anywhere">{keyword.scopeLabel}</p>
                 <div
@@ -184,7 +187,7 @@ function KeywordPatchEditor({
   onExpandedChange,
   patch,
 }: {
-  account: { currencyCode: string; label: string } | undefined
+  account: GoogleAdsApprovalAccount | undefined
   disabled: boolean
   expanded: boolean
   keyword: PositiveKeywordReference
