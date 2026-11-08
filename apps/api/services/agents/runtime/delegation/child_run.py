@@ -153,6 +153,8 @@ async def run_child_agent(
         raise
     except Exception as exc:
         await session.rollback()
+        if child_run_id is not None:
+            await _settle_failed_child(session, child_run_id=child_run_id)
         logger.warning(
             "Delegated agent run failed",
             exc_info=True,
@@ -172,3 +174,28 @@ async def run_child_agent(
         )
     finally:
         await session.close()
+
+
+async def _settle_failed_child(session: AsyncSession, *, child_run_id: UUID) -> None:
+    """Fail a child the parent is about to report as failed, leaving final verdicts alone."""
+    from services.agent_runs.settle_run_family import settle_run_family
+    from services.agents.runtime.execute.errors import (
+        DEFAULT_RUN_ERROR_CODE,
+        DEFAULT_RUN_ERROR_MESSAGE,
+    )
+
+    try:
+        await settle_run_family(
+            session,
+            run_id=child_run_id,
+            error_code=DEFAULT_RUN_ERROR_CODE,
+            error_message=DEFAULT_RUN_ERROR_MESSAGE,
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.warning(
+            "Could not settle failed delegated run",
+            exc_info=True,
+            extra={"child_run_id": str(child_run_id)},
+        )

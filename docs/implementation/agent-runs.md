@@ -414,7 +414,11 @@ Specialists share the root's remaining deadline. Finalisation cleanup has its
 own bounded wait outside the execution deadline.
 
 `AGENT_MAX_DELEGATION_DEPTH` accepts zero to disable delegation or one for
-direct specialists. The heartbeat interval must stay below the lease TTL.
+direct specialists. The schema enforces the same ceiling: `delegation_depth` is
+0 with no `parent_run_id` and 1 with one, and deleting a parent deletes its
+children. Deeper chains need a migration, because family locking and settlement
+reach only the root and its direct children. The heartbeat interval must stay
+below the lease TTL.
 
 Fresh permission reads precede model and tool requests. Failed reads cannot
 authorise another request. Heartbeats retry database failures only within the
@@ -423,7 +427,10 @@ can complete after local stopping; the runtime does not replay it automatically.
 
 Family mutations lock the root before children in ID order. Cancellation,
 permanent failure, and abandoned-run recovery settle non-terminal descendants
-through `parent_run_id`, preserving completed children. Cleanup jobs are queued
+through `parent_run_id`, preserving completed children. When a child's
+execution raises instead of settling itself, the delegation tool fails the child
+in its own transaction before it reports the failure to the parent, so the
+parent never finishes beside an unfinished child. Cleanup jobs are queued
 before suspended metadata is cleared. A root with unfinished children records
 blocked recovery instead of successful completion.
 

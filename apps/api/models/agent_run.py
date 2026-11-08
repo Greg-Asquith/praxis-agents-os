@@ -44,7 +44,7 @@ class AgentRun(BaseModel):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     parent_run_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
         nullable=True,
     )
     delegation_depth = Column(
@@ -107,7 +107,12 @@ class AgentRun(BaseModel):
             "trigger IN ('interactive', 'scheduled', 'delegated', 'event')",
             name="agent_runs_trigger_check",
         ),
-        CheckConstraint("delegation_depth >= 0", name="agent_runs_delegation_depth_check"),
+        # Depth 1 is the deepest chain; raising it is a schema change, not a setting.
+        CheckConstraint("delegation_depth IN (0, 1)", name="agent_runs_delegation_depth_check"),
+        CheckConstraint(
+            "(parent_run_id IS NULL) = (delegation_depth = 0)",
+            name="agent_runs_delegation_parent_check",
+        ),
         CheckConstraint(
             "status IN ("
             "'pending', 'running', 'awaiting_approval', "

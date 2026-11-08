@@ -279,6 +279,73 @@ async def test_delegated_child_inherits_scheduled_parent_envelope(
         )
 
 
+async def test_child_whose_execution_raises_is_failed_before_parent_continues(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_context = await _create_committed_delegation_context(committed_db_session_factory)
+    child_statuses_seen_by_parent: list[str | None] = []
+
+    async def stream_delegate_flow(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        if not _has_tool_return(messages, "delegate_to_agent"):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate_to_agent",
+                    json_args=json.dumps(
+                        {
+                            "agent_id": _agent_reference(runtime_context.child_agent_id),
+                            "task": "Run the child task.",
+                        }
+                    ),
+                    tool_call_id="delegate-child",
+                )
+            }
+            return
+        async with committed_db_session_factory() as db:
+            child_statuses_seen_by_parent.append(
+                await db.scalar(
+                    select(AgentRun.status).where(AgentRun.parent_run_id == runtime_context.run_id)
+                )
+            )
+        yield "parent final"
+
+    async def raising_execute_run(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("child execution crashed")
+
+    monkeypatch.setattr(
+        "services.agents.runtime.loop.build_model",
+        lambda _resolved_model: FunctionModel(
+            stream_function=stream_delegate_flow,
+            model_name="raising-child-flow",
+        ),
+    )
+    monkeypatch.setattr("services.agents.runtime.execute_run.execute_run", raising_execute_run)
+
+    try:
+        async with committed_db_session_factory() as db:
+            result = await execute_run(
+                db,
+                conversation_id=runtime_context.conversation_id,
+                run_id=runtime_context.run_id,
+                user_prompt="Use the specialist.",
+                sink=CollectingSink(
+                    run_id=runtime_context.run_id,
+                    conversation_id=runtime_context.conversation_id,
+                ),
+            )
+
+        assert child_statuses_seen_by_parent == [RUN_STATUS_FAILED]
+        assert result.run.status == RUN_STATUS_COMPLETED
+    finally:
+        await _delete_committed_delegation_context(
+            committed_db_session_factory,
+            runtime_context,
+        )
+
+
 async def test_delegated_child_approval_resume_rechecks_allowlist(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

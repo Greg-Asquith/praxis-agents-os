@@ -43,8 +43,8 @@ async def create_agent_run(
         raise CustomValueError("Transcript metadata is owned by run execution")
     if trigger not in ALL_RUN_TRIGGERS:
         raise CustomValueError(f"Unknown agent run trigger: {trigger!r}")
-    if delegation_depth < 0:
-        raise CustomValueError("Agent run delegation_depth must be non-negative")
+    if delegation_depth != (0 if parent_run_id is None else 1):
+        raise CustomValueError("Agent run delegation_depth must be 0 for a root run, 1 for a child")
     await validate_run_context(
         db,
         conversation_id=conversation_id,

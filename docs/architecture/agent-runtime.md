@@ -148,7 +148,9 @@ returns only its bounded result, so large reads and broad searches stay out of
 the parent's context. `delegate_to_agent` and `run_subagent` share
 `delegation/child_run.py`: a hidden delegated child conversation and run, a
 `NullSink`, shared usage and limits, the parent's side-effect envelope, depth
-checks, and approval bubbling. Child approvals show the role, and the tool row
+checks, and approval bubbling. Depth is one level by schema as well as by
+setting, and a child that raises is settled as failed before the parent sees
+the result. Child approvals show the role, and the tool row
 links to the child transcript.
 
 No agent row is created. The child run's `agent_id` is the parent, and
