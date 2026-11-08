@@ -320,12 +320,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length))
+        except ValueError:
+            # Also catches integers past Python's digit limit, which aren't a JSONDecodeError.
+            self._send(HTTPStatus.BAD_REQUEST, _error("invalid_request", "Bad JSON."))
+            return
+        try:
             response = handle_request(
                 payload, config=self.server.config, operations=self.server.operations
             )
             self._send(HTTPStatus.OK, response)
-        except json.JSONDecodeError:
-            self._send(HTTPStatus.BAD_REQUEST, _error("invalid_request", "Bad JSON."))
         except OperationError as exc:
             status = HTTPStatus.BAD_REQUEST if exc.code == "invalid_request" else HTTPStatus.OK
             self._send(status, _error(exc.code, exc.message))

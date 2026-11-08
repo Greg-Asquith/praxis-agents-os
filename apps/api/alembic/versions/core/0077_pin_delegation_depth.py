@@ -21,13 +21,14 @@ _PARENT_FK = "fk_agent_runs_parent_run_id_agent_runs"
 
 def _replace_parent_fk(ondelete: str) -> None:
     op.drop_constraint(_PARENT_FK, _TABLE, type_="foreignkey")
-    op.create_foreign_key(
-        _PARENT_FK, _TABLE, _TABLE, ["parent_run_id"], ["id"], ondelete=ondelete
-    )
+    op.create_foreign_key(_PARENT_FK, _TABLE, _TABLE, ["parent_run_id"], ["id"], ondelete=ondelete)
 
 
 def upgrade() -> None:
     """Allows depth 0 for root runs and depth 1 for runs with a parent."""
+    # Runs whose parent was deleted become roots; any deeper chain becomes one level.
+    op.execute(f"UPDATE {_TABLE} SET delegation_depth = 0 WHERE parent_run_id IS NULL")
+    op.execute(f"UPDATE {_TABLE} SET delegation_depth = 1 WHERE parent_run_id IS NOT NULL")
     op.drop_constraint(_DEPTH_CHECK, _TABLE, type_="check")
     op.create_check_constraint(_DEPTH_CHECK, _TABLE, "delegation_depth IN (0, 1)")
     op.create_check_constraint(

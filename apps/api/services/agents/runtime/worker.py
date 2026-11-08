@@ -106,6 +106,7 @@ async def run_resume_worker(
     session_factory = get_async_db_session_factory()
     session = session_factory()
     stream = InvocationSink(sink)
+    failed = False
 
     try:
         async with admitted_setup(session, control=execution_control, sink=stream):
@@ -148,6 +149,7 @@ async def run_resume_worker(
             usage=restored_run_usage(run),
         )
     except Exception:
+        failed = True
         await session.rollback()
         logger.exception(
             "Detached agent resume failed",
@@ -160,7 +162,9 @@ async def run_resume_worker(
 
         if not stream.done_sent:
             await bounded_finalisation(
-                _end_resume_stream(stream, run_id, workspace_id=workspace_id, user_id=user_id),
+                _end_resume_stream(
+                    stream, run_id, workspace_id=workspace_id, user_id=user_id, failed=failed
+                ),
                 max_wait=CANCEL_FINALIZE_TIMEOUT,
             )
         await bounded_finalisation(
@@ -175,7 +179,7 @@ async def run_resume_worker(
 
 
 async def _end_resume_stream(
-    sink: InvocationSink, run_id: UUID, *, workspace_id: UUID, user_id: UUID
+    sink: InvocationSink, run_id: UUID, *, workspace_id: UUID, user_id: UUID, failed: bool
 ) -> None:
     """Close a resume stream that ended without ``done`` from the saved run row."""
     from services.agents.runtime.execute.finalize import emit_final_events
@@ -190,15 +194,20 @@ async def _end_resume_stream(
     if run is not None and run.status not in {RUN_STATUS_PENDING, RUN_STATUS_RUNNING}:
         await emit_final_events(sink, run)
         return
-    # Another invocation owns the run, or it awaits the reaper; the client refreshes.
+    # Another invocation owns the run, or this one failed and the reaper settles it.
     status = run.status if run is not None else RUN_STATUS_FAILED
     await sink.emit(RunStatusEvent(status=status))
-    await sink.emit(
-        ErrorEvent(
+    if failed:
+        error = ErrorEvent(
+            code="agent_run_resume_failed",
+            message="This approval couldn't continue. Refresh the conversation shortly to see where it stopped.",
+        )
+    else:
+        error = ErrorEvent(
             code="agent_run_resume_already_handled",
             message="This approval is already being handled. Refresh the conversation.",
         )
-    )
+    await sink.emit(error)
     await sink.emit(DoneEvent(status=status))
 
 

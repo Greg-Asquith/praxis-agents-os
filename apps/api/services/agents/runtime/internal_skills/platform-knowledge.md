@@ -323,11 +323,11 @@ workspace copy** to keep your own editable version.
 ### Files
 
 **Files** holds the material agents work with: documents, PDFs,
-spreadsheets, presentations, images, and videos. To add files, click
-**Upload Files**, drag them onto the page, or attach them to a message.
-Documents can be up to 100 MB, images 10 MB, and videos 4 GB on Google
-Cloud or Amazon S3 storage (otherwise 100 MB) and 4 hours. Use **New
-Folder** and **Move to Folder** to organise them.
+spreadsheets, presentations, images, videos, and audio. Click **Upload
+Files**, drag files onto the page, or attach them to a message. Documents
+and audio (MP3, M4A, WAV) can be up to 100 MB, images 10 MB, and videos
+4 GB on Google Cloud or S3 storage (otherwise 100 MB) and 4 hours.
+Use **New Folder** and **Move to Folder** to organise them.
 
 Agents can read and change any workspace file. They edit and create Excel,
 PowerPoint, and Word files, keeping their template and fonts; an edit saves a new version. **Edit Image** saves a new image.

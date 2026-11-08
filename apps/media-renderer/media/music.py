@@ -13,8 +13,7 @@ MAX_MUSIC_VOLUME = 100
 MUSIC_OPTIONS = (
     "music_volume", "music_duck", "music_start_ms", "music_fade_in_ms", "music_fade_out_ms",
 )  # fmt: skip
-# Any speech over -50 dBFS compresses the music hard; blending a fifth of it back unchanged
-# caps the drop near 14 dB, so quiet and loud speakers duck it about the same.
+# Speech over -50 dBFS ducks the music; mixing a fifth back caps the drop near 14 dB.
 DUCK_FILTER = "sidechaincompress=threshold=0.003:ratio=20:attack=20:release=400:mix=0.8"
 
 

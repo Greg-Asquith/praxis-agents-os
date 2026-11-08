@@ -12,6 +12,21 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: uv
+    directory: /apps/data-science
+    schedule:
+      interval: weekly
+    ignore:
+      # Pinned to a reviewed commit with hash-checked weights.
+      - dependency-name: timestral
+    groups:
+      data-science-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: npm
     directory: /apps/web
     schedule:

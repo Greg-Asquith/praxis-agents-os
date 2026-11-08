@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
 from models.jobs import Job
 from services.jobs.domain import JOB_STATUS_PENDING
@@ -81,6 +81,15 @@ async def enqueue_job(
         initiated_by_user_id=initiated_by_user_id,
     )
 
+    # A worker can claim the pending twin between the failed insert and the read; insert again.
+    saved = await _insert_or_get_pending(db, job) or await _insert_or_get_pending(db, job)
+    if saved is None:
+        raise ConflictError("Duplicate job is already being claimed", conflicting_resource="job")
+    return saved
+
+
+async def _insert_or_get_pending(db: AsyncSession, job: Job) -> Job | None:
+    """Insert the job, or return its pending duplicate; None when the duplicate just left."""
     try:
         async with db.begin_nested():
             db.add(job)
@@ -88,19 +97,15 @@ async def enqueue_job(
     except IntegrityError as exc:
         if not is_pending_job_duplicate_error(exc):
             raise
-        existing = await _get_pending_duplicate(
+        return await _get_pending_duplicate(
             db,
-            kind=kind,
-            workspace_id=workspace_id,
-            concurrency_user_id=concurrency_user_id,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            content_hash=normalized_hash,
+            kind=job.kind,
+            workspace_id=job.workspace_id,
+            concurrency_user_id=job.concurrency_user_id,
+            subject_type=job.subject_type,
+            subject_id=job.subject_id,
+            content_hash=job.content_hash,
         )
-        if existing is None:
-            raise
-        return existing
-
     return job
 
 

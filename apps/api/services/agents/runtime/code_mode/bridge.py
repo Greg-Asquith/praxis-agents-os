@@ -954,7 +954,13 @@ async def _suspend_script(
             executed_call_count=bridge._call_count,
             elapsed_seconds=elapsed_seconds,
             executed_effects=[effect.__dict__ for effect in bridge.executed_effects],
-            nested_trace=bridge.trace,
+            # A call an earlier error left running or cancelled is saved as failed.
+            nested_trace=[
+                {**entry, "status": "failed"}
+                if entry["status"] in {"running", "cancelled"}
+                else entry
+                for entry in bridge.trace
+            ],
             tainted=bridge._taint.tainted,
             taint_sources=bridge._taint.sources,
             taint_sources_overflow=bridge._taint.overflow,

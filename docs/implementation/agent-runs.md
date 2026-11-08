@@ -548,7 +548,9 @@ reservation for the sweep or the lease reaper.
 Every resume stream ends with `done`. When the worker returns without one
 (the continuation was already started, or setup failed before execution), it
 reads the saved run: a settled or parked run gets its final events, and a run
-still `running` gets `agent_run_resume_already_handled` and `done`.
+still `running` gets `done` with `agent_run_resume_already_handled`, or
+`agent_run_resume_failed` when this worker raised (the lease reaper settles
+that run).
 
 Resume and the expiry sweep apply the same earliest pending family deadline.
 The sweep also settles a running root whose reservation outlived its owner

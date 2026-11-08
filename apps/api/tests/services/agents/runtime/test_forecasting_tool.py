@@ -68,7 +68,7 @@ def test_tool_is_hidden_without_the_service(monkeypatch: pytest.MonkeyPatch) -> 
 async def test_forecast_keeps_names_and_chart_out_of_the_service_and_model(service) -> None:
     sent, answers = service
     answers.append(_service_result())
-    promo = ["none", "promo", None, "promo"] * 11
+    promo = [1234567, 1234568, None, 1234568] * 11
 
     result = await forecast_series(
         title="Weekly Orders",
@@ -100,7 +100,7 @@ async def test_forecast_keeps_names_and_chart_out_of_the_service_and_model(servi
     chart = result.metadata["public_result"]["chart"]
     assert len(chart["periods"]) == len(HISTORY) + HORIZON
     assert [row["name"] for row in chart["covariates"]] == ["UK Holidays", "Promo"]
-    assert chart["covariates"][1]["labels"] == ["none", "promo"]
+    assert chart["covariates"][1]["labels"] == ["1234567", "1234568"]
 
 
 async def test_known_future_covariate_must_cover_the_horizon(service) -> None:

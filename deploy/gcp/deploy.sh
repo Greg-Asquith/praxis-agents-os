@@ -155,7 +155,7 @@ require_integer_range MEDIA_STAGING_URL_TTL_SECONDS 60 7200
 require_integer_range MEDIA_RENDERER_MAX_INPUT_BYTES 1048576 21474836480
 require_integer_range MAX_FILE_SIZE_AUDIO 1048576 524288000
 (( MAX_FILE_SIZE_AUDIO <= MEDIA_RENDERER_MAX_INPUT_BYTES )) \
-  || die "MAX_FILE_SIZE_AUDIO must be at most MAX_FILE_SIZE_SOURCE_VIDEO so the renderer can read every audio File"
+  || die "MAX_FILE_SIZE_AUDIO must be at most MEDIA_RENDERER_MAX_INPUT_BYTES so the renderer can read every audio File"
 require_integer_range DATA_SCIENCE_TIMEOUT_SECONDS 30 900
 for forecast_integer_variable in FORECAST_MAX_HISTORY_POINTS FORECAST_MAX_HORIZON \
   FORECAST_MAX_COVARIATES; do

@@ -30,6 +30,11 @@ def upgrade() -> None:
                 "WHERE status = 'awaiting_approval'"
             ).bindparams(days=settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS)
         )
+    # A reservation left on a run that stopped running can never be used, so drop it.
+    op.execute(
+        "UPDATE agent_runs SET metadata = metadata - 'approval_continuation' "
+        "WHERE status <> 'running' AND metadata ? 'approval_continuation'"
+    )
     op.create_check_constraint(
         "agent_runs_approval_expires_at_check",
         "agent_runs",

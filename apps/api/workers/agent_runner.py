@@ -27,6 +27,7 @@ from core.observability import setup_agent_tracing
 from core.settings import settings
 from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
+from services.agent_runs import reap_abandoned_runs
 from services.agent_runs.domain import RUN_STATUS_CANCELLED, RUN_STATUS_PENDING
 from services.agent_schedules.domain import RUN_STATUS_CLAIMED
 from services.agent_schedules.finalize_schedule_run_execution import (
@@ -69,6 +70,11 @@ async def run_once(
     owner_id = owner_instance_id or _owner_instance_id()
     session_factory = get_maintenance_async_db_session_factory()
 
+    # Reap first in its own transaction, so reconcile never holds run locks while it waits
+    # on schedule locks that finalisation takes in the opposite order.
+    async with session_factory() as db:
+        await reap_abandoned_runs(db)
+        await db.commit()
     async with session_factory() as db:
         reconciled = await reconcile_schedule_run_execution(db)
         if reconciled:

@@ -1,7 +1,6 @@
 // apps/web/src/features/conversations/components/forecast-chart.tsx
 
-import { useId, useMemo, useRef, useState } from "react"
-import { DownloadIcon } from "lucide-react"
+import { useId, useMemo, useRef } from "react"
 import {
   Area,
   AreaChart,
@@ -14,16 +13,16 @@ import {
   YAxis,
 } from "recharts"
 
+import { ChartExportButtons } from "@/components/tool-ui/chart-export-buttons"
 import { formatChartValue } from "@/components/tool-ui/chart-format"
-import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import type {
   ForecastCovariate,
   ForecastToolResult,
 } from "@/features/conversations/native-tools/forecast-tool"
-import { downloadChartPng, downloadChartSvg } from "@/lib/chart-export"
 import { formatCurrency } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useChartExport } from "@/components/tool-ui/use-chart-export"
 
 type ChartRow = {
   period: string
@@ -51,8 +50,11 @@ export function ForecastChart({
 }) {
   const { chart, frequency } = result
   const figureRef = useRef<HTMLElement>(null)
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
+  const { exportChart, exportError, exporting } = useChartExport(figureRef, {
+    caption: null,
+    subtitle: null,
+    title: result.title,
+  })
   const band = useCovariates || !chart.baseline ? chart.forecast : chart.baseline
   const rows = useMemo(() => chartRows(chart.history, chart.periods, band), [band, chart])
   const holidays = useMemo(() => holidaysByPeriod(result), [result])
@@ -60,51 +62,11 @@ export function ForecastChart({
   const formatPeriod = (value: unknown) => periodLabel(value, frequency)
   const formatValue = (value: unknown, compact = true) => valueLabel(value, result.unit, compact)
 
-  const exportChart = (format: "png" | "svg") => {
-    const figure = figureRef.current
-    if (!figure) {
-      return
-    }
-    setExporting(true)
-    setExportError(null)
-    const details = { title: result.title, subtitle: null, caption: null }
-    const exported =
-      format === "png"
-        ? downloadChartPng(figure, details)
-        : Promise.resolve().then(() => {
-            downloadChartSvg(figure, details)
-          })
-    void exported
-      .catch((error: unknown) => {
-        setExportError(error instanceof Error ? error.message : "The chart could not be exported.")
-      })
-      .finally(() => {
-        setExporting(false)
-      })
-  }
-
   return (
     <figure aria-label={`Forecast: ${result.title}`} className="grid min-w-0 gap-2" ref={figureRef}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h4 className="min-w-0 text-sm font-medium">{result.title}</h4>
-        <div className="flex gap-1">
-          {(["png", "svg"] as const).map((format) => (
-            <Button
-              aria-label={`Download ${format.toUpperCase()}`}
-              disabled={exporting}
-              key={format}
-              onClick={() => {
-                exportChart(format)
-              }}
-              size="xs"
-              type="button"
-              variant="outline"
-            >
-              <DownloadIcon data-icon="inline-start" />
-              {format.toUpperCase()}
-            </Button>
-          ))}
-        </div>
+        <ChartExportButtons exporting={exporting} onExport={exportChart} size="xs" />
       </div>
       <div className="min-w-0" data-chart-surface>
         <ComposedChart

@@ -2,7 +2,6 @@
 
 import { useLayoutEffect, useRef, useState } from "react"
 import type { ComponentProps } from "react"
-import { DownloadIcon } from "lucide-react"
 import {
   Area,
   AreaChart,
@@ -22,10 +21,10 @@ import {
   YAxis,
 } from "recharts"
 
+import { ChartExportButtons } from "@/components/tool-ui/chart-export-buttons"
 import { DEFAULT_CHART_COLORS, formatChartValue } from "@/components/tool-ui/chart-format"
 import type { ChartSeries, ChartSpec } from "@/components/tool-ui/chart-types"
-import { Button } from "@/components/ui/button"
-import { downloadChartPng, downloadChartSvg } from "@/lib/chart-export"
+import { useChartExport } from "@/components/tool-ui/use-chart-export"
 
 type XAxisProps = ComponentProps<typeof XAxis>
 type YAxisProps = ComponentProps<typeof YAxis>
@@ -39,8 +38,11 @@ export function DataChart({ spec }: { spec: ChartSpec }) {
   const chartRef = useRef<HTMLElement>(null)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const [plotWidth, setPlotWidth] = useState(0)
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState<string | null>(null)
+  const { exportChart, exportError, exporting } = useChartExport(chartRef, {
+    caption: spec.caption,
+    subtitle: spec.subtitle,
+    title: spec.title,
+  })
 
   useLayoutEffect(() => {
     const surface = surfaceRef.current
@@ -69,49 +71,7 @@ export function DataChart({ spec }: { spec: ChartSpec }) {
             <p className="text-muted-foreground mt-0.5 text-xs">{spec.subtitle}</p>
           ) : null}
         </div>
-        <div className="flex gap-1">
-          {(["png", "svg"] as const).map((format) => (
-            <Button
-              disabled={exporting}
-              key={format}
-              onClick={() => {
-                const chart = chartRef.current
-                if (!chart) {
-                  return
-                }
-                setExporting(true)
-                setExportError(null)
-                const details = {
-                  caption: spec.caption,
-                  subtitle: spec.subtitle,
-                  title: spec.title,
-                }
-                const exported =
-                  format === "png"
-                    ? downloadChartPng(chart, details)
-                    : Promise.resolve().then(() => {
-                        downloadChartSvg(chart, details)
-                      })
-                void exported
-                  .catch((error: unknown) => {
-                    setExportError(
-                      error instanceof Error ? error.message : "The chart could not be exported."
-                    )
-                  })
-                  .finally(() => {
-                    setExporting(false)
-                  })
-              }}
-              aria-label={`Download ${format.toUpperCase()}`}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <DownloadIcon data-icon="inline-start" />
-              {format.toUpperCase()}
-            </Button>
-          ))}
-        </div>
+        <ChartExportButtons exporting={exporting} onExport={exportChart} size="sm" />
       </div>
       <div
         className="bg-card border-border min-w-0 overflow-hidden rounded-lg border p-2"

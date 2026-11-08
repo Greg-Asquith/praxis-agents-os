@@ -321,7 +321,10 @@ def _coded(item: ForecastCovariate, labels: list[str] | None) -> list[float | No
 
 
 def _label(value: float | str) -> str:
-    return value if isinstance(value, str) else format(value, "g")
+    if isinstance(value, str):
+        return value
+    # Keep every digit so long numeric IDs stay distinct.
+    return str(int(value)) if float(value).is_integer() else repr(value)
 
 
 def _forecast_result(

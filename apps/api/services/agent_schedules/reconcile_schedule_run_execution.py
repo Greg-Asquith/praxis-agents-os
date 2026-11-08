@@ -11,7 +11,6 @@ from core.exceptions.general import ConflictError
 from core.settings import settings
 from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
-from services.agent_runs import reap_abandoned_runs
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL as AGENT_RUN_STATUS_AWAITING_APPROVAL,
     TERMINAL_RUN_STATUSES,
@@ -38,8 +37,6 @@ async def reconcile_schedule_run_execution(
 ) -> int:
     """Reconcile stale schedule execution state from generic run state."""
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
-    await reap_abandoned_runs(db, now=now_utc)
-
     # Read candidates without locks; each one is locked schedule then run before it changes.
     result = await db.execute(
         select(AgentScheduleRun)

@@ -27,8 +27,7 @@ def zoom_filter(frames: int, zoom: Sequence[int], punched: Sequence[tuple[int, i
         inside = "+".join(f"between(in\\,{first}\\,{last - 1})" for first, last in punched)
         punch, most = PUNCH_IN_PERCENT / 100, MAX_ZOOM_PERCENT / 100
         factor = f"min({most:g}\\,{factor}*if({inside}\\,{punch:g}\\,1))"
-    # The centred 1/factor of the frame goes to its corners, in sub-pixel steps so a push-in
-    # doesn't judder; that is always inside the frame, so no edge or fill shows.
+    # Sub-pixel corners of the centred 1/factor crop, so a push-in doesn't judder.
     near, far = f"(1-1/{factor})/2", f"(1+1/{factor})/2"
     return (
         f",perspective=x0=W*{near}:y0=H*{near}:x1=W*{far}:y1=H*{near}:"
