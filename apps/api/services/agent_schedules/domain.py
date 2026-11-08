@@ -1,6 +1,6 @@
 # apps/api/services/agent_schedules/domain.py
 
-"""Schedule validation and next-run calculation helpers."""
+"""Schedule validation, next-run calculation, and the schedule run lifecycle."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -21,6 +21,70 @@ _TIMING_FIELDS_BY_TYPE = {
     "interval": frozenset({"interval_minutes"}),
     "once": frozenset({"run_once_at"}),
 }
+
+RUN_STATUS_PENDING = "pending"
+RUN_STATUS_CLAIMED = "claimed"
+RUN_STATUS_RUNNING = "running"
+RUN_STATUS_AWAITING_APPROVAL = "awaiting_approval"
+RUN_STATUS_COMPLETED = "completed"
+RUN_STATUS_RETRYABLE_FAILED = "retryable_failed"
+RUN_STATUS_TERMINAL_FAILED = "terminal_failed"
+RUN_STATUS_CANCELLED = "cancelled"
+
+ALL_SCHEDULE_RUN_STATUSES = frozenset(
+    {
+        RUN_STATUS_PENDING,
+        RUN_STATUS_CLAIMED,
+        RUN_STATUS_RUNNING,
+        RUN_STATUS_AWAITING_APPROVAL,
+        RUN_STATUS_COMPLETED,
+        RUN_STATUS_RETRYABLE_FAILED,
+        RUN_STATUS_TERMINAL_FAILED,
+        RUN_STATUS_CANCELLED,
+    }
+)
+FINAL_SCHEDULE_RUN_STATUSES = frozenset(
+    {RUN_STATUS_COMPLETED, RUN_STATUS_TERMINAL_FAILED, RUN_STATUS_CANCELLED}
+)
+# A run in one of these holds its schedule: the next fire time waits for it to end.
+ACTIVE_SCHEDULE_RUN_STATUSES = frozenset(
+    {RUN_STATUS_CLAIMED, RUN_STATUS_RUNNING, RUN_STATUS_AWAITING_APPROVAL}
+)
+
+# Allowed changes. A claimed run whose claim expired is claimed again in place.
+ALLOWED_SCHEDULE_RUN_TRANSITIONS: dict[str, frozenset[str]] = {
+    RUN_STATUS_PENDING: frozenset({RUN_STATUS_CLAIMED, RUN_STATUS_TERMINAL_FAILED}),
+    RUN_STATUS_RETRYABLE_FAILED: frozenset({RUN_STATUS_CLAIMED, RUN_STATUS_TERMINAL_FAILED}),
+    RUN_STATUS_CLAIMED: frozenset(
+        {
+            RUN_STATUS_CLAIMED,
+            RUN_STATUS_RUNNING,
+            RUN_STATUS_RETRYABLE_FAILED,
+            RUN_STATUS_TERMINAL_FAILED,
+        }
+    ),
+    # Retryable only when the linked agent run is gone; otherwise the agent run decides.
+    RUN_STATUS_RUNNING: frozenset(
+        {
+            RUN_STATUS_AWAITING_APPROVAL,
+            RUN_STATUS_COMPLETED,
+            RUN_STATUS_CANCELLED,
+            RUN_STATUS_RETRYABLE_FAILED,
+            RUN_STATUS_TERMINAL_FAILED,
+        }
+    ),
+    RUN_STATUS_AWAITING_APPROVAL: frozenset(
+        {RUN_STATUS_COMPLETED, RUN_STATUS_CANCELLED, RUN_STATUS_TERMINAL_FAILED}
+    ),
+    RUN_STATUS_COMPLETED: frozenset(),
+    RUN_STATUS_TERMINAL_FAILED: frozenset(),
+    RUN_STATUS_CANCELLED: frozenset(),
+}
+
+
+def can_transition_schedule_run(current: str, target: str) -> bool:
+    """Return whether a schedule run may move from current to target status."""
+    return target in ALLOWED_SCHEDULE_RUN_TRANSITIONS.get(current, frozenset())
 
 
 @dataclass(frozen=True)

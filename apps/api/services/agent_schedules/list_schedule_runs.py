@@ -11,37 +11,13 @@ from sqlalchemy.orm import selectinload
 from core.exceptions.general import AppValidationError
 from models.agent import AgentScheduleRun
 from models.workspace import Workspace
-from services.agent_schedules.runs import (
-    RUN_STATUS_ACCEPTED,
-    RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_CANCELLED,
-    RUN_STATUS_CLAIMED,
-    RUN_STATUS_COMPLETED,
-    RUN_STATUS_PENDING,
-    RUN_STATUS_RETRYABLE_FAILED,
-    RUN_STATUS_RUNNING,
-    RUN_STATUS_TERMINAL_FAILED,
-)
+from services.agent_schedules.domain import ALL_SCHEDULE_RUN_STATUSES
 from services.agent_schedules.schemas import (
     AgentScheduleRunRead,
     AgentScheduleRunsListResponse,
 )
 from services.agent_schedules.utils import get_schedule_for_workspace
 from utils.pagination import paginate
-
-VALID_SCHEDULE_RUN_STATUSES = frozenset(
-    {
-        RUN_STATUS_PENDING,
-        RUN_STATUS_CLAIMED,
-        RUN_STATUS_ACCEPTED,
-        RUN_STATUS_RUNNING,
-        RUN_STATUS_AWAITING_APPROVAL,
-        RUN_STATUS_COMPLETED,
-        RUN_STATUS_RETRYABLE_FAILED,
-        RUN_STATUS_TERMINAL_FAILED,
-        RUN_STATUS_CANCELLED,
-    }
-)
 
 
 async def list_schedule_runs(
@@ -60,11 +36,11 @@ async def list_schedule_runs(
         AgentScheduleRun.deleted == False,  # noqa: E712
     ]
     if status is not None:
-        if status not in VALID_SCHEDULE_RUN_STATUSES:
+        if status not in ALL_SCHEDULE_RUN_STATUSES:
             raise AppValidationError(
                 "Invalid schedule run status",
                 field="status",
-                details={"valid_statuses": sorted(VALID_SCHEDULE_RUN_STATUSES)},
+                details={"valid_statuses": sorted(ALL_SCHEDULE_RUN_STATUSES)},
             )
         filters.append(AgentScheduleRun.status == status)
 

@@ -303,7 +303,7 @@ class AgentScheduleRun(BaseModel):
     __table_args__ = (
         CheckConstraint(
             "status IN ("
-            "'pending', 'claimed', 'accepted', 'running', 'awaiting_approval', "
+            "'pending', 'claimed', 'running', 'awaiting_approval', "
             "'completed', 'retryable_failed', 'terminal_failed', 'cancelled'"
             ")",
             name="agent_schedule_runs_status_check",

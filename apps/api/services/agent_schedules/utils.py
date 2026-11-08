@@ -71,14 +71,16 @@ async def get_schedule_for_workspace(
     *,
     workspace: Workspace,
     schedule_id: UUID,
+    for_update: bool = False,
 ) -> AgentSchedule:
-    schedule = await db.scalar(
-        select(AgentSchedule).where(
-            AgentSchedule.id == schedule_id,
-            AgentSchedule.workspace_id == workspace.id,
-            AgentSchedule.deleted == False,  # noqa: E712
-        )
+    query = select(AgentSchedule).where(
+        AgentSchedule.id == schedule_id,
+        AgentSchedule.workspace_id == workspace.id,
+        AgentSchedule.deleted == False,  # noqa: E712
     )
+    if for_update:
+        query = query.with_for_update()
+    schedule = await db.scalar(query)
     if schedule is None:
         raise NotFoundError(
             "Agent schedule not found",

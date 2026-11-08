@@ -19,13 +19,7 @@ from services.agent_schedules.reconcile_schedule_run_execution import (
     reconcile_schedule_run_execution,
 )
 from services.agent_schedules.run_schedule_now import run_schedule_now
-from services.agent_schedules.runs import (
-    claim_due_schedule_runs,
-    mark_run_completed,
-    mark_run_retryable_failure,
-    mark_run_terminal_failure,
-    mark_run_terminal_failure_and_disable_schedule,
-)
+from services.agent_schedules.runs import claim_due_schedule_runs
 from services.agent_schedules.update_schedule import update_schedule
 
 __all__ = [
@@ -38,10 +32,6 @@ __all__ = [
     "get_schedule",
     "list_schedule_runs",
     "list_schedules",
-    "mark_run_completed",
-    "mark_run_retryable_failure",
-    "mark_run_terminal_failure",
-    "mark_run_terminal_failure_and_disable_schedule",
     "pause_schedule",
     "prepare_schedule_run_execution",
     "preview_schedule",

@@ -21,13 +21,14 @@ from core.database import (
     get_maintenance_async_db_session_factory,
     set_session_tenant_context,
 )
-from core.exceptions.general import ConflictError
+from core.exceptions.general import ConflictError, NotFoundError
 from core.logging import setup_logging
 from core.observability import setup_agent_tracing
 from core.settings import settings
-from models.agent import AgentSchedule, AgentScheduleRun
+from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
 from services.agent_runs.domain import RUN_STATUS_CANCELLED, RUN_STATUS_PENDING
+from services.agent_schedules.domain import RUN_STATUS_CLAIMED
 from services.agent_schedules.finalize_schedule_run_execution import (
     finalize_schedule_run_execution,
 )
@@ -40,8 +41,8 @@ from services.agent_schedules.reconcile_schedule_run_execution import (
 )
 from services.agent_schedules.runs import (
     claim_due_schedule_runs,
-    mark_run_retryable_failure,
-    mark_run_terminal_failure_and_disable_schedule,
+    lock_schedule_and_run,
+    record_retryable_failure,
 )
 from services.agents.models import close_vertex_clients
 from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
@@ -452,48 +453,27 @@ async def _record_claim_setup_failure(schedule_run_id: UUID, exc: Exception) -> 
     async with session_factory() as db:
         await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
         try:
-            schedule_run = await db.scalar(
-                select(AgentScheduleRun)
-                .where(
-                    AgentScheduleRun.id == schedule_run_id,
-                    AgentScheduleRun.deleted == False,  # noqa: E712
-                )
-                .with_for_update()
-            )
-            if schedule_run is None:
+            try:
+                schedule, schedule_run = await lock_schedule_and_run(db, schedule_run_id)
+            except NotFoundError:
                 await db.rollback()
                 return
-            schedule = await db.scalar(
-                select(AgentSchedule)
-                .where(
-                    AgentSchedule.id == schedule_run.schedule_id,
-                    AgentSchedule.deleted == False,  # noqa: E712
-                )
-                .with_for_update()
-            )
-            if schedule is None:
+            # Only this worker's claim failed; a run that moved on belongs to someone else.
+            if schedule_run.status != RUN_STATUS_CLAIMED:
                 await db.rollback()
                 return
 
             code = exc.__class__.__name__
             message = str(exc) or code
-            now = datetime.now(UTC)
-            exhausted = mark_run_retryable_failure(
+            await record_retryable_failure(
+                db,
+                schedule,
                 schedule_run,
-                now=now,
+                now=datetime.now(UTC),
                 code=code,
                 message=message,
                 max_attempts=settings.AGENT_SCHEDULE_RUN_MAX_ATTEMPTS,
             )
-            if exhausted:
-                await mark_run_terminal_failure_and_disable_schedule(
-                    db,
-                    schedule,
-                    schedule_run,
-                    now=now,
-                    code=code,
-                    message=message,
-                )
             await db.commit()
             logger.warning(
                 "Scheduled agent run setup failed",

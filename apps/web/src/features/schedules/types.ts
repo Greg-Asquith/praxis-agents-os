@@ -26,7 +26,6 @@ export type ScheduleExecutionParams = Record<string, unknown> & {
 export type ScheduleRunStatus =
   | "pending"
   | "claimed"
-  | "accepted"
   | "running"
   | "awaiting_approval"
   | "completed"

@@ -18,7 +18,7 @@ from models.session import Session
 from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_schedules import prepare_schedule_run_execution
-from services.agent_schedules.runs import RUN_STATUS_CLAIMED, RUN_STATUS_TERMINAL_FAILED
+from services.agent_schedules.domain import RUN_STATUS_CLAIMED, RUN_STATUS_TERMINAL_FAILED
 from services.audit_events import AuditAction, AuditResourceType
 from services.users import create_user, delete_user, update_user
 from services.users.schemas import UserCreateRequest, UserUpdateRequest

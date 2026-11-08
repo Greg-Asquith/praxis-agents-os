@@ -37,6 +37,31 @@ Nothing calls an executor over HTTP. (`claim_due_schedule_runs` in
 `services/agent_schedules/runs.py` implements the claim half with
 `FOR UPDATE SKIP LOCKED`.)
 
+A schedule run moves through the states in
+`services/agent_schedules/domain.py` (`ALLOWED_SCHEDULE_RUN_TRANSITIONS`):
+
+| From | To |
+| --- | --- |
+| `pending`, `retryable_failed` | `claimed`, `terminal_failed` |
+| `claimed` | `claimed` (claim expired), `running`, `retryable_failed`, `terminal_failed` |
+| `running` | `awaiting_approval`, `completed`, `cancelled`, `terminal_failed`, `retryable_failed` (agent run gone) |
+| `awaiting_approval` | `completed`, `cancelled`, `terminal_failed` |
+
+`completed`, `terminal_failed` and `cancelled` are final. Every status change
+goes through `transition_schedule_run`, which refreshes the row under its lock
+and raises `ConflictError` for any other change. Writers lock the schedule
+first, then the run (`lock_schedule_and_run`), the same order the claim uses,
+so two writers can't deadlock.
+
+The schedule run mirrors its agent run. A failed agent run ends the schedule
+run as `terminal_failed` and pauses the schedule. A cancelled agent run (the
+person pressed Stop) ends it as `cancelled` and the schedule keeps its next
+fire time, because stopping one run isn't pausing the schedule. Completion
+and cancellation only set `next_run_at` while the schedule is active, so a
+schedule paused mid-run stays paused. Pause, enable and run-now lock the
+schedule row, and run-now refuses with a conflict while a run is `claimed`,
+`running` or `awaiting_approval`, so one schedule never has two runs at once.
+
 The worker process is wired into local Compose and `make dev` through
 `workers.main`, which supervises the scheduled-agent runner and the generic
 jobs runner. It shares the API image, database, provider settings, and storage

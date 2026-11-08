@@ -19,7 +19,7 @@ from models.conversation import Conversation
 from models.workspace import WorkspaceMembership
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import prepare_schedule_run_execution
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
     RUN_STATUS_CLAIMED,
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,

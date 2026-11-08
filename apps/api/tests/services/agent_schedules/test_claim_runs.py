@@ -9,11 +9,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
-from services.agent_schedules.runs import (
-    RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_CLAIMED,
-    claim_due_schedule_runs,
-)
+from services.agent_schedules.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_CLAIMED
+from services.agent_schedules.runs import claim_due_schedule_runs
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio

@@ -9,7 +9,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError, NotFoundError
-from models.agent import AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL as AGENT_RUN_STATUS_AWAITING_APPROVAL,
@@ -19,22 +18,19 @@ from services.agent_runs.domain import (
     RUN_STATUS_PENDING as AGENT_RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING as AGENT_RUN_STATUS_RUNNING,
 )
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
+    FINAL_SCHEDULE_RUN_STATUSES,
     RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_CANCELLED,
-    RUN_STATUS_COMPLETED,
-    RUN_STATUS_TERMINAL_FAILED,
+)
+from services.agent_schedules.runs import (
+    lock_schedule_and_run,
+    mark_run_cancelled,
     mark_run_completed,
     mark_run_terminal_failure_and_disable_schedule,
+    transition_schedule_run,
 )
 from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
 from utils.dates import normalize_utc_datetime
-
-_TERMINAL_SCHEDULE_RUN_STATUSES = {
-    RUN_STATUS_CANCELLED,
-    RUN_STATUS_COMPLETED,
-    RUN_STATUS_TERMINAL_FAILED,
-}
 
 
 async def finalize_schedule_run_execution(
@@ -46,8 +42,7 @@ async def finalize_schedule_run_execution(
 ) -> None:
     """Mirror a generic agent run terminal/suspended state onto its schedule run."""
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
-    schedule_run = await _load_schedule_run_for_update(db, schedule_run_id)
-    schedule = await _load_schedule_for_update(db, schedule_run.schedule_id)
+    schedule, schedule_run = await lock_schedule_and_run(db, schedule_run_id)
     agent_run = await _load_agent_run_for_update(db, agent_run_id)
 
     if schedule_run.agent_run_id != agent_run.id:
@@ -61,28 +56,35 @@ async def finalize_schedule_run_execution(
             },
         )
 
-    if schedule_run.status in _TERMINAL_SCHEDULE_RUN_STATUSES:
+    if schedule_run.status in FINAL_SCHEDULE_RUN_STATUSES:
         return
 
     if agent_run.status == AGENT_RUN_STATUS_COMPLETED:
-        mark_run_completed(schedule, schedule_run, now=now_utc)
+        await mark_run_completed(db, schedule, schedule_run, now=now_utc)
+        await db.flush()
+        return
+
+    if agent_run.status == AGENT_RUN_STATUS_CANCELLED:
+        await mark_run_cancelled(db, schedule, schedule_run, now=now_utc)
         await db.flush()
         return
 
     if agent_run.status == AGENT_RUN_STATUS_AWAITING_APPROVAL:
-        schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
-        schedule_run.claim_expires_at = None
-        await db.flush()
+        # A resumed run that asks again is already waiting.
+        if schedule_run.status != RUN_STATUS_AWAITING_APPROVAL:
+            await transition_schedule_run(db, schedule_run, RUN_STATUS_AWAITING_APPROVAL)
+            schedule_run.claim_expires_at = None
+            await db.flush()
         return
 
-    if agent_run.status in {AGENT_RUN_STATUS_FAILED, AGENT_RUN_STATUS_CANCELLED}:
+    if agent_run.status == AGENT_RUN_STATUS_FAILED:
         await mark_run_terminal_failure_and_disable_schedule(
             db,
             schedule,
             schedule_run,
             now=now_utc,
-            code=agent_run.error_code or _terminal_error_code(agent_run.status),
-            message=agent_run.error_message or _terminal_error_message(agent_run.status),
+            code=agent_run.error_code or "agent_run_failed",
+            message=agent_run.error_message or "Scheduled agent run failed.",
         )
         if schedule_run.conversation_id is not None:
             await prune_failed_empty_conversation_for_run(
@@ -112,45 +114,6 @@ async def finalize_schedule_run_execution(
     )
 
 
-async def _load_schedule_run_for_update(
-    db: AsyncSession,
-    schedule_run_id: UUID,
-) -> AgentScheduleRun:
-    schedule_run = await db.scalar(
-        select(AgentScheduleRun)
-        .where(
-            AgentScheduleRun.id == schedule_run_id,
-            AgentScheduleRun.deleted == False,  # noqa: E712
-        )
-        .with_for_update()
-    )
-    if schedule_run is None:
-        raise NotFoundError(
-            "Schedule run not found",
-            resource_type="agent_schedule_run",
-            resource_id=str(schedule_run_id),
-        )
-    return schedule_run
-
-
-async def _load_schedule_for_update(db: AsyncSession, schedule_id: UUID) -> AgentSchedule:
-    schedule = await db.scalar(
-        select(AgentSchedule)
-        .where(
-            AgentSchedule.id == schedule_id,
-            AgentSchedule.deleted == False,  # noqa: E712
-        )
-        .with_for_update()
-    )
-    if schedule is None:
-        raise NotFoundError(
-            "Schedule not found",
-            resource_type="agent_schedule",
-            resource_id=str(schedule_id),
-        )
-    return schedule
-
-
 async def _load_agent_run_for_update(db: AsyncSession, agent_run_id: UUID) -> AgentRun:
     agent_run = await db.scalar(
         select(AgentRun)
@@ -167,15 +130,3 @@ async def _load_agent_run_for_update(db: AsyncSession, agent_run_id: UUID) -> Ag
             resource_id=str(agent_run_id),
         )
     return agent_run
-
-
-def _terminal_error_code(status: str) -> str:
-    if status == AGENT_RUN_STATUS_CANCELLED:
-        return "agent_run_cancelled"
-    return "agent_run_failed"
-
-
-def _terminal_error_message(status: str) -> str:
-    if status == AGENT_RUN_STATUS_CANCELLED:
-        return "Scheduled agent run was cancelled."
-    return "Scheduled agent run failed."

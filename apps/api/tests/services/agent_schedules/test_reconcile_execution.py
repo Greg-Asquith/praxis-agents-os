@@ -20,8 +20,7 @@ from services.agent_runs import (
 )
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import reconcile_schedule_run_execution
-from services.agent_schedules.runs import (
-    RUN_STATUS_ACCEPTED,
+from services.agent_schedules.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RUNNING,
@@ -146,7 +145,7 @@ async def test_reconcile_excludes_still_paused_awaiting_schedule_run(
     assert schedule.is_active is True
 
 
-async def _expired_accepted_run_without_generic_run(
+async def _stale_running_run_without_generic_run(
     db: AsyncSession,
     *,
     now: datetime,
@@ -181,7 +180,7 @@ async def _expired_accepted_run_without_generic_run(
         user_id=user.id,
         agent_id=agent.id,
         scheduled_for=schedule.next_run_at,
-        status=RUN_STATUS_ACCEPTED,
+        status=RUN_STATUS_RUNNING,
         accepted_at=now - timedelta(minutes=10),
         attempt_count=1,
     )
@@ -196,7 +195,7 @@ async def test_reconcile_exhausted_run_without_generic_run_reports_blocked(
 ) -> None:
     now = datetime.now(UTC)
     monkeypatch.setattr(settings, "AGENT_SCHEDULE_RUN_MAX_ATTEMPTS", 1)
-    schedule_run = await _expired_accepted_run_without_generic_run(db_session, now=now)
+    schedule_run = await _stale_running_run_without_generic_run(db_session, now=now)
 
     assert await reconcile_schedule_run_execution(db_session, now=now) == 1
 

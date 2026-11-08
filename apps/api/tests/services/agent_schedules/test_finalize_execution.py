@@ -8,9 +8,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.general import ConflictError
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.conversation import Conversation
 from services.agent_runs import (
+    cancel_agent_run,
     complete_agent_run,
     create_agent_run,
     fail_agent_run,
@@ -19,12 +21,14 @@ from services.agent_runs import (
 )
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import finalize_schedule_run_execution
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
+from services.agent_schedules.runs import transition_schedule_run
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -121,6 +125,70 @@ async def test_completed_generic_run_retires_once_schedule(db_session: AsyncSess
     assert schedule.is_active is False
     assert schedule.next_run_at is None
     assert schedule.last_run_at is not None
+
+
+async def test_completion_after_pause_leaves_schedule_dormant(db_session: AsyncSession) -> None:
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session, schedule_type="interval")
+    await start_agent_run(db_session, run)
+    schedule.is_active = False
+    schedule.next_run_at = None
+    await complete_agent_run(db_session, run)
+
+    await finalize_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+        agent_run_id=run.id,
+    )
+
+    assert schedule_run.status == RUN_STATUS_COMPLETED
+    assert schedule.is_active is False
+    assert schedule.next_run_at is None
+
+
+async def test_stopped_run_is_cancelled_and_schedule_keeps_running(
+    db_session: AsyncSession,
+) -> None:
+    (
+        _user,
+        _workspace,
+        _agent,
+        schedule,
+        _conversation,
+        schedule_run,
+        run,
+    ) = await _prepared_schedule_context(db_session, schedule_type="interval")
+    original_next_run_at = schedule.next_run_at
+    await start_agent_run(db_session, run)
+    await cancel_agent_run(db_session, run)
+
+    await finalize_schedule_run_execution(
+        db_session,
+        schedule_run_id=schedule_run.id,
+        agent_run_id=run.id,
+    )
+
+    assert schedule_run.status == RUN_STATUS_CANCELLED
+    assert schedule.is_active is True
+    assert schedule.next_run_at > original_next_run_at
+
+
+async def test_finished_schedule_run_cannot_move_back(db_session: AsyncSession) -> None:
+    *_rest, schedule_run, _run = await _prepared_schedule_context(db_session)
+    schedule_run.status = RUN_STATUS_COMPLETED
+    await db_session.flush()
+
+    with pytest.raises(ConflictError):
+        await transition_schedule_run(db_session, schedule_run, RUN_STATUS_RUNNING)
+
+    assert schedule_run.status == RUN_STATUS_COMPLETED
 
 
 async def test_awaiting_approval_does_not_advance_schedule(db_session: AsyncSession) -> None:

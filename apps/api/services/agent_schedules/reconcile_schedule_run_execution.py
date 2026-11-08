@@ -7,25 +7,24 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.general import ConflictError
 from core.settings import settings
-from models.agent import AgentSchedule, AgentScheduleRun
+from models.agent import AgentScheduleRun
 from models.agent_run import AgentRun
 from services.agent_runs import reap_abandoned_runs
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL as AGENT_RUN_STATUS_AWAITING_APPROVAL,
     TERMINAL_RUN_STATUSES,
 )
-from services.agent_schedules.domain import SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE
+from services.agent_schedules.domain import (
+    RUN_STATUS_AWAITING_APPROVAL,
+    RUN_STATUS_RUNNING,
+    SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE,
+)
 from services.agent_schedules.finalize_schedule_run_execution import (
     finalize_schedule_run_execution,
 )
-from services.agent_schedules.runs import (
-    RUN_STATUS_ACCEPTED,
-    RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_RUNNING,
-    mark_run_retryable_failure,
-    mark_run_terminal_failure_and_disable_schedule,
-)
+from services.agent_schedules.runs import lock_schedule_and_run, record_retryable_failure
 from utils.dates import normalize_utc_datetime
 
 DEFAULT_RECONCILE_BATCH_SIZE = 100
@@ -41,13 +40,14 @@ async def reconcile_schedule_run_execution(
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
     await reap_abandoned_runs(db, now=now_utc)
 
+    # Read candidates without locks; each one is locked schedule then run before it changes.
     result = await db.execute(
         select(AgentScheduleRun)
         .outerjoin(AgentRun, AgentScheduleRun.agent_run_id == AgentRun.id)
         .where(
             AgentScheduleRun.deleted == False,  # noqa: E712
             or_(
-                AgentScheduleRun.status.in_({RUN_STATUS_ACCEPTED, RUN_STATUS_RUNNING}),
+                AgentScheduleRun.status == RUN_STATUS_RUNNING,
                 and_(
                     AgentScheduleRun.status == RUN_STATUS_AWAITING_APPROVAL,
                     AgentRun.status.in_(TERMINAL_RUN_STATUSES),
@@ -56,7 +56,6 @@ async def reconcile_schedule_run_execution(
         )
         .order_by(AgentScheduleRun.created_at)
         .limit(batch_size or DEFAULT_RECONCILE_BATCH_SIZE)
-        .with_for_update(skip_locked=True, of=AgentScheduleRun)
     )
     schedule_runs = list(result.scalars())
 
@@ -67,11 +66,8 @@ async def reconcile_schedule_run_execution(
                 reconciled += 1
             continue
 
-        if not _schedule_run_without_agent_run_is_stale(schedule_run, now=now_utc):
-            continue
-
-        await _mark_stale_pre_execution_failure(db, schedule_run=schedule_run, now=now_utc)
-        reconciled += 1
+        if await _mark_stale_pre_execution_failure(db, schedule_run=schedule_run, now=now_utc):
+            reconciled += 1
 
     await db.flush()
     return reconciled
@@ -94,12 +90,16 @@ async def _finalize_if_agent_run_ready(
     if agent_run.status not in TERMINAL_RUN_STATUSES | {AGENT_RUN_STATUS_AWAITING_APPROVAL}:
         return False
 
-    await finalize_schedule_run_execution(
-        db,
-        schedule_run_id=schedule_run.id,
-        agent_run_id=agent_run.id,
-        now=now,
-    )
+    try:
+        await finalize_schedule_run_execution(
+            db,
+            schedule_run_id=schedule_run.id,
+            agent_run_id=agent_run.id,
+            now=now,
+        )
+    except ConflictError:
+        # The agent run resumed after the scan; finalize refused before writing anything.
+        return False
     return True
 
 
@@ -121,31 +121,20 @@ async def _mark_stale_pre_execution_failure(
     *,
     schedule_run: AgentScheduleRun,
     now: datetime,
-) -> None:
-    schedule = await db.scalar(
-        select(AgentSchedule)
-        .where(
-            AgentSchedule.id == schedule_run.schedule_id,
-            AgentSchedule.deleted == False,  # noqa: E712
-        )
-        .with_for_update()
-    )
-    if schedule is None:
-        return
+) -> bool:
+    schedule, schedule_run = await lock_schedule_and_run(db, schedule_run.id)
+    if schedule_run.status != RUN_STATUS_RUNNING or schedule_run.agent_run_id is not None:
+        return False
+    if not _schedule_run_without_agent_run_is_stale(schedule_run, now=now):
+        return False
 
-    exhausted = mark_run_retryable_failure(
+    await record_retryable_failure(
+        db,
+        schedule,
         schedule_run,
         now=now,
         code=SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE,
         message="Schedule run was abandoned before an agent run was linked.",
         max_attempts=settings.AGENT_SCHEDULE_RUN_MAX_ATTEMPTS,
     )
-    if exhausted:
-        await mark_run_terminal_failure_and_disable_schedule(
-            db,
-            schedule,
-            schedule_run,
-            now=now,
-            code=SCHEDULE_EXECUTION_ABANDONED_ERROR_CODE,
-            message="Schedule run exceeded setup retry attempts before execution.",
-        )
+    return True

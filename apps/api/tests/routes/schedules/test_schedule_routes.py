@@ -18,7 +18,7 @@ from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RETRYABLE_FAILED,
@@ -611,7 +611,7 @@ async def test_pause_enable_and_expired_once_enable(
     assert {AuditAction.DISABLE.value, AuditAction.ENABLE.value} <= audit_actions
 
 
-async def test_run_now_requires_active_schedule_and_audits_execute(
+async def test_run_now_requires_idle_active_schedule_and_audits_execute(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
 ) -> None:
@@ -624,6 +624,19 @@ async def test_run_now_requires_active_schedule_and_audits_execute(
         user=user,
         agent=agent,
         is_active=False,
+    )
+    waiting = await _create_schedule(db_session, workspace=workspace, user=user, agent=agent)
+    waiting_next_run_at = waiting.next_run_at
+    db_session.add(
+        AgentScheduleRun(
+            schedule_id=waiting.id,
+            workspace_id=workspace.id,
+            user_id=user.id,
+            agent_id=agent.id,
+            scheduled_for=datetime.now(UTC) - timedelta(minutes=15),
+            status=RUN_STATUS_AWAITING_APPROVAL,
+            attempt_count=1,
+        )
     )
     await db_session.commit()
 
@@ -641,6 +654,15 @@ async def test_run_now_requires_active_schedule_and_audits_execute(
         headers=headers,
     )
     assert paused_response.status_code == 409
+
+    # A second run beside one waiting for approval would overlap it.
+    waiting_response = await db_async_client.post(
+        f"/api/v1/schedules/{waiting.id}/run-now",
+        headers=headers,
+    )
+    assert waiting_response.status_code == 409
+    await db_session.refresh(waiting)
+    assert waiting.next_run_at == waiting_next_run_at
 
     audit_event = await db_session.scalar(
         select(AuditEvent).where(

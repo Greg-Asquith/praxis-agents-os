@@ -20,7 +20,7 @@ from core.database import get_maintenance_async_db_session_factory
 from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.jobs import Job
-from services.agent_schedules.runs import RUN_STATUS_COMPLETED
+from services.agent_schedules.domain import RUN_STATUS_COMPLETED
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_SUCCEEDED
 from services.jobs.enqueue_job import enqueue_job
 from services.jobs.registry import JOB_HANDLERS, job_handler

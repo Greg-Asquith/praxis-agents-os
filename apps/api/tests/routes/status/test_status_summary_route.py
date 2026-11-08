@@ -176,7 +176,6 @@ async def test_status_summary_counts_all_rows_and_latest_schedule_health(
     boundary_statuses = [
         "pending",
         "claimed",
-        "accepted",
         "running",
         "awaiting_approval",
         "completed",

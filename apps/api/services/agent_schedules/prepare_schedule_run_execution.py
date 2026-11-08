@@ -18,10 +18,11 @@ from models.integration_context import ActiveContextSelection
 from services.agent_runs import create_agent_run, link_schedule_run
 from services.agent_runs.claim_execution import claim_agent_run_execution
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
+from services.agent_schedules.domain import RUN_STATUS_CLAIMED, RUN_STATUS_RUNNING
 from services.agent_schedules.runs import (
-    RUN_STATUS_CLAIMED,
-    RUN_STATUS_RUNNING,
+    lock_schedule_and_run,
     mark_run_terminal_failure_and_disable_schedule,
+    transition_schedule_run,
 )
 from services.agent_schedules.schemas import schedule_side_effect_policy
 from services.agents.runtime.completion_contract import (
@@ -68,8 +69,7 @@ async def prepare_schedule_run_execution(
 ) -> PreparedScheduleRunExecution:
     """Create the conversation/run handoff for one claimed schedule run."""
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
-    schedule_run = await _load_schedule_run_for_update(db, schedule_run_id)
-    schedule = await _load_schedule_for_update(db, schedule_run.schedule_id)
+    schedule, schedule_run = await lock_schedule_and_run(db, schedule_run_id)
     agent = await _load_agent(db, schedule.agent_id)
 
     if schedule_run.status != RUN_STATUS_CLAIMED:
@@ -143,7 +143,7 @@ async def prepare_schedule_run_execution(
     )
     owner_instance_id = str(uuid4())
     await claim_agent_run_execution(db, run, owner_instance_id=owner_instance_id, now=now_utc)
-    schedule_run.status = RUN_STATUS_RUNNING
+    await transition_schedule_run(db, schedule_run, RUN_STATUS_RUNNING)
     schedule_run.accepted_at = now_utc
     schedule_run.claim_expires_at = None
     schedule_run.last_error_code = None
@@ -160,45 +160,6 @@ async def prepare_schedule_run_execution(
         owner_instance_id=owner_instance_id,
         execution_control=execution_control_for_run(run),
     )
-
-
-async def _load_schedule_run_for_update(
-    db: AsyncSession,
-    schedule_run_id: UUID,
-) -> AgentScheduleRun:
-    schedule_run = await db.scalar(
-        select(AgentScheduleRun)
-        .where(
-            AgentScheduleRun.id == schedule_run_id,
-            AgentScheduleRun.deleted == False,  # noqa: E712
-        )
-        .with_for_update()
-    )
-    if schedule_run is None:
-        raise NotFoundError(
-            "Schedule run not found",
-            resource_type="agent_schedule_run",
-            resource_id=str(schedule_run_id),
-        )
-    return schedule_run
-
-
-async def _load_schedule_for_update(db: AsyncSession, schedule_id: UUID) -> AgentSchedule:
-    schedule = await db.scalar(
-        select(AgentSchedule)
-        .where(
-            AgentSchedule.id == schedule_id,
-            AgentSchedule.deleted == False,  # noqa: E712
-        )
-        .with_for_update()
-    )
-    if schedule is None:
-        raise NotFoundError(
-            "Schedule not found",
-            resource_type="agent_schedule",
-            resource_id=str(schedule_id),
-        )
-    return schedule
 
 
 async def _load_agent(db: AsyncSession, agent_id: UUID) -> Agent:

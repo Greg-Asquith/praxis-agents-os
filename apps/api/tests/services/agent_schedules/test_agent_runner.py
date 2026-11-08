@@ -24,13 +24,13 @@ from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
-    claim_due_schedule_runs,
 )
+from services.agent_schedules.runs import claim_due_schedule_runs
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.sinks import NullSink

@@ -26,7 +26,9 @@ async def pause_schedule(
     membership: WorkspaceMembership,
     schedule_id: UUID,
 ) -> AgentScheduleRead:
-    schedule = await get_schedule_for_workspace(db, workspace=workspace, schedule_id=schedule_id)
+    schedule = await get_schedule_for_workspace(
+        db, workspace=workspace, schedule_id=schedule_id, for_update=True
+    )
     assert_can_mutate_schedule(schedule=schedule, current_user=actor, membership=membership)
 
     if schedule.is_active:

@@ -15,7 +15,7 @@ from services.agent_runs.domain import (
     RUN_OUTCOME_GATE_FAILED,
     RUN_STATUS_AWAITING_APPROVAL,
 )
-from services.agent_schedules.runs import (
+from services.agent_schedules.domain import (
     RUN_STATUS_RETRYABLE_FAILED,
     RUN_STATUS_TERMINAL_FAILED,
 )
