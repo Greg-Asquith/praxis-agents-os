@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/ad-set-targeting.tsx
 
 import { Chip, ChoiceCards, SelectField, SwitchField } from "@/integrations/ads/components/controls"
-import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import type { CreateAdSetArgs } from "@/integrations/meta_ads/lib/create-ad-set"
 import {
   addAudience,

@@ -7,7 +7,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DeliveryNote } from "@/integrations/meta_ads/components/create-ads"
-import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { MediaFrame } from "@/integrations/meta_ads/components/media-frame"
 import {
   AdOutcomeLinks,

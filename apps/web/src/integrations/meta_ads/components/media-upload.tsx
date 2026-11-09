@@ -6,7 +6,7 @@ import { useState } from "react"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { WorkspaceFileThumbnail } from "@/components/tool-ui/workspace-file-thumbnail"
 import { Button } from "@/components/ui/button"
-import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { MetaAdsOutcomeTable } from "@/integrations/meta_ads/components/outcome-table"
 import {
   uploadCountLine,

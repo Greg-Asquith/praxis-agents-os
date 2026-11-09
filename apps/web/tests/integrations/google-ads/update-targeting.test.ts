@@ -1,0 +1,441 @@
+// apps/web/tests/integrations/google-ads/update-targeting.test.ts
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { createElement, type ReactNode } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { describe, expect, it, vi } from "vitest"
+
+import type { ToolActivity } from "@/integrations/contract"
+import {
+  addTarget,
+  acceptsLanguageAdds,
+  campaignRows,
+  campaignsByDifference,
+  clearedChange,
+  needsCheck,
+  parseBidAdjustment,
+  parseUpdateTargetingArgs,
+  pasteBatches,
+  removeTarget,
+  serializeChanges,
+  targetingApproveLabel,
+  targetingBlock,
+  targetingPrompt,
+  unchangedPlaces,
+  type Target,
+  type UpdateTargetingArgs,
+} from "@/integrations/google_ads/lib/update-targeting"
+import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/presenters/search-targeting"
+import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
+
+const CUSTOMER = "1234567890"
+const key = (id: string) => `customers/${CUSTOMER}/campaigns/${id}`
+
+function campaign(id: string) {
+  return { customer_id: CUSTOMER, campaign_id: id, label: `Campaign ${id}` }
+}
+
+function check(over: Record<string, unknown> = {}) {
+  return {
+    unavailable: false,
+    name: "Trail",
+    channel: "DISPLAY",
+    problem: null,
+    location_setting: "PRESENCE_OR_INTEREST",
+    locations: [{ key: "2826", name: "United Kingdom", excluded: false, bid_adjustment: 0 }],
+    location_total: 1,
+    radius: [],
+    languages: [{ key: "1000", name: "English" }],
+    item_problems: [],
+    already_set: [],
+    ...over,
+  }
+}
+
+function raw(over: Record<string, unknown> = {}) {
+  return {
+    changes: [
+      {
+        campaign: campaign("10"),
+        add_locations: [{ key: "1006", name: "Manchester", bid_adjustment: 15 }],
+        exclude_locations: [],
+        remove_locations: [],
+        add_languages: [],
+        remove_languages: [],
+      },
+    ],
+    _accounts: [
+      { customer_id: CUSTOMER, name: "Northwind", currency: "GBP", time_zone: "Europe/London" },
+    ],
+    _checks: {
+      campaigns: { [key("10")]: check() },
+      names: { locations: { "1006": "Manchester" }, languages: {} },
+    },
+    ...over,
+  }
+}
+
+function parsed(value: unknown = raw()): UpdateTargetingArgs {
+  const args = parseUpdateTargetingArgs(value)
+  if (args === null) throw new Error("Expected valid args")
+  return args
+}
+
+const LEEDS: Target = { bidAdjustment: null, key: "1007", name: "Leeds", targetType: "City" }
+
+describe("targeting edits", () => {
+  it("moves a location between lists instead of listing it twice", () => {
+    const value = raw()
+    const args = parsed(value)
+    const excluded = addTarget(args.changes, "exclude_locations", {
+      ...LEEDS,
+      key: "1006",
+      name: "Manchester",
+    })
+
+    expect(excluded[0]?.targets.add_locations).toEqual([])
+    expect(excluded[0]?.targets.exclude_locations.map((item) => item.key)).toEqual(["1006"])
+    // An excluded location can't carry a bid, and the server's model forbids the field.
+    expect(serializeChanges(excluded)[0]?.["exclude_locations"]).toEqual([
+      { key: "1006", name: "Manchester", target_type: "City" },
+    ])
+  })
+
+  it("adds a language only to campaigns that can take one", () => {
+    const value = raw({
+      changes: [
+        { campaign: campaign("10"), add_locations: [{ key: "1006" }] },
+        { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
+      ],
+      _checks: {
+        campaigns: { [key("10")]: check({ channel: "SEARCH" }), [key("11")]: check() },
+        names: {},
+      },
+    })
+    const args = parsed(value)
+
+    const next = addTarget(args.changes, "add_languages", { ...LEEDS, key: "1000" }, (change) =>
+      acceptsLanguageAdds(args, change)
+    )
+
+    expect(next.map((change) => change.targets.add_languages.length)).toEqual([0, 1])
+  })
+
+  it("takes a campaign out of the request when its last change is cancelled", () => {
+    const args = parsed()
+
+    expect(removeTarget(args.changes, "add_locations", "1006")).toEqual([])
+  })
+})
+
+describe("approval", () => {
+  it("blocks on a problem until the campaign is edited, then waits for a new check", () => {
+    const value = raw({
+      _checks: {
+        campaigns: { [key("10")]: check({ problem: "This would leave no location." }) },
+        names: {},
+      },
+    })
+    const checked = parsed(value)
+
+    expect(campaignRows(checked, checked)[0]?.problems).toEqual(["This would leave no location."])
+    expect(targetingBlock(checked, checked)).toContain("Fix or cancel")
+
+    const edited = parsed({
+      ...value,
+      changes: serializeChanges(addTarget(checked.changes, "add_locations", LEEDS)),
+    })
+
+    expect(campaignRows(edited, checked)[0]?.problems).toEqual([])
+    expect(needsCheck(edited, checked)).toBe(true)
+    expect(targetingBlock(edited, checked)).toBe("Check the changes before approving.")
+  })
+
+  it("blocks and asks for a new check when Google couldn't be reached", () => {
+    const args = parsed(raw({ _checks: { campaigns: { [key("10")]: { unavailable: true } } } }))
+
+    expect(needsCheck(args, args)).toBe(true)
+    expect(targetingBlock(args, args)).not.toBeNull()
+  })
+
+  it("doesn't count a campaign already at every setting", () => {
+    const args = parsed(
+      raw({
+        _checks: {
+          campaigns: {
+            [key("10")]: check({ already_set: [{ field: "add_locations", key: "1006" }] }),
+          },
+          names: {},
+        },
+      })
+    )
+
+    expect(targetingApproveLabel(args)).toBe("Apply Changes")
+    expect(targetingBlock(args, args)).toBe("These campaigns already have these settings.")
+  })
+
+  it("names the rejected item, and an edited draft with nothing changed needs no check", () => {
+    const args = parsed(
+      raw({
+        _checks: {
+          campaigns: {
+            [key("10")]: check({
+              item_problems: [
+                { field: "add_locations", key: "1006", message: "Google says: Not allowed." },
+              ],
+            }),
+          },
+          names: {},
+        },
+      })
+    )
+
+    expect(campaignRows(args, args)[0]?.problems).toEqual(["Manchester: Google says: Not allowed."])
+    expect(needsCheck(args, args)).toBe(false)
+  })
+})
+
+describe("wording", () => {
+  it("names one location on the button, and counts otherwise", () => {
+    expect(targetingApproveLabel(parsed())).toBe("Add Manchester")
+    expect(targetingPrompt(parsed())).toBe("Add Manchester to Trail in Northwind.")
+
+    const two = parsed(
+      raw({
+        changes: [
+          {
+            campaign: campaign("10"),
+            add_locations: [{ key: "1006" }, { key: "1007", name: "Leeds" }],
+          },
+        ],
+      })
+    )
+    expect(targetingApproveLabel(two)).toBe("Add 2 Locations")
+
+    const campaigns = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), add_locations: [{ key: "1006" }] },
+          { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
+        ],
+        _checks: {
+          campaigns: {
+            [key("10")]: check(),
+            // A blocked campaign doesn't count towards what applies.
+            [key("11")]: check({ problem: "Would leave no location." }),
+          },
+          names: {},
+        },
+      })
+    )
+    expect(targetingApproveLabel(campaigns)).toBe("Apply to 1 Campaign")
+  })
+})
+
+describe("what the card lists", () => {
+  it("counts live places per campaign and leaves out what the request touches", () => {
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), exclude_locations: [{ key: "2000" }] },
+          { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
+        ],
+        _checks: {
+          campaigns: {
+            [key("10")]: check({
+              locations: [
+                { key: "2826", name: "United Kingdom", excluded: false, bid_adjustment: 0 },
+                { key: "2000", name: "Wales", excluded: false, bid_adjustment: 0 },
+              ],
+            }),
+            [key("11")]: check(),
+          },
+          names: {},
+        },
+      })
+    )
+
+    expect(unchangedPlaces(args).map((place) => [place.name, place.count])).toEqual([
+      ["United Kingdom", 2],
+    ])
+  })
+
+  it("puts blocked campaigns first, then the ones least like the rest", () => {
+    const same = { add_locations: [{ key: "1006" }] }
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), ...same },
+          { campaign: campaign("11"), ...same },
+          { campaign: campaign("12"), exclude_locations: [{ key: "1007" }] },
+          { campaign: campaign("13"), ...same },
+        ],
+        _checks: {
+          campaigns: {
+            [key("10")]: check(),
+            [key("11")]: check(),
+            [key("12")]: check(),
+            [key("13")]: check({ problem: "Would leave no location." }),
+          },
+          names: {},
+        },
+      })
+    )
+
+    const order = campaignsByDifference(campaignRows(args, args)).map((row) => row.key)
+    expect(order.slice(0, 2)).toEqual([key("13"), key("12")])
+  })
+
+  it("starts a cancelled campaign again from nothing", () => {
+    const [change] = parsed().changes
+    if (!change) throw new Error("Expected a change")
+
+    const cleared = clearedChange(change)
+
+    expect(cleared.targets.add_locations).toEqual([])
+    expect(addTarget([cleared], "add_locations", LEEDS)[0]?.targets.add_locations).toHaveLength(1)
+  })
+})
+
+describe("inputs", () => {
+  it("reads a bid adjustment only inside Google's range", () => {
+    expect(parseBidAdjustment("+15%")).toBe(15)
+    expect(parseBidAdjustment("-90")).toBe(-90)
+    expect(parseBidAdjustment("-91")).toBeNull()
+    expect(parseBidAdjustment("901")).toBeNull()
+    expect(parseBidAdjustment("1.5")).toBeNull()
+  })
+
+  it("splits a paste by Google's 25 names and the route's 500 characters", () => {
+    const short = Array.from({ length: 60 }, (_, index) => `L${String(index)}`)
+    expect(pasteBatches(short).map((batch) => batch.length)).toEqual([25, 25, 10])
+
+    const long = Array.from({ length: 12 }, (_, index) => `${"x".repeat(49)}${String(index)}`)
+    for (const batch of pasteBatches(long)) {
+      expect(batch.join("\n").length).toBeLessThanOrEqual(500)
+    }
+  })
+})
+
+describe("presenters", () => {
+  const html = (node: ReactNode) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement("div", null, node)
+      )
+    )
+  const props = (activity: ToolActivity, withApproval = false) => ({
+    activity,
+    ...(withApproval
+      ? {
+          approvalDecision: {
+            decision: { decision: "pending" as const, edits: {}, message: "" as const },
+            error: null,
+            onDecisionChange: vi.fn(),
+            onRetry: vi.fn(),
+            pendingCount: 1,
+            submitting: false,
+          },
+        }
+      : {}),
+    compact: false,
+    defaultOpen: true,
+    live: false,
+    providerKey: "google_ads",
+  })
+
+  it("renders the approval and the result", () => {
+    const approval = html(
+      googleAdsUpdateTargetingPresenter.render(
+        props(
+          {
+            id: "targeting-1",
+            kind: "approval",
+            name: "google_ads_update_targeting",
+            status: "awaiting_approval",
+            args: raw(),
+          },
+          true
+        )
+      )
+    )
+    expect(approval).toContain("Add Manchester")
+
+    const result = html(
+      googleAdsUpdateTargetingPresenter.render(
+        props({
+          id: "targeting-2",
+          kind: "result",
+          name: "google_ads_update_targeting",
+          status: "completed",
+          args: raw(),
+          result: {
+            results: [
+              {
+                provider_key: "google_ads",
+                display_name: "Northwind",
+                external_id: CUSTOMER,
+                status: "success",
+                data: {
+                  account_id: CUSTOMER,
+                  outcomes: [
+                    {
+                      campaign_id: "10",
+                      campaign_name: "Trail",
+                      setting: "locations",
+                      action: "add",
+                      outcome: "updated",
+                      count: 1,
+                      items: [{ name: "Manchester", bid_adjustment: 15 }],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        })
+      )
+    )
+    expect(result).toContain("Manchester (+15%)")
+  })
+
+  it("renders search results", () => {
+    const rendered = html(
+      googleAdsSearchTargetingPresenter.render(
+        props({
+          id: "targeting-3",
+          kind: "result",
+          name: "google_ads_search_targeting",
+          status: "completed",
+          args: { kind: "location", names: ["Manchester"] },
+          result: {
+            results: [
+              {
+                provider_key: "google_ads",
+                display_name: "Northwind",
+                external_id: CUSTOMER,
+                status: "success",
+                data: {
+                  options: [
+                    {
+                      kind: "location",
+                      key: "1006",
+                      name: "Manchester",
+                      target_type: "City",
+                      region: "England, United Kingdom",
+                      reach: 2_900_000,
+                    },
+                  ],
+                  truncated: false,
+                },
+              },
+            ],
+          },
+        })
+      )
+    )
+    expect(rendered).toContain("2.9M")
+  })
+})

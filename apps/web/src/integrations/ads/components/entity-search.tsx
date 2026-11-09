@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/entity-search.tsx
+// apps/web/src/integrations/ads/components/entity-search.tsx
 
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { Loader2Icon, SearchIcon } from "lucide-react"

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
-import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,

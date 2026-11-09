@@ -15,7 +15,7 @@ import {
   TextField,
 } from "@/integrations/ads/components/controls"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
-import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,

@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending (plan 314).
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-responsive search ad creation, status changes, device bid adjustments, campaign-budget creation,
+responsive search ad creation, status changes, location and language targeting, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
@@ -205,6 +205,69 @@ for other tools to use. When Google refuses the request, the result gives each
 distinct reason once. Audit intents are grouped by ad group and keyed by build
 step.
 
+### Targeting
+
+`google_ads_search_targeting` finds locations and languages by name and returns
+the keys `google_ads_update_targeting` takes. It takes up to 25 names per call,
+which is Google's limit for `geoTargetConstants:suggest`, and one selected account
+runs it, because the keys are the same for every account. A location option has its
+key, name, type, region, and Google's estimated reach. Audit records the kind and
+count, never the search text. Audience search is pending (plan 306 C).
+
+`google_ads_update_targeting` changes up to 20 campaigns per call in one approval.
+Each entry names one campaign and only what changes. Ad group entries are pending
+(plan 306 C), because no setting in this tool applies to an ad group yet. Devices,
+schedules, audiences, and exclusions are also pending (plan 306 B to D). The fields
+are as follows:
+
+| Field | What it does |
+| --- | --- |
+| `add_locations` | Targets a location, with an optional `bid_adjustment` percent from -90 to 900. Naming a location already targeted changes its adjustment. |
+| `exclude_locations` | Excludes a location. |
+| `remove_locations` | Stops targeting or excluding a location. |
+| `add_radius` | Targets a radius around a latitude and longitude, with an optional bid adjustment. |
+| `remove_radius` | Removes a radius by criterion ID. |
+| `location_setting` | Sets who counts as in a location: `PRESENCE_OR_INTEREST` or `PRESENCE`. |
+| `add_languages`, `remove_languages` | Adds or removes a language. |
+
+Google doesn't let a criterion's value or excluded flag change, so moving a location
+between the included and excluded lists sends a removal and an add, in that order, in
+one request. A bid adjustment is a percent on the card and in the request, and the tool
+compiles it to Google's modifier.
+
+The tool refuses these before Google's dry run:
+
+- Adding a language to a Search campaign. Google matches each ad's language on Search
+  and rejects the criterion. A language left on a Search campaign from before can
+  still be removed.
+- A change that would leave a campaign that has locations with none, because its ads
+  could then show anywhere. This also covers Google's rule for Local Services
+  Performance Max campaigns.
+- A location or language key Google doesn't recognise.
+
+Radius targets take coordinates, not an address. Google computes a point from an
+address, so the read-back can't be matched to the request until that's confirmed
+against a live account.
+
+`operations/criteria.py` reads each campaign's criteria by type
+(`read_campaign_targeting`) and returns them by edit key. An included and an excluded
+place have different keys, so the edit seam sees a move as two changes.
+
+While preparing the approval, the tool reads each campaign, reads Google's names, and
+dry runs the rest through the edit seam. The trusted `_checks` display argument holds,
+per campaign, what it targets now (up to 100 locations by name, with the total), the
+problem that stops it, each item's problem, what's already set, and the live criteria
+the request touches. The tool declares `changes` in `approval_review_fields`, so any
+edit needs a new check. Approval plans against the criteria the operator saw, so the
+edit seam refuses anything changed since as `CHANGED_SINCE_APPROVAL`. The tool also
+reads each campaign again and applies the rules above to the live state, with nothing
+sent for a campaign that fails them. One request makes at most 2,500 edits, because one
+audit event holds 2,500 records.
+
+The result has one row per campaign, setting, action, and outcome, with up to 10 item
+names and a count, so it stays small at any request size. Audit records each change by
+key, never the names of places.
+
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
@@ -346,7 +409,7 @@ New Google cards build from the shared ads card kit in
 `integrations/ads/components/`, which Meta also uses: `SettingRows`,
 `SettingRow`, `SettingLine`, `StatusChoice`, `ChangeBanner`, `ChangeSummary`,
 `AttentionLine`, `MoneyField`,
-`EntityPicker`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
+`EntityPicker`, `EntitySearch`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
 `Chip`, and the labelled fields). The kit depends on no provider package,
 and dependency rules enforce that. `StatusChoice` is one plain line: Status, the
 choice, and a note such as "Paused. Will not appear or spend until
@@ -494,6 +557,47 @@ The result (`components/create-ad-groups-outcome.tsx`) has one row per kind of
 object. When nothing was created, it says so with Google's reason, or lists the
 reasons in a table when there are several. Google Ads links aren't shown, because
 no deep-link helper exists yet.
+
+### Update Targeting card
+
+`lib/update-targeting.ts` parses `changes` with `_accounts` and `_checks`, and keeps
+each entry as received so edits keep their fields. A campaign's problems apply while
+its entry matches what Google last answered for; once edited, it waits for
+**Check Changes** instead (`needsCheck`). Any problem blocks approval.
+
+The card (`components/targeting-approval.tsx`) shows each change once, in the same
+layout for one campaign or many:
+
+- A note says what approving does now. Paused campaigns get a neutral note, because
+  they show no ads until someone turns them on. `ChangeBanner` appears only when a
+  campaign is on.
+- Each blocked campaign has its own alert with **Cancel This Change**.
+- **Where Ads Can Show** is one list of places, each marked **Adding**, **Excluding**,
+  **Removing**, or **No Change**. Each added place has its own `BidAdjustment`, and ×
+  cancels that change on every campaign. With more than one campaign, each row says how
+  many it reaches. Eight or more places of one type collapse to one row with **Review**.
+- **Add or Exclude a Location** opens the tools: search, `LocationPaste` (lines Google
+  doesn't recognise are skipped and counted), and a distance around a place.
+- **Languages** appears only when a campaign can take a language or one is changing, so
+  it's hidden on Search campaigns with no language change.
+- The campaign `DataTable` appears only with more than one campaign. It opens on the
+  three most different (`campaignsByDifference`: blocked, then cancelled, then the least
+  common change), with **Show All**. The CSV holds only the rows shown until then.
+- **Who Counts** holds the location setting.
+
+Cancelling a campaign's last change moves it out of the request and into the approval
+controls' retained state, so **Undo** restores it through a check's redraw. With every
+campaign cancelled, the next location added starts them again from nothing
+(`clearedChange`). Reloading the page loses cancelled campaigns.
+
+The approve label names one location on one campaign ("Add France"), counts several
+("Add 2 Locations"), and otherwise counts campaigns, leaving out blocked ones.
+
+The result (`components/targeting-outcome.tsx`) is the standard `DataTable` result card,
+as on Update Status: Campaign, Setting, Before, After, and Outcome, with tabs for All,
+Changed, Already Set, Failed, and Unconfirmed when any, opening on Failed when anything
+failed. The search result (`components/targeting-search-table.tsx`) has columns that
+follow the kind.
 
 ### Data table extensions
 
