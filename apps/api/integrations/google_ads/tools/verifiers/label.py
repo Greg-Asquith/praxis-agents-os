@@ -131,7 +131,6 @@ async def _verify_live_ids(
                 login_customer_id=login_customer_id(entry),
                 campaign_ids=batch,
                 limit=len(batch),
-                exclude_removed=True,
             )
         else:
             rows = [
@@ -142,7 +141,6 @@ async def _verify_live_ids(
                     login_customer_id=login_customer_id(entry),
                     ad_group_ids=batch,
                     limit=len(batch),
-                    exclude_removed=True,
                 )
                 if isinstance((ad_group := row.get("adGroup")), Mapping)
             ]

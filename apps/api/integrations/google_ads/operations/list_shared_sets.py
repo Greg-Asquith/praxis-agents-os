@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/list_shared_sets.py
 
-"""List enabled Google Ads shared sets of a requested provider type."""
+"""List Google Ads shared sets of a requested provider type."""
 
 import re
 from collections.abc import Mapping, Sequence
@@ -25,7 +25,12 @@ async def list_shared_sets(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
+    """Returns shared sets of one type in ID order.
+
+    `exclude_removed` (on by default) leaves out removed shared sets, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if _SHARED_SET_TYPE_PATTERN.fullmatch(shared_set_type) is None:
         raise ValueError("Google Ads shared set type must be an uppercase provider enum identifier")
@@ -49,9 +54,10 @@ async def list_shared_sets(
         inclusive=minimum_id_inclusive,
     )
     boundary_clause = f" AND {boundary_filter}" if boundary_filter else ""
+    status_filter = " AND shared_set.status != 'REMOVED'" if exclude_removed else ""
     query = (
         "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "  # noqa: S608 -- validated enum/ids and escaped search
-        f"WHERE shared_set.type = '{shared_set_type}' AND shared_set.status = 'ENABLED'"
+        f"WHERE shared_set.type = '{shared_set_type}'{status_filter}"
         f"{id_filter}{name_filter}{boundary_clause} ORDER BY shared_set.id LIMIT {limit}"
     )
     payload = await client.post(

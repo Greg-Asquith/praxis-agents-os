@@ -28,7 +28,6 @@ async def verify_campaigns(
     *,
     entry: ResolvedContextEntry,
     campaign_ids: Sequence[str],
-    ignore_removed: bool,
 ) -> None:
     """Fail closed unless every approved campaign still exists in its account."""
     normalized_ids = validated_ids(
@@ -43,13 +42,8 @@ async def verify_campaigns(
         login_customer_id=login_customer_id(entry),
         campaign_ids=normalized_ids,
         limit=len(normalized_ids),
-        exclude_removed=ignore_removed,
     )
-    resolved_ids = {
-        str(campaign.get("id", ""))
-        for campaign in campaigns
-        if not ignore_removed or campaign.get("status") != "REMOVED"
-    }
+    resolved_ids = {str(campaign.get("id", "")) for campaign in campaigns}
     if resolved_ids != set(normalized_ids):
         raise ModelRetry(
             "A selected Google Ads campaign is unavailable. Ask the user to choose it again."
@@ -75,7 +69,6 @@ async def verify_campaigns_for_budget_assignment(
         login_customer_id=login_customer_id(entry),
         campaign_ids=normalized_ids,
         limit=len(normalized_ids),
-        exclude_removed=True,
     )
     experiment_arms = await list_active_campaign_experiment_arms(
         client,

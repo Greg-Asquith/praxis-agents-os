@@ -23,8 +23,13 @@ async def list_asset_groups(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Returns non-removed asset groups in ID order."""
+    """Returns asset groups in ID order.
+
+    `exclude_removed` (on by default) leaves out removed asset groups and those in a removed
+    campaign, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if limit < 1 or limit > MAX_ASSET_GROUP_LOOKUP:
         raise ValueError("Google Ads asset group lookup limit must be between 1 and 101")
@@ -33,7 +38,11 @@ async def list_asset_groups(
         raise ValueError("Google Ads asset group ids must contain only digits")
     if len(normalized_ids) > MAX_ASSET_GROUP_LOOKUP:
         raise ValueError("Google Ads asset group lookup accepts at most 101 ids")
-    filters = ["asset_group.status != 'REMOVED'"]
+    filters = (
+        ["asset_group.status != 'REMOVED'", "campaign.status != 'REMOVED'"]
+        if exclude_removed
+        else []
+    )
     if normalized_ids:
         filters.append(f"asset_group.id IN ({', '.join(normalized_ids)})")
     if search and search.strip():

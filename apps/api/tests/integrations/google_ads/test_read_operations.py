@@ -18,6 +18,7 @@ from integrations.google_ads.operations.get_report_field import (
     get_report_field,
     get_report_fields,
 )
+from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.operations.list_campaign_device_criteria import (
     list_campaign_device_criteria,
 )
@@ -254,6 +255,22 @@ async def test_report_tool_uses_discovered_account_currency(monkeypatch) -> None
     assert provider_report.await_args.kwargs["currency_code"] == "GBP"
 
 
+async def test_list_ad_groups_leaves_out_removed_parents_unless_overridden() -> None:
+    client = _OperationClient({"results": []})
+
+    await list_ad_groups(client, customer_id="111", login_customer_id="111", limit=25)
+
+    query = client.last_json["query"]
+    assert "ad_group.status != 'REMOVED'" in query
+    assert "campaign.status != 'REMOVED'" in query
+
+    await list_ad_groups(
+        client, customer_id="111", login_customer_id="111", limit=25, exclude_removed=False
+    )
+
+    assert "REMOVED" not in client.last_json["query"]
+
+
 async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
     client = _OperationClient(
         {
@@ -273,7 +290,6 @@ async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
         minimum_id=10,
         minimum_id_inclusive=False,
         limit=101,
-        exclude_removed=True,
     )
 
     assert campaigns == [{"id": "10", "name": "Brand", "status": "ENABLED"}]
@@ -381,7 +397,6 @@ async def test_google_ads_entity_operations_reject_malformed_ids_and_bounds(
         "customer_id": "333",
         "login_customer_id": "111",
         "limit": 1,
-        "exclude_removed": True,
     }
 
     with pytest.raises(ValueError, match="ids must contain only digits"):
@@ -416,7 +431,7 @@ async def test_list_shared_sets_treats_gaql_like_metacharacters_literally(
 
     expected_query = (
         "SELECT shared_set.id, shared_set.name, shared_set.member_count FROM shared_set "
-        "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status = 'ENABLED' "
+        "WHERE shared_set.type = 'NEGATIVE_KEYWORDS' AND shared_set.status != 'REMOVED' "
         "AND shared_set.name LIKE '%SEARCH_LITERAL%' "
         "ORDER BY shared_set.id LIMIT 1"
     ).replace("SEARCH_LITERAL", escaped)

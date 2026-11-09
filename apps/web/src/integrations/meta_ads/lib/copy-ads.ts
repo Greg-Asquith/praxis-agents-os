@@ -224,6 +224,6 @@ export function copyNextStep(result: CopyAdsResult): string | null {
     return "Meta turned on advanced settings some source ads don't have. Check those copies in Ads Manager."
   }
   return copied.every((copy) => copy.requestedStatus === "paused")
-    ? "Turn these copies on when Meta approves them. Ask the agent to check their review."
-    : "Active copies start running once Meta approves them."
+    ? "Paused. Activate once approved by Meta. The agent can check their review."
+    : "Active, pending approval. Will go live once approved by Meta."
 }

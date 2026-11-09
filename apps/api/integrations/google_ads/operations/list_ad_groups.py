@@ -21,9 +21,13 @@ async def list_ad_groups(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
-    exclude_removed: bool,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Return validated ad-group rows in stable provider order."""
+    """Return validated ad-group rows in stable provider order.
+
+    `exclude_removed` (on by default) leaves out removed ad groups and those in a removed
+    campaign, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if limit < 1 or limit > 101:
         raise ValueError("Google Ads ad-group lookup limit must be between 1 and 101")
@@ -35,7 +39,7 @@ async def list_ad_groups(
         raise ValueError("Google Ads ad-group lookup accepts at most 101 ids")
     filters = []
     if exclude_removed:
-        filters.append("ad_group.status != 'REMOVED'")
+        filters.extend(("ad_group.status != 'REMOVED'", "campaign.status != 'REMOVED'"))
     if normalized_ids:
         filters.append(f"ad_group.id IN ({', '.join(normalized_ids)})")
     if search and search.strip():

@@ -1974,7 +1974,9 @@ the first row with a problem starts open. The rows reuse the campaign, ad set,
 and Create Ads cards, so every setting is editable and edits are written back
 in the shape the tool takes. Each ad picks its ad sets from the launch's own.
 Below the spend line, a **Build Paused** | **Launch** choice (the shared
-`StatusChoice`) edits `go_live`, which is a `structured` field so only the
+`StatusChoice`, one plain line whose note reads "Paused. Will not appear or
+spend until activated." or "Active, pending approval. Will go live once
+approved by Meta.") edits `go_live`, which is a `structured` field so only the
 card shows it, and the approve label reads **Approve & Launch** or **Approve
 & Build** to match. Approval is blocked by the step-tool cards' own checks,
 and by an ad set without ads, two ad sets with one name, or an ad naming an

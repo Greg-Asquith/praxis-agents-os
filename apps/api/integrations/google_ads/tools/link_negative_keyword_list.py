@@ -123,7 +123,6 @@ async def google_ads_link_negative_keyword_list(
                 client,
                 entry=entry,
                 campaign_ids=normalized_campaign_ids,
-                ignore_removed=True,
             )
             ledger = await link_negative_keyword_list(
                 client,

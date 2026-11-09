@@ -21,9 +21,12 @@ async def list_campaigns(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
-    exclude_removed: bool,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Return validated campaign mappings in stable provider order."""
+    """Return validated campaign mappings in stable provider order.
+
+    `exclude_removed` (on by default) leaves out removed campaigns, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if limit < 1 or limit > 101:
         raise ValueError("Google Ads campaign lookup limit must be between 1 and 101")

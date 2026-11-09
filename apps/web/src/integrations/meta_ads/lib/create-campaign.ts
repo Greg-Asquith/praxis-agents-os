@@ -172,9 +172,9 @@ export function campaignStatusNote(args: CreateCampaignArgs): string {
   const { budget, currency } = args
   const limit =
     budget.mode === "ad_set" || !budget.amount
-      ? "what its ad sets are budgeted"
+      ? "its ad sets' budgets"
       : `up to ${budgetMoney(budget.amount, currency)}${budget.mode === "campaign_daily" ? " a day" : " in total"}`
-  return `Turns on when created. It spends ${limit} once it has active ad sets and approved ads.`
+  return `Active. Will go live once created, spending ${limit}.`
 }
 
 /** Blocks approval for what Meta would refuse: a missing name, amount, or country, or amounts under the minimums. */

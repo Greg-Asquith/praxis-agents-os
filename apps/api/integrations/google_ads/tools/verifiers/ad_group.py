@@ -33,7 +33,6 @@ async def verify_ad_groups(
         login_customer_id=login_customer_id(entry),
         ad_group_ids=normalized_ids,
         limit=len(normalized_ids),
-        exclude_removed=False,
     )
     resolved_ids = {
         str(ad_group.get("id", ""))

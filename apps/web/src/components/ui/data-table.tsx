@@ -79,6 +79,7 @@ export function DataTable({
   columns,
   exportFilename = "report.csv",
   groupBy,
+  onRowClick,
   onTabChange,
   pageSize,
   renderCell,
@@ -99,6 +100,8 @@ export function DataTable({
   exportFilename?: string
   // Gathers rows under a heading row and turns column sorting off.
   groupBy?: DataTableGroup
+  // Clicking a row calls this instead of opening the details sheet.
+  onRowClick?: (row: DataRow) => void
   onTabChange?: (id: string) => void
   pageSize?: number
   // Cells may hold controls; pair them with `rowDetails={false}` so clicks don't open the sheet.
@@ -273,6 +276,7 @@ export function DataTable({
                     groupKey !== undefined &&
                     (previous === undefined || groupBy.key(previous.original.values) !== groupKey)
                   const rowId = selection?.rowId(values)
+                  const openRow = onRowClick ?? (rowDetails ? setSelectedRow : undefined)
                   return [
                     startsGroup ? (
                       <TableRow className="bg-muted/40 hover:bg-muted/40" key={`group:${row.id}`}>
@@ -285,16 +289,18 @@ export function DataTable({
                       </TableRow>
                     ) : null,
                     <TableRow
-                      className={cn(rowDetails && "cursor-pointer", rowClassName?.(values))}
+                      className={cn(openRow && "cursor-pointer", rowClassName?.(values))}
                       key={row.id}
-                      {...(rowDetails
+                      {...(openRow
                         ? {
-                            "aria-label": `Open row ${String(visibleRowOffset + index + 1)} details`,
+                            "aria-label": onRowClick
+                              ? `Open row ${String(visibleRowOffset + index + 1)}`
+                              : `Open row ${String(visibleRowOffset + index + 1)} details`,
                             onClick: () => {
-                              setSelectedRow(values)
+                              openRow(values)
                             },
                             onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
-                              openRowFromKeyboard(event, values, setSelectedRow)
+                              openRowFromKeyboard(event, values, openRow)
                             },
                             role: "button",
                             tabIndex: 0,

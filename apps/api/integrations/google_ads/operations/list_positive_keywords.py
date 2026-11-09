@@ -31,8 +31,13 @@ async def list_positive_keywords(
     minimum_ad_group_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Returns bounded, non-removed positive keyword criteria in provider order."""
+    """Returns bounded positive keywords in provider order.
+
+    `exclude_removed` (on by default) leaves out removed keywords and those under a removed ad
+    group or campaign, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if limit < 1 or limit > 2501:
         raise ValueError("Google Ads positive-keyword lookup limit must be between 1 and 2,501")
@@ -54,8 +59,15 @@ async def list_positive_keywords(
     filters = [
         "ad_group_criterion.type = 'KEYWORD'",
         "ad_group_criterion.negative = FALSE",
-        "ad_group_criterion.status != 'REMOVED'",
     ]
+    if exclude_removed:
+        filters.extend(
+            (
+                "ad_group_criterion.status != 'REMOVED'",
+                "ad_group.status != 'REMOVED'",
+                "campaign.status != 'REMOVED'",
+            )
+        )
     if normalized_criterion_ids:
         filters.append(
             f"ad_group_criterion.criterion_id IN ({', '.join(normalized_criterion_ids)})"

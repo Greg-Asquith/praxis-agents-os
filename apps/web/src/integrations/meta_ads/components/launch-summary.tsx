@@ -67,16 +67,15 @@ export function LaunchApproval({
         <StatusChoice
           activeNote={
             aiOn
-              ? "Turns on when built, but the ads start paused because an AI-generated setting is on. Check Meta's preview before turning them on."
-              : "Turns on when built. Ads start once Meta approves them."
+              ? "Active, but ads start paused because an AI-generated setting is on. Check Meta's preview before activating them."
+              : "Active, pending approval. Will go live once approved by Meta."
           }
           disabled={disabled}
-          label="When Built"
           labels={{ paused: "Build Paused", active: "Launch" }}
           onChange={(choice) => {
             onEdit({ go_live: choice === "active" })
           }}
-          pausedNote="Builds everything paused. Nothing spends until you turn it on."
+          pausedNote="Paused. Will not appear or spend until activated."
           value={args.goLive ? "active" : "paused"}
         />
         <SettingRows

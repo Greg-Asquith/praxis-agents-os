@@ -363,11 +363,11 @@ export function adSetStatusNote(args: CreateAdSetArgs): string {
   const amount = budget?.amount ?? campaign.budget?.amount
   const kind = budget?.kind ?? (campaign.budget?.period === "lifetime" ? "lifetime" : "daily")
   const limit = amount
-    ? `Up to ${budgetMoney(amount, currency)}${kind === "daily" ? " a day" : " in total"}`
-    : "It spends"
+    ? `, spending up to ${budgetMoney(amount, currency)}${kind === "daily" ? " a day" : " in total"}`
+    : ""
   if (campaign.status === "PAUSED")
-    return `Turns on when created, but it won't spend yet: its campaign ${campaign.name} is paused. ${limit} once that's on.`
-  return `Turns on when created. ${limit} once it has approved ads.`
+    return `Active. Will go live once its campaign ${campaign.name} is activated${limit}.`
+  return `Active. Will go live once created${limit}.`
 }
 
 export const ROAS_FORMAT = "Set the minimum return on ad spend as a ratio above zero, such as 2.5."

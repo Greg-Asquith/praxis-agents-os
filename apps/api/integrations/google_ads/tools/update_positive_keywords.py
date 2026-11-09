@@ -396,7 +396,6 @@ async def _validate_bid_compatibility(
             login_customer_id=login_customer_id(entry),
             ad_group_ids=batch,
             limit=len(batch),
-            exclude_removed=True,
         )
         for row in rows:
             campaign = row.get("campaign")

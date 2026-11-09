@@ -298,7 +298,6 @@ async def _live_ad_groups(
         login_customer_id=login_customer_id(entry),
         ad_group_ids=ids,
         limit=len(ids),
-        exclude_removed=True,
     )
     live_by_id: dict[str, GoogleAdsAdGroupReference] = {}
     contexts: dict[str, _KeywordCreateContext] = {}

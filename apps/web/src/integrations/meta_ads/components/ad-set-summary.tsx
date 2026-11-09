@@ -56,11 +56,10 @@ export function CreateAdSetApproval({
         <StatusChoice
           activeNote={adSetStatusNote(args)}
           disabled={disabled}
-          label="Ad Set Status"
           onChange={(status) => {
             onEdit({ status })
           }}
-          pausedNote="Created paused. Nothing spends until you turn it on."
+          pausedNote="Paused. Will not appear or spend until activated."
           value={args.status}
         />
       )}

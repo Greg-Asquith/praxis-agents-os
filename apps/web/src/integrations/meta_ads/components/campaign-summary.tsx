@@ -73,11 +73,10 @@ export function CreateCampaignApproval({
         <StatusChoice
           activeNote={campaignStatusNote(args)}
           disabled={disabled}
-          label="Campaign Status"
           onChange={(status) => {
             onEdit({ status })
           }}
-          pausedNote="Created paused. Nothing spends until you turn it on."
+          pausedNote="Paused. Will not appear or spend until activated."
           value={args.status}
         />
       )}

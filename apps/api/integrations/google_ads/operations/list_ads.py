@@ -24,8 +24,12 @@ async def list_ads(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Returns non-removed ads in ad ID order; `search` matches the ad group name.
+    """Returns ads in ad ID order; `search` matches the ad group name.
+
+    `exclude_removed` (on by default) leaves out removed ads and those under a removed ad
+    group or campaign, which Google won't change.
 
     Most responsive search ads have no name, so the operator finds them by ad group.
     """
@@ -38,7 +42,15 @@ async def list_ads(
         raise ValueError("Google Ads ad ids must contain only digits")
     if len(normalized_ad_ids) > MAX_AD_LOOKUP or len(normalized_ad_group_ids) > MAX_AD_LOOKUP:
         raise ValueError("Google Ads ad lookup accepts at most 101 ids")
-    filters = ["ad_group_ad.status != 'REMOVED'"]
+    filters = (
+        [
+            "ad_group_ad.status != 'REMOVED'",
+            "ad_group.status != 'REMOVED'",
+            "campaign.status != 'REMOVED'",
+        ]
+        if exclude_removed
+        else []
+    )
     if normalized_ad_ids:
         filters.append(f"ad_group_ad.ad.id IN ({', '.join(normalized_ad_ids)})")
     if normalized_ad_group_ids:

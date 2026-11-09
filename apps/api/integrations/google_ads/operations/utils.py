@@ -168,7 +168,7 @@ def grouped_partial_failure_errors[OperationValue](
                 continue
             index = operation_index(item.get("location", {}))
             diagnostic = (
-                str(item.get("message", default_message)),
+                _diagnostic_message(item, default_message),
                 _error_code(item.get("errorCode")),
             )
             if index is not None and 0 <= index < len(operation_values):
@@ -199,6 +199,26 @@ def _combined_diagnostics(diagnostics: Sequence[tuple[str, str]]) -> dict[str, s
         "message": " | ".join(messages),
         "error_code": " | ".join(codes)[:100],
     }
+
+
+def _diagnostic_message(item: Mapping[str, Any], default_message: str) -> str:
+    """Google's message for one error, naming the policy when Google's generic one doesn't."""
+    message = str(item.get("message", default_message))
+    details = item.get("details")
+    if not isinstance(details, Mapping):
+        return message
+    finding = details.get("policyFindingDetails")
+    entries = finding.get("policyTopicEntries") if isinstance(finding, Mapping) else None
+    topics = [
+        str(entry["topic"]).replace("_", " ").title()
+        for entry in entries or ()
+        if isinstance(entry, Mapping) and entry.get("topic")
+    ]
+    if topics:
+        return f"Disapproved under the {', '.join(dict.fromkeys(topics))} policy."
+    violation = details.get("policyViolationDetails")
+    name = violation.get("externalPolicyName") if isinstance(violation, Mapping) else None
+    return f"{message} Policy: {name}." if name else message
 
 
 def _error_code(value: Any) -> str:

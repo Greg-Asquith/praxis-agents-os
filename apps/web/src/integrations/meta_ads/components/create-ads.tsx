@@ -60,10 +60,9 @@ export function CreateAdsApproval({
         <StatusChoice
           activeNote={delivery}
           disabled={disabled}
-          label={count === 1 ? "Status for This Ad" : `Status for All ${String(count)} Ads`}
           lockedNote={
             aiOn
-              ? "An AI-generated setting is on, so every ad is created paused. Check Meta's preview before turning them on."
+              ? "Paused, because an AI-generated setting is on. Check Meta's preview before activating."
               : null
           }
           onChange={(status) => {

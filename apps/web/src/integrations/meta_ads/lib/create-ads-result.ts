@@ -59,6 +59,6 @@ export function nextStep(result: CreateAdsResult): string | null {
     return "Meta turned on advanced settings you left off for some ads. Check them in Ads Manager, and ask the agent to pause any that are on."
   }
   return created.every((ad) => ad.requestedStatus === "paused")
-    ? "Turn these ads on when Meta approves them. Ask the agent to check their review."
-    : "Active ads start running once Meta approves them."
+    ? "Paused. Activate once approved by Meta. The agent can check their review."
+    : "Active, pending approval. Will go live once approved by Meta."
 }

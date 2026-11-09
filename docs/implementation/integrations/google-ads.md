@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending (plan 314).
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-status changes, device bid adjustments, campaign-budget creation,
+responsive search ad creation, status changes, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
@@ -68,6 +68,10 @@ endpoint per resource type. Two seams build on it:
   partial-failure request, and reads each object back. The read-back settles
   an unclear reply and fails a change Google accepted but didn't keep. If
   the read-back fails, Google's reply stands and **After** is empty.
+- Partial-failure parsing (`grouped_partial_failure_errors`) replaces
+  Google's generic policy message with the policy topics from the error's
+  `policyFindingDetails`, such as "Disapproved under the Destination Not
+  Working policy."
 - **Build seam** (`operations/build.py`). `CampaignBuild` collects the
   objects to create in one account. Budgets, assets, campaigns, ad groups,
   and asset groups get temporary resource names (`-1`, `-2`, and so on).
@@ -94,6 +98,12 @@ Ads use `google_ads_ad` references (`adGroupAds/{ad_group_id}~{ad_id}`) and
 asset groups use `google_ads_asset_group` references; both have entity
 resolvers. Ad lookup searches by ad group name, because most responsive
 search ads have no name, and labels an unnamed ad with its first headline.
+Every entity list operation (`operations/list_*.py` for campaigns, ad
+groups, ads, keywords, asset groups, budgets, labels, and shared sets) takes
+`exclude_removed`, on by default. It leaves out removed objects and anything
+under a removed ad group or campaign, because Google refuses changes to them.
+No tool turns it off today. The status tool reads removed objects through its
+own query.
 
 While preparing the approval, the tool reads each object's live status with
 its campaign's, and its ad group's for ads and keywords
@@ -114,6 +124,39 @@ requested status are reported as `already_set`. The rest go in one
 partial-failure `googleAds:mutate` request per account with a `status` mask,
 and each result row records **Before**, **Requested**, and the status read
 back as **After**.
+
+### Ad creation
+
+`google_ads_create_ads` creates up to 50 responsive search ads in existing
+Search ad groups of one account, in one approval. Each ad in `ads` has 3 to
+15 headlines (30 characters), 2 to 4 descriptions (90 characters), each
+with an optional pin, a final URL, an optional mobile final URL, optional
+`path1` and `path2` (15 characters; `path2` needs `path1`), and 1 to 10
+ad group references. Headlines and descriptions must each be different. One
+request names at most 100 ad groups. `status` is `PAUSED` unless the
+operator chooses Launch (`ENABLED`).
+
+The ad model (`GoogleAdsResponsiveSearchAd` in `tools/schemas/ads.py`) has
+no ad groups of its own, so ad group and campaign creation can nest it.
+`operations/responsive_search_ads.py` compiles one `AdGroupAd` per ad and
+ad group pair (`ad_group_ad_body`) and reads created ads back with their
+policy review (`read_ad_reviews`).
+
+While preparing the approval, the tool reads the ad groups. An ad group that
+isn't found (missing, removed, or in a removed campaign), or one outside a
+Search campaign, is a problem on the card and is left out of the dry run. The
+rest go through the build seam's dry run. The trusted `_checks` display argument holds each ad group's
+name, campaign, and problem; for each proposed ad, the copy that was checked
+and Google's rejections with the ad group each one names; and whole-request
+problems. An account that can't be read is `unavailable`.
+
+After approval, every pair goes in one atomic request through
+`send_build`, so Google creates every ad or none. Each created ad is read
+back for its status and review state; a failed read leaves those empty and
+the ad still counts as created. Audit intents are keyed by build step. The
+card can change copy, links, status, and ad groups, and cancel ads; ad
+groups it adds come from the entity resolver, and the dispatcher still
+holds every reference to the active context.
 
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
@@ -258,7 +301,10 @@ New Google cards build from the shared ads card kit in
 `AttentionLine`, `MoneyField`,
 `EntityPicker`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
 `Chip`, and the labelled fields). The kit depends on no provider package,
-and dependency rules enforce that. The older Google kit
+and dependency rules enforce that. `StatusChoice` is one plain line: Status, the
+choice, and a note such as "Paused. Will not appear or spend until
+activated." or "Active, pending approval. Will go live once approved by
+Google." Campaign and ad group notes leave out approval. The older Google kit
 (`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
 `GoogleAdsOutcomeTable`) stays only for the tools plans 307, 308, and 312
 replace.
@@ -334,6 +380,37 @@ Campaign, Before, After, and Outcome columns and tabs for All, Changed,
 Already Set, Failed, and Unconfirmed when any. It opens on Failed when anything
 failed, and the CSV holds every row. Already Set is never a failure.
 
+### Create Ads card
+
+`lib/create-ads.ts` parses `ads` and `status` with `_accounts` and
+`_checks`. It accepts copy over the limits so the card can show the problem,
+and keeps each entry and ad group reference as received so edits keep their
+fields. `adRows` lists each ad's problems: counts, character limits
+(counted per code point, like the server), repeated text, URLs, paths, no
+ad group, an ad group's problem, and Google's dry-run rejections. Google's
+rejections apply only while the ad's copy matches the checked copy
+(`copyKey`), and only for ad groups still on the ad. Any problem blocks
+approval. The approve label counts ads times ad groups.
+
+The card (`components/create-ads-approval.tsx`) shows `StatusChoice`
+(Paused or Active). With more than one ad it adds `ChangeSummary`
+lines for a final URL and display paths that every ad shares, edited once;
+Needs Attention with Cancel These N; and Cancelled with Restore. Then
+`AttentionLine`, and one `DataTable` of ads with All and Needs Attention
+tabs. Clicking an ad's row opens it below (Previous and Next step
+through the ads), with
+`SearchAdPreview` (a Google result in Google's light or dark colours,
+named from the final URL's host; pinned assets in place, then the rest in
+order),
+`TextAssetList` for headlines and descriptions (counters, pins, the
+minimum, the first three until Show All), link fields, and ad group chips
+with an `EntityPicker` to add one. Cancelling takes the ad out of `ads`;
+the card keeps cancelled ads until approval so Restore can put them back.
+
+The result (`components/create-ads-outcome.tsx`) is one `DataTable` with Ad
+Group, Headline 1, Status, Review, and Outcome. When nothing was created it
+says so once with Google's reason, because the request is atomic.
+
 ### Data table extensions
 
 The core `DataTable` stays generic and also serves bulk cards. It filters rows
@@ -351,6 +428,9 @@ before paging, so counts, pages, and the row total follow the view:
 - `renderCell` cells may hold controls, such as a select or a cancel button.
   Pair them with `rowDetails={false}` so a click doesn't open the details
   sheet, and use `rowClassName` to dim a row.
+- `onRowClick` makes the whole row a button that calls it instead of opening
+  the details sheet, as Create Ads does to open an ad. Controls in a cell
+  stop the click's propagation.
 - CSV export and copy hold every row, not only the filtered view.
 
 ### Keyword editors

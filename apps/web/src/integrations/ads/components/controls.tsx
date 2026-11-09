@@ -82,6 +82,7 @@ export function SegmentedChoice<T extends string>({
   ariaLabel,
   ariaLabelledBy,
   className,
+  compact = false,
   disabled,
   onChange,
   options,
@@ -90,6 +91,8 @@ export function SegmentedChoice<T extends string>({
   ariaLabel?: string
   ariaLabelledBy?: string
   className?: string
+  // Smaller, with a neutral chosen state, for a choice that sits inline in a line of text.
+  compact?: boolean
   disabled: boolean
   onChange: (value: T) => void
   options: readonly { value: T; label: string }[]
@@ -114,7 +117,11 @@ export function SegmentedChoice<T extends string>({
       {options.map((option) => (
         <ToggleGroupItem
           key={option.value}
-          className="text-foreground/70 aria-pressed:bg-accent aria-pressed:text-accent-foreground h-8 min-w-20 px-3 aria-pressed:font-semibold"
+          className={
+            compact
+              ? "text-muted-foreground aria-pressed:bg-muted aria-pressed:text-foreground h-6 min-w-14 px-2 text-xs"
+              : "text-foreground/70 aria-pressed:bg-accent aria-pressed:text-accent-foreground h-8 min-w-20 px-3 aria-pressed:font-semibold"
+          }
           value={option.value}
         >
           {option.label}

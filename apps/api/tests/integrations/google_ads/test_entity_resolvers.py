@@ -370,7 +370,6 @@ async def test_campaign_hydration_rejects_stale_and_inactive_scope(monkeypatch) 
     assert query.await_args.kwargs == {
         "campaign_ids": ["10", "20"],
         "limit": 2,
-        "exclude_removed": True,
     }
 
 
@@ -412,7 +411,6 @@ async def test_ad_group_hydration_drops_stale_and_out_of_context_values(monkeypa
     assert query.await_args.kwargs == {
         "ad_group_ids": ["10", "20"],
         "limit": 2,
-        "exclude_removed": True,
     }
 
 

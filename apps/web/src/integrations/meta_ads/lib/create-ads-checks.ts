@@ -362,16 +362,14 @@ export function statusLines(args: DeliveryArgs, rows: readonly DeliveryRow[]): s
   const lines = new Map<string, string[]>()
   for (const [adSetId, delivery] of adSetDelivery(args, rows)) {
     const adSet = args.adSets.get(adSetId)
-    const one = rows.filter((row) => row.ad.adSetIds.includes(adSetId)).length === 1
-    const [them, they] = one ? ["it", "It"] : ["them", "They"]
     const line =
       delivery === "paused"
-        ? `Created paused. Nothing runs or spends until you turn ${them} on.`
+        ? "Paused. Will not appear or spend until activated."
         : delivery === "ad_set_off"
-          ? `${they} won't run until the ad set is turned on.`
+          ? "Active, pending approval. Will go live once approved by Meta and the ad set is activated."
           : delivery === "campaign_off"
-            ? `${they} won't run until the campaign is turned on.`
-            : `${they} ${one ? "starts" : "start"} running once Meta approves ${them}${adSet ? budgetPhrase(adSet, args.currency) : ""}.`
+            ? "Active, pending approval. Will go live once approved by Meta and the campaign is activated."
+            : `Active, pending approval. Will go live once approved by Meta${adSet ? budgetPhrase(adSet, args.currency) : ""}.`
     lines.set(line, [...(lines.get(line) ?? []), adSetName(args, adSetId)])
   }
   // With one ad set, or one outcome for all of them, the ad set names add nothing.
@@ -384,8 +382,8 @@ function budgetPhrase(adSet: AdSetInfo, currency: string | null): string {
   if (!budget?.amount || !currency) return ""
   const amount = formatCurrencyAmount(budget.amount, currency)
   const period = budget.kind === "campaign" ? budget.period : budget.kind
-  const holder = budget.kind === "campaign" ? "its campaign's" : "this ad set's"
-  return `, within ${holder} ${amount} ${period === "lifetime" ? "in total" : "a day"}`
+  const holder = budget.kind === "campaign" ? "the campaign's" : "the ad set's"
+  return `, spending up to ${amount} ${period === "lifetime" ? "in total" : "a day"} from ${holder} budget`
 }
 
 export function checksFor(row: AdRow, field: CheckField): AdCheck[] {

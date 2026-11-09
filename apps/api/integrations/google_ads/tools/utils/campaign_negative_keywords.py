@@ -57,7 +57,7 @@ async def _verify_targets(
     entry: ResolvedContextEntry,
     campaign_ids: list[str],
 ) -> None:
-    await verify_campaigns(client, entry=entry, campaign_ids=campaign_ids, ignore_removed=True)
+    await verify_campaigns(client, entry=entry, campaign_ids=campaign_ids)
 
 
 async def _mutate_targets(

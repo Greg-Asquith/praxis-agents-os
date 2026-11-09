@@ -57,7 +57,6 @@ async def _query(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
-    exclude_removed: bool,
 ) -> list[Mapping[str, Any]]:
     client = await google_ads_client_for_principal(
         ctx.db,
@@ -74,7 +73,6 @@ async def _query(
         minimum_id=minimum_id,
         minimum_id_inclusive=minimum_id_inclusive,
         limit=limit,
-        exclude_removed=exclude_removed,
     )
 
 
@@ -89,7 +87,6 @@ async def search_google_ads_ad_groups(ctx, search, _dependent_args, page_size, c
             minimum_id=minimum_id,
             minimum_id_inclusive=inclusive,
             limit=limit,
-            exclude_removed=True,
         )
 
     return await search_scoped_entities(
@@ -113,7 +110,6 @@ async def resolve_google_ads_ad_groups(ctx, values: Sequence[Any], _dependent_ar
             entry,
             ad_group_ids=ids,
             limit=len(ids),
-            exclude_removed=True,
         )
         choices.extend(choice for row in rows if (choice := _choice(entry, row)) is not None)
     return tuple(choices)

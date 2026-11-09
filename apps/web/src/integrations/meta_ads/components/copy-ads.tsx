@@ -167,14 +167,13 @@ function CopyItem({
         ) : null}
       </div>
       <StatusChoice
-        activeNote="Starts running once Meta approves it, and spends from the ad set's budget."
+        activeNote="Active, pending approval. Will go live once approved by Meta."
         disabled={disabled}
-        label="Status"
-        lockedNote={source?.aiGenerated ? "Paused because an AI enhancement is on." : null}
+        lockedNote={source?.aiGenerated ? "Paused, because an AI enhancement is on." : null}
         onChange={(status) => {
           onEdit({ status })
         }}
-        pausedNote="Created paused. Nothing runs or spends until you turn it on."
+        pausedNote="Paused. Will not appear or spend until activated."
         value={source?.aiGenerated ? "paused" : copy.status}
       />
       {picking === "add" ? (

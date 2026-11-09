@@ -21,8 +21,12 @@ async def list_campaign_budgets(
     minimum_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
+    exclude_removed: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """Return active budgets with bounded linked-campaign labels."""
+    """Return budgets with bounded linked-campaign labels.
+
+    `exclude_removed` (on by default) leaves out removed budgets, which Google won't change.
+    """
     normalized_customer_id = normalize_customer_id(customer_id)
     if limit < 1 or limit > 101:
         raise ValueError("Google Ads campaign budget lookup limit must be between 1 and 101")
@@ -32,7 +36,7 @@ async def list_campaign_budgets(
     if len(normalized_ids) > 101:
         raise ValueError("Google Ads campaign budget lookup accepts at most 101 ids")
 
-    filters = ["campaign_budget.status != 'REMOVED'"]
+    filters = ["campaign_budget.status != 'REMOVED'"] if exclude_removed else []
     if normalized_ids:
         filters.append(f"campaign_budget.id IN ({', '.join(normalized_ids)})")
     if search and search.strip():
