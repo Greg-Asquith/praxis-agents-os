@@ -109,6 +109,7 @@ async def google_ads_create_ads(
         async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
             if client is None or pending is None or not pairs:
                 raise RuntimeError("Google Ads ad creation preparation did not complete")
+            built: BuildResult | None = None
             try:
                 built = await send_build(
                     client,
@@ -117,11 +118,13 @@ async def google_ads_create_ads(
                     family="ads",
                     operation=_OPERATION,
                 )
+                reviews = await _reviews(client, entry, built)
             except asyncio.CancelledError as exc:
+                if built is not None:
+                    exc.ledger = built.ledger
                 attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
                 raise
             detail = terminal_operation_detail(pending, built.ledger, identity_keys=_IDENTITY)
-            reviews = await _reviews(client, entry, built)
             data = _result(entry, request, pairs, ad_groups, built, reviews)
             status = audit_status(detail)
             return IntegrationAuditOutcome(
@@ -234,7 +237,12 @@ def _result(
     reviews: Mapping[str, AdReview],
 ) -> dict[str, Any]:
     rows = []
+    # An atomic refusal puts the same reason on every ad, so the result carries it once.
+    messages: set[str] = set()
     for (index, reference), effect in zip(pairs, _effects(built), strict=True):
+        repeated = effect.message in messages
+        if effect.message:
+            messages.add(effect.message)
         created = effect.external_ref if effect.outcome == "applied" else None
         review = reviews.get(created) if created else None
         check = ad_groups.get(_ad_group_name(reference))
@@ -251,7 +259,7 @@ def _result(
                 "review_status": review.review_status if review else None,
                 "approval_status": review.approval_status if review else None,
                 "error_code": effect.error_code,
-                "message": effect.message,
+                "message": None if repeated else effect.message,
             }
         )
     return {"account_id": entry.external_id, "requested_status": request.status, "ads": rows}

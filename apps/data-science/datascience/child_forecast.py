@@ -114,6 +114,13 @@ def window_cuts(history: int, holdout: int) -> list[int]:
     return cuts
 
 
+def count_tested_points(values: np.ndarray, holdout: int, cuts: list[int]) -> int:
+    """Counts the actual values scored; windows overlap, so each period counts once."""
+    history = len(values)
+    periods = {period for cut in cuts for period in range(history - cut, history - cut + holdout)}
+    return sum(bool(np.isfinite(values[period])) for period in periods)
+
+
 def window(
     covariates: dict[str, np.ndarray], first: int, end: int, holdout: int
 ) -> dict[str, np.ndarray]:
@@ -235,7 +242,7 @@ def backtest(
     return {
         "holdout": holdout,
         "starting_points": len(cuts),
-        "tested_points": sum(int(np.isfinite(actual).sum()) for actual in actuals),
+        "tested_points": count_tested_points(values, holdout, cuts),
         "forecast": scored,
         "baseline": baseline,
         "simple": simple_benchmark(values, holdout, cuts, frequency),

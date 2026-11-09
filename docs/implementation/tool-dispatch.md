@@ -395,7 +395,9 @@ the original expiry and record an audit event. The route allows 120 requests a
 minute, because a review can call the provider.
 
 The endpoint validates editable arguments and live entity access, then calls
-the tool's display callback. It retains `reviewed_args` separately from the
+the tool's display callback. A structured field's nested references aren't
+resolved one by one: the review checks the field's entity kind and the active
+context, and the tool's own account check holds them to that context. It retains `reviewed_args` separately from the
 original call and history, including Code Mode snapshots. Display metadata
 retains the pin; it is never an executable argument. The refreshed approval
 revision covers both sets of evidence. Resume defaults to the retained

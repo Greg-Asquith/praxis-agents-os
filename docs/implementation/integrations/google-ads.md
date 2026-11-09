@@ -22,7 +22,7 @@ status, currency, time zone, manager flag, auto-tagging, and today's and
 this month's cost. Costs are exact decimal strings in the account currency.
 Today is the current date in the account time zone. Manager accounts have
 no cost of their own, so the tool skips the cost query and returns null
-costs. Billing and spending limits are pending (plan 314).
+costs. Billing and spending limits are pending.
 
 ## Backend writes
 
@@ -67,7 +67,9 @@ endpoint per resource type. Two seams build on it:
   their values as `already_set` without sending them, sends the rest in one
   partial-failure request, and reads each object back. The read-back settles
   an unclear reply and fails a change Google accepted but didn't keep. If
-  the read-back fails, Google's reply stands and **After** is empty.
+  the read-back fails or doesn't return the object, Google's reply stands and
+  **After** is empty. A cancel during the read-back keeps Google's reply as the
+  evidence.
 - Partial-failure parsing (`grouped_partial_failure_errors`) replaces
   Google's generic policy message with the policy topics from the error's
   `policyFindingDetails`, such as "Disapproved under the Destination Not
@@ -212,13 +214,12 @@ the keys `google_ads_update_targeting` takes. It takes up to 25 names per call,
 which is Google's limit for `geoTargetConstants:suggest`, and one selected account
 runs it, because the keys are the same for every account. A location option has its
 key, name, type, region, and Google's estimated reach. Audit records the kind and
-count, never the search text. Audience search is pending (plan 306 C).
+count, never the search text. Audience search is pending.
 
 `google_ads_update_targeting` changes up to 20 campaigns per call in one approval.
-Each entry names one campaign and only what changes. Ad group entries are pending
-(plan 306 C), because no setting in this tool applies to an ad group yet. Devices,
-schedules, audiences, and exclusions are also pending (plan 306 B to D). The fields
-are as follows:
+Each entry names one campaign and only what changes. Ad group entries are pending,
+because no setting in this tool applies to an ad group yet. Devices, schedules,
+audiences, and exclusions are also pending. The fields are as follows:
 
 | Field | What it does |
 | --- | --- |
@@ -241,8 +242,9 @@ The tool refuses these before Google's dry run:
   and rejects the criterion. A language left on a Search campaign from before can
   still be removed.
 - A change that would leave a campaign that has locations with none, because its ads
-  could then show anywhere. This also covers Google's rule for Local Services
-  Performance Max campaigns.
+  could then show anywhere. An add Google rejects or doesn't recognise doesn't count as
+  a location left. This also covers Google's rule for Local Services Performance Max
+  campaigns.
 - A location or language key Google doesn't recognise.
 
 Radius targets take coordinates, not an address. Google computes a point from an
@@ -355,7 +357,7 @@ registers with the apply, remove, and delete tools.
 targets, and `google_ads_remove_labels` detaches them. Each target is an
 explicit union tagged by `kind`: `campaign`, `ad_group`, or `keyword`, carrying
 the matching scoped reference. Keywords are positive keywords only. The `ad`
-kind is pending (plan 312). The tools never accept raw resource
+kind is pending. The tools never accept raw resource
 names; the operation rebuilds each `campaignLabels`, `adGroupLabels`, or
 `adGroupCriterionLabels` resource name from the IDs.
 
@@ -576,8 +578,9 @@ layout for one campaign or many:
   **Removing**, or **No Change**. Each added place has its own `BidAdjustment`, and ×
   cancels that change on every campaign. With more than one campaign, each row says how
   many it reaches. Eight or more places of one type collapse to one row with **Review**.
-- **Add or Exclude a Location** opens the tools: search, `LocationPaste` (lines Google
-  doesn't recognise are skipped and counted), and a distance around a place.
+- **Add or Exclude a Location** opens the tools: search, `LocationPaste` (up to 500 lines
+  at a time; lines Google doesn't recognise are skipped and counted, and a failed lookup
+  keeps what it already found), and a distance around a place.
 - **Languages** appears only when a campaign can take a language or one is changing, so
   it's hidden on Search campaigns with no language change.
 - The campaign `DataTable` appears only with more than one campaign. It opens on the

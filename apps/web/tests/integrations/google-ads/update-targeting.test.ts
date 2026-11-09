@@ -314,6 +314,8 @@ describe("inputs", () => {
     for (const batch of pasteBatches(long)) {
       expect(batch.join("\n").length).toBeLessThanOrEqual(500)
     }
+
+    expect(pasteBatches(["x".repeat(600), "Leeds"])).toEqual([["Leeds"]])
   })
 })
 

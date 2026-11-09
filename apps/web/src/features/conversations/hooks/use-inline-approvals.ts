@@ -117,6 +117,7 @@ export function useInlineApprovals({
         submitError.cause.status === 409
       ) {
         setDecisions({})
+        setRetained({})
       }
       setFormError(submitError instanceof Error ? submitError.message : "Approval submit failed.")
       setFormErrorToolCallId(toolCallId)

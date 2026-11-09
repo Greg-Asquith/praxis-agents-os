@@ -168,8 +168,12 @@ function parseAdGroup(value: unknown): DraftAdGroup | null {
 }
 
 /** Reads the cancelled ad groups the card keeps across a check, in the tool's own shape. */
-export function parseCancelledAdGroups(value: unknown): DraftAdGroup[] {
-  return parseEach(value, parseAdGroup) ?? []
+/** What Restore brings back. A reset of the card's edits can return them to the request. */
+export function parseCancelledAdGroups(value: unknown, args: CreateAdGroupsArgs): DraftAdGroup[] {
+  const current = new Set(serializeAdGroups(args.adGroups).map((item) => JSON.stringify(item)))
+  return (parseEach(value, parseAdGroup) ?? []).filter(
+    (item) => !current.has(JSON.stringify(serializeAdGroups([item])[0]))
+  )
 }
 
 function parseItemProblem(value: unknown): ItemProblem[] {

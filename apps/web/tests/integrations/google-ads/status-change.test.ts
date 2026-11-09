@@ -136,6 +136,20 @@ describe("Google Ads status arguments", () => {
     expect(rows.map((row) => row.problem !== null)).toEqual([true, true, false, true])
   })
 
+  it("keeps a removed object's problem when the status changes", () => {
+    const removed = args({
+      _checks: {
+        ...args()._checks,
+        [RESOURCES.campaign]: check({ status: "REMOVED", problem: "Removed." }),
+      },
+    })
+    const flipped = parsed({
+      ...removed,
+      changes: [{ kind: "campaign", campaign, status: "ENABLED" }, ...removed.changes.slice(1)],
+    })
+    expect(statusRows(parsed(removed), flipped)[0]?.problem).toBe("Removed.")
+  })
+
   it("shows a rejection only while the status still equals the one checked", () => {
     const rejected = args({
       _checks: {

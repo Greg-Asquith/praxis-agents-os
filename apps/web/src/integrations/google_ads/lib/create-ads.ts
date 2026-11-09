@@ -361,6 +361,13 @@ export function serializeCopy(ad: AdCopy): Record<string, unknown> {
 }
 
 /** The `ads` value for the given drafts, keeping each entry's other fields. */
+/** What Restore brings back. A reset of the card's edits can return them to the request. */
+export function cancelledAds(retained: unknown, args: CreateAdsArgs): Record<string, unknown>[] {
+  if (!Array.isArray(retained)) return []
+  const current = new Set(serializeAds(args.ads).map((ad) => JSON.stringify(ad)))
+  return retained.filter(isRecord).filter((ad) => !current.has(JSON.stringify(ad)))
+}
+
 export function serializeAds(ads: readonly DraftAd[]): Record<string, unknown>[] {
   return ads.map((ad) => ({
     ...ad.entry,

@@ -47,13 +47,14 @@ async def list_campaign_budgets(
         inclusive=minimum_id_inclusive,
     ):
         filters.append(boundary_filter)
+    where_clause = f"WHERE {' AND '.join(filters)} " if filters else ""
     query = (
         "SELECT campaign_budget.id, campaign_budget.name, campaign_budget.status, "  # noqa: S608 -- digit-only ids and escaped search
         "campaign_budget.period, campaign_budget.delivery_method, "
         "campaign_budget.amount_micros, campaign_budget.total_amount_micros, "
         "campaign_budget.explicitly_shared, campaign_budget.reference_count, "
         "customer.currency_code FROM campaign_budget "
-        f"WHERE {' AND '.join(filters)} ORDER BY campaign_budget.id LIMIT {limit}"
+        f"{where_clause}ORDER BY campaign_budget.id LIMIT {limit}"
     )
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",

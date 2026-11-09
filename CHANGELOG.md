@@ -12,6 +12,26 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads status changes with approval: `google_ads_update_status` turns up
+  to 100 campaigns, ad groups, ads, keywords, and asset groups on or off in one
+  approval, checks each with Google first, refuses anything changed since the
+  card was shown, and reads each one back.
+- Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
+  search ads across existing ad groups in one all-or-nothing request, with a
+  search result preview and character counts on the card.
+- Google Ads ad group creation: `google_ads_create_ad_groups` creates up to 20
+  ad groups in a Search campaign with their keywords, negative keywords, and
+  ads in one all-or-nothing request. Keywords can be pasted, and the card
+  refuses bids the campaign's bidding doesn't use.
+- Google Ads create cards check edits with Google before approval. **Check
+  Changes** shows Google's answer on the card, with no agent turn, and approval
+  of an unchecked edit is refused.
+- Google Ads targeting: `google_ads_search_targeting` finds locations and
+  languages by name, and `google_ads_update_targeting` adds, removes, and
+  excludes locations, distances around a point, and languages across up to 20
+  campaigns in one approval, with bid adjustments. It refuses to leave a campaign
+  with no location. Search campaigns can't add languages, because Google doesn't
+  support it.
 - `cut_video_clips` can zoom in on every other jump cut that removing pauses
   makes, which hides the jump, and push in slowly across a segment, up to
   150%. Zooms stay inside the framed picture and follow the face when framing
@@ -323,6 +343,7 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Removed
 
+- `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
 - Run Code, which sent workspace files to an Anthropic, OpenAI, or Google
   sandbox, is gone, with its `NATIVE_RUN_CODE_*` settings. Agents work with
   Office files, CSV, and saved results through the document tools, and do

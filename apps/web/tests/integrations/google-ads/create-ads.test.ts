@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
+  cancelledAds,
   adRows,
   adsNeedCheck,
   canCheckAds,
@@ -77,6 +78,13 @@ function parsed(value: unknown = args()): CreateAdsArgs {
 }
 
 describe("Google Ads create ads arguments", () => {
+  it("doesn't offer to restore an ad that a reset put back in the request", () => {
+    const request = parsed()
+    const [first] = serializeAds(request.ads)
+    const other = { ...first, final_url: "https://example.com/other" }
+    expect(cancelledAds([first, other], request)).toEqual([other])
+  })
+
   it("applies Google's rejection to the copy it checked and drops it once the copy changes", () => {
     const original = parsed()
     expect(adRows(original)[0]?.problems).toEqual([

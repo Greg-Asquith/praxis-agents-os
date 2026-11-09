@@ -258,10 +258,12 @@ function parentOf(
   }
 }
 
-// A rejection applies to the status it was checked for; changing the status clears it.
+// Google's rejection applies to the status it was checked for, so changing the status clears it.
+// A removed or missing object can't take any status.
 function problemOf(item: StatusItem, check: StatusCheck): string | null {
   if (check.unavailable) return UNAVAILABLE_PROBLEM
-  return check.problem !== null && item.status === check.requested ? check.problem : null
+  const anyStatus = check.status === "REMOVED" || check.status === null
+  return anyStatus || item.status === check.requested ? check.problem : null
 }
 
 export function statusCounts(rows: readonly StatusRow[]): StatusCounts {

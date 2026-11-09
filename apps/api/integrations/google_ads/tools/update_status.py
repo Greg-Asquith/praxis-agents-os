@@ -56,6 +56,7 @@ from .utils.mutation_evidence import (
     google_ads_account_target,
     terminal_operation_detail,
 )
+from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_status"
@@ -86,7 +87,7 @@ async def google_ads_update_status(
         ),
     ],
 ) -> dict[str, Any]:
-    request = _request({"changes": changes})
+    request = validated_request(GoogleAdsUpdateStatusRequest, {"changes": changes})
     _require_proposed(proposed_args(ctx), request)
     checks = approved_display_args(ctx).get("_checks")
     shown: Mapping[str, Any] = checks if isinstance(checks, Mapping) else {}
@@ -151,15 +152,6 @@ async def google_ads_update_status(
         operation=operation,
     )
     return {"results": serialize_fan_out_results(results)}
-
-
-def _request(values: Mapping[str, Any]) -> GoogleAdsUpdateStatusRequest:
-    try:
-        return GoogleAdsUpdateStatusRequest.model_validate(values)
-    except ValidationError as exc:
-        error = exc.errors(include_url=False, include_input=False)[0]
-        message = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
-        raise ModelRetry(message) from None
 
 
 def _require_proposed(proposed: Mapping[str, Any], request: GoogleAdsUpdateStatusRequest) -> None:

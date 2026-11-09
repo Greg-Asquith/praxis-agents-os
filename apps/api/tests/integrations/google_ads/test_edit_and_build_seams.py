@@ -2,12 +2,17 @@
 
 """The Google Ads edit and build seams that every task-shaped write tool reuses."""
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pytest
 
-from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationFailureDisposition,
+    IntegrationTimeoutError,
+    IntegrationValidationError,
+)
 from integrations.google_ads.operations.build import CampaignBuild, dry_run_build, send_build
 from integrations.google_ads.operations.edits import (
     STALE_CODE,
@@ -138,6 +143,59 @@ async def test_edit_reports_an_equal_value_as_already_set_without_a_mutate() -> 
 
     assert client.bodies == []
     assert result.ledger.parents[0].skip_reason == "already_set"
+
+
+async def test_an_unclear_reply_is_settled_by_the_read_back() -> None:
+    edits = [
+        FieldChange("campaign", _CAMPAIGN, {"status": "PAUSED"}, {"status": "ENABLED"}),
+        FieldChange("adGroup", _AD_GROUP, {"status": "PAUSED"}, {"status": "ENABLED"}),
+    ]
+    read = _LiveState(
+        {_CAMPAIGN: {"status": "ENABLED"}, _AD_GROUP: {"status": "ENABLED"}},
+        {_CAMPAIGN: {"status": "PAUSED"}, _AD_GROUP: {"status": "ENABLED"}},
+    )
+    timeout = IntegrationTimeoutError(
+        "Google Ads did not reply.", failure_disposition=IntegrationFailureDisposition.AMBIGUOUS
+    )
+
+    result = await _applied(_MutateClient(timeout), read, edits)
+
+    assert [parent.effects[0].outcome for parent in result.ledger.parents] == [
+        "applied",
+        "unverified",
+    ]
+
+
+async def test_an_object_missing_from_the_read_back_keeps_googles_reply() -> None:
+    edit = FieldChange("campaign", _CAMPAIGN, {"status": "PAUSED"}, {"status": "ENABLED"})
+    read = _LiveState({_CAMPAIGN: {"status": "ENABLED"}}, {})
+    client = _MutateClient(
+        {"mutateOperationResponses": [{"campaignResult": {"resourceName": _CAMPAIGN}}]}
+    )
+
+    result = await _applied(client, read, [edit])
+
+    assert result.ledger.parents[0].effects[0].outcome == "applied"
+
+
+async def test_a_cancel_during_the_read_back_keeps_what_google_confirmed() -> None:
+    edit = FieldChange("campaign", _CAMPAIGN, {"status": "PAUSED"}, {"status": "ENABLED"})
+    reads = [{_CAMPAIGN: {"status": "ENABLED"}}, asyncio.CancelledError()]
+
+    async def read(_edits: Sequence[Edit]) -> Mapping[str, Mapping[str, Any]]:
+        answer = reads.pop(0)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    client = _MutateClient(
+        {"mutateOperationResponses": [{"campaignResult": {"resourceName": _CAMPAIGN}}]}
+    )
+
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await _applied(client, read, [edit])
+
+    assert caught.value.ledger.effect_counts == {"applied": 1, "failed": 0, "unverified": 0}
 
 
 async def test_edit_records_a_partial_failure_per_object() -> None:

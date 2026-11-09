@@ -61,13 +61,13 @@ async def list_ads(
         "ad_group_ad.ad.id", minimum_id=minimum_id, inclusive=minimum_id_inclusive
     ):
         filters.append(boundary_filter)
+    where_clause = f"WHERE {' AND '.join(filters)} " if filters else ""
     query = (
         "SELECT ad_group_ad.resource_name, ad_group_ad.status, ad_group_ad.ad.id, "  # noqa: S608 -- digit-only ids and escaped search
         "ad_group_ad.ad.name, ad_group_ad.ad.type, "
         "ad_group_ad.ad.responsive_search_ad.headlines, ad_group.id, ad_group.name, "
         "campaign.id, campaign.name FROM ad_group_ad "
-        f"WHERE {' AND '.join(filters)} "
-        f"ORDER BY ad_group_ad.ad.id LIMIT {limit}"
+        f"{where_clause}ORDER BY ad_group_ad.ad.id LIMIT {limit}"
     )
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",

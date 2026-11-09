@@ -430,9 +430,14 @@ def _with_refusals(
     planned: Sequence[_Planned],
     live: LiveCampaignTargeting | None,
     names: Mapping[str, Mapping[str, str]],
+    shown_problem: str | None = None,
 ) -> tuple[list[_Planned], str | None]:
-    """Marks what mustn't be sent, and returns the problem that stops the whole campaign."""
-    problem = _campaign_problem(live, planned)
+    """Marks what mustn't be sent, and returns the problem that stops the whole campaign.
+
+    An add that can't be sent doesn't count as a location the campaign keeps.
+    """
+    sendable = [item for item in planned if _item_problem(item, live, names) is None]
+    problem = shown_problem or _campaign_problem(live, sendable)
     refused: list[_Planned] = []
     for item in planned:
         reason = problem or _item_problem(item, live, names)
@@ -614,7 +619,11 @@ def _approved_plan(
         key: LiveCriterion(**values) for key, values in (check.get("criteria") or {}).items()
     }
     planned = _plan(change, criteria, check.get("location_setting"), names)
-    return _with_refusals(planned, live, names)[0]
+    # Google's answers aren't asked for again, so a problem they caused still stands.
+    shown_problem = check.get("problem")
+    return _with_refusals(
+        planned, live, names, shown_problem if isinstance(shown_problem, str) else None
+    )[0]
 
 
 def _pending_detail(
@@ -789,6 +798,10 @@ def _check(
     names: Mapping[str, Mapping[str, str]],
 ) -> dict[str, Any]:
     """Builds the card's view of one campaign, and the live values approval plans against."""
+    # An add Google rejected won't happen, so removals alongside it could leave no location.
+    problem = problem or _campaign_problem(
+        live, [item for item in planned if results[item.edit.key].refused is None]
+    )
     item_problems: dict[tuple[str, str], str] = {}
     already: list[dict[str, str]] = []
     for item in planned:

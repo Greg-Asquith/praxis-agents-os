@@ -395,6 +395,21 @@ async def test_leaving_a_campaign_with_no_location_is_refused_on_the_card_and_af
     assert {row["outcome"] for row in _rows(result)} == {"failed"}
 
 
+async def test_an_add_that_cant_be_sent_doesnt_count_as_the_location_left(monkeypatch) -> None:
+    account = _Account([_location("2826")], rejected={"geoTargetConstants/1006": "Not allowed."})
+    for added in ("1006", "999999"):
+        args = _args(remove_locations=[{"key": "2826"}], add_locations=[{"key": added}])
+
+        display = await _display(monkeypatch, account, args)
+        assert "no location" in _check(display)["problem"]
+        account.mutates.clear()
+
+        result, _audit = await _run(monkeypatch, account, args, display)
+
+        assert account.mutates == []
+        assert {row["outcome"] for row in _rows(result)} == {"failed"}
+
+
 async def test_a_location_removed_after_the_check_stops_the_last_location_removal(
     monkeypatch,
 ) -> None:

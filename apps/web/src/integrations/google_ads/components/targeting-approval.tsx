@@ -409,6 +409,7 @@ function CancelButton({
       disabled={disabled}
       onClick={onClick}
       size="icon"
+      title="Cancel This Change"
       type="button"
       variant="ghost"
     >
@@ -671,7 +672,9 @@ function RadiusRow({
         inputMode="decimal"
         onBlur={(event) => {
           const radius = Number(event.currentTarget.value)
-          if (radius > 0 && radius !== target.radius) onChange({ ...target, radius })
+          if (Number.isFinite(radius) && radius > 0 && radius !== target.radius) {
+            onChange({ ...target, radius })
+          }
         }}
       />
       <SegmentedChoice
@@ -1026,6 +1029,7 @@ function RadiusForm({
     longitude.trim() !== "" &&
     Math.abs(parsed.latitude) <= 90 &&
     Math.abs(parsed.longitude) <= 180 &&
+    Number.isFinite(parsed.radius) &&
     parsed.radius > 0
   const field = (
     name: string,

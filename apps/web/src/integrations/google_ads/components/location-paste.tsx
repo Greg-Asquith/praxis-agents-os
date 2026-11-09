@@ -7,10 +7,10 @@ import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import type { EntityChoice } from "@/features/tools/types"
-import { pasteBatches } from "@/integrations/google_ads/lib/update-targeting"
+import { MAX_PASTE_LINES, pasteBatches } from "@/integrations/google_ads/lib/update-targeting"
 import { getErrorMessage } from "@/lib/api/errors"
 
-type Found = { found: number; lines: number; missing: string[] }
+type Found = { found: number; lines: number; missing: string[]; notTried: number }
 
 /** Finds pasted places, one per line, in Google's list; lines Google doesn't know are counted. */
 export function LocationPaste({
@@ -33,10 +33,11 @@ export function LocationPaste({
     const lines = [...new Set(text.split("\n").map((line) => line.trim()))].filter(Boolean)
     setBusy(true)
     setError(null)
+    const choices: EntityChoice[] = []
+    const searched: string[] = []
     try {
-      const choices: EntityChoice[] = []
       // One at a time, because the route's rate limit is shared with the card's other lookups.
-      for (const batch of pasteBatches(lines)) {
+      for (const batch of pasteBatches(lines.slice(0, MAX_PASTE_LINES))) {
         const page = await lookupEntityReferences({
           conversationId: conversationId ?? "",
           dependentArgs: {},
@@ -47,25 +48,27 @@ export function LocationPaste({
           toolName,
         })
         choices.push(...page.choices)
+        searched.push(...batch)
       }
-      // A batch of one line lists every match, so keep only the best one per line.
-      const best = new Map<string, EntityChoice>()
-      for (const choice of choices) {
-        const term = choice.value["search_term"]
-        const line = typeof term === "string" ? term.toLowerCase() : choice.label.toLowerCase()
-        if (!best.has(line)) best.set(line, choice)
-      }
-      setFound({
-        found: best.size,
-        lines: lines.length,
-        missing: lines.filter((line) => !best.has(line.toLowerCase())),
-      })
-      onFound([...best.values()])
     } catch (caught) {
+      // What was found before the failure still counts.
       setError(getErrorMessage(caught))
-    } finally {
-      setBusy(false)
     }
+    // A batch of one line lists every match, so keep only the best one per line.
+    const best = new Map<string, EntityChoice>()
+    for (const choice of choices) {
+      const term = choice.value["search_term"]
+      const line = typeof term === "string" ? term.toLowerCase() : choice.label.toLowerCase()
+      if (!best.has(line)) best.set(line, choice)
+    }
+    setFound({
+      found: best.size,
+      lines: lines.length,
+      missing: searched.filter((line) => !best.has(line.toLowerCase())),
+      notTried: lines.length - searched.length,
+    })
+    onFound([...best.values()])
+    setBusy(false)
   }
 
   return (
@@ -102,6 +105,9 @@ export function LocationPaste({
                 {" "}
                 · {String(found.missing.length)} not recognised
               </span>
+            ) : null}
+            {found.notTried > 0 ? (
+              <span className="text-destructive"> · {String(found.notTried)} not tried</span>
             ) : null}
           </p>
         ) : null}

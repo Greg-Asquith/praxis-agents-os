@@ -794,6 +794,7 @@ export function parseCancelled(value: unknown): TargetingChange[] {
 // Google takes 25 names a request, and the lookup route takes 500 characters a search.
 const MAX_NAMES = 25
 const MAX_SEARCH_CHARS = 500
+export const MAX_PASTE_LINES = 500
 
 /** Splits pasted lines into searches the lookup route and Google both accept. */
 export function pasteBatches(lines: readonly string[]): string[][] {
@@ -801,6 +802,8 @@ export function pasteBatches(lines: readonly string[]): string[][] {
   let batch: string[] = []
   let size = 0
   for (const line of lines) {
+    // No search can hold this line, and no place name is this long.
+    if (line.length + 1 > MAX_SEARCH_CHARS) continue
     if (batch.length === MAX_NAMES || size + line.length + 1 > MAX_SEARCH_CHARS) {
       batches.push(batch)
       batch = []

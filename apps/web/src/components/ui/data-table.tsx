@@ -9,6 +9,7 @@ import {
   useCellContext,
   useHeaderContext,
 } from "@/components/data-table/table"
+import { handleRowKeyDown } from "@/components/data-table/row-activation"
 import {
   filterDataRows,
   orderByGroup,
@@ -164,6 +165,8 @@ export function DataTable({
       ),
       pagination: { pageIndex: 0, pageSize: resolvedPageSize ?? (rows.length || 1) },
     },
+    // Rows change on every edit in an approval table, which mustn't jump back to the first page.
+    autoResetPageIndex: false,
     manualPagination: resolvedPageSize === null,
   })
   const sortedModelRows = table.getSortedRowModel().rows
@@ -176,9 +179,14 @@ export function DataTable({
   )
   const { setPageIndex } = table
   const currentTabId = currentTab?.id
+  const { pagination, sorting } = table.state
   useEffect(() => {
     setPageIndex(0)
-  }, [currentTabId, search, setPageIndex])
+  }, [currentTabId, search, setPageIndex, sorting])
+  const lastPageIndex = Math.max(0, Math.ceil(filtered.rows.length / pagination.pageSize) - 1)
+  useEffect(() => {
+    if (pagination.pageIndex > lastPageIndex) setPageIndex(lastPageIndex)
+  }, [lastPageIndex, pagination.pageIndex, setPageIndex])
   const labelColumn = columns[0]
   const selectedIds = selection?.selected
   const filteredIds = useMemo(
@@ -186,7 +194,6 @@ export function DataTable({
     [filtered.rows, selection]
   )
   const selectedInView = filteredIds.filter((id) => selectedIds?.has(id)).length
-  const pagination = table.state.pagination
   const visibleRowOffset =
     resolvedPageSize === null ? 0 : pagination.pageIndex * pagination.pageSize
   const visibleColumns = table.getVisibleLeafColumns()
@@ -300,7 +307,9 @@ export function DataTable({
                               openRow(values)
                             },
                             onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
-                              openRowFromKeyboard(event, values, openRow)
+                              handleRowKeyDown(event, () => {
+                                openRow(values)
+                              })
                             },
                             role: "button",
                             tabIndex: 0,
@@ -569,17 +578,6 @@ function RowDetailSheet({
       </SheetContent>
     </Sheet>
   )
-}
-
-function openRowFromKeyboard(
-  event: KeyboardEvent<HTMLTableRowElement>,
-  row: DataRow,
-  select: (row: DataRow) => void
-) {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault()
-    select(row)
-  }
 }
 
 function columnClass(column: DataColumn): string {

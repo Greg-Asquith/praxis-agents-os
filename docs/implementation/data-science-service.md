@@ -115,7 +115,7 @@ history, and each later one starts `holdout // 2` steps earlier. Tests stop at
 the first of these limits:
 
 - six starting points
-- 64 scored steps
+- 64 scored steps, counting each test's steps in full
 - less than `max(12, holdout)` steps of context left
 - an earlier stretch Timestral can't forecast
 
@@ -150,7 +150,7 @@ the lower `wape`:
   "backtest": {
     "holdout": 56,
     "starting_points": 2,
-    "tested_points": 112,
+    "tested_points": 84,
     "forecast": {"wape": 0.09, "coverage": 0.82, "quantile_loss": 0.07},
     "baseline": {"wape": 0.13, "coverage": 0.75, "quantile_loss": 0.10},
     "simple": {"method": "same_period_last_cycle", "wape": 0.16},
@@ -240,7 +240,7 @@ The model sees:
 - `forecast`: one row per period (`period`, `median`, `low`, `high`), rounded
   to the most decimal places in the history, up to six
 - `backtest`: `periods` forecast ahead in each test, `starting_points`,
-  `tested_points`, `typical_error` (WAPE), `range_coverage` (share of actuals
+  `tested_points` (each period counted once), `typical_error` (WAPE), `range_coverage` (share of actuals
   in the 10 to 90% range), `simple_method`, `simple_error`, and
   `covariate_error_change` (relative change in quantile loss; negative means
   covariates helped)

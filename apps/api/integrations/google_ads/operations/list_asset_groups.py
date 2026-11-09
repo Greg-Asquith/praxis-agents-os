@@ -51,11 +51,11 @@ async def list_asset_groups(
         "asset_group.id", minimum_id=minimum_id, inclusive=minimum_id_inclusive
     ):
         filters.append(boundary_filter)
+    where_clause = f"WHERE {' AND '.join(filters)} " if filters else ""
     query = (
         "SELECT asset_group.id, asset_group.name, asset_group.status, "  # noqa: S608 -- digit-only ids and escaped search
         "campaign.id, campaign.name FROM asset_group "
-        f"WHERE {' AND '.join(filters)} "
-        f"ORDER BY asset_group.id LIMIT {limit}"
+        f"{where_clause}ORDER BY asset_group.id LIMIT {limit}"
     )
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",

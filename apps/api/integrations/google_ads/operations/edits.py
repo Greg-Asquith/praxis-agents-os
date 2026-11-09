@@ -224,7 +224,7 @@ async def apply_edits(
     Refused edits from preparation are recorded as failed and never sent.
 
     Raises:
-        asyncio.CancelledError: With a `ledger` attribute marking the sent edits unverified.
+        asyncio.CancelledError: With a `ledger` attribute holding what is known of the sent edits.
     """
     _require_unique(edits)
     live = await read(edits)
@@ -250,9 +250,13 @@ async def apply_edits(
     read_back = False
     if sent:
         # A failed read keeps Google's reply as the outcome, with no read-back values.
-        with contextlib.suppress(IntegrationError):
-            after.update(await read(sent))
-            read_back = True
+        try:
+            with contextlib.suppress(IntegrationError):
+                after.update(await read(sent))
+                read_back = True
+        except asyncio.CancelledError as exc:
+            exc.ledger = _ledger(family, edits, refusals, sent, outcomes)
+            raise
     checked = [
         _checked_outcome(edit, outcome, after.get(edit.key), read_back=read_back)
         for edit, outcome in zip(sent, outcomes, strict=True)
@@ -315,6 +319,9 @@ def _checked_outcome(
         if edit.action == "remove" and present is None and edit.before is not None:
             return ("applied", edit.before, None, None)
         return outcome if state == "unverified" else _not_confirmed(f"the {edit.action}")
+    # An object the read-back didn't return says nothing about the change.
+    if after is None:
+        return outcome
     values = edit.live(after) or {}
     different = [path for path, value in edit.requested.items() if values.get(path) != value]
     if not different:

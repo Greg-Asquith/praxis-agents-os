@@ -404,7 +404,7 @@ function CancelCell({
     </Button>
   ) : (
     <Button
-      aria-label="Cancel this change"
+      aria-label="Cancel This Change"
       disabled={disabled}
       onClick={() => {
         onToggle(true)

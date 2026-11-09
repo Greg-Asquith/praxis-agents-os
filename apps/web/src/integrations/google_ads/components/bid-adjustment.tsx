@@ -39,7 +39,7 @@ export function BidAdjustment({
             invalid && "border-destructive"
           )}
           disabled={disabled}
-          inputMode="numeric"
+          inputMode="text"
           onBlur={() => {
             setDraft(null)
             if (text.trim() === "") onChange(null)

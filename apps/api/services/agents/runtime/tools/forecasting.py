@@ -127,7 +127,7 @@ class ForecastBacktest(BaseModel):
 
     periods: int = Field(description="Periods forecast ahead in each test.")
     starting_points: int = Field(description="How many points in the history were tested from.")
-    tested_points: int = Field(description="Actual values scored across every test.")
+    tested_points: int = Field(description="Periods with an actual value scored across every test.")
     typical_error: float | None = Field(description="Mean absolute error over total actuals.")
     range_coverage: float | None = Field(description="Share of actuals inside the low-high range.")
     simple_method: SimpleMethod = Field(description="The simple forecast compared against.")

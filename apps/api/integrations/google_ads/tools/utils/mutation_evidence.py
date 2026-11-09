@@ -153,7 +153,7 @@ def attach_interrupted_evidence(
         return
     exc.failure_disposition = (
         IntegrationFailureDisposition.AMBIGUOUS
-        if ledger.effect_counts["unverified"]
+        if ledger.effect_counts["unverified"] or ledger.effect_counts["applied"]
         else IntegrationFailureDisposition.NOT_DISPATCHED
     )
     try:

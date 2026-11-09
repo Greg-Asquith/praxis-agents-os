@@ -10,6 +10,7 @@ import pytest
 from datascience import forecast
 from datascience.child_forecast import (
     MAX_STARTING_POINTS,
+    count_tested_points,
     holiday_covariates,
     period_days,
     simple_benchmark,
@@ -94,6 +95,13 @@ def test_test_windows_stop_at_the_limits_and_keep_enough_context() -> None:
     assert window_cuts(10_000, 1_024) == [1_024]
     assert len(window_cuts(10_000, 1)) == MAX_STARTING_POINTS
     assert window_cuts(16, 4) == [4]
+
+
+def test_tested_points_count_each_period_once_and_skip_gaps() -> None:
+    values = np.arange(40.0)
+    assert count_tested_points(values, 2, window_cuts(40, 2)) == 7
+    values[-1] = np.nan
+    assert count_tested_points(values, 2, window_cuts(40, 2)) == 6
 
 
 def test_simple_benchmark_takes_the_better_method_and_skips_gaps() -> None:

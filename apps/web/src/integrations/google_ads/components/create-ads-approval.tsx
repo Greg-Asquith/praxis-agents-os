@@ -32,10 +32,10 @@ import {
   serializeAds,
   sharedValue,
   type AdRow,
+  cancelledAds,
   type CreateAdsArgs,
   type DraftAd,
 } from "@/integrations/google_ads/lib/create-ads"
-import { isRecord } from "@/lib/guards"
 
 // Below this many ads the table's search only adds noise.
 const SEARCH_FROM = 10
@@ -77,7 +77,7 @@ export function CreateAdsApproval({
   const [tab, setTab] = useState("all")
   const [open, setOpen] = useState(() => firstToOpen(rows))
   // Cancelled ads as sent, so Restore puts them back with their edits.
-  const cancelled = Array.isArray(controls.retained) ? controls.retained.filter(isRecord) : []
+  const cancelled = cancelledAds(controls.retained, args)
   const openRow = rows[Math.min(open, rows.length - 1)]
 
   const editAds = (ads: DraftAd[]) => {

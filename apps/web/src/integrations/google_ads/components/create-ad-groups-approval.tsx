@@ -100,7 +100,7 @@ export function CreateAdGroupsApproval({
   const [tab, setTab] = useState("all")
   const [open, setOpen] = useState(() => firstToOpen(rows))
   // Cancelled ad groups, so Restore puts them back with their edits.
-  const cancelled = parseCancelledAdGroups(controls.retained)
+  const cancelled = parseCancelledAdGroups(controls.retained, args)
   const openRow = rows[Math.min(open, rows.length - 1)]
   const many = rows.length > 1
 
