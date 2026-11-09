@@ -12,6 +12,8 @@ from services.integrations.plugin import (
 from .discover_resources import discover_resources
 from .entity_resolvers import (
     GOOGLE_ADS_AD_GROUP_RESOLVER,
+    GOOGLE_ADS_AD_RESOLVER,
+    GOOGLE_ADS_ASSET_GROUP_RESOLVER,
     GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER,
     GOOGLE_ADS_CAMPAIGN_RESOLVER,
     GOOGLE_ADS_KEYWORD_RESOLVER,
@@ -59,6 +61,8 @@ PROVIDER = IntegrationProviderPlugin(
     tool_definitions=TOOL_DEFINITIONS,
     entity_resolvers=(
         GOOGLE_ADS_AD_GROUP_RESOLVER,
+        GOOGLE_ADS_AD_RESOLVER,
+        GOOGLE_ADS_ASSET_GROUP_RESOLVER,
         GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER,
         GOOGLE_ADS_CAMPAIGN_RESOLVER,
         GOOGLE_ADS_KEYWORD_RESOLVER,

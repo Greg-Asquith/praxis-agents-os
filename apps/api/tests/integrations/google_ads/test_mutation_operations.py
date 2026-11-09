@@ -15,7 +15,6 @@ from integrations.google_ads.operations.mutation_outcomes import (
 from integrations.google_ads.operations.remove_negative_keywords import (
     remove_negative_keywords,
 )
-from integrations.google_ads.operations.update_campaign_status import update_campaign_status
 from integrations.google_ads.operations.update_device_bid_modifiers import (
     update_device_bid_modifiers,
 )
@@ -26,41 +25,6 @@ from tests.integrations.google_ads.support import (
     _NegativeKeywordListClient,
     _OperationClient,
 )
-
-
-async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None:
-    payload = {
-        "results": [{"resourceName": "customers/333/campaigns/10"}, {}],
-        "partialFailureError": {
-            "details": [
-                {
-                    "errors": [
-                        {
-                            "message": "Campaign is removed",
-                            "errorCode": {"campaignError": "CANNOT_MODIFY_REMOVED_CAMPAIGN"},
-                            "location": {
-                                "fieldPathElements": [{"fieldName": "operations", "index": 1}]
-                            },
-                        }
-                    ]
-                }
-            ]
-        },
-    }
-    client = _OperationClient(payload)
-    result = await update_campaign_status(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        campaign_ids=["10", "20"],
-        status="PAUSED",
-    )
-    assert type(result) is GoogleAdsMutationLedger
-    assert client.last_json["partialFailure"] is True
-    assert client.last_login_customer_id == "111"
-    assert result["resource_names"] == ["customers/333/campaigns/10"]
-    assert result["campaign_errors"][0]["campaign_id"] == "20"
-    assert result["campaign_errors"][0]["error_code"] == "CANNOT_MODIFY_REMOVED_CAMPAIGN"
 
 
 async def test_update_device_bid_modifiers_mixes_create_update_and_skip() -> None:

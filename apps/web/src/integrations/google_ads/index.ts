@@ -2,7 +2,7 @@
 
 import type { IntegrationUiModule } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
-import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsUpdateStatusPresenter } from "@/integrations/google_ads/presenters/update-status"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
@@ -37,7 +37,7 @@ export default {
     googleAdsDeleteLabelsPresenter,
     ...googleAdsNegativeKeywordsPresenters,
     googleAdsCampaignLinksPresenter,
-    googleAdsCampaignStatusPresenter,
+    googleAdsUpdateStatusPresenter,
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,

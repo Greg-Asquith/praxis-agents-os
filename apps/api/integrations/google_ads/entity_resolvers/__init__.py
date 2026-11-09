@@ -2,7 +2,9 @@
 
 """Google Ads entity resolvers."""
 
+from .ad import GOOGLE_ADS_AD_RESOLVER
 from .ad_group import GOOGLE_ADS_AD_GROUP_RESOLVER
+from .asset_group import GOOGLE_ADS_ASSET_GROUP_RESOLVER
 from .campaign import GOOGLE_ADS_CAMPAIGN_RESOLVER
 from .campaign_budget import GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER
 from .keyword import GOOGLE_ADS_KEYWORD_RESOLVER
@@ -12,6 +14,8 @@ from .shared_set import GOOGLE_ADS_SHARED_SET_RESOLVER
 
 __all__ = [
     "GOOGLE_ADS_AD_GROUP_RESOLVER",
+    "GOOGLE_ADS_AD_RESOLVER",
+    "GOOGLE_ADS_ASSET_GROUP_RESOLVER",
     "GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER",
     "GOOGLE_ADS_CAMPAIGN_RESOLVER",
     "GOOGLE_ADS_KEYWORD_RESOLVER",

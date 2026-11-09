@@ -3,7 +3,6 @@
 """Google Ads tool execution, approval, result, and audit contracts."""
 
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -35,9 +34,6 @@ from integrations.google_ads.tools.list_report_fields import google_ads_list_rep
 from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordEntry,
     NegativeKeywordRemovalEntry,
-)
-from integrations.google_ads.tools.update_campaign_status import (
-    google_ads_update_campaign_status,
 )
 from integrations.google_ads.tools.utils import (
     normalize_negative_keywords,
@@ -269,168 +265,6 @@ async def test_negative_keyword_approval_resume_validates_canonical_override_tex
     assert [entry.model_dump() for entry in executed] == [
         {"text": "Edited Brand", "match_type": "PHRASE"}
     ]
-
-
-async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) -> None:
-    entries = tuple(
-        ResolvedContextEntry(
-            integration_resource_id=uuid4(),
-            provider_key="google_ads",
-            resource_type="google_ads_account",
-            external_id=customer_id,
-            display_name=f"Account {customer_id}",
-            connection_id=uuid4(),
-            connection_label="Agency",
-            connection_status="active",
-            write_allowed=True,
-            permissions_metadata={"login_customer_id": customer_id},
-        )
-        for customer_id in ("111", "222")
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=entries)),
-        tool_name="google_ads_update_campaign_status",
-    )
-    client = AsyncMock()
-
-    async def lookup(_path, **kwargs):
-        query = kwargs["json"]["query"]
-        campaign_id = "10" if "10" in query else "20"
-        return {"results": [{"campaign": {"id": campaign_id}}]}
-
-    client.post.side_effect = lookup
-    provider_update = AsyncMock(
-        side_effect=lambda _client, **kwargs: mutation_ledger(
-            {
-                "resource_names": [
-                    f"customers/{kwargs['customer_id']}/campaigns/{campaign_id}"
-                    for campaign_id in kwargs["campaign_ids"]
-                ],
-                "campaign_errors": [],
-            }
-        )
-    )
-    audited_calls: list[dict[str, Any]] = []
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        audited_calls.append(kwargs)
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.update_campaign_status",
-        provider_update,
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.run_audited_integration_operation",
-        passthrough_audit,
-    )
-
-    result = await google_ads_update_campaign_status(
-        ctx,
-        [
-            GoogleAdsCampaignReference(
-                customer_id=entries[0].external_id,
-                campaign_id="10",
-                label="First campaign",
-            ),
-            GoogleAdsCampaignReference(
-                customer_id=entries[1].external_id,
-                campaign_id="20",
-                label="Second campaign",
-            ),
-        ],
-        "PAUSED",
-    )
-
-    assert len(result["results"]) == 2
-    assert [item["status"] for item in result["results"]] == ["success", "success"], [
-        item["error_message"] for item in result["results"]
-    ]
-    assert [call.kwargs["customer_id"] for call in provider_update.await_args_list] == [
-        "111",
-        "222",
-    ]
-    assert [call.kwargs["campaign_ids"] for call in provider_update.await_args_list] == [
-        ["10"],
-        ["20"],
-    ]
-    pending = audited_calls[0]["pending_operation_detail"]
-    assert pending.intent_groups[0].fields == {"status": "PAUSED"}
-    assert [item.fields for item in pending.intent_groups[0].items] == [
-        {"campaign_id": "10", "campaign_name": "First campaign"}
-    ]
-
-
-async def test_campaign_update_fails_closed_when_pre_mutation_lookup_is_stale(
-    monkeypatch,
-) -> None:
-    entry = ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-        external_id="111",
-        display_name="Ads account",
-        connection_id=uuid4(),
-        connection_label="Agency",
-        connection_status="active",
-        write_allowed=True,
-        permissions_metadata={"login_customer_id": "999"},
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name="google_ads_update_campaign_status",
-        tool_call_id="call-denied",
-    )
-    client = AsyncMock()
-    client.post.return_value = {"results": [{"campaign": {"id": "10", "name": "Still available"}}]}
-    provider_update = AsyncMock()
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.update_campaign_status",
-        provider_update,
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.update_campaign_status.run_audited_integration_operation",
-        passthrough_audit,
-    )
-
-    result = await google_ads_update_campaign_status(
-        ctx,
-        [
-            GoogleAdsCampaignReference(
-                customer_id=entry.external_id,
-                campaign_id="10",
-                label="Still available",
-            ),
-            GoogleAdsCampaignReference(
-                customer_id=entry.external_id,
-                campaign_id="20",
-                label="Deleted before approval",
-            ),
-        ],
-        "PAUSED",
-    )
-
-    assert result["results"][0]["status"] == "error"
-    assert result["results"][0]["error_code"] == "ModelRetry"
-    assert "campaign is unavailable" in result["results"][0]["error_message"]
-    provider_update.assert_not_awaited()
 
 
 async def test_negative_list_campaign_links_reject_cross_account_references(

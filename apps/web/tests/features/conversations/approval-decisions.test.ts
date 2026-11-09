@@ -504,7 +504,7 @@ describe("approval decision helpers", () => {
     const approval: PendingToolApproval = {
       ...approvalIdentity("campaigns-1"),
       tool_call_id: "campaigns-1",
-      name: "google_ads_update_campaign_status",
+      name: "google_ads_link_negative_keyword_list",
       args: { campaign_ids: [first], status: "PAUSED" },
     }
 

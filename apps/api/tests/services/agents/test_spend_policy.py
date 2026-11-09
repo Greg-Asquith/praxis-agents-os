@@ -11,12 +11,10 @@ from integrations.google_ads.tools.create_campaign_budget import (
 from integrations.google_ads.tools.update_campaign_budget_amounts import (
     DEFINITION as CAMPAIGN_BUDGET_AMOUNT_DEFINITION,
 )
-from integrations.google_ads.tools.update_campaign_status import (
-    DEFINITION as CAMPAIGN_STATUS_DEFINITION,
-)
 from integrations.google_ads.tools.update_device_bid_modifiers import (
     DEFINITION as DEVICE_BID_MODIFIER_DEFINITION,
 )
+from integrations.google_ads.tools.update_status import DEFINITION as STATUS_DEFINITION
 from integrations.meta_ads.tools.copy_ads import DEFINITION as META_ADS_COPY_ADS_DEFINITION
 from integrations.meta_ads.tools.create_ad_set import (
     DEFINITION as META_ADS_CREATE_AD_SET_DEFINITION,
@@ -51,7 +49,7 @@ from services.agents.utils import validate_tool_configuration
 @pytest.mark.parametrize(
     "definition",
     [
-        CAMPAIGN_STATUS_DEFINITION,
+        STATUS_DEFINITION,
         CAMPAIGN_BUDGET_AMOUNT_DEFINITION,
         CREATE_CAMPAIGN_BUDGET_DEFINITION,
         DEVICE_BID_MODIFIER_DEFINITION,

@@ -1,6 +1,6 @@
 // apps/web/src/components/ui/data-table.tsx
 
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
 import {
@@ -9,6 +9,18 @@ import {
   useCellContext,
   useHeaderContext,
 } from "@/components/data-table/table"
+import {
+  filterDataRows,
+  orderByGroup,
+  tabCounts,
+  type DataTableGroup,
+  type DataTableTab,
+} from "@/components/data-table/filter"
+import {
+  DataTableBulkBar,
+  type DataTableSelection,
+} from "@/components/data-table/data-table-selection"
+import { DataTableToolbar } from "@/components/data-table/data-table-toolbar"
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import {
   dataTableExport,
@@ -20,6 +32,7 @@ import {
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Sheet,
   SheetContent,
@@ -43,6 +56,8 @@ import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { downloadTableCsv, tableToTsv } from "@/lib/table-export"
 import { cn } from "@/lib/utils"
 
+export type { DataTableGroup, DataTableTab } from "@/components/data-table/filter"
+export type { DataTableSelection } from "@/components/data-table/data-table-selection"
 export {
   isMicrosColumnKey,
   type DataColumn,
@@ -60,32 +75,72 @@ const ROW_NOUN = ["row", "rows"] as const
 const textCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" })
 
 export function DataTable({
+  activeTab,
   columns,
   exportFilename = "report.csv",
+  groupBy,
+  onTabChange,
   pageSize,
   renderCell,
+  rowClassName,
+  rowDetails = true,
   rowNoun = ROW_NOUN,
   rows,
+  searchable = false,
+  selection,
   showTotals = false,
   summary,
+  tabs,
   truncationNote,
 }: {
+  // Controlled tab; without it the table keeps the first tab, or `defaultTab`, itself.
+  activeTab?: string
   columns: DataColumn[]
   exportFilename?: string
+  // Gathers rows under a heading row and turns column sorting off.
+  groupBy?: DataTableGroup
+  onTabChange?: (id: string) => void
   pageSize?: number
+  // Cells may hold controls; pair them with `rowDetails={false}` so clicks don't open the sheet.
   renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null
+  rowClassName?: (row: DataRow) => string | undefined
+  // Clicking a row opens a sheet with every field; on by default.
+  rowDetails?: boolean
   rowNoun?: readonly [singular: string, plural: string]
   rows: DataRow[]
+  searchable?: boolean
+  // Adds a checkbox column and a bulk bar; the caller owns the selected ids.
+  selection?: DataTableSelection
   showTotals?: boolean
   summary?: ReactNode
+  // Filter tabs with counts; the export still holds every row.
+  tabs?: readonly DataTableTab[]
   truncationNote?: string | null
 }) {
   const { copied, copy } = useClipboardCopy()
   const [selectedRow, setSelectedRow] = useState<DataRow | null>(null)
-  const tableColumns = useMemo(() => dataColumnsToDefs(columns, renderCell), [columns, renderCell])
+  const [search, setSearch] = useState("")
+  const [ownTab, setOwnTab] = useState<string | undefined>(undefined)
+  const visibleTabs = useMemo(() => {
+    const counts = tabs ? tabCounts(rows, tabs) : new Map<string, number>()
+    return {
+      counts,
+      tabs: (tabs ?? []).filter((tab) => !tab.hideWhenEmpty || (counts.get(tab.id) ?? 0) > 0),
+    }
+  }, [rows, tabs])
+  const currentTab =
+    visibleTabs.tabs.find((tab) => tab.id === (activeTab ?? ownTab)) ?? visibleTabs.tabs[0]
+  const filtered = useMemo(() => {
+    const matching = filterDataRows(rows, columns, { search, tab: currentTab })
+    return groupBy ? orderByGroup(matching, groupBy.key) : { groups: null, rows: matching }
+  }, [columns, currentTab, groupBy, rows, search])
+  const tableColumns = useMemo(
+    () => dataColumnsToDefs(columns, renderCell, !groupBy),
+    [columns, groupBy, renderCell]
+  )
   const tableRows = useMemo(
-    () => rows.map((values, index) => ({ id: String(index), values })),
-    [rows]
+    () => filtered.rows.map((values, index) => ({ id: String(index), values })),
+    [filtered.rows]
   )
   const columnsByKey = useMemo(
     () => new Map(columns.map((column) => [column.key, column])),
@@ -110,9 +165,24 @@ export function DataTable({
   })
   const sortedModelRows = table.getSortedRowModel().rows
   const exported = useMemo(
-    () => dataTableExportFromRowModel(columns, sortedModelRows),
-    [columns, sortedModelRows]
+    () =>
+      tabs || searchable
+        ? dataTableExport(columns, rows)
+        : dataTableExportFromRowModel(columns, sortedModelRows),
+    [columns, rows, searchable, sortedModelRows, tabs]
   )
+  const { setPageIndex } = table
+  const currentTabId = currentTab?.id
+  useEffect(() => {
+    setPageIndex(0)
+  }, [currentTabId, search, setPageIndex])
+  const labelColumn = columns[0]
+  const selectedIds = selection?.selected
+  const filteredIds = useMemo(
+    () => (selection ? filtered.rows.map((row) => selection.rowId(row)) : []),
+    [filtered.rows, selection]
+  )
+  const selectedInView = filteredIds.filter((id) => selectedIds?.has(id)).length
   const pagination = table.state.pagination
   const visibleRowOffset =
     resolvedPageSize === null ? 0 : pagination.pageIndex * pagination.pageSize
@@ -122,9 +192,35 @@ export function DataTable({
     <table.AppTable>
       <TooltipProvider>
         <div className="grid min-w-0 gap-2">
+          {visibleTabs.tabs.length > 0 || searchable ? (
+            <DataTableToolbar
+              activeTab={currentTab?.id}
+              counts={visibleTabs.counts}
+              onSearch={searchable ? setSearch : undefined}
+              onTab={(id) => {
+                setOwnTab(id)
+                onTabChange?.(id)
+              }}
+              search={search}
+              tabs={visibleTabs.tabs}
+            />
+          ) : null}
+          {selection && selection.selected.size > 0 ? (
+            <DataTableBulkBar
+              actions={selection.actions}
+              count={selection.selected.size}
+              onClear={() => {
+                selection.onChange(new Set())
+              }}
+            />
+          ) : null}
           <div className="min-w-0">
-            <Table className="table-fixed" style={{ minWidth: tableMinWidth(visibleColumns) }}>
+            <Table
+              className="table-fixed"
+              style={{ minWidth: tableMinWidth(visibleColumns) + (selection ? 40 : 0) }}
+            >
               <colgroup>
+                {selection ? <col style={{ width: 40 }} /> : null}
                 {visibleColumns.map((column) => (
                   <col key={column.id} style={{ width: column.columnDef.meta?.width }} />
                 ))}
@@ -132,6 +228,23 @@ export function DataTable({
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id}>
+                    {selection ? (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          aria-label="Select all rows"
+                          checked={filteredIds.length > 0 && selectedInView === filteredIds.length}
+                          indeterminate={selectedInView > 0 && selectedInView < filteredIds.length}
+                          onCheckedChange={(checked) => {
+                            const next = new Set(selection.selected)
+                            for (const id of filteredIds) {
+                              if (checked) next.add(id)
+                              else next.delete(id)
+                            }
+                            selection.onChange(next)
+                          }}
+                        />
+                      </TableHead>
+                    ) : null}
                     {headerGroup.headers.map((tableHeader) => (
                       <table.AppHeader header={tableHeader} key={tableHeader.id}>
                         {() => <DataTableHeaderCell />}
@@ -141,27 +254,75 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody>
-                {table.getRowModel().rows.map((row, index) => (
-                  <TableRow
-                    aria-label={`Open row ${String(visibleRowOffset + index + 1)} details`}
-                    className="cursor-pointer"
-                    key={row.id}
-                    onClick={() => {
-                      setSelectedRow(row.original.values)
-                    }}
-                    onKeyDown={(event) => {
-                      openRowFromKeyboard(event, row.original.values, setSelectedRow)
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <table.AppCell cell={cell} key={cell.id}>
-                        {() => <DataTableBodyCell />}
-                      </table.AppCell>
-                    ))}
+                {table.getRowModel().rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      className="text-muted-foreground py-6 text-center"
+                      colSpan={visibleColumns.length + (selection ? 1 : 0)}
+                    >
+                      Nothing in this view.
+                    </TableCell>
                   </TableRow>
-                ))}
+                ) : null}
+                {table.getRowModel().rows.flatMap((row, index, pageRows) => {
+                  const values = row.original.values
+                  const groupKey = groupBy?.key(values)
+                  const previous = pageRows[index - 1]
+                  const startsGroup =
+                    groupBy !== undefined &&
+                    groupKey !== undefined &&
+                    (previous === undefined || groupBy.key(previous.original.values) !== groupKey)
+                  const rowId = selection?.rowId(values)
+                  return [
+                    startsGroup ? (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40" key={`group:${row.id}`}>
+                        <TableCell
+                          className="text-sm font-medium"
+                          colSpan={visibleColumns.length + (selection ? 1 : 0)}
+                        >
+                          {groupBy.label(groupKey, filtered.groups?.get(groupKey) ?? [])}
+                        </TableCell>
+                      </TableRow>
+                    ) : null,
+                    <TableRow
+                      className={cn(rowDetails && "cursor-pointer", rowClassName?.(values))}
+                      key={row.id}
+                      {...(rowDetails
+                        ? {
+                            "aria-label": `Open row ${String(visibleRowOffset + index + 1)} details`,
+                            onClick: () => {
+                              setSelectedRow(values)
+                            },
+                            onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
+                              openRowFromKeyboard(event, values, setSelectedRow)
+                            },
+                            role: "button",
+                            tabIndex: 0,
+                          }
+                        : {})}
+                    >
+                      {selection && rowId !== undefined ? (
+                        <TableCell className="w-10">
+                          <Checkbox
+                            aria-label={`Select ${labelColumn ? formatDataCell(labelColumn, values[labelColumn.key]) : "row"}`}
+                            checked={selection.selected.has(rowId)}
+                            onCheckedChange={(checked) => {
+                              const next = new Set(selection.selected)
+                              if (checked) next.add(rowId)
+                              else next.delete(rowId)
+                              selection.onChange(next)
+                            }}
+                          />
+                        </TableCell>
+                      ) : null}
+                      {row.getVisibleCells().map((cell) => (
+                        <table.AppCell cell={cell} key={cell.id}>
+                          {() => <DataTableBodyCell />}
+                        </table.AppCell>
+                      ))}
+                    </TableRow>,
+                  ]
+                })}
               </TableBody>
               {totals ? (
                 <TableFooter>
@@ -188,7 +349,7 @@ export function DataTable({
           </div>
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span>
-              {String(rows.length)} {rows.length === 1 ? rowNoun[0] : rowNoun[1]}
+              {String(filtered.rows.length)} {filtered.rows.length === 1 ? rowNoun[0] : rowNoun[1]}
             </span>
             {summary}
             {truncationNote ? (
@@ -220,8 +381,8 @@ export function DataTable({
               </Button>
             </div>
           </div>
-          {resolvedPageSize !== null && rows.length > resolvedPageSize ? (
-            <table.Pagination total={rows.length} />
+          {resolvedPageSize !== null && filtered.rows.length > resolvedPageSize ? (
+            <table.Pagination total={filtered.rows.length} />
           ) : null}
           <RowDetailSheet
             columns={columns}
@@ -240,7 +401,8 @@ export function DataTable({
 
 export function dataColumnsToDefs(
   columns: DataColumn[],
-  renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null
+  renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null,
+  sortable = true
 ) {
   return columnHelper.columns(
     columns.map((column) =>
@@ -248,7 +410,7 @@ export function dataColumnsToDefs(
         id: column.key,
         cell: () => <DataCellFromContext column={column} renderCell={renderCell} />,
         enableHiding: true,
-        enableSorting: true,
+        enableSorting: sortable,
         header: ({ header }) => <header.ColumnHeader />,
         meta: {
           align: columnAlignment(column),

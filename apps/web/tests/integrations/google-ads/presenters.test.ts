@@ -16,7 +16,6 @@ import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
-import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
@@ -120,35 +119,7 @@ describe("Google Ads tool presenters", () => {
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
-  it("blocks approval for legacy raw campaign ids", () => {
-    const html = render(
-      googleAdsCampaignStatusPresenter.render(
-        props(
-          {
-            id: "campaign-legacy",
-            kind: "approval",
-            name: "google_ads_update_campaign_status",
-            status: "awaiting_approval",
-            args: { campaign_ids: ["10", "20"], status: "PAUSED" },
-          },
-          approvalControls(),
-          toolUi([])
-        )
-      )
-    )
-
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Decline<\/button>/)
-  })
-
   it.each([
-    {
-      presenter: googleAdsCampaignStatusPresenter,
-      name: "google_ads_update_campaign_status",
-      key: "campaigns",
-      row: { campaign_id: "10", outcome: "updated" },
-      label: "10",
-    },
     {
       presenter: googleAdsNegativeKeywordListsPresenter,
       name: "google_ads_create_negative_keyword_list",
@@ -423,84 +394,6 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("6 proposed changes")
   })
 
-  it("isolates a malformed account outcome without hiding valid siblings", () => {
-    const html = render(
-      googleAdsCampaignStatusPresenter.render(
-        props({
-          id: "campaign-mixed-contract",
-          kind: "result",
-          name: "google_ads_update_campaign_status",
-          status: "completed",
-          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
-          result: {
-            results: [
-              entry({
-                requested_status: "PAUSED",
-                campaigns: [
-                  {
-                    campaign_id: "10",
-                    campaign_name: "Summer Sale",
-                    requested_status: "PAUSED",
-                    outcome: "updated",
-                    external_ref: "customers/1234567890/campaigns/10",
-                  },
-                ],
-              }),
-              {
-                ...entry({ requested_status: "PAUSED", campaigns: "malformed" }),
-                provider_key: "google_ads",
-                display_name: "Second account",
-                external_id: "2222222222",
-              },
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("Updated")
-    expect(html).toContain("Second account")
-    expect(html).toContain("The system couldn&#x27;t confirm the campaign status outcome.")
-  })
-
-  it("distinguishes an unverified mutation from a known failure", () => {
-    const html = render(
-      googleAdsCampaignStatusPresenter.render(
-        props({
-          id: "campaign-unverified",
-          kind: "result",
-          name: "google_ads_update_campaign_status",
-          status: "completed",
-          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
-          result: {
-            results: [
-              {
-                ...entry({
-                  campaigns: [
-                    {
-                      campaign_id: "10",
-                      campaign_name: "Evidence-only campaign",
-                      requested_status: "PAUSED",
-                      outcome: "updated",
-                      external_ref: "customers/1234567890/campaigns/10",
-                    },
-                  ],
-                }),
-                status: "error",
-                error_code: "unverified_mutation",
-                error_message: "request outcome unknown",
-              },
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("The system couldn&#x27;t verify whether Google Ads updated")
-    expect(html).not.toContain("request outcome unknown")
-    expect(html).not.toContain("Evidence-only campaign")
-  })
-
   it("groups label approval targets by type without dumping raw arguments", () => {
     const html = render(
       googleAdsLabelAssociationsPresenter.render(
@@ -683,9 +576,7 @@ describe("Google Ads tool presenters", () => {
 
 function props(
   activity: ToolActivity,
-  approvalDecision?: Parameters<
-    typeof googleAdsCampaignStatusPresenter.render
-  >[0]["approvalDecision"],
+  approvalDecision?: Parameters<typeof googleAdsAccountsPresenter.render>[0]["approvalDecision"],
   ui?: ToolUi
 ) {
   return {

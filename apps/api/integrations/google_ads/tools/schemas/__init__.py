@@ -13,7 +13,6 @@ from .campaign_budgets import (
     GoogleAdsUpdateCampaignBudgetAmountsOutput,
 )
 from .campaign_links import GoogleAdsCampaignLinkOutput
-from .campaign_status import GoogleAdsCampaignStatusOutput
 from .create_negative_keyword_list import GoogleAdsCreateNegativeKeywordListOutput
 from .device_bid_modifiers import (
     GoogleAdsDeviceAdjustment,
@@ -67,7 +66,6 @@ __all__ = [
     "GoogleAdsCampaignBudgetAmount",
     "GoogleAdsCampaignBudgetAmountUpdate",
     "GoogleAdsCampaignLinkOutput",
-    "GoogleAdsCampaignStatusOutput",
     "GoogleAdsCpcBid",
     "GoogleAdsCreateCampaignBudgetOutput",
     "GoogleAdsCreateLabelsOutput",

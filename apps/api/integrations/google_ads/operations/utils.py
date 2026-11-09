@@ -9,7 +9,9 @@ from typing import Any
 
 from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 
-_ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.(?:id|[a-z][a-z0-9_]*_id)")
+_ENTITY_ID_FIELD_PATTERN = re.compile(
+    r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?\.(?:id|[a-z][a-z0-9_]*_id)"
+)
 _RECOMMENDATION_RESOURCE_PATTERN = re.compile(
     r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
 )

@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.exceptions.general import AppValidationError
+from integrations.google_ads.entity_resolvers.ad import resolve_google_ads_ads
 from integrations.google_ads.entity_resolvers.ad_group import (
     resolve_google_ads_ad_groups,
 )
@@ -40,13 +41,14 @@ from integrations.google_ads.entity_resolvers.utils import (
 )
 from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
+    GoogleAdsAdReference,
     GoogleAdsCampaignBudgetReference,
     GoogleAdsCampaignReference,
     GoogleAdsKeywordReference,
     GoogleAdsSharedSetReference,
 )
-from integrations.google_ads.tools.update_campaign_status import (
-    DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+from integrations.google_ads.tools.add_campaign_negative_keywords import (
+    DEFINITION as GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
 )
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -421,7 +423,7 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
         actor=object(),
         workspace=object(),
         active_context=ResolvedActiveContext(entries=(entry,)),
-        tool_definition=GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+        tool_definition=GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
     )
     reference = _campaign_reference(entry, "10").model_dump(mode="json")
     authorized = SimpleNamespace(
@@ -433,7 +435,7 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
     )
     monkeypatch.setattr(
         "services.agents.runtime.tools.registry.get_runtime_tool_definition",
-        lambda _tool_name: GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+        lambda _tool_name: GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
     )
     monkeypatch.setattr(
         "services.agents.runtime.entity_references.service.authorize_entity_field",
@@ -452,8 +454,45 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
             membership=SimpleNamespace(),
             run=SimpleNamespace(conversation_id=uuid4()),
             tool_call=SimpleNamespace(
-                tool_name="google_ads_update_campaign_status",
-                args={"campaign_ids": [reference], "status": "PAUSED"},
+                tool_name="google_ads_add_campaign_negative_keywords",
+                args={
+                    "campaign_ids": [reference],
+                    "keywords": [{"text": "free", "match_type": "EXACT"}],
+                },
             ),
             override_args=None,
         )
+
+
+async def test_ad_hydration_keeps_only_the_requested_ad_group_and_ad_pairs(monkeypatch) -> None:
+    active = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active,)),
+    )
+
+    def row(ad_group_id: str, ad_id: str) -> dict:
+        return {
+            "adGroupAd": {"status": "ENABLED", "ad": {"id": ad_id, "name": f"Ad {ad_id}"}},
+            "adGroup": {"id": ad_group_id, "name": "Shoes"},
+            "campaign": {"id": "1", "name": "Brand"},
+        }
+
+    # The query filters ad IDs and ad group IDs separately, so it can return crossed pairs.
+    query = AsyncMock(return_value=[row("20", "30"), row("21", "30"), row("21", "31")])
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.ad._query", query)
+    references = [
+        GoogleAdsAdReference(
+            customer_id="111", campaign_id="1", ad_group_id=ad_group_id, ad_id=ad_id, label="Ad"
+        )
+        for ad_group_id, ad_id in (("20", "30"), ("21", "31"))
+    ]
+
+    choices = await resolve_google_ads_ads(ctx, references, {})
+
+    assert [(c.value["ad_group_id"], c.value["ad_id"]) for c in choices] == [
+        ("20", "30"),
+        ("21", "31"),
+    ]

@@ -25,7 +25,8 @@ import {
 import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 
 type ApprovalSpec<Args> = {
-  approveLabel?: string
+  // A function reads the edited arguments, so the label can count what will run.
+  approveLabel?: string | ((args: Args) => string)
   label?: string
   parseArgs: (value: unknown) => Args | null
   prompt: string | ((args: Args) => string)
@@ -72,7 +73,10 @@ export type IntegrationWriteRenderer = (context: ToolRowPresenterProps) => React
 
 type ResolvedVariant<Args, Result> = IntegrationWriteVariant<Args, Result> &
   Omit<IntegrationWriteCopy, "approval" | "progressLabel"> & {
-    approval: ApprovalSpec<Args> & IntegrationWriteCopy["approval"]
+    approval: ApprovalSpec<Args> &
+      Omit<IntegrationWriteCopy["approval"], "approveLabel"> & {
+        approveLabel: string | ((args: Args) => string)
+      }
     progressLabel: string | ((args: Args | null) => string)
   }
 
@@ -276,7 +280,11 @@ function renderApproval<Args, Result>(
     return (
       <ToolApprovalDecisionCard
         activityId={approvalActivityIdentity(activity)}
-        approveLabel={variant.approval.approveLabel}
+        approveLabel={
+          typeof variant.approval.approveLabel === "string"
+            ? variant.approval.approveLabel
+            : "Approve"
+        }
         args={activity.args}
         controls={approvalDecision}
         {...provenance}
@@ -319,7 +327,7 @@ function renderApproval<Args, Result>(
   return (
     <ToolApprovalDecisionCard
       activityId={approvalActivityIdentity(activity)}
-      approveLabel={variant.approval.approveLabel}
+      approveLabel={approvalCopy(variant.approval.approveLabel, currentParsedArgs ?? args)}
       args={activity.args}
       controls={approvalDecision}
       {...provenance}

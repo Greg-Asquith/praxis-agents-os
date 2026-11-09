@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending (plan 314).
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-campaign status, device bid adjustments, campaign-budget creation,
+status changes, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
@@ -82,6 +82,38 @@ Both seams return the shared mutation ledger, so `terminal_operation_detail`
 records them like any other write. A request Google never received or
 rejected outright is failed; any other request error, or a cancellation,
 leaves the sent changes unverified.
+
+### Status changes
+
+`google_ads_update_status` turns campaigns, ad groups, ads, positive
+keywords, and asset groups on (`ENABLED`) or off (`PAUSED`): up to 100
+objects per call across kinds and accounts, in one approval. Each entry in
+`changes` is tagged by `kind`, carries that kind's scoped reference, and
+sets its own status, so one call can turn some objects off and others on.
+Ads use `google_ads_ad` references (`adGroupAds/{ad_group_id}~{ad_id}`) and
+asset groups use `google_ads_asset_group` references; both have entity
+resolvers. Ad lookup searches by ad group name, because most responsive
+search ads have no name, and labels an unnamed ad with its first headline.
+
+While preparing the approval, the tool reads each object's live status with
+its campaign's, and its ad group's for ads and keywords
+(`operations/read_status.py`, one query per kind, run in turn because
+concurrent requests would share the caller's database session), then dry runs the real changes through the
+edit seam. The trusted `_checks` display argument, keyed by resource name,
+carries each object's live status, its parents' names and statuses, the
+status the check was made for, and any problem: Google's dry-run rejection,
+prefixed "Google says:", an object that no longer exists, or a removed object. An account that can't
+be read marks its objects `unavailable`. The card can change each status and
+cancel changes, but the tool refuses any object the agent didn't propose.
+
+After approval, each edit's **Before** is the status the card showed, so the
+edit seam refuses an object whose status changed since
+(`CHANGED_SINCE_APPROVAL`). Objects without a check, missing objects, and
+removed objects are refused without a request. Objects already at the
+requested status are reported as `already_set`. The rest go in one
+partial-failure `googleAds:mutate` request per account with a `status` mask,
+and each result row records **Before**, **Requested**, and the status read
+back as **After**.
 
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
@@ -170,7 +202,7 @@ registers with the apply, remove, and delete tools.
 targets, and `google_ads_remove_labels` detaches them. Each target is an
 explicit union tagged by `kind`: `campaign`, `ad_group`, or `keyword`, carrying
 the matching scoped reference. Keywords are positive keywords only. The `ad`
-kind is pending until ad references exist. The tools never accept raw resource
+kind is pending (plan 312). The tools never accept raw resource
 names; the operation rebuilds each `campaignLabels`, `adGroupLabels`, or
 `adGroupCriterionLabels` resource name from the IDs.
 
@@ -222,7 +254,8 @@ Account metadata requires a nonblank label and a valid currency code.
 
 New Google cards build from the shared ads card kit in
 `integrations/ads/components/`, which Meta also uses: `SettingRows`,
-`SettingRow`, `SettingLine`, `StatusChoice`, `ChangeBanner`, `MoneyField`,
+`SettingRow`, `SettingLine`, `StatusChoice`, `ChangeBanner`, `ChangeSummary`,
+`AttentionLine`, `MoneyField`,
 `EntityPicker`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
 `Chip`, and the labelled fields). The kit depends on no provider package,
 and dependency rules enforce that. The older Google kit
@@ -245,9 +278,8 @@ amount results use the same distinction, with Unconfirmed after values for faile
 or unverified outcomes. Budget amount deltas and monthly estimates describe
 requested values. Budget and keyword-creation sample envelopes and list negative
 keyword results use shared per-outcome count validation, including truncated
-sample upper bounds. List errors retain account-level failure semantics. Campaign status and
-negative keyword list creation also use the shared outcome table, with Campaign
-and Name as their leading columns. Campaign failures use shared label chips.
+sample upper bounds. List errors retain account-level failure semantics. Negative keyword list
+creation also uses the shared outcome table, with Name as its leading column.
 Budget creation retains its single card and uses the shared outcome label.
 
 ### Approval composition
@@ -269,6 +301,57 @@ through `components/accounts-table.tsx`: one table across all accounts, with
 money in each row's own currency. Bid adjustment formatting belongs
 to `lib/bid-modifiers.ts`. Tool-specific summaries stay inside the shared
 approval section. Construct presenters using this shared kit.
+
+
+### Update Status card
+
+`google_ads_update_status` turns campaigns, ad groups, ads, keywords, and asset
+groups on or off in one approval. `lib/status-change.ts` parses `changes` with
+the trusted `_accounts` and `_checks` beside it, keying each object by its
+resource name. `statusRows` joins each proposed change to its check and to the
+edited `changes`, so a change missing from the edit is cancelled and can come
+back with Undo. A row's rejection shows and blocks approval only while its
+status still equals the status the server checked; changing the status clears
+it. A missing or unavailable check always blocks. An item turned on is flagged
+Won't Show Yet when its parent is off and not being turned on in the same
+request: the campaign for ad groups and asset groups, and for ads and keywords
+the ad group, then the campaign. That flag warns and never blocks. A row whose new status equals the
+live status is Already On or Already Off and isn't counted in the approve label.
+
+The card (`components/status-change-approval.tsx`) shows the banner, one
+`ChangeSummary` line per kind of change, an `AttentionLine` when anything
+blocks, and one change table grouped by campaign. Each summary line filters the
+table, and the Turn Off and Turn On lines carry an On/Off choice that sets every
+item in the line. Below ten items the summary and table tools are left out.
+Edits go out as the whole `changes` value: each entry keeps its reference as
+received, only `status` changes, and cancelled entries are omitted. The card
+never adds entries. The approve label counts the changes that will run and
+reads the edited arguments, through the write presenter's `approveLabel`
+function form.
+
+The result is one `DataTable` inside the usual result card, with Item, Kind,
+Campaign, Before, After, and Outcome columns and tabs for All, Changed,
+Already Set, Failed, and Unconfirmed when any. It opens on Failed when anything
+failed, and the CSV holds every row. Already Set is never a failure.
+
+### Data table extensions
+
+The core `DataTable` stays generic and also serves bulk cards. It filters rows
+before paging, so counts, pages, and the row total follow the view:
+
+- `tabs` adds filter tabs with counts. Each tab has a `match` function, and
+  `hideWhenEmpty` drops it while nothing matches. `activeTab` and
+  `onTabChange` control the tab from outside, such as a change summary line.
+- `searchable` adds a search box that matches every word across all columns,
+  hidden ones included.
+- `selection` adds a checkbox column, a select-all for the filtered rows, and
+  a bulk bar showing the count with caller-supplied `actions`. The caller owns
+  the selected ids.
+- `groupBy` gathers rows under heading rows and turns column sorting off.
+- `renderCell` cells may hold controls, such as a select or a cancel button.
+  Pair them with `rowDetails={false}` so a click doesn't open the details
+  sheet, and use `rowClassName` to dim a row.
+- CSV export and copy hold every row, not only the filtered view.
 
 ### Keyword editors
 

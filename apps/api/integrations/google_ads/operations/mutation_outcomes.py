@@ -362,9 +362,6 @@ class GoogleAdsMutationLedger(Mapping[str, Any]):
             result["created_names"] = [item["name"] for item in applied]
             result.pop(self.projection.applied_key)
             result[self.projection.skipped_key] = [item["name"] for item in skipped]
-        elif self.family == "campaign_status":
-            result.pop(self.projection.applied_key)
-            result.pop(self.projection.skipped_key)
         elif self.family == "campaign_shared_set_links":
             result.pop(self.projection.applied_key)
             result[self.projection.skipped_key] = [item["campaign_id"] for item in skipped]

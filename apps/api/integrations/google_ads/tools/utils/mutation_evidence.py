@@ -4,6 +4,7 @@
 
 from collections.abc import Iterable
 
+from core.exceptions.integration import IntegrationFailureDisposition
 from integrations.google_ads.operations.mutation_outcomes import (
     GoogleAdsMutationLedger,
     thaw_fields,
@@ -138,3 +139,27 @@ def _counts(statuses: Iterable[str]) -> IntegrationOperationCounts:
 
 def _count_total(counts: IntegrationOperationCounts) -> int:
     return counts.applied + counts.skipped + counts.failed + counts.unverified
+
+
+def attach_interrupted_evidence(
+    exc: BaseException,
+    pending: PendingIntegrationOperationDetail,
+    *,
+    identity_keys: tuple[str, ...],
+) -> None:
+    """Records the outcomes an edit or build attached to an error that stopped it part way."""
+    ledger = getattr(exc, "ledger", None)
+    if not isinstance(ledger, GoogleAdsMutationLedger):
+        return
+    exc.failure_disposition = (
+        IntegrationFailureDisposition.AMBIGUOUS
+        if ledger.effect_counts["unverified"]
+        else IntegrationFailureDisposition.NOT_DISPATCHED
+    )
+    try:
+        exc.operation_detail = terminal_operation_detail(
+            pending, ledger, identity_keys=identity_keys
+        )
+    except ValueError:
+        # Never let incomplete evidence replace the error that stopped the run.
+        exc.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS

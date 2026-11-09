@@ -15,7 +15,7 @@ CORPUS = [
     "create_artifact",
     "read_artifact",
     "update_artifact",
-    "google_ads_update_campaign_status",
+    "google_ads_update_status",
     "google_ads_create_campaign_budget",
     "google_ads_run_report",
     "outlook_mail_send_message",
@@ -45,12 +45,12 @@ def test_broad_noun_finds_every_action_on_it() -> None:
 def test_provider_limits_matches_to_its_tools() -> None:
     campaign_matches = _search("Google Ads campaigns")
     assert set(campaign_matches[:2]) == {
-        "google_ads_update_campaign_status",
+        "google_ads_update_status",
         "google_ads_create_campaign_budget",
     }
     assert "outlook_mail_send_message" not in campaign_matches
     assert set(_search("google ads")) == {
-        "google_ads_update_campaign_status",
+        "google_ads_update_status",
         "google_ads_create_campaign_budget",
         "google_ads_run_report",
     }
