@@ -5,9 +5,16 @@
 import math
 from datetime import date
 
+import numpy as np
 import pytest
 from datascience import forecast
-from datascience.child_forecast import holiday_covariates, period_days
+from datascience.child_forecast import (
+    MAX_STARTING_POINTS,
+    holiday_covariates,
+    period_days,
+    simple_benchmark,
+    window_cuts,
+)
 from datascience.holidays_calendar import daily_shares
 from datascience.operations import OPERATIONS
 from datascience.self_check import check_forecast
@@ -74,7 +81,31 @@ def test_a_weekly_pattern_forecasts_within_tolerance(config: DriverConfig) -> No
         )
     )
     assert result["backtest"]["forecast"]["wape"] < 0.1
+    assert result["backtest"]["starting_points"] > 1
+    assert result["backtest"]["tested_points"] > result["backtest"]["holdout"]
     assert result["baseline"] is not None
+    assert result["backtest"]["baseline"]["wape"] is not None
+
+
+def test_test_windows_stop_at_the_limits_and_keep_enough_context() -> None:
+    assert window_cuts(52, 8) == [8, 12, 16, 20, 24, 28]
+    assert window_cuts(28, 7) == [7, 10, 13, 16]
+    # A long window scores enough points on its own, which bounds the forward passes.
+    assert window_cuts(10_000, 1_024) == [1_024]
+    assert len(window_cuts(10_000, 1)) == MAX_STARTING_POINTS
+    assert window_cuts(16, 4) == [4]
+
+
+def test_simple_benchmark_takes_the_better_method_and_skips_gaps() -> None:
+    pattern = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0] * 8)
+    assert simple_benchmark(pattern, 7, [7], "daily") == {
+        "method": "same_period_last_cycle",
+        "wape": 0.0,
+    }
+
+    level = np.array([10.0] * 20 + [np.nan, 10.0])
+    # Weekly's 52-period cycle is longer than the context, so only the average runs.
+    assert simple_benchmark(level, 2, [2], "weekly") == {"method": "average", "wape": 0.0}
 
 
 def test_holiday_shares_weight_regions_by_population() -> None:

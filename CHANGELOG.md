@@ -35,8 +35,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Agents can forecast a time series with `forecast_series`, which runs
   Mistral's Timestral 123M on CPU in the isolated data science service
   (`apps/data-science`). It returns each period's median and likely range, a
-  backtest on the end of the history, and UK, EU, US, or AU public holidays
-  as built-in covariates, and works from `run_code`. It is hidden unless
+  backtest from several points near the end of the history, and UK, EU, US, or
+  AU public holidays as built-in covariates, and works from `run_code`. Each
+  forecast carries a reliability rating with plain warnings: when it tests no
+  better than a simple average, when counts are too small to predict well, and
+  when the history is too short to show seasonal patterns. It leaves out
+  covariates that make its test less accurate. It is hidden unless
   `DATA_SCIENCE_URL` is set; the deploy sets it on GCP. Conversations show
   each forecast as a card with the history, the forecast and its likely
   range, holiday markers, and covariate strips, with a switch to compare the

@@ -16,6 +16,7 @@ Frequency = Literal["hourly", "daily", "weekly", "monthly"]
 HolidayRegion = Literal["uk", "eu", "us", "au"]
 CovariateTiming = Literal["known_future", "past_only"]
 CovariateKind = Literal["number", "category"]
+SimpleMethod = Literal["average", "same_period_last_cycle"]
 
 # Mirrors apps/data-science/datascience/forecast.py.
 MIN_HISTORY = 16
@@ -57,18 +58,34 @@ class ServiceSeries(BaseModel):
     high: list[FiniteFloat]
 
 
-class ServiceTestedSeries(ServiceSeries):
+class ServiceScore(BaseModel):
+    """Backtest metrics pooled over every test window."""
+
+    model_config = ConfigDict(extra="forbid")
+
     wape: FiniteFloat | None
     coverage: FiniteFloat | None
     quantile_loss: FiniteFloat | None
+
+
+class ServiceSimpleBenchmark(BaseModel):
+    """The better of the two simple forecasts over the same test windows."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: SimpleMethod
+    wape: FiniteFloat | None
 
 
 class ServiceBacktest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     holdout: int = Field(ge=1)
-    forecast: ServiceTestedSeries
-    baseline: ServiceTestedSeries | None
+    starting_points: int = Field(ge=1)
+    tested_points: int = Field(ge=0)
+    forecast: ServiceScore
+    baseline: ServiceScore | None
+    simple: ServiceSimpleBenchmark
     quantile_loss_change: FiniteFloat | None
 
 

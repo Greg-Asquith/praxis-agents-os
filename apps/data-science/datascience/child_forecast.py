@@ -3,8 +3,9 @@
 """Runs one forecast as an isolated child: reads request.json, writes result.json.
 
 Run as ``python -I child_forecast.py`` in the request's directory. The driver has
-already checked the request. The child forecasts the horizon, then backtests on the
-end of the history, each with and without covariates when there are any.
+already checked the request. The child forecasts the horizon, then backtests from several
+starting points near the end of the history, each with and without covariates when there
+are any, and scores simple benchmarks over the same periods.
 """
 
 import calendar
@@ -26,6 +27,13 @@ from timestral import TimestralForecaster
 from datascience.holidays_calendar import daily_shares
 
 LOW, HIGH = 0.1, 0.9
+# One test window can flatter or punish a forecast, so windows repeat until these limits.
+MAX_STARTING_POINTS = 6
+ENOUGH_TESTED_POINTS = 64
+MIN_TEST_CONTEXT = 12
+# Bounds the extra forward passes on long histories; the forecast itself reads all of it.
+MAX_TEST_CONTEXT = 2_048
+SEASONS = {"hourly": 24, "daily": 7, "weekly": 52, "monthly": 12}
 
 
 def period_days(start: str, frequency: str, count: int) -> list[list[date]]:
@@ -92,12 +100,26 @@ def covariate_arrays(
     return {name: _array(rows)[None] for name, rows in groups.items() if rows}
 
 
-def truncate(
-    covariates: dict[str, np.ndarray], history: int, holdout: int
+def window_cuts(history: int, holdout: int) -> list[int]:
+    """Returns each test window's distance from the end of the history, latest first."""
+    step = max(1, holdout // 2)
+    least_context = max(MIN_TEST_CONTEXT, holdout)
+    cuts = [holdout]
+    while (
+        len(cuts) < MAX_STARTING_POINTS
+        and len(cuts) * holdout < ENOUGH_TESTED_POINTS
+        and history - cuts[-1] - step >= least_context
+    ):
+        cuts.append(cuts[-1] + step)
+    return cuts
+
+
+def window(
+    covariates: dict[str, np.ndarray], first: int, end: int, holdout: int
 ) -> dict[str, np.ndarray]:
-    """Cuts covariates to a backtest that ends `holdout` steps before the history does."""
+    """Cuts covariates to a test whose context runs from `first` up to `end`."""
     return {
-        name: rows[..., : history if "known" in name else history - holdout]
+        name: rows[..., first : end + holdout if "known" in name else end]
         for name, rows in covariates.items()
     }
 
@@ -118,23 +140,106 @@ def run_one(
     }
 
 
-def score(predicted: dict[str, Any], actual: np.ndarray) -> dict[str, Any]:
-    """Adds backtest metrics over the observed actuals, or null when there are none."""
+def score(predictions: list[dict[str, Any]], actuals: list[np.ndarray]) -> dict[str, Any]:
+    """Returns backtest metrics pooled over the observed actuals, or null when there are none."""
+    actual = np.concatenate(actuals)
     observed = np.isfinite(actual)
     scale = float(np.abs(actual[observed]).sum())
-    median = np.array(predicted["median"])
-    low, high = np.array(predicted["low"]), np.array(predicted["high"])
-    quantiles, levels = predicted.pop("quantiles"), np.array(predicted.pop("levels"))
     if not observed.any() or scale == 0:
-        return {**predicted, "wape": None, "coverage": None, "quantile_loss": None}
+        return {"wape": None, "coverage": None, "quantile_loss": None}
+    median = np.concatenate([np.array(item["median"]) for item in predictions])
+    low = np.concatenate([np.array(item["low"]) for item in predictions])
+    high = np.concatenate([np.array(item["high"]) for item in predictions])
+    quantiles = np.concatenate([item["quantiles"] for item in predictions])
+    levels = np.array(predictions[0]["levels"])
     errors = actual[observed, None] - quantiles[observed]
     pinball = np.maximum(levels * errors, (levels - 1) * errors).sum()
     inside = (actual[observed] >= low[observed]) & (actual[observed] <= high[observed])
     return {
-        **predicted,
         "wape": float(np.abs(actual[observed] - median[observed]).sum() / scale),
         "coverage": float(inside.mean()),
         "quantile_loss": float(2 * pinball / (len(levels) * scale)),
+    }
+
+
+def simple_benchmark(
+    values: np.ndarray, holdout: int, cuts: list[int], frequency: str
+) -> dict[str, Any]:
+    """Returns the lower error of the two forecasts a forecast must beat to add anything."""
+    history, season = len(values), SEASONS[frequency]
+    methods = ["average"]
+    if history - cuts[-1] >= season:
+        methods.append("same_period_last_cycle")
+    best: dict[str, Any] = {"method": "average", "wape": None}
+    for method in methods:
+        predicted, actual = [], []
+        for cut in cuts:
+            context = values[: history - cut]
+            predicted.append(_simple_forecast(context, holdout, method, season))
+            actual.append(values[history - cut : history - cut + holdout])
+        error = _wape(np.concatenate(predicted), np.concatenate(actual))
+        if error is not None and (best["wape"] is None or error < best["wape"]):
+            best = {"method": method, "wape": error}
+    return best
+
+
+def _simple_forecast(context: np.ndarray, holdout: int, method: str, season: int) -> np.ndarray:
+    average = np.nanmean(context)
+    if method == "average":
+        return np.full(holdout, average)
+    repeated = context[-season:][np.arange(holdout) % season]
+    return np.where(np.isfinite(repeated), repeated, average)
+
+
+def _wape(predicted: np.ndarray, actual: np.ndarray) -> float | None:
+    observed = np.isfinite(actual) & np.isfinite(predicted)
+    scale = float(np.abs(actual[observed]).sum())
+    if scale == 0:
+        return None
+    return float(np.abs(actual[observed] - predicted[observed]).sum() / scale)
+
+
+def backtest(
+    forecaster: TimestralForecaster,
+    values: np.ndarray,
+    holdout: int,
+    covariates: dict[str, np.ndarray],
+    frequency: str,
+) -> dict[str, Any]:
+    """Forecasts held-out windows from what came before them and scores them together."""
+    history = len(values)
+    tested: list[dict[str, Any]] = []
+    plain: list[dict[str, Any]] = []
+    actuals: list[np.ndarray] = []
+    cuts: list[int] = []
+    for cut in window_cuts(history, holdout):
+        end = history - cut
+        first = max(0, end - MAX_TEST_CONTEXT)
+        try:
+            with_all = run_one(
+                forecaster, values[first:end], holdout, window(covariates, first, end, holdout)
+            )
+            without = run_one(forecaster, values[first:end], holdout, {}) if covariates else None
+        except ValueError:
+            # An earlier stretch can be unusable when the full history isn't, such as all gaps.
+            if not cuts:
+                raise
+            break
+        tested.append(with_all)
+        if without:
+            plain.append(without)
+        actuals.append(values[end : end + holdout])
+        cuts.append(cut)
+    scored = score(tested, actuals)
+    baseline = score(plain, actuals) if plain else None
+    return {
+        "holdout": holdout,
+        "starting_points": len(cuts),
+        "tested_points": sum(int(np.isfinite(actual).sum()) for actual in actuals),
+        "forecast": scored,
+        "baseline": baseline,
+        "simple": simple_benchmark(values, holdout, cuts, frequency),
+        "quantile_loss_change": _change(scored, baseline),
     }
 
 
@@ -151,31 +256,15 @@ def forecast(request: dict[str, Any]) -> dict[str, Any]:
     forecaster = TimestralForecaster.from_pretrained(model_dir, local_files_only=True)
 
     main = run_one(forecaster, values, horizon, covariates)
-    tested = score(
-        run_one(
-            forecaster, values[: history - holdout], holdout, truncate(covariates, history, holdout)
-        ),
-        values[history - holdout :],
-    )
-    baseline = tested_baseline = None
-    if covariates:
-        baseline = run_one(forecaster, values, horizon, {})
-        tested_baseline = score(
-            run_one(forecaster, values[: history - holdout], holdout, {}),
-            values[history - holdout :],
-        )
+    baseline = run_one(forecaster, values, horizon, {}) if covariates else None
+    tested = backtest(forecaster, values, holdout, covariates, request["frequency"])
     for series in (main, baseline):
         if series:
             del series["quantiles"], series["levels"]
     return {
         "forecast": main,
         "baseline": baseline,
-        "backtest": {
-            "holdout": holdout,
-            "forecast": tested,
-            "baseline": tested_baseline,
-            "quantile_loss_change": _change(tested, tested_baseline),
-        },
+        "backtest": tested,
         "holiday_covariates": holiday_rows,
         "holidays": holidays_found,
     }

@@ -17,6 +17,12 @@ export type ForecastCovariate = {
   labels: string[] | null
 }
 
+type ForecastSimpleMethod = "average" | "same_period_last_cycle"
+
+export type ForecastReliability = "good" | "limited" | "low"
+
+type ForecastScore = { typicalError: number | null; rangeCoverage: number | null }
+
 type ForecastHoliday = { date: string; region: string; name: string }
 
 export type ForecastToolResult = {
@@ -26,17 +32,22 @@ export type ForecastToolResult = {
   method: string
   backtest: {
     periods: number
-    typicalError: number | null
-    rangeCoverage: number | null
+    startingPoints: number
+    testedPoints: number
+    simpleMethod: ForecastSimpleMethod
+    simpleError: number | null
     covariateErrorChange: number | null
   }
   holidays: ForecastHoliday[]
+  covariatesUsed: boolean
+  reliability: ForecastReliability
+  caveats: string[]
   chart: {
     periods: string[]
     history: (number | null)[]
     forecast: ForecastBand
     baseline: ForecastBand | null
-    backtest: { forecast: ForecastBand; baseline: ForecastBand | null }
+    backtest: { forecast: ForecastScore; baseline: ForecastScore | null }
     covariates: ForecastCovariate[]
   }
 }
@@ -49,6 +60,11 @@ const FREQUENCIES: ReadonlySet<ForecastFrequency> = new Set([
 ])
 const SOURCES: ReadonlySet<ForecastCovariate["source"]> = new Set(["holiday", "provided"])
 const KINDS: ReadonlySet<ForecastCovariate["kind"]> = new Set(["number", "category"])
+const RELIABILITIES: ReadonlySet<ForecastReliability> = new Set(["good", "limited", "low"])
+const SIMPLE_METHODS: ReadonlySet<ForecastSimpleMethod> = new Set([
+  "average",
+  "same_period_last_cycle",
+])
 
 // The public result of a completed forecast_series call, or null when it isn't one.
 export function forecastToolResult(value: unknown): ForecastToolResult | null {
@@ -59,7 +75,10 @@ export function forecastToolResult(value: unknown): ForecastToolResult | null {
     !isOneOf(FREQUENCIES, value["frequency"]) ||
     typeof value["method"] !== "string" ||
     !isRecord(value["backtest"]) ||
-    !Array.isArray(value["holidays"])
+    !Array.isArray(value["holidays"]) ||
+    typeof value["covariates_used"] !== "boolean" ||
+    !isOneOf(RELIABILITIES, value["reliability"]) ||
+    !isStringArray(value["caveats"])
   ) {
     return null
   }
@@ -68,8 +87,10 @@ export function forecastToolResult(value: unknown): ForecastToolResult | null {
   if (
     !chart ||
     typeof backtest["periods"] !== "number" ||
-    !isNullableFiniteNumber(backtest["typical_error"]) ||
-    !isNullableFiniteNumber(backtest["range_coverage"]) ||
+    typeof backtest["starting_points"] !== "number" ||
+    typeof backtest["tested_points"] !== "number" ||
+    !isOneOf(SIMPLE_METHODS, backtest["simple_method"]) ||
+    !isNullableFiniteNumber(backtest["simple_error"]) ||
     !isNullableFiniteNumber(backtest["covariate_error_change"])
   ) {
     return null
@@ -81,8 +102,10 @@ export function forecastToolResult(value: unknown): ForecastToolResult | null {
     method: value["method"],
     backtest: {
       periods: backtest["periods"],
-      typicalError: backtest["typical_error"],
-      rangeCoverage: backtest["range_coverage"],
+      startingPoints: backtest["starting_points"],
+      testedPoints: backtest["tested_points"],
+      simpleMethod: backtest["simple_method"],
+      simpleError: backtest["simple_error"],
       covariateErrorChange: backtest["covariate_error_change"],
     },
     holidays: value["holidays"].flatMap((item: unknown) =>
@@ -93,6 +116,9 @@ export function forecastToolResult(value: unknown): ForecastToolResult | null {
         ? [{ date: item["date"], region: item["region"], name: item["name"] }]
         : []
     ),
+    covariatesUsed: value["covariates_used"],
+    reliability: value["reliability"],
+    caveats: value["caveats"],
     chart,
   }
 }
@@ -105,9 +131,9 @@ function forecastChart(value: unknown): ForecastToolResult["chart"] | null {
   const history = nullableNumbers(value["history"])
   const forecast = band(value["forecast"])
   const baseline = value["baseline"] === null ? null : band(value["baseline"])
-  const tested = band(value["backtest"]["forecast"])
+  const tested = score(value["backtest"]["forecast"])
   const testedBaseline =
-    value["backtest"]["baseline"] === null ? null : band(value["backtest"]["baseline"])
+    value["backtest"]["baseline"] === null ? null : score(value["backtest"]["baseline"])
   const covariates = Array.isArray(value["covariates"])
     ? value["covariates"].map(covariate)
     : [null]
@@ -119,8 +145,6 @@ function forecastChart(value: unknown): ForecastToolResult["chart"] | null {
     (value["backtest"]["baseline"] !== null && !testedBaseline) ||
     periods.length !== history.length + forecast.median.length ||
     (baseline !== null && baseline.median.length !== forecast.median.length) ||
-    tested.median.length > history.length ||
-    (testedBaseline !== null && testedBaseline.median.length !== tested.median.length) ||
     !covariates.every(
       (item) =>
         item !== null &&
@@ -173,6 +197,14 @@ function band(value: unknown): ForecastBand | null {
     : null
 }
 
+function score(value: unknown): ForecastScore | null {
+  return isRecord(value) &&
+    isNullableFiniteNumber(value["typical_error"]) &&
+    isNullableFiniteNumber(value["range_coverage"])
+    ? { typicalError: value["typical_error"], rangeCoverage: value["range_coverage"] }
+    : null
+}
+
 function numbers(value: unknown): number[] | null {
   return Array.isArray(value) &&
     value.every((item): item is number => typeof item === "number" && Number.isFinite(item))
@@ -191,50 +223,33 @@ export const FORECAST_PERIOD_NAMES: Record<ForecastFrequency, string> = {
   monthly: "month",
 }
 
-export type ForecastBacktestSummary = {
-  periods: number
-  periodName: string
-  typicalError: number | null
-  rangeCoverage: number | null
+const SIMPLE_METHOD_NAMES: Record<ForecastSimpleMethod, string> = {
+  average: "the average of past values",
+  same_period_last_cycle: "repeating the last cycle",
 }
 
-// The backtest of the forecast on show; without covariates it's scored here from the chart series.
+export type ForecastBacktestSummary = ForecastScore & {
+  periods: number
+  periodName: string
+  startingPoints: number
+  simpleName: string
+  simpleError: number | null
+}
+
+// The test results for whichever forecast is on show.
 export function forecastBacktestSummary(
   result: ForecastToolResult,
   useCovariates: boolean
 ): ForecastBacktestSummary {
   const { backtest, chart } = result
-  const periodName = FORECAST_PERIOD_NAMES[result.frequency]
-  const baseline = chart.backtest.baseline
-  if (useCovariates || !baseline) {
-    return {
-      periods: backtest.periods,
-      periodName,
-      typicalError: backtest.typicalError,
-      rangeCoverage: backtest.rangeCoverage,
-    }
-  }
-  const actuals = chart.history.slice(chart.history.length - baseline.median.length)
-  let error = 0
-  let total = 0
-  let inside = 0
-  let counted = 0
-  actuals.forEach((actual, index) => {
-    const median = baseline.median[index]
-    const low = baseline.low[index]
-    const high = baseline.high[index]
-    if (actual === null || median === undefined || low === undefined || high === undefined) {
-      return
-    }
-    error += Math.abs(median - actual)
-    total += Math.abs(actual)
-    inside += low <= actual && actual <= high ? 1 : 0
-    counted += 1
-  })
+  const score =
+    useCovariates || !chart.backtest.baseline ? chart.backtest.forecast : chart.backtest.baseline
   return {
+    ...score,
     periods: backtest.periods,
-    periodName,
-    typicalError: total > 0 ? error / total : null,
-    rangeCoverage: counted > 0 ? inside / counted : null,
+    periodName: FORECAST_PERIOD_NAMES[result.frequency],
+    startingPoints: backtest.startingPoints,
+    simpleName: SIMPLE_METHOD_NAMES[backtest.simpleMethod],
+    simpleError: backtest.simpleError,
   }
 }

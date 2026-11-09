@@ -10,8 +10,8 @@ Use this guide when someone wants to know what a number is likely to do next:
 orders over the next eight weeks, sign-ups next quarter, or traffic through
 the holidays. `forecast_series` runs Timestral 123M, a forecasting model, on
 the history you send. It returns a likely value and range for each future
-period, a test of how accurate it was on the end of the history, and the
-public holidays in the forecast period. The conversation shows the result as
+period, tests of how accurate it was near the end of the history, a reliability
+rating with caveats, and the public holidays in the forecast period. The conversation shows the result as
 a forecast card with a chart, so you don't need to draw one.
 
 The person you work with usually isn't a statistician. They want a number
@@ -59,8 +59,9 @@ region, call it once per series.
 4. Total or average rows that share a period, such as several orders on one
    day or several campaigns in one week. Use a total for counts and money,
    and an average for rates and prices.
-5. Use as much history as you have, up to the tool's limit. A year or more
-   lets the model learn seasonal patterns.
+5. Use as much history as you have, up to the tool's limit. At least two years
+   lets the model separate a seasonal pattern from chance. If you use more
+   history than the person asked for, say so and say why.
 6. Leave out the current period if it isn't over yet. A half-finished week
    looks like a sudden drop.
 
@@ -73,6 +74,8 @@ region, call it once per series.
   exact days.
 - Use weekly or monthly when daily values are mostly zero or very noisy, or
   when daily history would run past the history limit.
+- Small counts are mostly chance. Below about 30 per period, offer a coarser
+  frequency when the decision allows it.
 - Convert the person's horizon to periods: eight weeks is `horizon=56` daily
   or `horizon=8` weekly. A quarter is about 13 weeks or 91 days.
 - `start` is the first history period: a date for daily, the first day of the
@@ -102,6 +105,10 @@ Holidays and planned events often explain more than the history alone.
   forecast period includes a likely sale, launch, or price change.
 - Only add covariates you have real values for. A planned-spend covariate
   with guessed future spend makes the forecast look more certain than it is.
+- The tool leaves covariates out when they make its test clearly less accurate.
+  `covariates_used` is then false, and a caveat gives the average with and
+  without them. Report the forecast without them first. If the person asked for
+  a forecast under a plan, also say the plan's figure is less trustworthy.
 
 ## When not to forecast
 
@@ -124,16 +131,23 @@ Lead with the outcome in the person's units, then the range, then how far to
 trust it:
 
 > Expect about 4,100 orders a week through Christmas, likely between 3,600
-> and 4,700. When tested on the last eight weeks, it was within 9% on average,
-> and allowing for bank holidays cut the error by 31%.
+> and 4,700. When tested on recent weeks, it was within 9% on average,
+> compared with 16% for repeating last week's figures, and allowing for bank
+> holidays cut the error by 31%.
 
 - **Always give the range, not only the middle figure.** `low` and `high`
   are the 10th and 90th percentiles: about eight in ten periods should land
   between them.
+- **Pass on `reliability` and every caveat.** Follow `how_to_report` and the
+  following section. Never leave a caveat out or describe a forecast as more
+  certain than its rating.
 - **Give the typical error.** `backtest.typical_error` is the average miss as
-  a share of the actual values when the model forecast the last
-  `backtest.periods` periods from what came before them. Say it as a
-  percentage: 0.09 is "within 9% on average".
+  a share of the actual values, across forecasts made `backtest.periods`
+  periods ahead from `backtest.starting_points` points in the history. Say it
+  as a percentage: 0.09 is "within 9% on average".
+- **Compare it with the simple forecast.** `backtest.simple_error` is the error
+  of `backtest.simple_method`: the average of past values, or the same period
+  from the last cycle. It shows whether the forecast adds anything.
 - **Mention range coverage when it's off.** `backtest.range_coverage` is the
   share of those actuals inside the range. Well below 0.8 means the range is
   too narrow, so tell the person to expect more variation.
@@ -141,12 +155,28 @@ trust it:
   `backtest.covariate_error_change` means holidays and covariates made the
   forecast more accurate; -0.31 is "cut the error by 31%". A positive value
   means they didn't help.
-- **Name the holidays** in the forecast period that the forecast allows for.
-- **Pass on the caveat** when the result has one.
+- **Name the holidays** in the forecast period only when `covariates_used` is
+  true. Otherwise the forecast doesn't allow for them.
 - Add up periods the way the person thinks about them. If they asked about
   weeks, total the daily medians, lows, and highs in a script and report weekly
   figures. Totals of daily lows and highs are wider than the true weekly
   range, so call them a cautious range.
-- Use plain words: "likely range", "typical error", and "tested on the last
-  eight weeks". Avoid "quantile", "WAPE", and "covariate" unless the person
-  uses them.
+- Use plain words: "likely range", "typical error", and "tested on recent
+  weeks". Avoid "quantile", "WAPE", and "covariate" unless the person uses them.
+
+## Follow the reliability rating
+
+Say what the rating means for the person's decision:
+
+- **`good`:** the forecast beat a simple one in testing and the data has no
+  known weakness. Plan with it, using the range.
+- **`limited`:** the forecast is usable with care. State each caveat and what
+  it means for the decision, such as holding some budget back.
+- **`low`:** say this first, before the figures: don't rely on this forecast
+  alone. Give the figure as the usual level, not as a prediction of changes.
+  Don't describe any rise, dip, or seasonal shape in it as expected.
+
+When the rating isn't `good`, say what would improve it, such as more history
+or a coarser frequency. Never run the forecast again with different settings to
+get a better rating and report only that run. If you run several, report that
+you did.

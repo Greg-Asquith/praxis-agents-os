@@ -311,7 +311,19 @@ cases:
     metadata:
       judge_response: false
       forbidden_tools: ["forecast_series"]
-      judge_rubric: "The conversation already holds a forecast_series result for daily orders: medians, low and high figures per day, a backtest over the last 42 days with a typical error of 0.071 and range coverage of 0.83, and Christmas and Boxing Day in the horizon. The response summarises that result. It gives a likely range (low and high figures), not only a central figure; says how accurate the forecast was when tested on recent history, a typical error of about 7%; and doesn't present the forecast as the effect or cause of anything."
+      judge_rubric: "The conversation already holds a forecast_series result for daily orders: medians, low and high figures per day, a backtest of 42 days ahead from two starting points with a typical error of 0.071 and range coverage of 0.83, and Christmas and Boxing Day in the horizon. The response summarises that result. It gives a likely range (low and high figures), not only a central figure; says how accurate the forecast was when tested on recent history, a typical error of about 7%; and doesn't present the forecast as the effect or cause of anything."
+  - name: forecast_report_low_reliability
+    inputs:
+      prompt: "I gave you our weekly enquiries from the CRM export and you forecast them. How many enquiries should I plan for over the next eight weeks?"
+      channel_fixture:
+        tool_name: forecast_series
+        args: {title: "Weekly enquiries", unit: enquiries, start: "2025-11-17", frequency: weekly, horizon: 8, values: [10, 13, 11, 17, 12, 7, 11, 13, 13, 9, 3, 9, 21, 8, 3, 8, 11, 11, 8, 10, 16, 7, 13, 13, 9, 9, 9, 13, 18, 10, 12, 11, 3, 12, 3, 15, 8, 13, 4, 12, 8, 9, 7, 17, 3, 5, 6, 8, 7, 14, 9, 9]}
+        fixture_path: "fixtures/forecast_evals/forecast_series_low_reliability.json"
+        structured: true
+    metadata:
+      judge_response: false
+      forbidden_tools: ["forecast_series"]
+      judge_rubric: "The conversation already holds a forecast_series result with reliability low: about 9 enquiries a week, likely 4 to 15, typically off by 35% in testing against 34% for the average of past values, with caveats about small counts and less than two years of history. The response gives the figure and the range; says plainly that the forecast tested no better than the plain average, so it's a guide to the usual level; and mentions that the counts are small or the history is short. It doesn't present the figures as a confident prediction and doesn't describe the model as accurate."
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."

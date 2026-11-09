@@ -52,16 +52,13 @@ async def run_forecast(request: ServiceForecastRequest) -> ServiceForecastResult
 
 def _fits(result: ServiceForecastResult, request: ServiceForecastRequest) -> bool:
     horizon, history = request.horizon, len(request.values)
-    holdout = result.backtest.holdout
     with_covariates = bool(request.holiday_regions or request.covariates)
     return (
         _series_fits(result.forecast, horizon)
         and (result.baseline is not None) == with_covariates
         and (result.baseline is None or _series_fits(result.baseline, horizon))
-        and holdout <= min(horizon, history // 4)
-        and _series_fits(result.backtest.forecast, holdout)
+        and result.backtest.holdout <= min(horizon, history // 4)
         and (result.backtest.baseline is not None) == with_covariates
-        and (result.backtest.baseline is None or _series_fits(result.backtest.baseline, holdout))
         and set(result.holiday_covariates) == set(request.holiday_regions)
         and all(len(row) == history + horizon for row in result.holiday_covariates.values())
     )

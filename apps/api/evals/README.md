@@ -76,8 +76,10 @@ variable the call names) is the CSV's values unchanged.
 `forecast_explain_range_and_error` puts a forecast result in history and asks
 for a summary. A case's `judge_rubric` adds a judge with that rubric; this
 case uses it in place of the general judges, which see only the prompt and
-would treat the result's figures as invented. Fixtures live in
-`tests/fixtures/forecast_evals/`.
+would treat the result's figures as invented.
+`forecast_report_low_reliability` puts a low-reliability result in history and
+checks that the answer passes the warning on instead of sounding confident.
+Fixtures live in `tests/fixtures/forecast_evals/`.
 
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`

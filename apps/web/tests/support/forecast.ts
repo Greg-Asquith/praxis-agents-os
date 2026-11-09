@@ -15,9 +15,20 @@ export function forecastPublicResult(overrides: { baseline?: boolean } = {}) {
     method: "Timestral 123M",
     history_points: 6,
     forecast: [],
-    backtest: { periods: 2, typical_error: 0.05, range_coverage: 1, covariate_error_change: -0.31 },
+    backtest: {
+      periods: 2,
+      starting_points: 3,
+      tested_points: 6,
+      typical_error: 0.05,
+      range_coverage: 1,
+      simple_method: "average",
+      simple_error: 0.2,
+      covariate_error_change: withBaseline ? -0.31 : null,
+    },
     holidays: [{ date: "2026-12-25", region: "uk", name: "Christmas Day", share: 1 }],
-    caveat: null,
+    covariates_used: withBaseline,
+    reliability: "limited",
+    caveats: ["The test covered only 6 periods, so its accuracy figures are rough."],
     chart: {
       periods: [
         "2026-12-20",
@@ -32,8 +43,8 @@ export function forecastPublicResult(overrides: { baseline?: boolean } = {}) {
       forecast: band([150]),
       baseline: withBaseline ? band([160]) : null,
       backtest: {
-        forecast: band([110, 190]),
-        baseline: withBaseline ? band([95, 230]) : null,
+        forecast: { typical_error: 0.05, range_coverage: 1 },
+        baseline: withBaseline ? { typical_error: 0.12, range_coverage: 0.5 } : null,
       },
       covariates: [
         {

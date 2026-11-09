@@ -42,17 +42,19 @@ async def test_script_forecast_is_audited_and_keeps_the_chart_from_the_model(
     monkeypatch.setattr(settings, "DATA_SCIENCE_AUTH", "none")
 
     async def post(_service, payload, *, request_seconds):
-        holdout = 7
-        tested = {**_series(holdout), "wape": 0.05, "coverage": 0.86, "quantile_loss": 0.04}
+        tested = {"wape": 0.05, "coverage": 0.86, "quantile_loss": 0.04}
         return {
             "ok": True,
             "result": {
                 "forecast": _series(7),
                 "baseline": None,
                 "backtest": {
-                    "holdout": holdout,
+                    "holdout": 7,
+                    "starting_points": 3,
+                    "tested_points": 21,
                     "forecast": tested,
                     "baseline": None,
+                    "simple": {"method": "average", "wape": 0.2},
                     "quantile_loss_change": None,
                 },
                 "holiday_covariates": {},

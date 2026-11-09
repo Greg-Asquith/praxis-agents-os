@@ -21,6 +21,15 @@ describe("forecast tool row", () => {
     expect(completed).toContain('data-slot="tool-result-card"')
   })
 
+  it("shows caveats only when the forecast has them", () => {
+    const clear = { ...forecastPublicResult(), caveats: [] }
+
+    expect(render({ status: "completed", result: forecastPublicResult() })).toContain(
+      'role="alert"'
+    )
+    expect(render({ status: "completed", result: clear })).not.toContain('role="alert"')
+  })
+
   it("leaves failed calls and malformed results to the default row", () => {
     const malformed = forecastPublicResult()
     malformed.chart.history.pop()

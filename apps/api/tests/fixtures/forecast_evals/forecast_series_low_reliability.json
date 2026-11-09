@@ -1,0 +1,76 @@
+{
+  "title": "Weekly enquiries",
+  "unit": "enquiries",
+  "frequency": "weekly",
+  "method": "Timestral 123M",
+  "history_points": 52,
+  "forecast": [
+    {
+      "period": "2026-11-16",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-11-23",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-11-30",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-12-07",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-12-14",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-12-21",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2026-12-28",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    },
+    {
+      "period": "2027-01-04",
+      "median": 9.0,
+      "low": 4.0,
+      "high": 15.0
+    }
+  ],
+  "backtest": {
+    "periods": 8,
+    "starting_points": 6,
+    "tested_points": 48,
+    "typical_error": 0.354,
+    "range_coverage": 0.79,
+    "simple_method": "average",
+    "simple_error": 0.344,
+    "covariate_error_change": null
+  },
+  "holidays": [],
+  "covariates_used": false,
+  "reliability": "low",
+  "caveats": [
+    "In testing, this forecast was typically off by 35%, and the average of past values was off by 34%. Treat it as a guide to the usual level, not a prediction of changes.",
+    "The history covers less than two years, so a repeating seasonal pattern can't be told apart from chance.",
+    "These are small counts, about 10 per week, so chance alone moves each week by about 25%. Monthly totals give steadier figures."
+  ],
+  "how_to_report": "Start by saying not to rely on this forecast alone. Then give the figure as the usual level with its range, the typical error beside the simple forecast's error, and every caveat."
+}

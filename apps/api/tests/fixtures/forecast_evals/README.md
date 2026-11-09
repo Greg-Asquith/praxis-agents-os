@@ -13,6 +13,8 @@ The `forecast_*` cases in `evals/datasets/agent_behavior.yaml` use these:
 - `forecast_series_daily_orders.json`: the model-visible `forecast_series`
   result for a 56-day horizon with UK holidays, built by the tool's
   `_forecast_result` from a synthetic service result.
+- `forecast_series_low_reliability.json`: the same result for 52 weeks of
+  small, synthetic counts that a plain average forecasts as well as the model.
 
 Rebuild them when the `read_table` or forecast result changes, so the
 evals show models what production returns.

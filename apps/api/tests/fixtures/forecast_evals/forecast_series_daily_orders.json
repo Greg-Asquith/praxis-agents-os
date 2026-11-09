@@ -344,8 +344,12 @@
   ],
   "backtest": {
     "periods": 42,
+    "starting_points": 2,
+    "tested_points": 84,
     "typical_error": 0.071,
     "range_coverage": 0.83,
+    "simple_method": "same_period_last_cycle",
+    "simple_error": 0.16,
     "covariate_error_change": -0.119
   },
   "holidays": [
@@ -368,5 +372,8 @@
       "share": 1.0
     }
   ],
-  "caveat": null
+  "covariates_used": true,
+  "reliability": "good",
+  "caveats": [],
+  "how_to_report": "Give the range and the typical error, not only the median."
 }

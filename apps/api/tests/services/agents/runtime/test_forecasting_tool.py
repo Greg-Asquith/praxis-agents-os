@@ -24,21 +24,48 @@ def _series(length: int, value: float = 105.123456) -> dict:
     return {"median": [value] * length, "low": [value - 10] * length, "high": [value + 10] * length}
 
 
-def _service_result(*, history: int = len(HISTORY), horizon: int = HORIZON) -> dict:
-    holdout = min(horizon, history // 4)
-    tested = {**_series(holdout), "wape": 0.0912, "coverage": 0.75, "quantile_loss": 0.07}
+def _service_result(
+    *,
+    history: int = len(HISTORY),
+    horizon: int = HORIZON,
+    wape: float = 0.0912,
+    simple_wape: float = 0.2,
+    coverage: float = 0.75,
+    tested_points: int = 24,
+    change: float = -0.3,
+) -> dict:
+    tested = {"wape": wape, "coverage": coverage, "quantile_loss": 0.07}
     return {
         "forecast": _series(horizon),
         "baseline": _series(horizon, 99.0),
         "backtest": {
-            "holdout": holdout,
+            "holdout": min(horizon, history // 4),
+            "starting_points": 6,
+            "tested_points": tested_points,
             "forecast": tested,
-            "baseline": {**tested, "quantile_loss": 0.1},
-            "quantile_loss_change": -0.3,
+            "baseline": {**tested, "wape": 0.15, "quantile_loss": 0.1},
+            "simple": {"method": "average", "wape": simple_wape},
+            "quantile_loss_change": change,
         },
         "holiday_covariates": {"uk": [0.0] * (history + horizon)},
         "holidays": [{"date": "2026-01-01", "region": "uk", "name": "New Year's Day", "share": 1}],
     }
+
+
+async def _forecast(answers: list[dict], *, values: list | None = None, **result) -> dict:
+    """Forecasts a series whose values and frequency avoid every data caveat by default."""
+    values = HISTORY if values is None else values
+    frequency = result.pop("frequency", "daily")
+    answers.append(_service_result(history=len(values), **result))
+    outcome = await forecast_series(
+        title="Orders",
+        start="2025-01-06",
+        frequency=frequency,
+        values=values,
+        horizon=HORIZON,
+        holiday_regions=["uk"],
+    )
+    return outcome.return_value
 
 
 @pytest.fixture
@@ -97,10 +124,79 @@ async def test_forecast_keeps_names_and_chart_out_of_the_service_and_model(servi
         "high": 115.12,
     }
     assert visible["backtest"]["typical_error"] == 0.091
+    assert visible["covariates_used"] is True
     chart = result.metadata["public_result"]["chart"]
     assert len(chart["periods"]) == len(HISTORY) + HORIZON
     assert [row["name"] for row in chart["covariates"]] == ["UK Holidays", "Promo"]
     assert chart["covariates"][1]["labels"] == ["1234567", "1234568"]
+
+
+async def test_covariates_that_hurt_the_test_are_left_out(service) -> None:
+    _, answers = service
+
+    visible = await _forecast(answers, change=0.044)
+
+    assert visible["covariates_used"] is False
+    assert visible["forecast"][0]["median"] == 99.0
+    # The score must describe the forecast returned, not the one left out.
+    assert visible["backtest"]["typical_error"] == 0.15
+    assert any("105.12" in caveat and "99.0" in caveat for caveat in visible["caveats"])
+
+
+async def test_forecast_no_better_than_a_simple_one_is_low_reliability(service) -> None:
+    _, answers = service
+
+    visible = await _forecast(answers, wape=0.354, simple_wape=0.344)
+
+    assert visible["reliability"] == "low"
+    assert "34%" in visible["caveats"][0]
+
+
+async def test_forecast_clearly_beating_a_simple_one_stays_good(service) -> None:
+    _, answers = service
+
+    visible = await _forecast(answers, wape=0.1, simple_wape=0.11)
+
+    assert visible["reliability"] == "good"
+    assert visible["caveats"] == []
+
+
+async def test_small_whole_number_counts_are_flagged(service) -> None:
+    _, answers = service
+    small = [11.0, 12.0, 4.0, 8.0] * 10
+
+    visible = await _forecast(answers, values=small)
+
+    assert visible["reliability"] == "limited"
+    assert any("about 8.8 per day" in caveat for caveat in visible["caveats"])
+
+
+async def test_small_decimal_values_are_not_treated_as_counts(service) -> None:
+    _, answers = service
+
+    visible = await _forecast(answers, values=[1.5, 2.25, 3.5, 1.75] * 10)
+
+    assert not any("small counts" in caveat for caveat in visible["caveats"])
+
+
+async def test_less_than_two_seasonal_cycles_is_flagged(service) -> None:
+    _, answers = service
+    year = [100.5] * 52
+
+    visible = await _forecast(answers, values=year, frequency="weekly")
+
+    assert visible["reliability"] == "limited"
+    assert any("two years" in caveat for caveat in visible["caveats"])
+
+
+async def test_too_few_tested_points_is_flagged_over_coverage(service) -> None:
+    _, answers = service
+
+    visible = await _forecast(answers, tested_points=4, coverage=0.25)
+
+    assert visible["reliability"] == "limited"
+    assert len(visible["caveats"]) == 1
+    assert "only 4 periods" in visible["caveats"][0]
 
 
 async def test_known_future_covariate_must_cover_the_horizon(service) -> None:

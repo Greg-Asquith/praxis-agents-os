@@ -23,7 +23,7 @@ Compose). See [Video tools](video-tools.md#media-renderer) for the driver.
 | `datascience/__main__.py` | Starts the driver with a 8 MiB request cap, no transfers, and the forecast self-check |
 | `datascience/operations.py` | The `OPERATIONS` the service offers |
 | `datascience/forecast.py` | Validates a forecast request and runs it in a child; standard library only |
-| `datascience/child_forecast.py` | The isolated child: holiday covariates, Timestral, backtest metrics |
+| `datascience/child_forecast.py` | The isolated child: holiday covariates, Timestral, backtest metrics, simple benchmarks |
 | `datascience/holidays_calendar.py` | Population-weighted public holiday shares |
 | `datascience/population_weights.json` | Population per holiday calendar, with source and reference date |
 | `datascience/self_check.py` | One tiny forecast through the real operation before serving |
@@ -106,14 +106,26 @@ only numbers. Any other field, type, or non-finite number is refused with
 The child builds one known-future covariate per holiday region, then runs:
 
 - the forecast with every covariate
-- a backtest that holds out the last `min(horizon, history // 4)` points and
-  forecasts them from the rest
-- when there are covariates, the same forecast and backtest without them
+- when there are covariates, the same forecast without them
+- a backtest from several starting points, with and without covariates
+
+Each test forecasts `holdout` steps from what came before them, where `holdout`
+is `min(horizon, history // 4)`. The first test holds out the end of the
+history, and each later one starts `holdout // 2` steps earlier. Tests stop at
+the first of these limits:
+
+- six starting points
+- 64 scored steps
+- less than `max(12, holdout)` steps of context left
+- an earlier stretch Timestral can't forecast
+
+Each test reads at most 2,048 steps of context, which bounds the extra work on
+long histories. The forecast itself reads the whole history.
 
 Timestral's defaults apply: symmetric averaging and clipping at zero for
 series with no negative values. Each result series has the median and the
-0.1 and 0.9 quantiles. The backtest also reports, over the observed held-out
-values:
+0.1 and 0.9 quantiles. The backtest reports these metrics, pooled over the
+observed values of every test:
 
 - `wape`: `sum |actual − median| / sum |actual|`
 - `coverage`: the share of actuals inside the 10 to 90% band
@@ -121,6 +133,13 @@ values:
 
 `quantile_loss_change` is the relative change in quantile loss from adding
 covariates. Negative means covariates lowered the error.
+
+`simple` scores two simple forecasts over the same tests and keeps the one with
+the lower `wape`:
+
+- `average`: the mean of the observed context
+- `same_period_last_cycle`: the same position in the last 24 hours, 7 days, 52
+  weeks, or 12 months, when every test has that much context
 
 ### Result
 
@@ -130,8 +149,11 @@ covariates. Negative means covariates lowered the error.
   "baseline": {"median": [], "low": [], "high": []},
   "backtest": {
     "holdout": 56,
-    "forecast": {"median": [], "low": [], "high": [], "wape": 0.09, "coverage": 0.82, "quantile_loss": 0.07},
-    "baseline": {"median": [], "low": [], "high": [], "wape": 0.13, "coverage": 0.75, "quantile_loss": 0.10},
+    "starting_points": 2,
+    "tested_points": 112,
+    "forecast": {"wape": 0.09, "coverage": 0.82, "quantile_loss": 0.07},
+    "baseline": {"wape": 0.13, "coverage": 0.75, "quantile_loss": 0.10},
+    "simple": {"method": "same_period_last_cycle", "wape": 0.16},
     "quantile_loss_change": -0.31
   },
   "holiday_covariates": {"uk": [], "eu": []},
@@ -169,11 +191,12 @@ bump `holidays` with dependency audits.
 
 ## Performance
 
-On 2 CPUs, a daily series of one year with a 56-day horizon and two regions
-takes about 2.5 seconds, mostly loading PyTorch and the weights. The largest
-request the API will send (10,000 hourly points, a 1,024-step horizon, four
-regions, and eight covariates) takes about 75 seconds, so the default timeout
-is 300 seconds.
+These figures come from 2 CPUs. A daily series of one year with a 56-day
+horizon and two regions takes about 4.5 seconds, mostly loading PyTorch and the
+weights. A request with 10,000 hourly points, four regions, and eight
+covariates takes about 55 seconds with a 1,024-step horizon, which runs one
+test. It takes about 80 seconds with an eight-step horizon, which runs six.
+That's the slowest shape found, and the default timeout is 300 seconds.
 
 ## `forecast_series` tool
 
@@ -216,19 +239,60 @@ The model sees:
 
 - `forecast`: one row per period (`period`, `median`, `low`, `high`), rounded
   to the most decimal places in the history, up to six
-- `backtest`: `periods` held out, `typical_error` (WAPE), `range_coverage`
-  (share of actuals in the 10 to 90% range), and `covariate_error_change`
-  (relative change in quantile loss; negative means covariates helped)
+- `backtest`: `periods` forecast ahead in each test, `starting_points`,
+  `tested_points`, `typical_error` (WAPE), `range_coverage` (share of actuals
+  in the 10 to 90% range), `simple_method`, `simple_error`, and
+  `covariate_error_change` (relative change in quantile loss; negative means
+  covariates helped)
 - `holidays` in the horizon, with region and population share
-- `caveat` when the history is less than three horizons, plus `method`,
-  `frequency`, and `history_points`
+- `covariates_used`, `reliability`, `caveats`, and `how_to_report`, described
+  in [Reliability](#reliability)
+- `method`, `frequency`, and `history_points`
 
 The forecast card gets the same value plus `chart` through `public_result`
 metadata, which never reaches the model or a script. `chart` holds the
 period labels and history for the last `max(3 × horizon, 90)` periods, both
-forecasts (with and without covariates), both backtests, and each covariate
-(holiday regions first) over the same window. The largest request yields
+forecasts (with and without covariates), the typical error and coverage of
+both, and each covariate (holiday regions first) over the same window. The largest request yields
 about 600,000 characters, within the declared 1,000,000.
+
+### Reliability
+
+The tool rates each forecast `good`, `limited`, or `low` from the tests and the
+history, and writes each reason as a plain caveat, most serious first. The API
+owns these rules; the service returns only the numbers.
+
+The rating is `low` when any of these apply:
+
+- The tests have no values to score.
+- The typical error is at least 95% of the simple forecast's error.
+- The typical error is over 50%.
+
+The rating is `limited` when none of those apply and any of these do:
+
+- The typical error is over 30%.
+- The tests scored fewer than eight values.
+- Fewer than 60% of actuals fell inside the likely range, with at least eight
+  values scored.
+- The history is less than three horizons.
+- Weekly or monthly history covers less than two years, or hourly history less
+  than two days.
+- The history holds only whole numbers from zero up, and chance alone moves a
+  period by 15% or more. That's a mean of about 28 or fewer. The tool estimates
+  chance as `sqrt(2 / (π × mean))`, a random count's typical distance from its
+  mean as a share of the mean.
+
+Otherwise the rating is `good`.
+
+`how_to_report` tells the model what its answer must include at that rating. It
+travels with the result because a model can hold a result without having read
+the tool description or the skill.
+
+When covariates raise the backtest's quantile loss by more than 2%, the tool
+leaves them out. `forecast` then holds the forecast without them,
+`typical_error` and `range_coverage` describe that forecast, `covariates_used`
+is false, and a caveat gives the average with and without them. This caveat
+doesn't change the rating.
 
 ### Forecast card
 
@@ -243,11 +307,14 @@ to the default row.
   horizon. The tooltip names them.
 - Covariate strips sit under the chart on the same X axis, holiday regions
   first.
-- When `baseline` exists, one **Use in Forecast** switch swaps in the
-  forecast without covariates on the client. It never re-runs the tool. With
-  the switch on, the header shows the backtest's `covariate_error_change`.
-- The footer gives the typical error and range coverage. With covariates off,
-  the card scores the no-covariate backtest from `chart` itself.
+- The header shows the reliability, and an alert under the chart lists the
+  caveats.
+- When `baseline` exists, one **Use in Forecast** switch swaps the forecast
+  with covariates and the one without on the client. It starts from
+  `covariates_used` and never re-runs the tool. With the switch on, the header
+  shows the backtest's `covariate_error_change`.
+- The footer gives the typical error of the forecast on show, the simple
+  forecast's error, range coverage, and how the test ran.
 - **PNG** and **SVG** export the main chart through `lib/chart-export.ts`,
   which `build_chart` cards also use.
 
@@ -258,13 +325,13 @@ working rules: what a forecast can't answer, gathering and lining up history
 without inventing values, choosing the frequency and horizon, holiday regions
 and `known_future` covariates (retail events such as Black Friday aren't
 public holidays), when not to forecast, and explaining the range, typical
-error, and covariate change in plain words. Update it when the tool's
+error, reliability, and caveats in plain words. Update it when the tool's
 arguments, limits, or result change.
 
 The `forecast_*` cases in `apps/api/evals/datasets/agent_behavior.yaml` check
 that an agent forecasts a read CSV once with the right frequency, horizon, and
-holiday region and the history unchanged, and that it reports the range and
-backtest error. They need `DATA_SCIENCE_URL`; see the
+holiday region and the history unchanged, that it reports the range and
+backtest error, and that it passes on a low-reliability warning. They need `DATA_SCIENCE_URL`; see the
 [evals README](../../apps/api/evals/README.md).
 
 ## Local development
@@ -299,7 +366,9 @@ in Docker:
 - validation refuses a known-future covariate that misses the horizon, too
   short a history, and a non-finite value
 - a weekly pattern forecasts within tolerance through the full driver path,
-  with its band around the median
+  with its band around the median and a backtest from several starting points
+- test windows stop at their limits, and the simple benchmark takes the better
+  method
 - holiday shares for Scotland's 2 January, EU Christmas, Victoria's Melbourne
   Cup, and a UK December month
 - start-up fails when the weights are missing
@@ -310,6 +379,7 @@ per-service request cap.
 In the API, `tests/services/agents/runtime/test_forecasting_tool.py` uses a
 stub transport: the tool is hidden without the service, labels and the chart
 stay out of the request and the model's result, a short known-future
-covariate is refused before any request, and a malformed result fails.
+covariate is refused before any request, a malformed result fails, and the
+reliability rules and covariate choice apply.
 `tests/scenarios/test_forecasting.py` forecasts from a `run_code` script and
 checks the nested audit record and that the chart never reaches the model.

@@ -34,6 +34,8 @@ MAX_ABS_VALUE = 1e15
 FIRST_YEAR, LAST_YEAR = 1950, 2100
 ARGUMENT_KEYS = {"start", "frequency", "values", "horizon", "holiday_regions", "covariates"}
 SERIES_KEYS = {"median", "low", "high"}
+SCORE_KEYS = ("wape", "coverage", "quantile_loss")
+SIMPLE_METHODS = ("average", "same_period_last_cycle")
 
 
 def validate_forecast(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -155,20 +157,41 @@ def _well_formed(result: Any, arguments: dict[str, Any]) -> bool:
         return False
     horizon = arguments["horizon"]
     backtest = result.get("backtest")
-    if not isinstance(backtest, dict) or type(backtest.get("holdout")) is not int:
+    if not _backtest(backtest):
         return False
-    holdout = backtest["holdout"]
     shares = result.get("holiday_covariates")
     return (
         _series(result.get("forecast"), horizon)
         and (result.get("baseline") is None or _series(result["baseline"], horizon))
-        and _series(backtest.get("forecast"), holdout)
-        and (backtest.get("baseline") is None or _series(backtest["baseline"], holdout))
         and isinstance(shares, dict)
         and set(shares) == set(arguments["holiday_regions"])
         and all(_finite_list(row, len(arguments["values"]) + horizon) for row in shares.values())
         and isinstance(result.get("holidays"), list)
     )
+
+
+def _backtest(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    counts = (value.get("holdout"), value.get("starting_points"), value.get("tested_points"))
+    simple = value.get("simple")
+    return (
+        all(type(count) is int for count in counts)
+        and _score(value.get("forecast"))
+        and (value.get("baseline") is None or _score(value["baseline"]))
+        and isinstance(simple, dict)
+        and simple.get("method") in SIMPLE_METHODS
+        and _finite_or_null(simple.get("wape"))
+        and _finite_or_null(value.get("quantile_loss_change"))
+    )
+
+
+def _score(value: Any) -> bool:
+    return isinstance(value, dict) and all(_finite_or_null(value.get(key)) for key in SCORE_KEYS)
+
+
+def _finite_or_null(value: Any) -> bool:
+    return value is None or (type(value) in {int, float} and math.isfinite(value))
 
 
 def _series(value: Any, length: int) -> bool:
