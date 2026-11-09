@@ -21,6 +21,9 @@ export type ToolApprovalDecisionControls = {
   onDecisionChange: (decision: ApprovalDecision) => void
   onRetry: () => void
   onReview?: () => void
+  // Card state that a review's redraw would lose, such as items the operator cancelled.
+  retained?: unknown
+  onRetain?: (value: unknown) => void
   pendingCount: number
   submitting: boolean
 }

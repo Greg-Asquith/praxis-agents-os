@@ -191,6 +191,10 @@ describe("approval File re-review interactions", () => {
       expect(onReview).not.toHaveBeenCalled()
     }
   )
+  it("keeps a card's retained state when a review changes the revision", () => {
+    render()?.onRetain?.(["cancelled ad"])
+    expect(render({ approvalRevision: "round-2" })?.retained).toEqual(["cancelled ad"])
+  })
   it("blocks duplicate review, approval, and edits while review is in flight", async () => {
     let finish: () => void = () => undefined
     onReview.mockImplementation(

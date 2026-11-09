@@ -392,6 +392,7 @@ DEFINITION = RuntimeToolDefinition(
     availability_check=google_ads_available,
     approval_display_args=_approval_display_args,
     approval_input_model=GoogleAdsCreateAdsRequest,
+    approval_review_fields=("ads",),
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Creating Google Ads",

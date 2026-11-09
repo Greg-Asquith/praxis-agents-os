@@ -316,8 +316,35 @@ def validate_retained_review(leaf: "DirectApprovalNode", args: dict[str, Any]) -
         raise approval_review_required()
     for key in definition.approval_review_fields:
         field = next(field for field in definition.presentation.arg_fields if field.key == key)
-        if not _matches_review(field, args.get(key), display.get(key)):
+        matches = (
+            _matches_structured_review(definition, key, args, display)
+            if field.format == "structured"
+            else _matches_review(field, args.get(key), display.get(key))
+        )
+        if not matches:
             raise approval_review_required(key)
+
+
+def _matches_structured_review(
+    definition: "RuntimeToolDefinition",
+    key: str,
+    selected: dict[str, Any],
+    reviewed: dict[str, Any],
+) -> bool:
+    """Compares a nested field as the tool reads it, so a null option or blank isn't an edit."""
+    from pydantic import ValidationError
+
+    model = definition.approval_input_model
+    if model is None:
+        return False
+    try:
+        first, second = (
+            model.model_validate({name: args[name] for name in model.model_fields if name in args})
+            for args in (selected, reviewed)
+        )
+    except ValidationError:
+        return False
+    return first.model_dump(mode="json")[key] == second.model_dump(mode="json")[key]
 
 
 def _matches_review(field: "ToolFieldPresentation", selected: Any, reviewed: Any) -> bool:
@@ -379,6 +406,11 @@ async def build_review_display_args(
     from services.agents.runtime.envelope import build_run_envelope
     from services.agents.runtime.sinks import NullSink
 
+    lead = next(
+        field
+        for field in definition.presentation.arg_fields
+        if field.key == definition.approval_review_fields[0]
+    )
     authorized = await authorize_entity_field(
         db,
         actor=actor,
@@ -386,7 +418,9 @@ async def build_review_display_args(
         membership=membership,
         conversation_id=run.conversation_id,
         tool_name=definition.name,
-        field_key=definition.approval_review_fields[0],
+        field_key=lead.key,
+        # A structured field holds several kinds, so its first kind authorises the review.
+        entity_kind=lead.entity_kinds[0] if lead.format == "structured" else None,
         run=run,
         tool_call_id=tool_call_id,
     )
@@ -408,5 +442,5 @@ async def build_review_display_args(
         projected = definition.approval_display_args(deps, canonical)
         display = await projected if isawaitable(projected) else projected
     except ModelRetry as exc:
-        raise AppValidationError(str(exc), field="source") from exc
+        raise AppValidationError(str(exc), field=lead.key) from exc
     return display

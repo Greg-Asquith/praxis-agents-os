@@ -41,7 +41,8 @@ type ApprovalSpec<Args> = {
     controls: ToolApprovalDecisionControls
   ) => ReactNode
   title?: string | ((args: Args) => string)
-  validateArgs?: (value: unknown) => string | null
+  // `retained` is the request as the server last held it, before this card's unsaved edits.
+  validateArgs?: (value: unknown, retained: Args) => string | null
 }
 
 // Lifecycle strings default from `copy`; set one directly only when the template reads wrong.
@@ -303,7 +304,9 @@ function renderApproval<Args, Result>(
     : mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
   const currentParsedArgs = variant.approval.parseArgs(currentArgs)
   const displayError = approvalDisplayError(currentArgs)
-  const argsError = displayError ? null : (variant.approval.validateArgs?.(currentArgs) ?? null)
+  const argsError = displayError
+    ? null
+    : (variant.approval.validateArgs?.(currentArgs, args) ?? null)
   const validationError =
     refreshed?.error ??
     displayError ??

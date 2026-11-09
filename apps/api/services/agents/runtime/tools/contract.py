@@ -606,9 +606,13 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
     entity_fields = {
         field.key
         for field in presentation.arg_fields
-        if field.editable and field.format in {"entity", "entity_list"} and field.entity_kind
+        if field.editable
+        and (
+            (field.format in {"entity", "entity_list"} and field.entity_kind)
+            or (field.format == "structured" and field.entity_kinds)
+        )
     }
-    # The first review field authorises the review, so it must be an entity selection.
+    # The first review field authorises the review, so it must hold entity references.
     if review_fields and (
         len(review_fields) != len(definition.approval_review_fields)
         or not review_fields.issubset(editable_fields)
@@ -616,8 +620,8 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
         or definition.approval_display_args is None
     ):
         raise RuntimeError(
-            "Approval review fields require unique editable arguments, led by an entity "
-            "selection, and display projection"
+            "Approval review fields require unique editable arguments, led by a field that "
+            "holds entity references, and display projection"
         )
     # Nothing else checks a nested edit's shape, so the tool's own model must.
     if definition.approval_input_model is None and any(

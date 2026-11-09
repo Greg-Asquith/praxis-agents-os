@@ -134,7 +134,7 @@ describe("integration write presenter", () => {
     const card = approval(context, config)
     expect(card.args).toBe(context.activity.args)
     expect(card.controls).toBe(context.approvalDecision)
-    expect(validate).toHaveBeenCalledWith({ name: "Edited" })
+    expect(validate).toHaveBeenCalledWith({ name: "Edited" }, parseArgs(context.activity.args))
     expect(card.title).toBe("Review Edited")
     expect(card.prompt).toBe("Change Edited")
     expect(render(context, config)).toContain("Summary: Edited")

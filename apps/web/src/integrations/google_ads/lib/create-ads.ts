@@ -70,7 +70,7 @@ export type AdRow = {
 }
 
 const UNAVAILABLE =
-  "Google Ads couldn't check these ads. Decline, then ask the agent to prepare them again."
+  "Google Ads couldn't check these ads. Check again, or decline and ask the agent to prepare them again."
 const URL_PATTERN = /^https?:\/\/\S+$/i
 
 /** Counts characters as Google does for Latin text, one per code point. */
@@ -249,16 +249,23 @@ export function adCopyProblems(ad: AdCopy): string[] {
   ]
 }
 
-/** Everything that blocks this ad, from the card's own checks and Google's dry run. */
-function adProblems(ad: DraftAd, checks: AdsChecks): string[] {
+/** What the card can find without asking Google again, so these block a check. */
+function cardProblems(ad: DraftAd, checks: AdsChecks): string[] {
   const problems = adCopyProblems(ad)
   if (ad.adGroups.length === 0) problems.push("Choose at least one ad group.")
-  if (checks.unavailable) return [...problems, UNAVAILABLE]
-  const groups = new Set(ad.adGroups.map((group) => group.key))
+  if (checks.unavailable) return problems
   for (const group of ad.adGroups) {
     const problem = checks.adGroups.get(group.key)?.problem
     if (problem) problems.push(`${adGroupName(group, checks)}: ${problem}`)
   }
+  return problems
+}
+
+/** Everything that blocks this ad, from the card's own checks and Google's dry run. */
+function adProblems(ad: DraftAd, checks: AdsChecks): string[] {
+  const problems = cardProblems(ad, checks)
+  if (checks.unavailable) return [...problems, UNAVAILABLE]
+  const groups = new Set(ad.adGroups.map((group) => group.key))
   // Google checked this exact copy, so its rejections stop applying once the copy changes.
   for (const problem of checks.googleProblems.get(copyKey(ad)) ?? []) {
     if (problem.adGroup !== null && !groups.has(problem.adGroup)) continue
@@ -288,14 +295,33 @@ export function createAdsCounts(rows: readonly AdRow[]): CreateAdsCounts {
   }
 }
 
+/** Google's problems with the whole request rather than one ad. */
+export function adsRequestProblems(args: CreateAdsArgs): string[] {
+  return args.checks.unavailable ? [] : args.checks.requestProblems
+}
+
+/** True when Google hasn't answered for this request. Status doesn't change its answer. */
+export function adsNeedCheck(args: CreateAdsArgs, checked: CreateAdsArgs): boolean {
+  return (
+    args.checks.unavailable ||
+    JSON.stringify(serializeAds(args.ads)) !== JSON.stringify(serializeAds(checked.ads))
+  )
+}
+
+export function canCheckAds(args: CreateAdsArgs): boolean {
+  return args.ads.length > 0 && args.ads.every((ad) => !cardProblems(ad, args.checks).length)
+}
+
 /** Why the request can't be approved yet, or null. */
-export function createAdsBlock(args: CreateAdsArgs | null): string | null {
+export function createAdsBlock(args: CreateAdsArgs | null, checked: CreateAdsArgs): string | null {
   if (args === null) return null
   const counts = createAdsCounts(adRows(args))
   if (counts.ads === 0) return "Every ad is cancelled. Decline this request, or restore one."
+  const [problem] = adsRequestProblems(args)
+  if (problem) return problem
   if (counts.problems > 0)
     return `Fix or cancel ${approvalCountLine(counts.problems, "ad")} to continue.`
-  return null
+  return adsNeedCheck(args, checked) ? "Check the changes before approving." : null
 }
 
 export function createAdsPrompt(args: CreateAdsArgs): string {

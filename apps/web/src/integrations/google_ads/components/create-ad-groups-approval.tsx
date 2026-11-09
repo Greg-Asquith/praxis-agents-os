@@ -3,6 +3,7 @@
 import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, PlusIcon, XIcon } from "lucide-react"
 import { useId, useMemo, useState } from "react"
 
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -31,16 +32,20 @@ import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/compone
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import { AdCopyEditor } from "@/integrations/google_ads/components/ad-copy-editor"
+import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   adGroupRows,
+  adGroupsNeedCheck,
   blankAd,
   campaignCheck,
+  canCheckAdGroups,
   createAdGroupsCounts,
   keywordMixLine,
   MAX_ADS,
   mergePastedKeywords,
   parseCampaign,
+  parseCancelledAdGroups,
   requestProblems,
   serializeAdGroups,
   type AdGroupRow,
@@ -78,10 +83,15 @@ const TABS: DataTableTab[] = [
 
 export function CreateAdGroupsApproval({
   args,
+  checked,
+  controls,
   disabled,
   onFieldEdit,
 }: {
   args: CreateAdGroupsArgs
+  // The request Google last answered for.
+  checked: CreateAdGroupsArgs
+  controls: ToolApprovalDecisionControls
   disabled: boolean
   onFieldEdit: (key: string, value: EditedValue) => void
 }) {
@@ -90,7 +100,7 @@ export function CreateAdGroupsApproval({
   const [tab, setTab] = useState("all")
   const [open, setOpen] = useState(() => firstToOpen(rows))
   // Cancelled ad groups, so Restore puts them back with their edits.
-  const [cancelled, setCancelled] = useState<DraftAdGroup[]>([])
+  const cancelled = parseCancelledAdGroups(controls.retained)
   const openRow = rows[Math.min(open, rows.length - 1)]
   const many = rows.length > 1
 
@@ -101,13 +111,15 @@ export function CreateAdGroupsApproval({
     save(args.adGroups.map((group, at) => (at === index ? { ...group, ...patch } : group)))
   }
   const cancel = (indexes: ReadonlySet<number>) => {
-    setCancelled([...cancelled, ...args.adGroups.filter((_, at) => indexes.has(at))])
+    controls.onRetain?.(
+      serializeAdGroups([...cancelled, ...args.adGroups.filter((_, at) => indexes.has(at))])
+    )
     save(args.adGroups.filter((_, at) => !indexes.has(at)))
     setOpen(0)
   }
   const restore = () => {
     save([...args.adGroups, ...cancelled])
-    setCancelled([])
+    controls.onRetain?.([])
   }
 
   const tableRows = useMemo<DataRow[]>(
@@ -137,6 +149,16 @@ export function CreateAdGroupsApproval({
         pausedNote="Paused. Will not appear or spend until activated."
         value={args.status === "ENABLED" ? "active" : "paused"}
       />
+      {adGroupsNeedCheck(args, checked) ? (
+        <CheckChanges
+          canCheck={canCheckAdGroups(args)}
+          disabled={disabled}
+          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
+          note="Google hasn't checked these changes yet."
+          onCheck={controls.onReview}
+          submitting={controls.submitting}
+        />
+      ) : null}
       <EntityPicker
         currentLabel={args.campaign.label}
         disabled={disabled}
@@ -270,8 +292,7 @@ function BiddingNote({ args }: { args: CreateAdGroupsArgs }) {
         <InfoIcon aria-hidden="true" />
         <AlertTitle>{args.campaign.label} Hasn't Been Checked</AlertTitle>
         <AlertDescription>
-          The campaign, its bidding, and its ad group names get checked when you approve. Nothing is
-          created if there's a problem.
+          Check these changes to see the campaign's bidding and whether its ad group names are free.
         </AlertDescription>
       </Alert>
     )

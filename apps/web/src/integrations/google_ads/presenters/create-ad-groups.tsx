@@ -36,13 +36,16 @@ export const googleAdsCreateAdGroupsPresenter = createIntegrationWritePresenter(
         approveLabel: createAdGroupsApproveLabel,
         parseArgs: parseCreateAdGroupsArgs,
         prompt: createAdGroupsPrompt,
-        // Problems follow the edited names and bids, so approval waits on them.
-        validateArgs: (value) => createAdGroupsBlock(parseCreateAdGroupsArgs(value)),
+        // Problems follow the edited names and bids, and an edit needs Google's answer.
+        validateArgs: (value, checked) =>
+          createAdGroupsBlock(parseCreateAdGroupsArgs(value), checked),
         renderInvalidDraft: true,
         renderFields: false,
-        renderSummary: (value, fallback, onFieldEdit, disabled) => (
+        renderSummary: (value, fallback, onFieldEdit, disabled, controls) => (
           <CreateAdGroupsApproval
             args={parseCreateAdGroupsArgs(value) ?? fallback}
+            checked={fallback}
+            controls={controls}
             disabled={disabled}
             onFieldEdit={onFieldEdit}
           />

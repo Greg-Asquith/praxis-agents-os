@@ -32,13 +32,15 @@ export const googleAdsCreateAdsPresenter = createIntegrationWritePresenter({
           approveLabel: createAdsApproveLabel,
           parseArgs: parseCreateAdsArgs,
           prompt: createAdsPrompt,
-          // Problems follow the edited copy, so approval waits on them.
-          validateArgs: (value) => createAdsBlock(parseCreateAdsArgs(value)),
+          // Problems follow the edited copy, and an edit needs Google's answer, so approval waits.
+          validateArgs: (value, checked) => createAdsBlock(parseCreateAdsArgs(value), checked),
           renderInvalidDraft: true,
           renderFields: false,
-          renderSummary: (value, fallback, onFieldEdit, disabled) => (
+          renderSummary: (value, fallback, onFieldEdit, disabled, controls) => (
             <CreateAdsApproval
               args={parseCreateAdsArgs(value) ?? fallback}
+              checked={fallback}
+              controls={controls}
               disabled={disabled}
               onFieldEdit={onFieldEdit}
             />

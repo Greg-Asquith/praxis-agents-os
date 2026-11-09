@@ -374,19 +374,25 @@ new ad set, the source ads of copies, and the objects of budget changes.
 
 Tools with `approval_review_fields` declare editable arguments whose display
 evidence must be refreshed before approval when they change. The first field
-must be an `entity` or `entity_list` selection, which authorises the review;
-later fields can be any editable argument. Resume compares single entities and
-entity lists by reference identity, in order, and other fields by value. An
+must hold entity references, which authorises the review: an `entity` or
+`entity_list` selection, or a `structured` field with `entity_kinds`, which
+authorises with its first kind. Later fields can be any editable argument.
+Resume compares single entities and entity lists by reference identity, in
+order, and structured fields as the tool's `approval_input_model` reads them, so
+a blank or null option isn't an edit. It compares other fields by value. An
 omitted single entity needs no review. A secondary `entity_list` is optional:
 the editor can add it when absent and clears it to null, never `[]`, and
 resume treats null and a reviewed list as different selections. SharePoint reviews a selected source
 and its revision together. `meta_ads_update_status` reviews its status and
-object lists so its delivery evidence matches the edited selection.
+object lists so its delivery evidence matches the edited selection. Google Ads
+create tools review their nested requests, so Google's dry run covers exactly
+what the operator approves.
 
 `POST /agent-runs/{run_id}/review-approval` accepts the root run, current
 `approval_revision`, exact `approval_id`, and executable `override_args`. The actor must own the pending run family in the active
 workspace. The same family lock serialises review and resume. Reviews preserve
-the original expiry and record an audit event.
+the original expiry and record an audit event. The route allows 120 requests a
+minute, because a review can call the provider.
 
 The endpoint validates editable arguments and live entity access, then calls
 the tool's display callback. It retains `reviewed_args` separately from the
@@ -397,7 +403,10 @@ arguments and rejects unreviewed source identities. Tools may supply an
 `approval_input_model` for cross-field validation before review or resume.
 
 The client submits review only from an explicit action, then reloads the
-approval and transcript before accepting a decision. Shared transcripts have
+approval and transcript before accepting a decision. A review changes the
+revision, which redraws the card and clears its edits, since the retained
+arguments now hold them. A card keeps anything else it needs through `retained`
+and `onRetain` on its approval controls, such as cancelled items. Shared transcripts have
 no review controls. Review failures leave approval pending and permit retry,
 correction, or decline. Optional multiline fields accept null so choosing a
 File can remove text content; an empty string remains a distinct edit.

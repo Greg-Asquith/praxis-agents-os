@@ -33,7 +33,7 @@ const MAX_OBJECTS = 2_500
 const MONEY_PATTERN = /^\d+(?:\.\d{1,6})?$/
 const URL_PATTERN = /^https?:\/\/\S+$/i
 const UNAVAILABLE =
-  "Google Ads couldn't check these ad groups. Decline, then ask the agent to prepare them again."
+  "Google Ads couldn't check these ad groups. Check again, or decline and ask the agent to prepare them again."
 
 export type DraftKeyword = PastedKeyword & { cpcBid: string; finalUrl: string }
 
@@ -165,6 +165,11 @@ function parseAdGroup(value: unknown): DraftAdGroup | null {
     targetCpa: text(value["target_cpa"]),
     targetRoas: roasPercent(value["target_roas"]),
   }
+}
+
+/** Reads the cancelled ad groups the card keeps across a check, in the tool's own shape. */
+export function parseCancelledAdGroups(value: unknown): DraftAdGroup[] {
+  return parseEach(value, parseAdGroup) ?? []
 }
 
 function parseItemProblem(value: unknown): ItemProblem[] {
@@ -354,21 +359,25 @@ function googleProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[]
   })
 }
 
+/** What the card can find without asking Google again, so these block a check. */
+function cardProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
+  return [
+    ...nameProblems(group.name, args.adGroups, args),
+    ...bidProblems(group, args),
+    ...listProblems("keyword", group.keywords, MAX_KEYWORDS),
+    ...listProblems("negative keyword", group.negatives, MAX_NEGATIVES),
+    ...keywordUrlProblems(group),
+    ...adProblems(group),
+  ]
+}
+
 export function adGroupRows(args: CreateAdGroupsArgs): AdGroupRow[] {
   return args.adGroups.map((adGroup, index) => ({
     adGroup,
     index,
     problems: args.checks.unavailable
       ? [UNAVAILABLE]
-      : [
-          ...nameProblems(adGroup.name, args.adGroups, args),
-          ...bidProblems(adGroup, args),
-          ...listProblems("keyword", adGroup.keywords, MAX_KEYWORDS),
-          ...listProblems("negative keyword", adGroup.negatives, MAX_NEGATIVES),
-          ...keywordUrlProblems(adGroup),
-          ...adProblems(adGroup),
-          ...googleProblems(adGroup, args),
-        ],
+      : [...cardProblems(adGroup, args), ...googleProblems(adGroup, args)],
   }))
 }
 
@@ -422,8 +431,28 @@ export function keywordMixLine(rows: readonly AdGroupRow[]): string {
     .join(", ")
 }
 
+function requestKey(args: CreateAdGroupsArgs): string {
+  return JSON.stringify([args.campaign.reference, serializeAdGroups(args.adGroups)])
+}
+
+/** True when Google hasn't answered for this request. Status doesn't change its answer. */
+export function adGroupsNeedCheck(args: CreateAdGroupsArgs, checked: CreateAdGroupsArgs): boolean {
+  return args.checks.unavailable || requestKey(args) !== requestKey(checked)
+}
+
+export function canCheckAdGroups(args: CreateAdGroupsArgs): boolean {
+  return (
+    args.adGroups.length > 0 &&
+    objectCount(args.adGroups) <= MAX_OBJECTS &&
+    args.adGroups.every((group) => !cardProblems(group, args).length)
+  )
+}
+
 /** Why the request can't be approved yet, or null. */
-export function createAdGroupsBlock(args: CreateAdGroupsArgs | null): string | null {
+export function createAdGroupsBlock(
+  args: CreateAdGroupsArgs | null,
+  checked: CreateAdGroupsArgs
+): string | null {
   if (args === null) return null
   const counts = createAdGroupsCounts(adGroupRows(args))
   if (counts.adGroups === 0)
@@ -432,7 +461,7 @@ export function createAdGroupsBlock(args: CreateAdGroupsArgs | null): string | n
   if (problem) return problem
   if (counts.problems > 0)
     return `Fix or cancel ${approvalCountLine(counts.problems, "ad group")} to continue.`
-  return null
+  return adGroupsNeedCheck(args, checked) ? "Check the changes before approving." : null
 }
 
 export function createAdGroupsPrompt(args: CreateAdGroupsArgs): string {

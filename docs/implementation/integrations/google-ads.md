@@ -150,6 +150,13 @@ name, campaign, and problem; for each proposed ad, the copy that was checked
 and Google's rejections with the ad group each one names; and whole-request
 problems. An account that can't be read is `unavailable`.
 
+The tool declares `ads` in `approval_review_fields`, so an edited request needs
+a new check. Check Changes on the card sends it to `review-approval`, which runs
+these checks again on the edited request and retains the result. Approval refuses
+`ads` that differ from what was checked with `approval_review_required`. Status
+isn't part of the check, because it doesn't change Google's answer. See [retained
+approval reviews](../tool-dispatch.md#retained-approval-reviews).
+
 After approval, every pair goes in one atomic request through
 `send_build`, so Google creates every ad or none. Each created ad is read
 back for its status and review state; a failed read leaves those empty and
@@ -186,10 +193,12 @@ While preparing the approval, the tool reads the campaign and dry runs the ad
 groups that have no bid or name problem. The trusted `_checks` display argument
 holds the campaign (its bidding and what it accepts, or its problem), the live
 names, and Google's rejections, each naming its ad group and item. A campaign
-that is removed or outside Search is left out of the dry run.
+that is removed or outside Search is left out of the dry run. The tool declares
+`campaign` and `ad_groups` in `approval_review_fields`, so an edit to either needs
+a new check, as in ad creation.
 
-After approval, the tool reads the campaign again, because the card can change
-the campaign, names, and bids. A problem stops the tool with nothing sent. The
+After approval, the tool reads the campaign again, because accounts can change
+between the check and the send. A problem stops the tool with nothing sent. The
 rest goes in one atomic request, so Google creates everything or nothing. The
 result counts each kind of object and returns a reference for each ad group,
 for other tools to use. When Google refuses the request, the result gives each
@@ -428,7 +437,14 @@ fields. `adRows` lists each ad's problems: counts, character limits
 ad group, an ad group's problem, and Google's dry-run rejections. Google's
 rejections apply only while the ad's copy matches the checked copy
 (`copyKey`), and only for ad groups still on the ad. Any problem blocks
-approval. The approve label counts ads times ad groups.
+approval, as does Google's whole-request problem. The approve label counts ads
+times ad groups.
+
+After an edit to the ads, `adsNeedCheck` makes approval wait for **Check Changes**,
+comparing the draft with the request the server last checked. `canCheckAds` holds
+the check back while the card can already see a problem, to save a call to Google.
+When Google couldn't be reached, the same control reads **Check Again**. A status
+change needs no check.
 
 The card (`components/create-ads-approval.tsx`) shows `StatusChoice`
 (Paused or Active). With more than one ad it adds `ChangeSummary`
@@ -443,7 +459,8 @@ order),
 `TextAssetList` for headlines and descriptions (counters, pins, the
 minimum, the first three until Show All), link fields, and ad group chips
 with an `EntityPicker` to add one. Cancelling takes the ad out of `ads`;
-the card keeps cancelled ads until approval so Restore can put them back.
+the approval controls keep cancelled ads through a check's redraw so Restore
+can put them back. Reloading the page loses them.
 
 The result (`components/create-ads-outcome.tsx`) is one `DataTable` with Ad
 Group, Headline 1, Status, Review, and Outcome. When nothing was created it
@@ -457,8 +474,9 @@ in the request, or live in the campaign in any case), bids the campaign doesn't
 accept, keyword limits and marks, each ad's copy, and Google's rejections. A
 rejection applies only while its ad group has the same name and still holds the
 rejected item. After the operator chooses another campaign, the campaign's rules
-and rejections stop applying, and the card says the campaign gets checked on
-approval. Any problem blocks approval.
+and rejections stop applying until they check it. Any problem blocks approval.
+`adGroupsNeedCheck` and `canCheckAdGroups` make approval wait for **Check Changes**,
+as on the Create Ads card, after an edit to the campaign or ad groups.
 
 The card (`components/create-ad-groups-approval.tsx`) names the campaign's bidding
 once, then shows `StatusChoice` and the campaign `EntityPicker`. With more than one

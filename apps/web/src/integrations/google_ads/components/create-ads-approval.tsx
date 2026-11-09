@@ -3,6 +3,7 @@
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,10 +19,14 @@ import { Chip } from "@/integrations/ads/components/controls"
 import { EntityPicker } from "@/integrations/ads/components/entity-picker"
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import { AdCopyEditor } from "@/integrations/google_ads/components/ad-copy-editor"
+import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   adGroupName,
   adRows,
+  adsNeedCheck,
+  adsRequestProblems,
+  canCheckAds,
   createAdsCounts,
   parseAdGroup,
   serializeAds,
@@ -30,6 +35,7 @@ import {
   type CreateAdsArgs,
   type DraftAd,
 } from "@/integrations/google_ads/lib/create-ads"
+import { isRecord } from "@/lib/guards"
 
 // Below this many ads the table's search only adds noise.
 const SEARCH_FROM = 10
@@ -54,10 +60,15 @@ const TABS: DataTableTab[] = [
 
 export function CreateAdsApproval({
   args,
+  checked,
+  controls,
   disabled,
   onFieldEdit,
 }: {
   args: CreateAdsArgs
+  // The request Google last answered for.
+  checked: CreateAdsArgs
+  controls: ToolApprovalDecisionControls
   disabled: boolean
   onFieldEdit: (key: string, value: EditedValue) => void
 }) {
@@ -66,7 +77,7 @@ export function CreateAdsApproval({
   const [tab, setTab] = useState("all")
   const [open, setOpen] = useState(() => firstToOpen(rows))
   // Cancelled ads as sent, so Restore puts them back with their edits.
-  const [cancelled, setCancelled] = useState<Record<string, unknown>[]>([])
+  const cancelled = Array.isArray(controls.retained) ? controls.retained.filter(isRecord) : []
   const openRow = rows[Math.min(open, rows.length - 1)]
 
   const editAds = (ads: DraftAd[]) => {
@@ -79,16 +90,20 @@ export function CreateAdsApproval({
     editAds(args.ads.map((ad) => ({ ...ad, ...patch })))
   }
   const cancel = (indexes: ReadonlySet<number>) => {
-    setCancelled([...cancelled, ...serializeAds(args.ads.filter((_, at) => indexes.has(at)))])
+    controls.onRetain?.([
+      ...cancelled,
+      ...serializeAds(args.ads.filter((_, at) => indexes.has(at))),
+    ])
     editAds(args.ads.filter((_, at) => !indexes.has(at)))
     setOpen(0)
   }
   const restore = () => {
     onFieldEdit("ads", [...serializeAds(args.ads), ...cancelled])
-    setCancelled([])
+    controls.onRetain?.([])
   }
 
   const many = rows.length > 1
+  const wholeRequest = adsRequestProblems(args)
   const tableRows = useMemo<DataRow[]>(
     () =>
       rows.map((row) => ({
@@ -114,6 +129,25 @@ export function CreateAdsApproval({
         pausedNote="Paused. Will not appear or spend until activated."
         value={args.status === "ENABLED" ? "active" : "paused"}
       />
+      {adsNeedCheck(args, checked) ? (
+        <CheckChanges
+          canCheck={canCheckAds(args)}
+          disabled={disabled}
+          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
+          note="Google hasn't checked these changes yet."
+          onCheck={controls.onReview}
+          submitting={controls.submitting}
+        />
+      ) : null}
+      {wholeRequest.length > 0 ? (
+        <ul className="text-destructive grid gap-0.5 text-sm" role="alert">
+          {wholeRequest.map((problem) => (
+            <li key={problem} className="wrap-anywhere">
+              {problem}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {many ? (
         <SharedSettings
           ads={args.ads}

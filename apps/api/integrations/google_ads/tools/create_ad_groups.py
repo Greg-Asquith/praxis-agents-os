@@ -470,6 +470,7 @@ DEFINITION = RuntimeToolDefinition(
     availability_check=google_ads_available,
     approval_display_args=_approval_display_args,
     approval_input_model=GoogleAdsCreateAdGroupsRequest,
+    approval_review_fields=("campaign", "ad_groups"),
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Creating Google Ads Ad Groups",

@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import { formatKeywordLine, parseKeywordLines } from "@/integrations/ads/lib/keyword-notation"
 import {
   adGroupRows,
+  canCheckAdGroups,
   createAdGroupsApproveLabel,
   createAdGroupsBlock,
   mergePastedKeywords,
@@ -118,7 +119,9 @@ describe("Google Ads create ad groups arguments", () => {
     expect(problems(value)).toEqual([
       "Has a £0.90 click bid, but the campaign uses Maximise Conversions. Remove the bid to continue.",
     ])
-    expect(createAdGroupsBlock(parsed(value))).toBe("Fix or cancel 1 ad group to continue.")
+    expect(createAdGroupsBlock(parsed(value), parsed(value))).toBe(
+      "Fix or cancel 1 ad group to continue."
+    )
   })
 
   it("blocks keyword bids under the same rule, and lets them through under manual bidding", () => {
@@ -178,10 +181,31 @@ describe("Google Ads create ad groups arguments", () => {
         campaign: { ...checks().campaign, problem: "New ad groups only go in Search campaigns." },
       }),
     })
-    expect(createAdGroupsBlock(parsed(blocked))).toBe("New ad groups only go in Search campaigns.")
+    expect(createAdGroupsBlock(parsed(blocked), parsed(blocked))).toBe(
+      "New ad groups only go in Search campaigns."
+    )
     expect(createAdGroupsApproveLabel(parsed(args([group(), group({ name: "B" })])))).toBe(
       "Create 2 Ad Groups"
     )
+  })
+
+  it("makes approval wait on a check once the campaign or an ad group changes", () => {
+    const checked = parsed(args())
+    expect(createAdGroupsBlock(parsed(args([group()], { status: "ENABLED" })), checked)).toBeNull()
+
+    const moved = args([group()], {
+      campaign: { customer_id: CUSTOMER, campaign_id: "11", label: "Other" },
+    })
+    expect(canCheckAdGroups(parsed(moved))).toBe(true)
+    expect(createAdGroupsBlock(parsed(moved), checked)).toBe("Check the changes before approving.")
+
+    const renamed = args([group({ name: "Narrow Fit" })])
+    expect(createAdGroupsBlock(parsed(renamed), checked)).toBe(
+      "Check the changes before approving."
+    )
+
+    // The card already knows this campaign ignores click bids, so asking Google can wait.
+    expect(canCheckAdGroups(parsed(args([group({ cpc_bid: "0.90" })])))).toBe(false)
   })
 
   it("sends a ROAS percentage as a ratio and survives a round trip", () => {

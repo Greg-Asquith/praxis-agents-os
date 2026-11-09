@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   adRows,
+  adsNeedCheck,
+  canCheckAds,
   createAdsApproveLabel,
   createAdsBlock,
   parseCreateAdsArgs,
@@ -109,7 +111,43 @@ describe("Google Ads create ads arguments", () => {
       "Headline 1 is 32 characters. The limit is 30.",
       "Fill in path 1 before path 2.",
     ])
-    expect(createAdsBlock(parsed(value))).toBe("Fix or cancel 1 ad to continue.")
+    expect(createAdsBlock(parsed(value), parsed(value))).toBe("Fix or cancel 1 ad to continue.")
+  })
+
+  it("makes approval wait on a check for edited ads, but not for a new status", () => {
+    const value = args({ _checks: { ...args()._checks, ads: [] } })
+    const checked = parsed(value)
+    expect(createAdsBlock(checked, checked)).toBeNull()
+    expect(createAdsBlock(parsed({ ...value, status: "ENABLED" }), checked)).toBeNull()
+
+    const ad = checked.ads[0]
+    if (!ad) throw new Error("expected an ad")
+    const editedAds = serializeAds([{ ...ad, finalUrl: "https://example.com/new" }])
+    const edited = parsed({ ...value, ads: editedAds })
+    expect(adsNeedCheck(edited, checked)).toBe(true)
+    expect(canCheckAds(edited)).toBe(true)
+    expect(createAdsBlock(edited, checked)).toBe("Check the changes before approving.")
+
+    // Undoing the edit sends blank options as null, which Google has already answered for.
+    const undone = parsed({ ...value, ads: serializeAds(checked.ads) })
+    expect(createAdsBlock(undone, checked)).toBeNull()
+
+    const broken = parsed({
+      ...value,
+      ads: serializeAds([{ ...ad, finalUrl: "not a link" }]),
+    })
+    expect(canCheckAds(broken)).toBe(false)
+  })
+
+  it("offers another check when Google couldn't answer, and blocks on a whole-request problem", () => {
+    const unavailable = parsed(args({ _checks: { unavailable: true } }))
+    expect(adsNeedCheck(unavailable, unavailable)).toBe(true)
+    expect(canCheckAds(unavailable)).toBe(true)
+
+    const refused = parsed(
+      args({ _checks: { ...args()._checks, ads: [], problems: ["Google says: No access."] } })
+    )
+    expect(createAdsBlock(refused, refused)).toBe("Google says: No access.")
   })
 
   it("keeps each reference whole and sends blank optional fields as null", () => {

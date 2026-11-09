@@ -51,6 +51,8 @@ export function useInlineApprovals({
   const [formErrorToolCallId, setFormErrorToolCallId] = useState<string | null>(null)
   const [reviewErrorKey, setReviewErrorKey] = useState<string | null>(null)
   const [submittingToolCallId, setSubmittingToolCallId] = useState<string | null>(null)
+  // Keyed by approval, and kept when a review changes the revision.
+  const [retained, setRetained] = useState<Record<string, unknown>>({})
   if (previousScope !== scope) {
     setPreviousScope(scope)
     setDecisions({})
@@ -233,6 +235,10 @@ export function useInlineApprovals({
       onRetry: () => {
         if (reviewErrorKey === key) void review(approval, key)
         else void submit(decisions, key)
+      },
+      retained: retained[key],
+      onRetain: (value) => {
+        setRetained({ ...retained, [key]: value })
       },
       ...(onReview
         ? {
