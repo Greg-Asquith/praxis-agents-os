@@ -26,16 +26,20 @@ export type AdGroupTarget = {
   reference: Record<string, unknown>
 }
 
-export type DraftAd = {
-  adGroups: AdGroupTarget[]
+/** An ad's copy and links, shared by every card that creates ads. */
+export type AdCopy = {
   descriptions: TextAsset[]
-  // The ad as received, so an edit keeps fields this card doesn't show.
-  entry: Record<string, unknown>
   finalUrl: string
   headlines: TextAsset[]
   mobileFinalUrl: string
   path1: string
   path2: string
+}
+
+export type DraftAd = AdCopy & {
+  adGroups: AdGroupTarget[]
+  // The ad as received, so an edit keeps fields this card doesn't show.
+  entry: Record<string, unknown>
 }
 
 type AdGroupCheck = { campaignName: string | null; name: string; problem: string | null }
@@ -101,7 +105,7 @@ export function parseAdGroup(value: unknown): AdGroupTarget | null {
   }
 }
 
-function parseCopy(value: unknown): Omit<DraftAd, "adGroups" | "entry"> | null {
+export function parseCopy(value: unknown): AdCopy | null {
   if (!isRecord(value)) return null
   const headlines = parseAssets(value["headlines"])
   const descriptions = parseAssets(value["descriptions"])
@@ -129,7 +133,7 @@ function parseAd(value: unknown): DraftAd | null {
 }
 
 /** Identifies an ad's copy, so a check made on that copy applies only while it is unchanged. */
-function copyKey(ad: Omit<DraftAd, "adGroups" | "entry">): string {
+export function copyKey(ad: AdCopy): string {
   const assets = (items: readonly TextAsset[]) => items.map((item) => [item.text.trim(), item.pin])
   return JSON.stringify([
     assets(ad.headlines),
@@ -218,7 +222,7 @@ function assetProblems(
   return problems
 }
 
-function linkProblems(ad: DraftAd): string[] {
+function linkProblems(ad: AdCopy): string[] {
   const problems: string[] = []
   if (!URL_PATTERN.test(ad.finalUrl.trim()))
     problems.push("Enter a final URL starting with http:// or https://.")
@@ -236,13 +240,18 @@ function linkProblems(ad: DraftAd): string[] {
   return problems
 }
 
-/** Everything that blocks this ad, from the card's own checks and Google's dry run. */
-function adProblems(ad: DraftAd, checks: AdsChecks): string[] {
-  const problems = [
+/** What the card itself can tell is wrong with an ad's copy and links. */
+export function adCopyProblems(ad: AdCopy): string[] {
+  return [
     ...assetProblems("Headline", ad.headlines, HEADLINE_LIMITS),
     ...assetProblems("Description", ad.descriptions, DESCRIPTION_LIMITS),
     ...linkProblems(ad),
   ]
+}
+
+/** Everything that blocks this ad, from the card's own checks and Google's dry run. */
+function adProblems(ad: DraftAd, checks: AdsChecks): string[] {
+  const problems = adCopyProblems(ad)
   if (ad.adGroups.length === 0) problems.push("Choose at least one ad group.")
   if (checks.unavailable) return [...problems, UNAVAILABLE]
   const groups = new Set(ad.adGroups.map((group) => group.key))
@@ -311,22 +320,27 @@ export function createAdsDetails(args: CreateAdsArgs | null): FanOutDetail[] {
   ]
 }
 
+/** An ad's copy and links as the tool takes them; blank optional fields are null. */
+export function serializeCopy(ad: AdCopy): Record<string, unknown> {
+  const assets = (items: readonly TextAsset[]) =>
+    items.map((item) => (item.pin ? { text: item.text, pin: item.pin } : { text: item.text }))
+  return {
+    headlines: assets(ad.headlines),
+    descriptions: assets(ad.descriptions),
+    final_url: ad.finalUrl,
+    mobile_final_url: ad.mobileFinalUrl.trim() ? ad.mobileFinalUrl : null,
+    path1: ad.path1.trim() ? ad.path1 : null,
+    path2: ad.path2.trim() ? ad.path2 : null,
+  }
+}
+
 /** The `ads` value for the given drafts, keeping each entry's other fields. */
 export function serializeAds(ads: readonly DraftAd[]): Record<string, unknown>[] {
-  return ads.map((ad) => {
-    const assets = (items: readonly TextAsset[]) =>
-      items.map((item) => (item.pin ? { text: item.text, pin: item.pin } : { text: item.text }))
-    return {
-      ...ad.entry,
-      headlines: assets(ad.headlines),
-      descriptions: assets(ad.descriptions),
-      final_url: ad.finalUrl,
-      mobile_final_url: ad.mobileFinalUrl.trim() ? ad.mobileFinalUrl : null,
-      path1: ad.path1.trim() ? ad.path1 : null,
-      path2: ad.path2.trim() ? ad.path2 : null,
-      ad_groups: ad.adGroups.map((group) => group.reference),
-    }
-  })
+  return ads.map((ad) => ({
+    ...ad.entry,
+    ...serializeCopy(ad),
+    ad_groups: ad.adGroups.map((group) => group.reference),
+  }))
 }
 
 /** The value every ad shares for these fields, or null when they differ. */
@@ -341,7 +355,7 @@ export function sharedValue<K extends keyof DraftAd>(
 
 /** The display URL a searcher sees: the final URL's domain, then the paths. */
 /** The site name and URL Google shows above the headline: the host, then the display paths. */
-export function previewSite(ad: Pick<DraftAd, "finalUrl" | "path1" | "path2">): {
+export function previewSite(ad: Pick<AdCopy, "finalUrl" | "path1" | "path2">): {
   name: string
   url: string
 } {

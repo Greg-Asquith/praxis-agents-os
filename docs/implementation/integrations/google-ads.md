@@ -158,6 +158,44 @@ card can change copy, links, status, and ad groups, and cancel ads; ad
 groups it adds come from the entity resolver, and the dispatcher still
 holds every reference to the active context.
 
+### Ad group creation
+
+`google_ads_create_ad_groups` creates 1 to 20 ad groups in one live Search
+campaign, in one approval. Each ad group has a name, optional keywords (text,
+match type, optional click bid and final URL), negative keywords, up to 3 ads
+using the ad model above, and optional bid settings. `status` is `PAUSED`
+unless the operator chooses Active. It applies to the ad groups and ads;
+keywords start enabled. One request creates at most 2,500 objects, because one
+audit event holds 2,500 records.
+
+Bid settings follow Google's rules, and the tool refuses any Google would
+ignore or reject:
+
+| Setting | Accepted when the campaign uses |
+| --- | --- |
+| `cpc_bid` and keyword `cpc_bid` | Manual CPC, not a portfolio strategy |
+| `target_cpa` | Target CPA, or Maximise Conversions with a target CPA. The target of a portfolio strategy isn't read, so Google decides. |
+| `target_roas` (a ratio, so 3.5 means 350%) | Target ROAS, or Maximise Conversion Value with a target ROAS, not a portfolio strategy |
+
+`operations/search_ad_groups.py` compiles an ad group with its contents for the
+build seam (`add_search_ad_group`) and reads the campaign's channel, bidding, and
+up to 2,000 live ad group names (`read_search_campaign`). Each step records its
+`source` (`AdGroupItem`), so a dry-run rejection names its item.
+
+While preparing the approval, the tool reads the campaign and dry runs the ad
+groups that have no bid or name problem. The trusted `_checks` display argument
+holds the campaign (its bidding and what it accepts, or its problem), the live
+names, and Google's rejections, each naming its ad group and item. A campaign
+that is removed or outside Search is left out of the dry run.
+
+After approval, the tool reads the campaign again, because the card can change
+the campaign, names, and bids. A problem stops the tool with nothing sent. The
+rest goes in one atomic request, so Google creates everything or nothing. The
+result counts each kind of object and returns a reference for each ad group,
+for other tools to use. When Google refuses the request, the result gives each
+distinct reason once. Audit intents are grouped by ad group and keyed by build
+step.
+
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
@@ -410,6 +448,34 @@ the card keeps cancelled ads until approval so Restore can put them back.
 The result (`components/create-ads-outcome.tsx`) is one `DataTable` with Ad
 Group, Headline 1, Status, Review, and Outcome. When nothing was created it
 says so once with Google's reason, because the request is atomic.
+
+### Create Ad Groups card
+
+`lib/create-ad-groups.ts` parses the request with `_accounts` and `_checks`.
+`adGroupRows` lists each ad group's problems: its name (empty, too long, repeated
+in the request, or live in the campaign in any case), bids the campaign doesn't
+accept, keyword limits and marks, each ad's copy, and Google's rejections. A
+rejection applies only while its ad group has the same name and still holds the
+rejected item. After the operator chooses another campaign, the campaign's rules
+and rejections stop applying, and the card says the campaign gets checked on
+approval. Any problem blocks approval.
+
+The card (`components/create-ad-groups-approval.tsx`) names the campaign's bidding
+once, then shows `StatusChoice` and the campaign `EntityPicker`. With more than one
+ad group it adds `ChangeSummary`, with counts, Cancel These N, and Restore, and one
+`DataTable` of ad groups with editable names. Clicking a row opens the ad group
+below, in `SettingRows`: Name, Keywords, Ads, Negatives, and Bids. Keywords and
+negatives use the shared `KeywordPaste` (one per line: `[exact]`, `"phrase"`, or
+plain text for broad; parsing is in `integrations/ads/lib/keyword-notation.ts`).
+Review opens a table for match types, click bids, and final URLs. A pasted keyword
+keeps its bid and URL when its text and match type stay the same. Ads use
+`AdCopyEditor`, shared with Create Ads. Inputs inside a table cell save when the
+field loses focus, so typing doesn't redraw the table.
+
+The result (`components/create-ad-groups-outcome.tsx`) has one row per kind of
+object. When nothing was created, it says so with Google's reason, or lists the
+reasons in a table when there are several. Google Ads links aren't shown, because
+no deep-link helper exists yet.
 
 ### Data table extensions
 

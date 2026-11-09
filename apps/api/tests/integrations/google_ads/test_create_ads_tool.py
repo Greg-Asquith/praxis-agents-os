@@ -211,7 +211,10 @@ async def test_one_atomic_request_creates_an_ad_in_two_ad_groups_and_reads_back_
 
 def test_a_headline_over_30_characters_is_refused_before_any_request() -> None:
     with pytest.raises(ModelRetry, match="at most 30 characters"):
-        tool_module._request({"ads": [_ad("20", headline="Grip Any Trail. Free Returns Today")]})
+        tool_module.validated_request(
+            tool_module.GoogleAdsCreateAdsRequest,
+            {"ads": [_ad("20", headline="Grip Any Trail. Free Returns Today")]},
+        )
 
 
 async def test_approval_flags_unusable_ad_groups_and_googles_rejection_per_ad(

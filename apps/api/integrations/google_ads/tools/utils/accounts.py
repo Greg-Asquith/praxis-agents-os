@@ -8,7 +8,9 @@ from typing import Any
 
 from pydantic_ai import ModelRetry
 
-from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+
+from .bindings import GOOGLE_ADS_WRITE_BINDING
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,3 +50,14 @@ def account_facts(entry: ResolvedContextEntry) -> GoogleAdsAccountFacts:
 def approval_accounts(entries: Iterable[ResolvedContextEntry]) -> list[dict[str, Any]]:
     """Builds the trusted `_accounts` approval projection for the given accounts."""
     return [account_facts(entry).display() for entry in entries]
+
+
+def writable_entry(
+    active: ResolvedActiveContext | None, customer_id: str
+) -> ResolvedContextEntry | None:
+    """Finds the account in the active context that this run may write to, if any."""
+    entries = active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ()
+    return next(
+        (item for item in entries if item.write_allowed and item.external_id == customer_id),
+        None,
+    )

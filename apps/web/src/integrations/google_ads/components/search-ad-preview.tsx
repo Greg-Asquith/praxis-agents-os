@@ -7,11 +7,11 @@ import {
   HEADLINE_PINS,
   previewAssets,
   previewSite,
-  type DraftAd,
+  type AdCopy,
 } from "@/integrations/google_ads/lib/create-ads"
 
 /** The ad as a Google search result, in Google's own type and colours: three headlines and two descriptions. */
-export function SearchAdPreview({ ad }: { ad: DraftAd }) {
+export function SearchAdPreview({ ad }: { ad: AdCopy }) {
   const headlines = previewAssets(ad.headlines, HEADLINE_PINS)
   const descriptions = previewAssets(ad.descriptions, DESCRIPTION_PINS)
   const site = previewSite(ad)

@@ -70,6 +70,8 @@ class BuildStep:
     label: str
     body: Mapping[str, Any]
     temporary_name: str | None
+    # What the caller compiled this from, so a rejection can be traced back to it.
+    source: Any = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +101,9 @@ class CampaignBuild:
     def __post_init__(self) -> None:
         self.customer_id = normalize_customer_id(self.customer_id)
 
-    def create(self, resource: BuildResource, body: Mapping[str, Any], *, label: str) -> str | None:
+    def create(
+        self, resource: BuildResource, body: Mapping[str, Any], *, label: str, source: Any = None
+    ) -> str | None:
         """Adds one object and returns its temporary name, for objects others refer to.
 
         Raises:
@@ -118,7 +122,7 @@ class CampaignBuild:
             temporary_name = f"customers/{self.customer_id}/{collection}/{self._next_id}"
             self._next_id -= 1
             body = {**body, "resourceName": temporary_name}
-        self._steps.append(BuildStep(resource, label, body, temporary_name))
+        self._steps.append(BuildStep(resource, label, body, temporary_name, source))
         return temporary_name
 
     @property

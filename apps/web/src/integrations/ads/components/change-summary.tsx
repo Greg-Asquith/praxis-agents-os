@@ -8,6 +8,8 @@ export type ChangeSummaryLine = {
   // A control that edits every item in the line, such as an On/Off choice.
   action?: ReactNode
   count: number
+  // Plain text after the label, such as what the count is made up of.
+  detail?: string
   id: string
   label: string
   // Filters the change table to this line; the line is a button when set.
@@ -53,6 +55,7 @@ function SummaryLabel({ line }: { line: ChangeSummaryLine }) {
         )}
       />
       <span className="font-medium">{line.label}</span>
+      {line.detail ? <span className="text-muted-foreground">{line.detail}</span> : null}
       <span className="text-muted-foreground tabular-nums">{String(line.count)}</span>
     </>
   )

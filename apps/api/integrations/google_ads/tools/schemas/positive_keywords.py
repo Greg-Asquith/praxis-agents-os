@@ -26,6 +26,12 @@ def normalize_keyword_text(value: object) -> object:
     return " ".join(value.split()) if isinstance(value, str) else value
 
 
+def validate_keyword_word_count(value: str) -> str:
+    if len(value.split()) > 10:
+        raise ValueError("Google Ads keywords can contain at most 10 words")
+    return value
+
+
 def money_bid_to_micros(value: str, *, label: str = "Bid") -> int:
     candidate = value.strip()
     if re.fullmatch(r"\d+(?:\.\d+)?", candidate) is None:
@@ -122,9 +128,7 @@ class GoogleAdsPositiveKeywordEntry(GoogleAdsStrictModel):
     @field_validator("text")
     @classmethod
     def validate_word_count(cls, value: str) -> str:
-        if len(value.split()) > 10:
-            raise ValueError("Google Ads keywords can contain at most 10 words")
-        return value
+        return validate_keyword_word_count(value)
 
 
 class GoogleAdsPositiveKeywordOutcome(GoogleAdsStrictModel):

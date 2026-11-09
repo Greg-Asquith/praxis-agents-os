@@ -6,8 +6,8 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, ValidationError
-from pydantic_ai import ModelRetry, RunContext
+from pydantic import Field
+from pydantic_ai import RunContext
 
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
@@ -46,7 +46,7 @@ from .schemas.ads import (
     GoogleAdsCreateAdsRequest,
     GoogleAdsNewAd,
 )
-from .utils.accounts import approval_accounts
+from .utils.accounts import approval_accounts, writable_entry
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -55,6 +55,7 @@ from .utils.mutation_evidence import (
     google_ads_account_target,
     terminal_operation_detail,
 )
+from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "create_ads"
@@ -84,7 +85,7 @@ async def google_ads_create_ads(
     ],
     status: Literal["PAUSED", "ENABLED"] = "PAUSED",
 ) -> dict[str, Any]:
-    request = _request({"ads": ads, "status": status})
+    request = validated_request(GoogleAdsCreateAdsRequest, {"ads": ads, "status": status})
     checks = approved_display_args(ctx).get("_checks")
     shown = checks.get("ad_groups") if isinstance(checks, Mapping) else None
     ad_groups: Mapping[str, Any] = shown if isinstance(shown, Mapping) else {}
@@ -147,15 +148,6 @@ async def google_ads_create_ads(
         operation=operation,
     )
     return {"results": serialize_fan_out_results(results)}
-
-
-def _request(values: Mapping[str, Any]) -> GoogleAdsCreateAdsRequest:
-    try:
-        return GoogleAdsCreateAdsRequest.model_validate(values)
-    except ValidationError as exc:
-        error = exc.errors(include_url=False, include_input=False)[0]
-        message = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
-        raise ModelRetry(message) from None
 
 
 def _compile(
@@ -268,16 +260,7 @@ def _result(
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
     """Adds the account's facts, each ad group's campaign and problem, and Google's dry run."""
     request = GoogleAdsCreateAdsRequest.model_validate(args)
-    customer_id = request.ads[0].ad_groups[0].customer_id
-    active = deps.active_context
-    entry = next(
-        (
-            item
-            for item in (active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ())
-            if item.write_allowed and item.external_id == customer_id
-        ),
-        None,
-    )
+    entry = writable_entry(deps.active_context, request.ads[0].ad_groups[0].customer_id)
     accounts = approval_accounts([entry]) if entry is not None else []
     return {**args, "_accounts": accounts, "_checks": await _checks(deps, entry, request)}
 
