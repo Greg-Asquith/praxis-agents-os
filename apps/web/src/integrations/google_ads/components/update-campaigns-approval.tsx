@@ -18,18 +18,30 @@ import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { BiddingCell, BiddingChange } from "@/integrations/google_ads/components/bidding-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
+import {
+  canonicalMoney,
+  roasPercent,
+  TARGETS,
+  type Bidding,
+  type BiddingContext,
+} from "@/integrations/google_ads/lib/campaign-bidding"
 import {
   CAMPAIGN_SETTINGS,
   campaignCounts,
   campaignRows,
   campaignsBannerDetail,
+  campaignsBannerTitle,
+  canCheckCampaigns,
   editedChanges,
+  isBidding,
   needsCheck,
   parametersText,
   parseCancelled,
   parseParametersText,
   restoredChanges,
+  rowContext,
   sameValue,
   SETTING_TITLES,
   valueText,
@@ -44,9 +56,9 @@ import {
 const TOOLS_FROM = 10
 
 const COLUMNS: DataColumn[] = [
-  { key: "campaign", kind: "text", label: "Campaign", width: 240 },
+  { key: "campaign", kind: "text", label: "Campaign", width: 220 },
   { key: "setting", kind: "text", label: "Setting", width: 150 },
-  { key: "change", kind: "text", label: "Change", width: 320 },
+  { key: "change", kind: "text", label: "Change", width: 420 },
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
 ]
 
@@ -118,6 +130,8 @@ export function UpdateCampaignsApproval({
         cancelled.filter((entry) => entry !== item)
       )
   }
+  // One campaign shows bidding in its own section, beside the list of its other settings.
+  const listed = rows.filter((row) => row.setting !== "bidding")
   const idsOf = (match: (row: CampaignRow) => boolean) =>
     rows.filter((row) => !row.cancelled && match(row)).map((row) => row.id)
 
@@ -136,6 +150,7 @@ export function UpdateCampaignsApproval({
     ),
     change: (
       <ChangeCell
+        context={rowContext(args, row)}
         disabled={disabled}
         onChange={(value) => {
           setValue([row.id], value)
@@ -153,7 +168,10 @@ export function UpdateCampaignsApproval({
             {String(counts.apply)} {counts.apply === 1 ? "change" : "changes"}
           </p>
         }
-        detail={campaignsBannerDetail(counts, accountIds, args.accounts)}
+        detail={campaignsBannerDetail(counts, accountIds, args.accounts).map((line) => (
+          <p key={line}>{line}</p>
+        ))}
+        title={campaignsBannerTitle(counts)}
       />
       {tools ? (
         <>
@@ -236,7 +254,7 @@ export function UpdateCampaignsApproval({
           rows={rows.map((row) => ({
             campaign: row.campaignName,
             cancel: "",
-            change: valueText(row.setting, row.value),
+            change: valueText(row.setting, row.value, rowContext(args, row)),
             id: row.id,
             setting: SETTING_TITLES[row.setting],
           }))}
@@ -267,28 +285,51 @@ export function UpdateCampaignsApproval({
             : {})}
         />
       ) : (
-        <ul
-          aria-label={rows[0]?.campaignName ?? "Campaign"}
-          className="divide-y overflow-hidden rounded-lg border"
-        >
-          {rows.map((row) => {
-            const { cancel: cancelCell, change } = cells(row)
-            return (
-              <li
+        <>
+          {listed.length > 0 ? (
+            <ul
+              aria-label={rows[0]?.campaignName ?? "Campaign"}
+              className="divide-y overflow-hidden rounded-lg border"
+            >
+              {listed.map((row) => {
+                const { cancel: cancelCell, change } = cells(row)
+                return (
+                  <li
+                    key={row.id}
+                    className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-start gap-3 px-3 py-2"
+                  >
+                    <SettingCell row={row} />
+                    {change}
+                    {cancelCell}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
+          {rows
+            .filter((row) => row.setting === "bidding")
+            .map((row) => (
+              <BiddingChange
                 key={row.id}
-                className="grid grid-cols-[9rem_minmax(0,1fr)_auto] items-start gap-3 px-3 py-2"
-              >
-                <SettingCell row={row} />
-                {change}
-                {cancelCell}
-              </li>
-            )
-          })}
-        </ul>
+                context={rowContext(args, row)}
+                disabled={disabled}
+                onCancel={() => {
+                  cancel([row.id])
+                }}
+                onChange={(value) => {
+                  setValue([row.id], value)
+                }}
+                onUndo={() => {
+                  undo(row.id)
+                }}
+                row={row}
+              />
+            ))}
+        </>
       )}
       {needsCheck(args, checked) && args.changes.length > 0 ? (
         <CheckChanges
-          canCheck
+          canCheck={canCheckCampaigns(args)}
           disabled={disabled}
           label={
             [...checked.checks.values()].some((check) => check.unavailable)
@@ -352,24 +393,28 @@ function SettingCell({ row }: { row: CampaignRow }) {
 
 /** The live value, then the new one as an inline edit. */
 function ChangeCell({
+  context,
   disabled,
   onChange,
   row,
 }: {
+  context: BiddingContext
   disabled: boolean
   onChange: (value: SettingValue) => void
   row: CampaignRow
 }) {
+  if (isBidding(row.value))
+    return <BiddingCell context={context} disabled={disabled} onChange={onChange} row={row} />
   if (row.cancelled)
     return (
       <span className="text-muted-foreground pt-1 text-sm line-through">
-        {valueText(row.setting, row.was)} → {valueText(row.setting, row.value)}
+        {valueText(row.setting, row.was, context)} → {valueText(row.setting, row.value, context)}
       </span>
     )
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
       <span className="text-muted-foreground wrap-anywhere whitespace-normal">
-        {valueText(row.setting, row.was)} →
+        {valueText(row.setting, row.was, context)} →
       </span>
       <SettingEditor
         disabled={disabled}
@@ -394,7 +439,7 @@ function SettingEditor({
   label: string
   onChange: (value: SettingValue) => void
   setting: CampaignSetting
-  value: SettingValue
+  value: Exclude<SettingValue, Bidding>
 }): ReactNode {
   if (typeof value === "boolean")
     return (
@@ -483,6 +528,8 @@ function EveryAction({
         value={shared ? (first.value ? "on" : "off") : null}
       />
     )
+  if (setting === "bidding")
+    return <EveryTarget disabled={disabled} onChange={onChange} rows={rows} />
   if (setting === "end_date")
     return (
       <CommittedInput
@@ -497,6 +544,54 @@ function EveryAction({
       />
     )
   return null
+}
+
+// The one target each strategy takes, so a summary line can set it on every campaign.
+const LINE_TARGETS = {
+  MAXIMIZE_CLICKS: "max_cpc",
+  MAXIMIZE_CONVERSIONS: "target_cpa",
+  MAXIMIZE_CONVERSION_VALUE: "target_roas",
+} as const
+
+/** Sets one target on every bidding change in the line, when they share a strategy and target. */
+function EveryTarget({
+  disabled,
+  onChange,
+  rows,
+}: {
+  disabled: boolean
+  onChange: (value: SettingValue) => void
+  rows: readonly CampaignRow[]
+}): ReactNode {
+  const values = rows.map((row) => row.value).filter(isBidding)
+  const [first] = values
+  if (!first || values.length !== rows.length) return null
+  const strategy = first.strategy
+  const keys =
+    strategy === TARGETS
+      ? (["target_cpa", "target_roas", "max_cpc"] as const).filter((key) => first[key] != null)
+      : strategy in LINE_TARGETS
+        ? [LINE_TARGETS[strategy as keyof typeof LINE_TARGETS]]
+        : []
+  const [key] = keys
+  if (keys.length !== 1 || !key || values.some((value) => value.strategy !== strategy)) return null
+  const shared = values.every((value) => value[key] === first[key]) ? first[key] : null
+  const roas = key === "target_roas"
+  return (
+    <CommittedInput
+      ariaLabel={`${roas ? "Target ROAS (%)" : key === "target_cpa" ? "Target CPA" : "Maximum click bid"} for every campaign in this line`}
+      className="h-7 w-28 text-sm tabular-nums"
+      disabled={disabled}
+      onCommit={(next) => {
+        const trimmed = next.trim()
+        const number = Number(trimmed)
+        if (!trimmed || !Number.isFinite(number) || number <= 0) return
+        onChange({ ...first, [key]: roas ? number / 100 : canonicalMoney(trimmed) })
+      }}
+      placeholder={roas ? "ROAS %" : "Amount"}
+      value={shared == null ? "" : typeof shared === "number" ? roasPercent(shared) : shared}
+    />
+  )
 }
 
 function CancelCell({

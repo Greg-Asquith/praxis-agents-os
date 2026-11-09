@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/update-campaigns-result.ts
 
+import { parseBidding, type BiddingContext } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
   CAMPAIGN_SETTINGS,
   type CampaignSetting,
@@ -21,12 +22,18 @@ export type CampaignOutcomeRow = {
   setting: CampaignSetting
 }
 
-export type UpdateCampaignsResult = { accountId: string; rows: CampaignOutcomeRow[] }
+export type UpdateCampaignsResult = {
+  accountId: string
+  // The account currency and portfolio names that bidding values are written with.
+  context: BiddingContext
+  rows: CampaignOutcomeRow[]
+}
 
 const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
 
 function value(raw: unknown): SettingValue | undefined {
   if (raw === null || typeof raw === "string" || typeof raw === "boolean") return raw
+  if (isRecord(raw)) return parseBidding(raw) ?? undefined
   if (!Array.isArray(raw)) return undefined
   const items: UrlParameter[] = []
   for (const item of raw) {
@@ -75,7 +82,20 @@ export function parseUpdateCampaignsResult(raw: unknown): UpdateCampaignsResult 
     return null
   const campaigns = raw["campaigns"].map(parseCampaign)
   if (campaigns.some((rows) => rows === null)) return null
-  return { accountId: raw["account_id"], rows: campaigns.flatMap((rows) => rows ?? []) }
+  const portfolios = new Map<string, string>()
+  if (Array.isArray(raw["portfolios"]))
+    for (const item of raw["portfolios"])
+      if (
+        isRecord(item) &&
+        typeof item["resource_name"] === "string" &&
+        typeof item["name"] === "string"
+      )
+        portfolios.set(item["resource_name"], item["name"])
+  return {
+    accountId: raw["account_id"],
+    context: { currency: isNonEmptyString(raw["currency"]) ? raw["currency"] : null, portfolios },
+    rows: campaigns.flatMap((rows) => rows ?? []),
+  }
 }
 
 export function campaignsOutcomeSummary(result: UpdateCampaignsResult): string {

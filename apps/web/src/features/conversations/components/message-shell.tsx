@@ -10,8 +10,9 @@ import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { formatTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
+// Markdown joins single line breaks, so paragraphs keep the ones the person typed.
 export const userMessageBubbleClass =
-  "bg-muted text-foreground max-w-full min-w-0 rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed"
+  "bg-muted text-foreground max-w-full min-w-0 rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed [&_p]:whitespace-pre-line"
 
 function MessageCopyButton({ text }: { text: string }) {
   const { copied, copy } = useClipboardCopy()

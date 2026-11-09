@@ -54,6 +54,8 @@ class FieldChange:
     before: SettingValues = field(default_factory=dict)
     # Why the change mustn't be sent, such as Google rejecting it in the dry run.
     refused: str | None = None
+    # Read-only paths that must still hold their `before` values, but are never sent.
+    compared: tuple[str, ...] = ()
 
     @property
     def key(self) -> str:
@@ -71,7 +73,8 @@ class FieldChange:
 
     @property
     def settings(self) -> str:
-        return ",".join(self.requested)
+        # A refused change may send nothing, such as a bidding target its strategy doesn't take.
+        return ",".join(self.requested or self.compared)
 
     def operation(self) -> MutateOperation:
         changed = self.changed_fields
@@ -83,7 +86,8 @@ class FieldChange:
         return MutateOperation(self.resource, {"update": update, "updateMask": ",".join(changed)})
 
     def live(self, values: SettingValues | None) -> SettingValues | None:
-        return None if values is None else {path: values.get(path) for path in self.requested}
+        paths = (*self.requested, *self.compared)
+        return None if values is None else {path: values.get(path) for path in paths}
 
     def produces(self, resource_name: str) -> bool:
         return resource_name == self.resource_name

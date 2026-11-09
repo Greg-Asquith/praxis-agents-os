@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
+import { parseBidding } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
   campaignCounts,
   campaignRows,
@@ -97,6 +98,76 @@ describe("approval", () => {
   })
 })
 
+describe("bidding", () => {
+  const strategy = (id: string, current: unknown, requested: unknown, over = {}) => ({
+    [key(id)]: check({ current: { bidding: current }, requested: { bidding: requested }, ...over }),
+  })
+  const smart = { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "15" }
+
+  it("resolves a target change against the live strategy, and counts learning for a new one", () => {
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), bidding: { strategy: "TARGETS", target_cpa: "15.00" } },
+          {
+            campaign: campaign("11"),
+            bidding: { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18.00" },
+          },
+          { campaign: campaign("12"), bidding: { strategy: "TARGETS", target_roas: 4 } },
+        ],
+        _checks: {
+          ...strategy("10", smart, { strategy: "TARGETS", target_cpa: "15" }),
+          // The server writes money canonically, so "18.00" is the value it checked.
+          ...strategy(
+            "11",
+            { strategy: "MANUAL_CPC" },
+            { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18" },
+            { problems: { bidding: "Google says: no conversion tracking." } }
+          ),
+          // A target the live strategy can't take changes nothing, so it isn't Already Set.
+          ...strategy(
+            "12",
+            { strategy: "MAXIMIZE_CLICKS", max_cpc: null },
+            {
+              strategy: "TARGETS",
+              target_roas: 4,
+            }
+          ),
+        },
+      })
+    )
+    const rows = campaignRows(args, args)
+
+    expect(rows.map((row) => [row.unchanged, row.learning, row.problem])).toEqual([
+      [true, false, null],
+      [false, true, "Google says: no conversion tracking."],
+      [false, false, null],
+    ])
+    expect(campaignCounts(rows).learning).toBe(1)
+  })
+
+  it("writes an edited strategy as the tool argument, keeping a portfolio's reference", () => {
+    const args = parsed(
+      raw({
+        changes: [{ campaign: campaign("10"), bidding: { strategy: "MANUAL_CPC" } }],
+        _checks: strategy("10", smart, { strategy: "MANUAL_CPC" }),
+      })
+    )
+    const ids = new Set([`${key("10")}|bidding`])
+    const portfolio = { customer_id: CUSTOMER, bidding_strategy_id: "5", label: "Brand tCPA" }
+
+    const toPortfolio = editedChanges(args, ids, () =>
+      parseBidding({ strategy: "PORTFOLIO", portfolio })
+    )
+    const toClicks = editedChanges(args, ids, () =>
+      parseBidding({ strategy: "MAXIMIZE_CLICKS", max_cpc: null })
+    )
+
+    expect(toPortfolio[0]?.["bidding"]).toEqual({ strategy: "PORTFOLIO", portfolio })
+    expect(toClicks[0]?.["bidding"]).toEqual({ strategy: "MAXIMIZE_CLICKS" })
+  })
+})
+
 describe("presenters", () => {
   const html = (node: ReactNode) =>
     renderToStaticMarkup(
@@ -135,7 +206,22 @@ describe("presenters", () => {
             kind: "approval",
             name: "google_ads_update_campaigns",
             status: "awaiting_approval",
-            args: raw(),
+            args: raw({
+              changes: [
+                ...raw().changes,
+                {
+                  campaign: campaign("11"),
+                  bidding: { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18" },
+                },
+              ],
+              _checks: {
+                [key("10")]: check(),
+                [key("11")]: check({
+                  current: { bidding: { strategy: "MANUAL_CPC" } },
+                  requested: { bidding: { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18" } },
+                }),
+              },
+            }),
           },
           true
         )

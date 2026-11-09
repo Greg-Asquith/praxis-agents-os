@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/update_campaigns.py
 
-"""Approval-only tool that changes the names, dates, URL options, and networks of Google Ads campaigns."""
+"""Approval-only tool that changes the names, dates, URL options, networks, and bidding of Google Ads campaigns."""
 
 import asyncio
 from collections import defaultdict
@@ -39,15 +39,32 @@ from services.integrations.operations import (
 )
 
 from ..client import GoogleAdsClient
+from ..operations.campaign_bidding import (
+    BIDDING_GUARDS,
+    AdGroupBids,
+    Bidding,
+    bidding_notes,
+    bidding_paths,
+    changes_strategy,
+    needs_conversions,
+    read_ad_group_bids,
+    read_conversions,
+    resolved_bidding,
+    strategy_problem,
+)
 from ..operations.campaign_settings import (
     SETTING_PATHS,
     CampaignSetting,
     LiveCampaignSettings,
     api_value,
-    card_value,
+    card_settings,
     read_campaign_settings,
 )
 from ..operations.edits import Edit, EditResult, FieldChange, apply_edits, prepare_edits
+from ..operations.list_bidding_strategies import (
+    MAX_BIDDING_STRATEGY_LOOKUP,
+    list_bidding_strategies,
+)
 from .schemas.campaign_updates import (
     MAX_CAMPAIGN_UPDATES,
     GoogleAdsCampaignUpdate,
@@ -89,25 +106,73 @@ _NETWORK = {
     "search_partners": "Search Partners can only change on Search and Shopping campaigns.",
     "display_expansion": "Display expansion can only change on Search campaigns.",
 }
+_PORTFOLIO_MISSING = "This portfolio strategy no longer exists in Google Ads."
+
+# Each portfolio strategy's name and Google type, by resource name.
+type Portfolios = Mapping[str, Mapping[str, str]]
 
 
-def _edit(change: GoogleAdsCampaignUpdate) -> FieldChange:
+def _bidding(
+    change: GoogleAdsCampaignUpdate, current: Mapping[str, Any]
+) -> tuple[Bidding | None, str | None]:
+    """The strategy a bidding request leaves the campaign on, and why it can't, if so."""
+    requested = change.requested.get("bidding")
+    if requested is None:
+        return None, None
+    live = current.get("bidding")
+    return resolved_bidding(requested, live if isinstance(live, Mapping) else {})
+
+
+def _effective(
+    change: GoogleAdsCampaignUpdate, current: Mapping[str, Any]
+) -> dict[CampaignSetting, Any]:
+    """The requested settings in card terms, with a targets-only bidding request resolved."""
+    values = dict(change.requested)
+    bidding, problem = _bidding(change, current)
+    if bidding is not None and problem is None:
+        values["bidding"] = bidding
+    return values
+
+
+def _edit(change: GoogleAdsCampaignUpdate, current: Mapping[str, Any]) -> FieldChange:
+    """Builds the edit against the campaign's settings in card terms, which bidding paths need."""
+    requested = {
+        SETTING_PATHS[setting]: api_value(setting, value)
+        for setting, value in change.requested.items()
+        if setting != "bidding"
+    }
+    bidding, problem = _bidding(change, current)
+    if bidding is not None and problem is None:
+        requested.update(bidding_paths(bidding, current.get("bidding") or {}))
     return FieldChange(
         resource="campaign",
         resource_name=change.resource_name,
-        requested={
-            SETTING_PATHS[setting]: api_value(setting, value)
-            for setting, value in change.requested.items()
-        },
+        requested=requested,
+        compared=BIDDING_GUARDS if bidding is not None else (),
     )
 
 
-def _setting_problems(
-    change: GoogleAdsCampaignUpdate, live: LiveCampaignSettings, today: date
-) -> dict[CampaignSetting, str]:
-    """Google's date and network rules for the settings that change, checked before asking it."""
-    requested = change.requested
+def _bidding_problem(
+    change: GoogleAdsCampaignUpdate, live: LiveCampaignSettings, portfolios: Portfolios
+) -> str | None:
     current = live.settings()
+    bidding, problem = _bidding(change, current)
+    if bidding is None or problem is not None or bidding == current["bidding"]:
+        return problem
+    if bidding.get("strategy") == "PORTFOLIO" and bidding.get("portfolio") not in portfolios:
+        return _PORTFOLIO_MISSING
+    return strategy_problem(bidding, live.channel)
+
+
+def _setting_problems(
+    change: GoogleAdsCampaignUpdate,
+    live: LiveCampaignSettings,
+    today: date,
+    portfolios: Portfolios,
+) -> dict[CampaignSetting, str]:
+    """Google's date, network, and bidding rules for the settings that change, checked first."""
+    current = live.settings()
+    requested = _effective(change, current)
     changing = {s: v for s, v in requested.items() if v != current[s]}
     problems: dict[CampaignSetting, str] = {}
     now = today.isoformat()
@@ -128,6 +193,8 @@ def _setting_problems(
     for network, channels in _NETWORK_CHANNELS.items():
         if network in changing and live.channel not in channels:
             problems[network] = _NETWORK[network]
+    if bidding := _bidding_problem(change, live, portfolios):
+        problems["bidding"] = bidding
     return problems
 
 
@@ -224,13 +291,14 @@ def _approved_edit(change: GoogleAdsCampaignUpdate, check: Any) -> FieldChange:
 
     The check must be for exactly these settings, and any problem it showed still stands.
     """
-    edit = _edit(change)
     if (
         not isinstance(check, Mapping)
         or check.get("unavailable") is not False
         or check.get("requested") != change.requested
+        or not isinstance(check.get("current"), Mapping)
     ):
-        return replace(edit, refused=_NOT_SHOWN)
+        return replace(_edit(change, {}), refused=_NOT_SHOWN)
+    edit = _edit(change, check["current"])
     problems = check.get("problems")
     problem = check.get("problem") or next(
         iter(problems.values() if isinstance(problems, Mapping) else ()), None
@@ -239,7 +307,7 @@ def _approved_edit(change: GoogleAdsCampaignUpdate, check: Any) -> FieldChange:
         return replace(edit, refused=str(problem))
     values = check.get("values")
     values = values if isinstance(values, Mapping) else {}
-    return replace(edit, before={path: values.get(path) for path in edit.requested})
+    return replace(edit, before=edit.live(values) or {})
 
 
 def _reader(
@@ -312,13 +380,11 @@ def _result(
             "already_set" if skipped else _OUTCOMES[effect.outcome if effect else "unverified"]
         )
         after = result.after.get(name)
+        after_settings = card_settings(after) if after is not None else {}
         settings = []
-        for setting, requested in change.requested.items():
+        for setting, requested in _effective(change, current).items():
             before = current.get(setting)
-            if skipped:
-                read = before
-            else:
-                read = card_value(setting, after.get(SETTING_PATHS[setting])) if after else None
+            read = before if skipped else after_settings.get(setting)
             settings.append(
                 {
                     "setting": setting,
@@ -339,7 +405,19 @@ def _result(
                 "message": effect.message if effect is not None else None,
             }
         )
-    return {"account_id": entry.external_id, "campaigns": campaigns}
+    portfolios = {
+        name: {"resource_name": name, "name": str(item.get("name") or "Portfolio strategy")}
+        for check in shown.values()
+        if isinstance(check, Mapping) and isinstance(check.get("portfolios"), Mapping)
+        for name, item in check["portfolios"].items()
+        if isinstance(item, Mapping)
+    }
+    return {
+        "account_id": entry.external_id,
+        "currency": account_facts(entry).currency,
+        "portfolios": list(portfolios.values()),
+        "campaigns": campaigns,
+    }
 
 
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
@@ -380,12 +458,14 @@ async def _account_checks(
             login_customer_id=login_customer_id(entry),
             campaign_ids=[change.campaign.campaign_id for change in changes],
         )
+        portfolios = await _read_portfolios(client, entry, changes, live)
         problems = {
-            change.resource_name: _setting_problems(change, item, today)
+            change.resource_name: _setting_problems(change, item, today, portfolios)
             for change in changes
             if (item := live.get(change.resource_name)) is not None
         }
         rejected = await _dry_run(client, entry, changes, live, problems)
+        notes = await _bidding_notes(client, entry, changes, live, problems, portfolios)
     except (IntegrationError, LookupError):
         return {change.resource_name: {"unavailable": True} for change in changes}
     return {
@@ -394,9 +474,45 @@ async def _account_checks(
             live.get(change.resource_name),
             problems.get(change.resource_name, {}),
             rejected.get(change.resource_name),
+            notes.get(change.resource_name, []),
+            portfolios,
         )
         for change in changes
     }
+
+
+async def _read_portfolios(
+    client: GoogleAdsClient,
+    entry: ResolvedContextEntry,
+    changes: Sequence[GoogleAdsCampaignUpdate],
+    live: Mapping[str, LiveCampaignSettings],
+) -> dict[str, dict[str, str]]:
+    """Reads the live portfolio strategies the campaigns use now or would move to."""
+    names: set[str] = set()
+    for change in changes:
+        requested, item = change.requested.get("bidding"), live.get(change.resource_name)
+        if requested is None:
+            continue
+        for bidding in (requested, item.settings()["bidding"] if item else {}):
+            if bidding.get("strategy") == "PORTFOLIO":
+                names.add(bidding["portfolio"])
+    ids = sorted(name.rsplit("/", 1)[-1] for name in names if name.rsplit("/", 1)[-1].isdigit())
+    portfolios: dict[str, dict[str, str]] = {}
+    for start in range(0, len(ids), MAX_BIDDING_STRATEGY_LOOKUP):
+        batch = ids[start : start + MAX_BIDDING_STRATEGY_LOOKUP]
+        for strategy in await list_bidding_strategies(
+            client,
+            customer_id=entry.external_id,
+            login_customer_id=login_customer_id(entry),
+            bidding_strategy_ids=batch,
+            limit=len(batch),
+        ):
+            name = f"customers/{entry.external_id}/biddingStrategies/{strategy.get('id')}"
+            portfolios[name] = {
+                "name": str(strategy.get("name") or "Portfolio strategy"),
+                "type": str(strategy.get("type") or ""),
+            }
+    return portfolios
 
 
 async def _dry_run(
@@ -408,7 +524,7 @@ async def _dry_run(
 ) -> dict[str, str]:
     """Returns Google's rejection per campaign, asking only about campaigns with no problem yet."""
     checked = [
-        _edit(change)
+        _edit(change, live[change.resource_name].settings())
         for change in changes
         if _campaign_problem(live.get(change.resource_name)) is None
         and not problems.get(change.resource_name)
@@ -430,29 +546,73 @@ async def _dry_run(
     return {edit.key: f"Google says: {edit.refused}" for edit in prepared if edit.refused}
 
 
+async def _bidding_notes(
+    client: GoogleAdsClient,
+    entry: ResolvedContextEntry,
+    changes: Sequence[GoogleAdsCampaignUpdate],
+    live: Mapping[str, LiveCampaignSettings],
+    problems: Mapping[str, Mapping[CampaignSetting, str]],
+    portfolios: Portfolios,
+) -> dict[str, list[str]]:
+    """For each strategy change, its ad groups' own bids and, if needed, recent conversions."""
+    moving: dict[str, tuple[GoogleAdsCampaignUpdate, Bidding, Bidding, str | None]] = {}
+    for change in changes:
+        item = live.get(change.resource_name)
+        if item is None or "bidding" in problems.get(change.resource_name, {}):
+            continue
+        current = item.settings()
+        bidding, _problem = _bidding(change, current)
+        if bidding is not None and changes_strategy(bidding, current["bidding"]):
+            kind = portfolios.get(str(bidding.get("portfolio")), {}).get("type")
+            moving[item.campaign_id] = (change, bidding, current["bidding"], kind)
+    if not moving:
+        return {}
+    account = {"customer_id": entry.external_id, "login_customer_id": login_customer_id(entry)}
+    ad_groups = await read_ad_group_bids(client, **account, campaign_ids=list(moving))
+    wanted = [
+        key for key, (_c, bidding, _w, kind) in moving.items() if needs_conversions(bidding, kind)
+    ]
+    conversions = await read_conversions(client, **account, campaign_ids=wanted) if wanted else {}
+    return {
+        change.resource_name: bidding_notes(
+            bidding,
+            current,
+            ad_groups=ad_groups.get(key, AdGroupBids()),
+            conversions=conversions.get(key, 0.0) if key in wanted else None,
+            portfolio_type=kind,
+        )
+        for key, (change, bidding, current, kind) in moving.items()
+    }
+
+
 def _check(
     change: GoogleAdsCampaignUpdate,
     live: LiveCampaignSettings | None,
     problems: Mapping[CampaignSetting, str],
     rejected: str | None,
+    notes: Sequence[str],
+    portfolios: Portfolios,
 ) -> dict[str, Any]:
     """Builds the card's view of one campaign, and the live values approval plans against."""
-    requested = change.requested
+    current = live.settings() if live else {}
+    bidding, _problem = _bidding(change, current)
     return {
         "unavailable": False,
         "name": change.campaign.label if live is None else live.values.get("name"),
         "status": live.status if live else None,
         "channel": live.channel if live else None,
-        "current": live.settings() if live else {},
-        "requested": requested,
-        # What approval plans against, in Google's terms, for the settings that change.
-        "values": {
-            SETTING_PATHS[setting]: live.values.get(SETTING_PATHS[setting]) for setting in requested
-        }
-        if live
-        else {},
+        "current": current,
+        "requested": change.requested,
+        # What approval plans against, in Google's terms, for the paths the change reads.
+        "values": (_edit(change, current).live(live.values) or {}) if live else {},
         "problem": _campaign_problem(live) or rejected,
         "problems": dict(problems),
+        "notes": {"bidding": list(notes)} if notes else {},
+        # A strategy change restarts Google's learning, which the card counts in its banner.
+        "learning": bool(
+            live and bidding is not None and changes_strategy(bidding, current["bidding"])
+        ),
+        "portfolios": {name: dict(item) for name, item in portfolios.items()},
     }
 
 
@@ -465,11 +625,18 @@ DEFINITION = RuntimeToolDefinition(
         "change: name; start_date and end_date as YYYY-MM-DD in the account time zone, with "
         'end_date "none" to run with no end date; url_options with final_url_suffix, '
         "tracking_template, and custom_parameters (up to 8 key and value pairs, replacing the "
-        "campaign's list), where an empty value clears it; and networks with search_partners "
+        "campaign's list), where an empty value clears it; networks with search_partners "
         "(Search and Shopping campaigns) and display_expansion (Search campaigns), each on or "
-        "off. A campaign that has started can't change its start date, and new dates can't be "
-        "in the past. Status, budgets, bidding, targeting, and removal aren't supported here. "
-        "Each result reports what Google Ads shows after the change."
+        "off; and bidding. bidding is one of MANUAL_CPC; MAXIMIZE_CLICKS with optional "
+        "max_cpc; MAXIMIZE_CONVERSIONS with optional target_cpa; MAXIMIZE_CONVERSION_VALUE "
+        "with optional target_roas (a ratio, so 3.5 is 350%); TARGET_IMPRESSION_SHARE "
+        "(Search only) with location, share_percent, and max_cpc; PORTFOLIO with a portfolio "
+        "bidding strategy reference from the same account; or TARGETS with target_cpa, "
+        "target_roas, or max_cpc to change only targets on the current strategy. Money is in "
+        "the account currency. Leaving out an optional target removes it. A campaign that has "
+        "started can't change its start date, and new dates can't be in the past. Status, "
+        "budgets, targeting, and removal aren't supported here. Each result reports what "
+        "Google Ads shows after the change."
     ),
     provider="google_ads",
     label="Update Google Ads Campaigns",
@@ -502,7 +669,7 @@ DEFINITION = RuntimeToolDefinition(
                 label="Campaign Changes",
                 editable=True,
                 format="structured",
-                entity_kinds=("google_ads_campaign",),
+                entity_kinds=("google_ads_campaign", "google_ads_bidding_strategy"),
             ),
         ),
         result_fields=RESULTS_FIELD,

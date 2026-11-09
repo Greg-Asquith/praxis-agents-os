@@ -3,6 +3,7 @@
 from .ad import GoogleAdsAdReference
 from .ad_group import GoogleAdsAdGroupReference
 from .asset_group import GoogleAdsAssetGroupReference
+from .bidding_strategy import GoogleAdsBiddingStrategyReference
 from .campaign import GoogleAdsCampaignReference
 from .campaign_budget import GoogleAdsCampaignBudgetReference
 from .keyword import GoogleAdsKeywordReference, positive_keyword_reference_from_row
@@ -18,6 +19,7 @@ __all__ = [
     "GoogleAdsAdGroupReference",
     "GoogleAdsAdReference",
     "GoogleAdsAssetGroupReference",
+    "GoogleAdsBiddingStrategyReference",
     "GoogleAdsCampaignBudgetReference",
     "GoogleAdsCampaignReference",
     "GoogleAdsKeywordReference",

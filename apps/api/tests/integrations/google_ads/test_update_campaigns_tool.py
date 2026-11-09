@@ -21,6 +21,14 @@ _SEARCH = "customers/111/campaigns/10"
 _SHOPPING = "customers/111/campaigns/11"
 _DISPLAY = "customers/111/campaigns/12"
 _NOT_STARTED = "customers/111/campaigns/13"
+_SMART = "customers/111/campaigns/14"
+# Members of Google's bidding oneof, and the type each sets.
+_BIDDING = {
+    "manualCpc": "MANUAL_CPC",
+    "targetSpend": "TARGET_SPEND",
+    "maximizeConversions": "MAXIMIZE_CONVERSIONS",
+    "maximizeConversionValue": "MAXIMIZE_CONVERSION_VALUE",
+}
 _TODAY = "2026-11-09"
 
 
@@ -43,9 +51,19 @@ class _Account:
     def __init__(self, *campaigns: dict[str, Any]):
         self.campaigns = {campaign["resourceName"]: campaign for campaign in campaigns}
         self.mutates: list[dict[str, Any]] = []
+        self.ad_groups: list[dict[str, Any]] = []
+        self.conversions: dict[str, float] = {}
 
     async def post(self, path: str, **kwargs: Any) -> Any:
         body = kwargs["json"]
+        if "FROM ad_group" in body.get("query", ""):
+            return [{"results": self.ad_groups}]
+        if "metrics.conversions" in body.get("query", ""):
+            rows = [
+                {"campaign": {"id": key}, "metrics": {"conversions": value}}
+                for key, value in self.conversions.items()
+            ]
+            return [{"results": rows}]
         if path.endswith("googleAds:searchStream"):
             ids = re.search(r"IN \(([^)]*)\)", body["query"]).group(1).split(", ")
             rows = [
@@ -66,6 +84,14 @@ class _Account:
 
     def _apply(self, campaign: dict[str, Any], update: dict[str, Any], operation: dict[str, Any]):
         for path in operation["updateMask"].split(","):
+            root = path.split(".")[0]
+            if path in _BIDDING and update.get(path):
+                raise AssertionError(f"Google refuses a mask on a field with subfields: {path}")
+            if root in _BIDDING and campaign.get("biddingStrategyType") != _BIDDING[root]:
+                # Setting one member of the oneof clears the others.
+                for member in _BIDDING:
+                    campaign.pop(member, None)
+                campaign["biddingStrategyType"] = _BIDDING[root]
             *parents, leaf = path.split(".")
             source, target = update, campaign
             for part in parents:
@@ -237,3 +263,107 @@ async def test_a_change_the_approval_check_did_not_cover_is_refused(monkeypatch)
     assert [body["validateOnly"] for body in account.mutates] == [True]
     assert data.campaigns[0].message == tool_module._NOT_SHOWN
     assert account.campaigns[_SEARCH]["name"] == "Campaign 10"
+
+
+async def test_a_new_strategy_is_sent_whole_and_a_target_change_alone(monkeypatch) -> None:
+    account = _Account(
+        _campaign("10", "SEARCH", biddingStrategyType="MANUAL_CPC", manualCpc={}),
+        _campaign(
+            "14",
+            "SEARCH",
+            biddingStrategyType="MAXIMIZE_CONVERSIONS",
+            maximizeConversions={"targetCpaMicros": "15000000"},
+        ),
+    )
+    account.ad_groups = [
+        {"campaign": {"id": "10"}, "adGroup": {"name": "Boots", "cpcBidMicros": "500000"}}
+    ]
+    account.conversions = {"10": 42.0}
+    changes = _changes(
+        {"campaign": "10", "bidding": {"strategy": "MAXIMIZE_CONVERSIONS", "target_cpa": "18.00"}},
+        {"campaign": "14", "bidding": {"strategy": "TARGETS", "target_cpa": "20"}},
+    )
+    display = await _display(monkeypatch, account, changes)
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert account.mutates[-1]["mutateOperations"] == [
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": _SEARCH,
+                    "maximizeConversions": {"targetCpaMicros": "18000000"},
+                },
+                # Setting a field inside another strategy moves the campaign off Manual CPC.
+                "updateMask": "maximizeConversions.targetCpaMicros",
+            }
+        },
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": _SMART,
+                    "maximizeConversions": {"targetCpaMicros": "20000000"},
+                },
+                "updateMask": "maximizeConversions.targetCpaMicros",
+            }
+        },
+    ]
+    checks = display["_checks"]
+    assert checks[_SEARCH]["learning"] and not checks[_SMART]["learning"]
+    assert checks[_SEARCH]["notes"]["bidding"] == [
+        "42 conversions in the last 30 days.",
+        "Google sets bids itself, so the CPC bids on 1 ad group stop being used.",
+    ]
+    assert [
+        (
+            row.before.model_dump(exclude_none=True),
+            row.after.model_dump(exclude_none=True),
+            row.outcome,
+        )
+        for c in data.campaigns
+        for row in c.settings
+    ] == [
+        (
+            {"strategy": "MANUAL_CPC"},
+            {"strategy": "MAXIMIZE_CONVERSIONS", "target_cpa": "18"},
+            "updated",
+        ),
+        (
+            {"strategy": "MAXIMIZE_CONVERSIONS", "target_cpa": "15"},
+            {"strategy": "MAXIMIZE_CONVERSIONS", "target_cpa": "20"},
+            "updated",
+        ),
+    ]
+
+
+async def test_a_target_the_current_strategy_does_not_take_is_refused_before_any_request(
+    monkeypatch,
+) -> None:
+    account = _Account(
+        _campaign("10", "SEARCH", biddingStrategyType="TARGET_SPEND", targetSpend={})
+    )
+    changes = _changes({"campaign": "10", "bidding": {"strategy": "TARGETS", "target_roas": 4}})
+
+    display = await _display(monkeypatch, account, changes)
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert display["_checks"][_SEARCH]["problems"]["bidding"].startswith(
+        "Target ROAS needs Maximise Conversion Value."
+    )
+    assert account.mutates == []
+    assert data.campaigns[0].settings[0].outcome == "failed"
+
+
+async def test_a_strategy_changed_since_approval_is_not_replaced(monkeypatch) -> None:
+    account = _Account(_campaign("10", "SEARCH", biddingStrategyType="MANUAL_CPC", manualCpc={}))
+    changes = _changes({"campaign": "10", "bidding": {"strategy": "MAXIMIZE_CONVERSIONS"}})
+    display = await _display(monkeypatch, account, changes)
+    # Someone moves the campaign to Maximise Clicks after the card was checked.
+    campaign = account.campaigns[_SEARCH]
+    campaign.pop("manualCpc")
+    campaign.update(biddingStrategyType="TARGET_SPEND", targetSpend={})
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert [body["validateOnly"] for body in account.mutates] == [True]
+    assert data.campaigns[0].error_code == "CHANGED_SINCE_APPROVAL"

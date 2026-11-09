@@ -10,7 +10,7 @@ export function ChangeBanner({
   title = "Changes take effect straight away",
 }: {
   aside?: ReactNode
-  detail: string
+  detail: ReactNode
   title?: string
 }) {
   return (
@@ -23,7 +23,7 @@ export function ChangeBanner({
           <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
           {title}
         </p>
-        <p className="text-muted-foreground text-sm">{detail}</p>
+        <div className="text-muted-foreground text-sm">{detail}</div>
       </div>
       {aside}
     </div>

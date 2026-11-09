@@ -9,6 +9,7 @@ import {
   EDIT_OUTCOME_LABELS,
   EDIT_OUTCOME_TABS,
 } from "@/integrations/google_ads/lib/edit-outcomes"
+import type { BiddingContext } from "@/integrations/google_ads/lib/campaign-bidding"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { SETTING_TITLES, valueText } from "@/integrations/google_ads/lib/update-campaigns"
 import {
@@ -27,8 +28,10 @@ const COLUMNS: DataColumn[] = [
   { key: "details", kind: "text", label: "Details", hidden: true },
 ]
 
-function afterText(row: CampaignOutcomeRow): string {
-  return row.outcome === "failed" || !row.readBack ? "—" : valueText(row.setting, row.after)
+function afterText(row: CampaignOutcomeRow, context: BiddingContext): string {
+  return row.outcome === "failed" || !row.readBack
+    ? "—"
+    : valueText(row.setting, row.after, context)
 }
 
 /** One row per campaign and setting, opening on the failures when there are any. */
@@ -39,8 +42,8 @@ export function UpdateCampaignsOutcome({ result }: { result: UpdateCampaignsResu
   const rows = useMemo(
     () =>
       result.rows.map((row) => ({
-        after: afterText(row),
-        before: valueText(row.setting, row.before),
+        after: afterText(row, result.context),
+        before: valueText(row.setting, row.before, result.context),
         campaign: row.campaignName,
         details: [row.message, row.errorCode ? googleAdsTokenLabel(row.errorCode) : null]
           .filter(Boolean)
@@ -49,7 +52,7 @@ export function UpdateCampaignsOutcome({ result }: { result: UpdateCampaignsResu
         setting: SETTING_TITLES[row.setting],
         token: row.outcome,
       })),
-    [result.rows]
+    [result]
   )
   return (
     <DataTable

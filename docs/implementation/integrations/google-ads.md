@@ -131,8 +131,8 @@ back as **After**.
 
 `google_ads_update_campaigns` changes up to 50 live campaigns of any type in
 one approval. Each entry names one campaign and only the settings that change.
-Bidding, conversion goals, and Performance Max and Shopping settings are
-pending. The fields are as follows:
+Conversion goals and Performance Max and Shopping settings are pending. The
+fields are as follows:
 
 | Field | What it does |
 | --- | --- |
@@ -141,6 +141,7 @@ pending. The fields are as follows:
 | `end_date` | Sets the end date, sent as `endDateTime` at `23:59:59`, or `"none"` to run with no end date. |
 | `url_options` | `final_url_suffix`, `tracking_template`, and `custom_parameters` (up to 8 pairs, replacing the list). An empty value or list clears it. |
 | `networks` | `search_partners` (Search and Shopping) and `display_expansion` (Search) on or off. |
+| `bidding` | One of `MANUAL_CPC`; `MAXIMIZE_CLICKS` with an optional `max_cpc`; `MAXIMIZE_CONVERSIONS` with an optional `target_cpa`; `MAXIMIZE_CONVERSION_VALUE` with an optional `target_roas` ratio; `TARGET_IMPRESSION_SHARE` with `location`, `share_percent`, and `max_cpc`; `PORTFOLIO` with a `google_ads_bidding_strategy` reference from the campaign's account; or `TARGETS` with `target_cpa`, `target_roas`, or `max_cpc`, changing only targets on the current strategy. Leaving out an optional target removes it. |
 
 `operations/campaign_settings.py` reads each campaign's settings by ID,
 including removed campaigns, and holds two forms of each value: Google's, by
@@ -148,6 +149,44 @@ JSON field path, which the edit seam compares and masks, and the card's, with
 dates as `YYYY-MM-DD` and no end date as null. A `FieldChange` path whose
 requested value is null stays in the update mask and out of the body, which
 is how Google clears a field, such as the end date.
+
+#### Bidding
+
+`operations/campaign_bidding.py` holds bidding in card terms (`card_bidding`:
+the strategy and only its own fields, money as a canonical decimal string),
+and works out what a change sends (`bidding_paths`). Google's bidding is one
+oneof on the campaign, and it refuses an update mask naming a strategy field
+that has subfields set. So staying on a strategy names each field inside it,
+and the edit seam sends only the targets that differ. Moving to another
+strategy names the fields it sets, or the bare strategy field when it sets
+none (`manualCpc`, or Maximise Conversions with no target). A portfolio is the
+`biddingStrategy` field. Setting any member moves the campaign off the
+others, portfolio included.
+
+A `TARGETS` request resolves against the live strategy
+(`resolved_bidding`): a target CPA needs Maximise Conversions (or the older
+standard Target CPA), a target ROAS needs Maximise Conversion Value (or Target
+ROAS), and a maximum click bid needs Maximise Clicks or Target Impression
+Share. A campaign on a portfolio strategy changes targets on the strategy,
+not here. Strategies are offered per channel as in Google's v24 strategy
+types table (`strategy_problem`), and a portfolio must exist in the
+campaign's account (`operations/list_bidding_strategies.py`, which lists
+account-owned portfolios only).
+
+A bidding edit sets `FieldChange.compared` to `biddingStrategyType` and
+`biddingStrategy`. The seam compares those read-only paths with the approved
+values but never sends them, so a strategy someone changed since approval is
+refused (`CHANGED_SINCE_APPROVAL`) rather than replaced.
+
+For a strategy change, the check reads the campaign's live ad groups
+(`read_ad_group_bids`) and, when the new strategy uses conversions, its
+conversions over the last 30 days (`read_conversions`). Its `notes.bidding`
+says how many conversions there were, which ad groups have their own target
+CPA or ROAS, and which CPC bids stop being used (moving off Manual CPC) or
+start to matter (moving onto it). `learning` marks a strategy change, which
+restarts Google's learning; a target change doesn't.
+
+#### Checks
 
 While preparing the approval, the tool reads each campaign, checks Google's
 rules locally, and dry runs the rest through the edit seam:
@@ -159,19 +198,24 @@ rules locally, and dry runs the rest through the edit seam:
 - The end date can't be before the start date, after the request's dates are
   applied to the live ones.
 - A network the channel doesn't support is refused before Google sees it.
+- A target the current strategy doesn't take, a strategy the channel doesn't
+  offer, or a missing portfolio is refused before Google sees it.
 
 The trusted `_checks` display argument, keyed by campaign resource name, holds
 the campaign's name, status, and channel, its `current` settings in card terms,
 the `requested` settings the check covered, Google's `values` for those
-settings (what approval plans against), a campaign `problem` (missing,
-removed, or Google's dry-run rejection prefixed "Google says:"), and `problems`
-by setting. Edits on the card need a new check (`approval_review_fields`).
+settings and bidding guards (what approval plans against), the bidding
+`notes`, `learning`, and the `portfolios` named (name and type by resource
+name), a campaign `problem` (missing, removed, or Google's dry-run rejection
+prefixed "Google says:"), and `problems` by setting. Edits on the card need a new check (`approval_review_fields`).
 After approval, a campaign whose request differs from its check, or whose check
 showed a problem, is refused without a request. The rest go in one
 partial-failure `googleAds:mutate` request per account, masking only the
 settings that differ from the live values. Each result row is one setting with
 **Before** (as the card showed it), **Requested**, **After** (read back), and
-its outcome; a setting already at its value is `already_set`.
+its outcome; a setting already at its value is `already_set`. Bidding values in
+the result are card terms; the result also carries the account `currency` and
+the `portfolios` named, so the card can write them out.
 
 ### Ad creation
 
@@ -747,16 +791,36 @@ The card (`components/update-campaigns-approval.tsx`) shows the banner with the
 count of changes, then each row as the live value, an arrow, and an inline
 editor: an On/Off choice for networks, a date field for dates (an empty end date
 means no end date), and a text field otherwise. Custom parameters are edited as
-`key=value, key=value`. One campaign is a plain list of its settings; more than
+`key=value, key=value`. Bidding has its own editor (`components/bidding-editor.tsx`).
+With one campaign, `BiddingChange` is a section beside the list of other settings: a
+**Now** panel with the live strategy and its targets, and the new strategy as a labelled
+select with each target as its own labelled field. A sentence says what the new bidding
+does (`biddingSentence`), and that learning carries on when the strategy stays the same.
+The bidding notes are listed under it. With many campaigns, `BiddingCell` puts the change on
+one line with the notes under it, and an edit button opens the same fields in the row.
+**Portfolio Strategy** opens an `EntityPicker` for `google_ads_bidding_strategy`. A
+target-only request shows the live strategy with only its own targets. When the live
+strategy can't take the target, the problem offers **Switch to** the strategy that does
+(`targetFix`). Such a request is never Already Set and doesn't count as restarting
+learning. `lib/campaign-bidding.ts` mirrors the server's card terms, writing money
+canonically so an edit matches what Google checked. A Target Impression Share change
+without a page position, share, and maximum click bid is a problem the card raises
+itself, and Check Changes waits for it. The banner's title says Google's learning
+restarts, with the count of campaigns, when a strategy changes. Its detail names the
+account and its time zone. A sole change's prompt names only the campaign, such as
+"Switch Praxis Agents | Search | UK to Target Impression Share." One campaign is a plain list of
+its settings; more than
 one is a `DataTable` with Campaign, Setting, Change, and Cancel columns. From
 ten rows, a `ChangeSummary` line per setting filters the table, and the End
 Date, Search Partners, and Display Expansion lines can set every campaign in the
-line; search, setting tabs, Needs Attention, and row selection with **Cancel
+line, as can the Bidding line for one shared target when every change in it is
+on the same strategy; search, setting tabs, Needs Attention, and row selection with **Cancel
 These Changes** appear too. Cancelled settings move into the approval controls'
 retained state, so **Undo** restores them, and their campaign, through a
 check's redraw. Text fields save on blur through the shared kit's
 `CommittedInput`. The approve label names a sole change ("Remove End Date",
-"Turn Off Search Partners") and otherwise counts the changes that will run.
+"Turn Off Search Partners", "Switch to Maximise Conversions", "Change Target")
+and otherwise counts the changes that will run.
 
 The result (`components/update-campaigns-outcome.tsx`) is the standard
 `DataTable` result card: Campaign, Setting, Before, After, and Outcome, with the

@@ -46,7 +46,8 @@ def _blank_is_none(value: object) -> object:
     return None if isinstance(value, str) and not value.strip() else value
 
 
-type _MaxCpc = Annotated[str, Field(max_length=32), _valid_bid("maximum click bid")]
+type GoogleAdsMaxCpc = Annotated[str, Field(max_length=32), _valid_bid("maximum click bid")]
+type GoogleAdsTargetCpa = Annotated[str, Field(max_length=32), _valid_bid("target CPA")]
 
 
 class GoogleAdsNewDailyBudget(GoogleAdsStrictModel):
@@ -78,7 +79,7 @@ class GoogleAdsManualCpc(GoogleAdsStrictModel):
 
 class GoogleAdsMaximizeClicks(GoogleAdsStrictModel):
     strategy: Literal["MAXIMIZE_CLICKS"]
-    max_cpc: _MaxCpc | None = None
+    max_cpc: GoogleAdsMaxCpc | None = None
 
     @field_validator("max_cpc", mode="before")
     @classmethod
@@ -92,7 +93,7 @@ class GoogleAdsMaximizeClicks(GoogleAdsStrictModel):
 
 class GoogleAdsMaximizeConversions(GoogleAdsStrictModel):
     strategy: Literal["MAXIMIZE_CONVERSIONS"]
-    target_cpa: Annotated[str, Field(max_length=32), _valid_bid("target CPA")] | None = None
+    target_cpa: GoogleAdsTargetCpa | None = None
 
     @field_validator("target_cpa", mode="before")
     @classmethod
@@ -120,7 +121,7 @@ class GoogleAdsTargetImpressionShare(GoogleAdsStrictModel):
     location: Literal["ANYWHERE_ON_PAGE", "TOP_OF_PAGE", "ABSOLUTE_TOP_OF_PAGE"]
     share_percent: int = Field(ge=1, le=100)
     # Google requires a ceiling for this strategy.
-    max_cpc: _MaxCpc
+    max_cpc: GoogleAdsMaxCpc
 
     @property
     def max_cpc_micros(self) -> int | None:

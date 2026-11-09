@@ -5,6 +5,21 @@ import {
   parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
+import {
+  biddingArgument,
+  biddingProblem,
+  biddingText,
+  changesStrategy,
+  comparableBidding,
+  parseBidding,
+  resolvedBidding,
+  strategyLabel,
+  TARGET_KEYS,
+  TARGET_LABELS,
+  TARGETS,
+  type Bidding,
+  type BiddingContext,
+} from "@/integrations/google_ads/lib/campaign-bidding"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
@@ -18,14 +33,16 @@ export const CAMPAIGN_SETTINGS = [
   "custom_parameters",
   "search_partners",
   "display_expansion",
+  "bidding",
 ] as const
 
 export type CampaignSetting = (typeof CAMPAIGN_SETTINGS)[number]
 export type UrlParameter = { key: string; value: string }
 // Card terms, as the server sends them: dates as YYYY-MM-DD, and null for none.
-export type SettingValue = string | boolean | UrlParameter[] | null
+export type SettingValue = string | boolean | UrlParameter[] | Bidding | null
 
 export const SETTING_TITLES: Record<CampaignSetting, string> = {
+  bidding: "Bidding",
   custom_parameters: "Custom Parameters",
   display_expansion: "Display Expansion",
   end_date: "End Date",
@@ -59,6 +76,9 @@ type CampaignCheck =
       unavailable: false
       current: Partial<Record<CampaignSetting, SettingValue>>
       name: string | null
+      // Notes about a bidding change, such as recent conversions and ad groups' own bids.
+      notes: string[]
+      portfolios: Map<string, string>
       problem: string | null
       problems: Partial<Record<CampaignSetting, string>>
       requested: Partial<Record<CampaignSetting, SettingValue>>
@@ -85,6 +105,10 @@ export type CampaignRow = {
   customerId: string
   id: string
   key: string
+  // A bidding change that moves to another strategy, so Google's learning restarts.
+  learning: boolean
+  // Shown under the change while it matches what Google last checked.
+  notes: string[]
   // Blocks approval while set.
   problem: string | null
   setting: CampaignSetting
@@ -98,6 +122,7 @@ export type CampaignRow = {
 export type CampaignCounts = {
   apply: number
   campaigns: number
+  learning: number
   problems: number
   total: number
 }
@@ -121,6 +146,7 @@ function parseParameters(value: unknown): UrlParameter[] | null {
 }
 
 function settingValue(setting: CampaignSetting, value: unknown): SettingValue | undefined {
+  if (setting === "bidding") return parseBidding(value) ?? undefined
   if (value === null) return setting === "custom_parameters" ? [] : null
   if (NETWORK_SETTINGS.has(setting)) return typeof value === "boolean" ? value : undefined
   if (setting === "custom_parameters") return parseParameters(value) ?? undefined
@@ -160,6 +186,8 @@ function requestedOf(
     const value = networks[setting]
     if (typeof value === "boolean") values[setting] = value
   }
+  const bidding = parseBidding(entry["bidding"])
+  if (bidding) values.bidding = bidding
   return values
 }
 
@@ -187,10 +215,17 @@ function parseCheck(value: unknown): CampaignCheck {
     const problem = text(rawProblems[setting])
     if (problem) problems[setting] = problem
   }
+  const notes = isRecord(value["notes"]) ? value["notes"]["bidding"] : null
+  const portfolios = new Map<string, string>()
+  if (isRecord(value["portfolios"]))
+    for (const [name, item] of Object.entries(value["portfolios"]))
+      if (isRecord(item) && typeof item["name"] === "string") portfolios.set(name, item["name"])
   return {
     unavailable: false,
     current: settingMap(value["current"]),
     name: text(value["name"]),
+    notes: Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [],
+    portfolios,
     problem: text(value["problem"]),
     problems,
     requested: settingMap(value["requested"]),
@@ -216,8 +251,26 @@ export function parseUpdateCampaignsArgs(value: unknown): UpdateCampaignsArgs | 
   }
 }
 
+function comparable(value: SettingValue | undefined): unknown {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? comparableBidding(value)
+    : value
+}
+
 export function sameValue(a: SettingValue | undefined, b: SettingValue | undefined): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+  return JSON.stringify(comparable(a)) === JSON.stringify(comparable(b))
+}
+
+export function isBidding(value: SettingValue | undefined): value is Bidding {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+/** The value a row leaves the campaign on: a targets-only bidding change merged into the live one. */
+function rowResult(row: Pick<CampaignRow, "value" | "was">): SettingValue {
+  if (!isBidding(row.value)) return row.value
+  const resolved = resolvedBidding(row.value, isBidding(row.was) ? row.was : undefined)
+  // A target the live strategy can't take changes nothing yet, so it never reads as Already Set.
+  return resolved.problem === null ? resolved.bidding : row.value
 }
 
 function rowOf(
@@ -233,6 +286,8 @@ function rowOf(
   const was = live ? (live.current[setting] ?? null) : undefined
   // Google answered for the value it was checked with, so an edited value waits for a new check.
   const checked = live !== null && sameValue(live.requested[setting], value)
+  const result = rowResult({ value, was })
+  const local = isBidding(value) ? biddingProblem(value) : null
   return {
     campaignName: live?.name ?? label,
     cancelled: change === null,
@@ -240,14 +295,21 @@ function rowOf(
     customerId,
     id: `${key}|${setting}`,
     key,
+    learning:
+      isBidding(result) &&
+      result.strategy !== TARGETS &&
+      isBidding(was) &&
+      changesStrategy(result, was),
+    notes: live !== null && checked && setting === "bidding" ? live.notes : [],
     problem:
-      live === null
+      local ??
+      (live === null
         ? UNAVAILABLE_PROBLEM
         : checked
           ? (live.problem ?? live.problems[setting] ?? null)
-          : null,
+          : null),
     setting,
-    unchanged: was !== undefined && sameValue(was, value),
+    unchanged: was !== undefined && sameValue(was, result),
     value,
     was,
   }
@@ -302,6 +364,7 @@ export function campaignCounts(rows: readonly CampaignRow[]): CampaignCounts {
   return {
     apply: live.filter((row) => !row.unchanged).length,
     campaigns: new Set(live.map((row) => row.key)).size,
+    learning: new Set(live.filter((row) => row.learning).map((row) => row.key)).size,
     problems: live.filter((row) => row.problem !== null).length,
     total: live.length,
   }
@@ -324,6 +387,10 @@ function withSetting(
     return nested("url_options", value === null && setting !== "custom_parameters" ? "" : value)
   if (NETWORK_SETTINGS.has(setting)) return nested("networks", value)
   if (value === undefined) return without(entry, setting)
+  if (isBidding(value)) {
+    const argument = biddingArgument(value)
+    return argument ? { ...entry, bidding: argument } : entry
+  }
   return { ...entry, [setting]: setting === "end_date" && value === null ? "none" : value }
 }
 
@@ -387,6 +454,14 @@ function signature(args: UpdateCampaignsArgs): string {
   )
 }
 
+/** Whether Google can check the request: every bidding change is complete. */
+export function canCheckCampaigns(args: UpdateCampaignsArgs): boolean {
+  return args.changes.every((change) => {
+    const bidding = change.requested.bidding
+    return !isBidding(bidding) || biddingProblem(bidding) === null
+  })
+}
+
 export function needsCheck(args: UpdateCampaignsArgs, checked: UpdateCampaignsArgs): boolean {
   return (
     [...checked.checks.values()].some((check) => check.unavailable) ||
@@ -442,9 +517,25 @@ export function parseParametersText(value: string): UrlParameter[] | null {
   return items
 }
 
+const NO_CONTEXT: BiddingContext = { currency: null, portfolios: new Map() }
+
+/** The account currency and portfolio names a row's bidding is written with. */
+export function rowContext(args: UpdateCampaignsArgs, row: CampaignRow): BiddingContext {
+  const check = args.checks.get(row.key)
+  return {
+    currency: args.accounts.get(row.customerId)?.currencyCode ?? null,
+    portfolios: check && !check.unavailable ? check.portfolios : NO_CONTEXT.portfolios,
+  }
+}
+
 /** A setting's value in the words the card uses. */
-export function valueText(setting: CampaignSetting, value: SettingValue | undefined): string {
+export function valueText(
+  setting: CampaignSetting,
+  value: SettingValue | undefined,
+  context: BiddingContext = NO_CONTEXT
+): string {
   if (value === undefined) return "—"
+  if (isBidding(value)) return biddingText(value, context)
   if (typeof value === "boolean") return value ? "On" : "Off"
   if (Array.isArray(value)) return value.length > 0 ? parametersText(value) : "None"
   if (value === null) return setting === "end_date" ? "No end date" : "None"
@@ -469,10 +560,12 @@ export function campaignsPrompt(args: UpdateCampaignsArgs): string {
   if (rows.length === 0) return "Nothing is left to change."
   const where = accountName(args)
   const sole = soleRow(args)
+  // The banner names the account, so a sole change's prompt names only the campaign.
   if (sole) {
-    return sole.setting === "name"
-      ? `Rename ${sole.campaignName} to ${valueText("name", sole.value)} in ${where}.`
-      : `Change the ${SETTING_TITLES[sole.setting].toLowerCase()} of ${sole.campaignName} in ${where}.`
+    if (sole.setting === "name")
+      return `Rename ${sole.campaignName} to ${valueText("name", sole.value)}.`
+    if (isBidding(sole.value)) return biddingPrompt(sole, sole.value)
+    return `Change the ${SETTING_TITLES[sole.setting].toLowerCase()} of ${sole.campaignName}.`
   }
   const campaigns = new Set(rows.map((row) => row.key)).size
   const target =
@@ -490,6 +583,7 @@ export function campaignsApproveLabel(args: UpdateCampaignsArgs): string {
     if (sole.setting === "end_date") return sole.value === null ? "Remove End Date" : "Set End Date"
     if (typeof sole.value === "boolean")
       return `Turn ${sole.value ? "On" : "Off"} ${SETTING_TITLES[sole.setting]}`
+    if (isBidding(sole.value)) return biddingApproveLabel(sole)
     return `Change ${SETTING_TITLES[sole.setting]}`
   }
   const { apply } = campaignCounts(campaignRows(args, args))
@@ -498,18 +592,61 @@ export function campaignsApproveLabel(args: UpdateCampaignsArgs): string {
     : `Apply ${String(apply)} ${apply === 1 ? "Change" : "Changes"}`
 }
 
+// Each target as a sentence names it.
+const TARGET_NAMES = {
+  max_cpc: "maximum click bid",
+  target_cpa: "target CPA",
+  target_roas: "target ROAS",
+} as const
+
+// The target a target-only change names, for its prompt and button.
+function changedTarget(value: SettingValue): (typeof TARGET_KEYS)[number] | null {
+  if (!isBidding(value) || value.strategy !== TARGETS) return null
+  return TARGET_KEYS.find((key) => value[key] != null) ?? null
+}
+
+function biddingPrompt(row: CampaignRow, value: Bidding): string {
+  const target = changedTarget(value)
+  if (target) return `Change the ${TARGET_NAMES[target]} of ${row.campaignName}.`
+  return row.learning
+    ? `Switch ${row.campaignName} to ${strategyLabel(value.strategy)}.`
+    : `Change the bidding of ${row.campaignName}.`
+}
+
+function biddingApproveLabel(row: CampaignRow): string {
+  const value = rowResult(row)
+  if (row.learning && isBidding(value)) return `Switch to ${strategyLabel(value.strategy)}`
+  const target = changedTarget(row.value)
+  return target ? `Change ${TARGET_LABELS[target]}` : "Change Bidding"
+}
+
+/** The banner leads with Google's learning restarting when a strategy changes. */
+export function campaignsBannerTitle(counts: CampaignCounts): string {
+  if (counts.learning === 0) return "Changes take effect straight away"
+  return counts.campaigns === 1
+    ? "Google's learning restarts"
+    : `Google's learning restarts on ${approvalCountLine(counts.learning, "campaign")}`
+}
+
 export function campaignsBannerDetail(
   counts: CampaignCounts,
   accountIds: readonly string[],
   accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>
-): string {
-  const timeZone = accountIds.length === 1 ? accounts.get(accountIds[0] ?? "")?.timeZone : undefined
-  return [
-    approvalCountLine(counts.campaigns, "campaign"),
-    timeZone ? `Account time ${timeZone}` : null,
+): string[] {
+  const account = accountIds.length === 1 ? accounts.get(accountIds[0] ?? "") : undefined
+  const where = [
+    account?.label ?? null,
+    counts.campaigns > 1 ? approvalCountLine(counts.campaigns, "campaign") : null,
+    account?.timeZone ? `Account time ${account.timeZone}` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ")
+  return [
+    counts.learning > 0
+      ? "Changes take effect straight away. Results can swing for 1–2 weeks while Google relearns."
+      : null,
+    where,
+  ].filter((line): line is string => Boolean(line))
 }
 
 export function campaignsDetails(args: UpdateCampaignsArgs | null): FanOutDetail[] {

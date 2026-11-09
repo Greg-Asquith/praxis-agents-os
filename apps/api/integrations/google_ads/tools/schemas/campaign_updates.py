@@ -3,16 +3,27 @@
 """Arguments and result contract for changing the settings of live Google Ads campaigns."""
 
 from datetime import date
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ...operations.campaign_bidding import Bidding, money
 from ...operations.campaign_settings import CampaignSetting
 from ...operations.url_custom_parameters import validate_url_custom_parameter_items
-from ...references import GoogleAdsCampaignReference
+from ...references import GoogleAdsBiddingStrategyReference, GoogleAdsCampaignReference
 from .base import GoogleAdsStrictModel
+from .campaigns import (
+    GoogleAdsManualCpc,
+    GoogleAdsMaxCpc,
+    GoogleAdsMaximizeClicks,
+    GoogleAdsMaximizeConversions,
+    GoogleAdsMaximizeConversionValue,
+    GoogleAdsTargetCpa,
+    GoogleAdsTargetImpressionShare,
+)
+from .positive_keywords import money_bid_to_micros
 
 MAX_CAMPAIGN_UPDATES = 50
 # Google's limit for campaign URL fields.
@@ -51,6 +62,52 @@ class GoogleAdsCampaignNetworks(GoogleAdsStrictModel):
     display_expansion: bool | None = None
 
 
+class GoogleAdsPortfolioBidding(GoogleAdsStrictModel):
+    """Moves the campaign onto a portfolio strategy in the same account."""
+
+    strategy: Literal["PORTFOLIO"]
+    portfolio: GoogleAdsBiddingStrategyReference
+
+
+class GoogleAdsBiddingTargets(GoogleAdsStrictModel):
+    """Changes only targets on the campaign's current standard strategy."""
+
+    strategy: Literal["TARGETS"]
+    target_cpa: GoogleAdsTargetCpa | None = None
+    # A ratio, so 3.5 means 350%.
+    target_roas: float | None = Field(default=None, ge=0.01, le=1000)
+    max_cpc: GoogleAdsMaxCpc | None = None
+
+    @model_validator(mode="after")
+    def _names_a_target(self) -> Self:
+        if self.target_cpa is None and self.target_roas is None and self.max_cpc is None:
+            raise ValueError("Name target_cpa, target_roas, or max_cpc to change.")
+        return self
+
+
+type GoogleAdsCampaignBidding = Annotated[
+    GoogleAdsManualCpc
+    | GoogleAdsMaximizeClicks
+    | GoogleAdsMaximizeConversions
+    | GoogleAdsMaximizeConversionValue
+    | GoogleAdsTargetImpressionShare
+    | GoogleAdsPortfolioBidding
+    | GoogleAdsBiddingTargets,
+    Field(discriminator="strategy"),
+]
+
+
+def card_request(bidding: GoogleAdsCampaignBidding) -> Bidding:
+    """A bidding request in card terms, with money as canonical decimal strings."""
+    if isinstance(bidding, GoogleAdsPortfolioBidding):
+        return {"strategy": "PORTFOLIO", "portfolio": bidding.portfolio.resource_name}
+    fields = bidding.model_dump(exclude_none=isinstance(bidding, GoogleAdsBiddingTargets))
+    for key in ("target_cpa", "max_cpc"):
+        if fields.get(key):
+            fields[key] = money(money_bid_to_micros(fields[key]))
+    return fields
+
+
 class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
     """One campaign and only the settings that change."""
 
@@ -62,6 +119,7 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
     end_date: date | Literal["none"] | None = None
     url_options: GoogleAdsUrlOptions | None = None
     networks: GoogleAdsCampaignNetworks | None = None
+    bidding: GoogleAdsCampaignBidding | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -78,6 +136,11 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
         start, end = self.start_date, self.end_date
         if isinstance(start, date) and isinstance(end, date) and end < start:
             raise ValueError("The end date must be on or after the start date.")
+        if (
+            isinstance(self.bidding, GoogleAdsPortfolioBidding)
+            and self.bidding.portfolio.customer_id != self.campaign.customer_id
+        ):
+            raise ValueError("Choose a portfolio strategy from the campaign's own account.")
         return self
 
     @property
@@ -108,6 +171,8 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
                 values["search_partners"] = networks.search_partners
             if networks.display_expansion is not None:
                 values["display_expansion"] = networks.display_expansion
+        if self.bidding is not None:
+            values["bidding"] = card_request(self.bidding)
         return values
 
 
@@ -124,7 +189,21 @@ class GoogleAdsUpdateCampaignsRequest(GoogleAdsStrictModel):
         return self
 
 
-type GoogleAdsSettingValue = str | bool | list[GoogleAdsUrlParameter] | None
+class GoogleAdsBiddingValue(GoogleAdsStrictModel):
+    """Bidding in card terms; only the strategy's own fields are set."""
+
+    strategy: str = Field(max_length=64)
+    target_cpa: str | None = Field(default=None, max_length=32)
+    target_roas: float | None = None
+    max_cpc: str | None = Field(default=None, max_length=32)
+    location: str | None = Field(default=None, max_length=64)
+    share_percent: int | None = None
+    portfolio: str | None = Field(default=None, max_length=200)
+    # Google's strategy type when the card has no name for it.
+    type: str | None = Field(default=None, max_length=64)
+
+
+type GoogleAdsSettingValue = str | bool | list[GoogleAdsUrlParameter] | GoogleAdsBiddingValue | None
 
 
 class GoogleAdsCampaignSettingOutcome(GoogleAdsStrictModel):
@@ -142,13 +221,23 @@ class GoogleAdsCampaignUpdateOutcome(GoogleAdsStrictModel):
     campaign_id: str
     name: str
     read_back: bool
-    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=8)
+    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=9)
     error_code: str | None = None
     message: str | None = None
 
 
+class GoogleAdsPortfolioName(GoogleAdsStrictModel):
+    resource_name: str = Field(max_length=200)
+    name: str = Field(max_length=255)
+
+
 class GoogleAdsUpdateCampaignsData(GoogleAdsStrictModel):
     account_id: str
+    currency: str
+    # Names of the portfolio strategies that bidding values name.
+    portfolios: list[GoogleAdsPortfolioName] = Field(
+        default_factory=list, max_length=2 * MAX_CAMPAIGN_UPDATES
+    )
     campaigns: list[GoogleAdsCampaignUpdateOutcome] = Field(max_length=MAX_CAMPAIGN_UPDATES)
 
 

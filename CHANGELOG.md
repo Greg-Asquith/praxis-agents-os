@@ -21,6 +21,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   changes URL options, and turns Search Partners and Display expansion on or
   off in one approval. The card refuses dates and networks Google won't take,
   and each result reads the setting back.
+- Google Ads bidding changes with approval: `google_ads_update_campaigns` also
+  moves campaigns between Manual CPC, Maximise Clicks, Maximise Conversions,
+  Maximise Conversion Value, Target Impression Share, and portfolio strategies,
+  or changes only a target. The card shows recent conversions and ad groups
+  with their own bids, counts campaigns that restart learning, and refuses
+  targets the strategy doesn't take.
 - Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
   search ads across existing ad groups in one all-or-nothing request, with a
   search result preview and character counts on the card.
@@ -362,6 +368,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Line breaks you type in a message show in the conversation, instead of
+  joining the lines into one.
 - Your own messages with long code lines stay inside the conversation
   column; the code block scrolls sideways instead of the message spilling
   under the sidebar.

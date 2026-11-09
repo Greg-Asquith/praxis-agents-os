@@ -7,6 +7,7 @@ export function CommittedInput({
   ariaLabel,
   className,
   disabled,
+  id,
   onCommit,
   placeholder,
   type,
@@ -15,6 +16,7 @@ export function CommittedInput({
   ariaLabel: string
   className?: string
   disabled: boolean
+  id?: string
   onCommit: (value: string) => void
   placeholder?: string
   type?: string
@@ -27,6 +29,7 @@ export function CommittedInput({
       className={className ?? "h-7 text-sm"}
       defaultValue={value}
       disabled={disabled}
+      id={id}
       onBlur={(event) => {
         if (event.currentTarget.value !== value) onCommit(event.currentTarget.value)
       }}

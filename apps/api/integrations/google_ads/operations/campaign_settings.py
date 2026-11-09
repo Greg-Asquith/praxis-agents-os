@@ -9,6 +9,7 @@ from typing import Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .campaign_bidding import BIDDING_FIELDS, bidding_values, card_bidding
 from .utils import stream_rows
 
 type CampaignSetting = Literal[
@@ -20,9 +21,11 @@ type CampaignSetting = Literal[
     "custom_parameters",
     "search_partners",
     "display_expansion",
+    "bidding",
 ]
 
 # Each setting's field path in Google's JSON names, as the edit seam compares and masks it.
+# Bidding has several paths, which `campaign_bidding` works out from the change.
 SETTING_PATHS: dict[CampaignSetting, str] = {
     "name": "name",
     "start_date": "startDateTime",
@@ -46,6 +49,7 @@ _FIELDS = (
     "campaign.url_custom_parameters",
     "campaign.network_settings.target_search_network",
     "campaign.network_settings.target_content_network",
+    *BIDDING_FIELDS,
 )
 
 
@@ -91,10 +95,16 @@ class LiveCampaignSettings:
     values: Mapping[str, Any]
 
     def settings(self) -> dict[CampaignSetting, Any]:
-        return {
-            setting: card_value(setting, self.values.get(path))
-            for setting, path in SETTING_PATHS.items()
-        }
+        return card_settings(self.values)
+
+
+def card_settings(values: Mapping[str, Any]) -> dict[CampaignSetting, Any]:
+    """Every setting in card terms, from the values `read_campaign_settings` returns."""
+    settings: dict[CampaignSetting, Any] = {
+        setting: card_value(setting, values.get(path)) for setting, path in SETTING_PATHS.items()
+    }
+    settings["bidding"] = card_bidding(values)
+    return settings
 
 
 async def read_campaign_settings(
@@ -155,4 +165,5 @@ def _values(campaign: Mapping[str, Any]) -> dict[str, Any]:
         # A flag Google leaves out is off.
         "networkSettings.targetSearchNetwork": networks.get("targetSearchNetwork") is True,
         "networkSettings.targetContentNetwork": networks.get("targetContentNetwork") is True,
+        **bidding_values(campaign),
     }
