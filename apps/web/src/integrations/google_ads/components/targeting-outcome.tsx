@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
-import { DataTable, type DataColumn, type DataTableTab } from "@/components/ui/data-table"
+import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import {
+  EDIT_OUTCOME_BADGES,
+  EDIT_OUTCOME_LABELS,
+  EDIT_OUTCOME_TABS,
+} from "@/integrations/google_ads/lib/edit-outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   rowChange,
@@ -22,37 +27,6 @@ const COLUMNS: DataColumn[] = [
   { key: "details", kind: "text", label: "Details", hidden: true },
 ]
 
-const LABELS: Record<TargetingOutcome, string> = {
-  already_set: "Already Set",
-  failed: "Failed",
-  unverified: "Unconfirmed",
-  updated: "Changed",
-}
-
-const BADGES = {
-  already_set: "secondary",
-  failed: "destructive",
-  unverified: "warning",
-  updated: "success",
-} as const
-
-function outcomeTab(id: TargetingOutcome | "all", hideWhenEmpty = false): DataTableTab {
-  return {
-    hideWhenEmpty,
-    id,
-    label: id === "all" ? "All" : LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
-}
-
-const TABS: DataTableTab[] = [
-  outcomeTab("all"),
-  outcomeTab("updated"),
-  outcomeTab("already_set"),
-  outcomeTab("failed"),
-  outcomeTab("unverified", true),
-]
-
 /** One row per campaign and setting, opening on the failures when there are any. */
 export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResult }) {
   const [tab, setTab] = useState(
@@ -69,7 +43,7 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
           details: [row.message, row.errorCode ? googleAdsTokenLabel(row.errorCode) : null]
             .filter(Boolean)
             .join(" · "),
-          outcome: LABELS[row.outcome],
+          outcome: EDIT_OUTCOME_LABELS[row.outcome],
           setting: SETTING_TITLES[row.setting],
           token: row.outcome,
         }
@@ -86,7 +60,7 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
       renderCell={(column, row) => {
         if (column.key === "outcome")
           return (
-            <Badge variant={BADGES[row["token"] as TargetingOutcome]}>
+            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as TargetingOutcome]}>
               {cellText(row["outcome"])}
             </Badge>
           )
@@ -103,7 +77,7 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
       rowNoun={["row", "rows"]}
       rows={rows}
       summary={<span>{targetingOutcomeSummary(result)}</span>}
-      tabs={TABS}
+      tabs={EDIT_OUTCOME_TABS}
     />
   )
 }

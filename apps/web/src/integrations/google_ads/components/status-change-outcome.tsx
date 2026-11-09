@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
-import { DataTable, type DataColumn, type DataTableTab } from "@/components/ui/data-table"
+import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { EDIT_OUTCOME_BADGES, EDIT_OUTCOME_TABS } from "@/integrations/google_ads/lib/edit-outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { statusLabel, STATUS_KIND_TITLES } from "@/integrations/google_ads/lib/status-change"
 import {
@@ -21,30 +22,6 @@ const COLUMNS: DataColumn[] = [
   { key: "after", kind: "text", label: "After", width: 90 },
   { key: "outcome", kind: "text", label: "Outcome", width: 130 },
   { key: "details", kind: "text", label: "Details", hidden: true },
-]
-
-const BADGES = {
-  updated: "success",
-  already_set: "secondary",
-  failed: "destructive",
-  unverified: "warning",
-} as const
-
-function outcomeTab(id: StatusOutcome | "all", label: string, hideWhenEmpty = false): DataTableTab {
-  return {
-    id,
-    label,
-    match: (row) => id === "all" || row["token"] === id,
-    hideWhenEmpty,
-  }
-}
-
-const TABS: DataTableTab[] = [
-  outcomeTab("all", "All"),
-  outcomeTab("updated", "Changed"),
-  outcomeTab("already_set", "Already Set"),
-  outcomeTab("failed", "Failed"),
-  outcomeTab("unverified", "Unconfirmed", true),
 ]
 
 /** Every item's before, after, and outcome, opening on the failures when there are any. */
@@ -78,7 +55,7 @@ export function StatusChangeOutcome({ result }: { result: StatusChangeResult }) 
       renderCell={(column, row) => {
         if (column.key === "outcome")
           return (
-            <Badge variant={BADGES[row["token"] as StatusOutcome]}>
+            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as StatusOutcome]}>
               {cellText(row["outcome"])}
             </Badge>
           )
@@ -96,7 +73,7 @@ export function StatusChangeOutcome({ result }: { result: StatusChangeResult }) 
       rowNoun={["item", "items"]}
       rows={rows}
       summary={<span>{resultSummary(result)}</span>}
-      tabs={TABS}
+      tabs={EDIT_OUTCOME_TABS}
     />
   )
 }

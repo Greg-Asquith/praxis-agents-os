@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeSummary } from "@/integrations/ads/components/change-summary"
+import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { KeywordPaste } from "@/integrations/ads/components/keyword-paste"
 import { MoneyField } from "@/integrations/ads/components/money-field"
@@ -299,44 +300,6 @@ export function AdGroupSummary({
 
 function firstToOpen(rows: readonly AdGroupRow[]): number {
   return rows.find((row) => row.problems.length > 0)?.index ?? 0
-}
-
-/** A table cell input that edits on leaving the field, so typing doesn't redraw the whole table. */
-function CommittedInput({
-  ariaLabel,
-  className,
-  disabled,
-  onCommit,
-  placeholder,
-  value,
-}: {
-  ariaLabel: string
-  className?: string
-  disabled: boolean
-  onCommit: (value: string) => void
-  placeholder?: string
-  value: string
-}) {
-  return (
-    <Input
-      key={value}
-      aria-label={ariaLabel}
-      className={className ?? "h-7 text-sm"}
-      defaultValue={value}
-      disabled={disabled}
-      onBlur={(event) => {
-        if (event.currentTarget.value !== value) onCommit(event.currentTarget.value)
-      }}
-      onClick={(event) => {
-        event.stopPropagation()
-      }}
-      onKeyDown={(event) => {
-        // The row opens on Enter and Space, which also need to reach this field as text.
-        event.stopPropagation()
-      }}
-      placeholder={placeholder}
-    />
-  )
 }
 
 function AdGroupEditor({

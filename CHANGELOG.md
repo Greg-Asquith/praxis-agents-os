@@ -16,6 +16,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   to 100 campaigns, ad groups, ads, keywords, and asset groups on or off in one
   approval, checks each with Google first, refuses anything changed since the
   card was shown, and reads each one back.
+- Google Ads campaign settings with approval: `google_ads_update_campaigns`
+  renames up to 50 campaigns, sets or removes their start and end dates,
+  changes URL options, and turns Search Partners and Display expansion on or
+  off in one approval. The card refuses dates and networks Google won't take,
+  and each result reads the setting back.
 - Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
   search ads across existing ad groups in one all-or-nothing request, with a
   search result preview and character counts on the card.

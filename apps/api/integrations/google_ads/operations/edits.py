@@ -77,7 +77,9 @@ class FieldChange:
         changed = self.changed_fields
         update: dict[str, Any] = {"resourceName": self.resource_name}
         for path in changed:
-            _set_path(update, path, self.requested[path])
+            # A masked path left out of the body clears it, such as a campaign's end date.
+            if self.requested[path] is not None:
+                _set_path(update, path, self.requested[path])
         return MutateOperation(self.resource, {"update": update, "updateMask": ",".join(changed)})
 
     def live(self, values: SettingValues | None) -> SettingValues | None:

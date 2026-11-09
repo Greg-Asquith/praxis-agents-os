@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending.
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-Search campaign, ad group, and responsive search ad creation, status changes, location and language targeting, device bid adjustments, campaign-budget creation,
+Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
@@ -126,6 +126,52 @@ requested status are reported as `already_set`. The rest go in one
 partial-failure `googleAds:mutate` request per account with a `status` mask,
 and each result row records **Before**, **Requested**, and the status read
 back as **After**.
+
+### Campaign settings
+
+`google_ads_update_campaigns` changes up to 50 live campaigns of any type in
+one approval. Each entry names one campaign and only the settings that change.
+Bidding, conversion goals, and Performance Max and Shopping settings are
+pending. The fields are as follows:
+
+| Field | What it does |
+| --- | --- |
+| `name` | Renames the campaign. Line breaks and repeated spaces become one space. |
+| `start_date` | Sets the start date (`YYYY-MM-DD`, account time zone). Sent as `startDateTime` at `00:00:00`. |
+| `end_date` | Sets the end date, sent as `endDateTime` at `23:59:59`, or `"none"` to run with no end date. |
+| `url_options` | `final_url_suffix`, `tracking_template`, and `custom_parameters` (up to 8 pairs, replacing the list). An empty value or list clears it. |
+| `networks` | `search_partners` (Search and Shopping) and `display_expansion` (Search) on or off. |
+
+`operations/campaign_settings.py` reads each campaign's settings by ID,
+including removed campaigns, and holds two forms of each value: Google's, by
+JSON field path, which the edit seam compares and masks, and the card's, with
+dates as `YYYY-MM-DD` and no end date as null. A `FieldChange` path whose
+requested value is null stays in the update mask and out of the body, which
+is how Google clears a field, such as the end date.
+
+While preparing the approval, the tool reads each campaign, checks Google's
+rules locally, and dry runs the rest through the edit seam:
+
+- A campaign that has started can't change its start date, because Google
+  refuses it (`CANNOT_MODIFY_START_DATE_IF_ALREADY_STARTED`). Started means its
+  start date is on or before today in the account time zone.
+- A new start date must be after today, and a new end date today or later.
+- The end date can't be before the start date, after the request's dates are
+  applied to the live ones.
+- A network the channel doesn't support is refused before Google sees it.
+
+The trusted `_checks` display argument, keyed by campaign resource name, holds
+the campaign's name, status, and channel, its `current` settings in card terms,
+the `requested` settings the check covered, Google's `values` for those
+settings (what approval plans against), a campaign `problem` (missing,
+removed, or Google's dry-run rejection prefixed "Google says:"), and `problems`
+by setting. Edits on the card need a new check (`approval_review_fields`).
+After approval, a campaign whose request differs from its check, or whose check
+showed a problem, is refused without a request. The rest go in one
+partial-failure `googleAds:mutate` request per account, masking only the
+settings that differ from the live values. Each result row is one setting with
+**Before** (as the card showed it), **Requested**, **After** (read back), and
+its outcome; a setting already at its value is `already_set`.
 
 ### Ad creation
 
@@ -686,6 +732,36 @@ as on Update Status: Campaign, Setting, Before, After, and Outcome, with tabs fo
 Changed, Already Set, Failed, and Unconfirmed when any, opening on Failed when anything
 failed. The search result (`components/targeting-search-table.tsx`) has columns that
 follow the kind.
+
+### Update Campaigns card
+
+`lib/update-campaigns.ts` parses `changes` with `_accounts` and `_checks`, and
+keeps each entry as received so edits keep their reference. `campaignRows`
+gives one row per campaign and setting, with the live value, the new value,
+and a problem. A problem applies while the row's value matches what Google
+last checked; an edited value waits for **Check Changes** instead
+(`needsCheck`). Any problem blocks approval, and a row whose value equals the
+live value is Already Set and isn't counted.
+
+The card (`components/update-campaigns-approval.tsx`) shows the banner with the
+count of changes, then each row as the live value, an arrow, and an inline
+editor: an On/Off choice for networks, a date field for dates (an empty end date
+means no end date), and a text field otherwise. Custom parameters are edited as
+`key=value, key=value`. One campaign is a plain list of its settings; more than
+one is a `DataTable` with Campaign, Setting, Change, and Cancel columns. From
+ten rows, a `ChangeSummary` line per setting filters the table, and the End
+Date, Search Partners, and Display Expansion lines can set every campaign in the
+line; search, setting tabs, Needs Attention, and row selection with **Cancel
+These Changes** appear too. Cancelled settings move into the approval controls'
+retained state, so **Undo** restores them, and their campaign, through a
+check's redraw. Text fields save on blur through the shared kit's
+`CommittedInput`. The approve label names a sole change ("Remove End Date",
+"Turn Off Search Partners") and otherwise counts the changes that will run.
+
+The result (`components/update-campaigns-outcome.tsx`) is the standard
+`DataTable` result card: Campaign, Setting, Before, After, and Outcome, with the
+edit seam's outcome tabs from `lib/edit-outcomes.ts`, which Update Status and
+Update Targeting share. After is blank when Google's reply couldn't be read back.
 
 ### Data table extensions
 
