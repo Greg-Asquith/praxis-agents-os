@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/components/create-ad-groups-outcome.tsx
+// apps/web/src/integrations/google_ads/components/campaign-build-outcome.tsx
 
 import { useMemo } from "react"
 
@@ -6,13 +6,13 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
 import {
   BUILD_KIND_LABELS,
-  createAdGroupsSummary,
+  campaignBuildSummary,
   hasFailures,
   hasUnverified,
   nothingCreated,
   type BuildKindCount,
-  type CreateAdGroupsResult,
-} from "@/integrations/google_ads/lib/create-ad-groups-result"
+  type CampaignBuildResult,
+} from "@/integrations/google_ads/lib/campaign-build-result"
 
 const PROBLEM_COLUMNS: DataColumn[] = [
   { key: "item", kind: "text", label: "Item", width: 220 },
@@ -20,14 +20,21 @@ const PROBLEM_COLUMNS: DataColumn[] = [
   { key: "message", kind: "text", label: "Google Says", width: 360 },
 ]
 
-// Google creates the ad groups and ads as chosen; keywords always start enabled.
-function kindStatus(kind: BuildKindCount, result: CreateAdGroupsResult): "Paused" | "Enabled" {
-  const followsRequest = kind.kind === "ad_group" || kind.kind === "ad"
+// Google creates the campaign, ad groups, and ads as chosen; everything else starts enabled.
+function kindStatus(kind: BuildKindCount, result: CampaignBuildResult): "Paused" | "Enabled" {
+  const followsRequest = kind.kind === "campaign" || kind.kind === "ad_group" || kind.kind === "ad"
   return followsRequest && result.requestedStatus === "PAUSED" ? "Paused" : "Enabled"
 }
 
 /** One row per kind of object, or Google's reasons when nothing was created. */
-export function CreateAdGroupsOutcome({ result }: { result: CreateAdGroupsResult }) {
+export function CampaignBuildOutcome({
+  exportName,
+  result,
+}: {
+  // The CSV file name's stem, such as google-ads-created-ad-groups.
+  exportName: string
+  result: CampaignBuildResult
+}) {
   const columns = useMemo<DataColumn[]>(
     () => [
       { key: "kind", kind: "text", label: "Kind", width: 200 },
@@ -77,7 +84,7 @@ export function CreateAdGroupsOutcome({ result }: { result: CreateAdGroupsResult
         {result.problems.length > 1 ? (
           <DataTable
             columns={PROBLEM_COLUMNS}
-            exportFilename="google-ads-ad-group-problems.csv"
+            exportFilename={`${exportName}-problems.csv`}
             pageSize={25}
             rowDetails={false}
             rowNoun={["problem", "problems"]}
@@ -90,7 +97,7 @@ export function CreateAdGroupsOutcome({ result }: { result: CreateAdGroupsResult
   return (
     <DataTable
       columns={columns}
-      exportFilename="google-ads-created-ad-groups.csv"
+      exportFilename={`${exportName}.csv`}
       renderCell={(column, row) =>
         column.key === "status" && Number(row["created"]) > 0 ? (
           <Badge variant={row["status"] === "Paused" ? "warning" : "success"}>
@@ -101,7 +108,7 @@ export function CreateAdGroupsOutcome({ result }: { result: CreateAdGroupsResult
       rowDetails={false}
       rowNoun={["kind", "kinds"]}
       rows={rows}
-      summary={<span>{createAdGroupsSummary(result)}</span>}
+      summary={<span>{campaignBuildSummary(result)}</span>}
     />
   )
 }

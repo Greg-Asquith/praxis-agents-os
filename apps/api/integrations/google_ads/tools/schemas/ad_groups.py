@@ -66,10 +66,12 @@ class GoogleAdsNewKeyword(GoogleAdsStrictModel):
         return cpc_bid_to_micros(self.cpc_bid) if self.cpc_bid else None
 
 
-def _distinct_keywords(entries: list[GoogleAdsNewKeyword] | list[NegativeKeywordEntry]) -> None:
+def distinct_keywords(
+    entries: list[GoogleAdsNewKeyword] | list[NegativeKeywordEntry], *, scope: str = "ad group"
+) -> None:
     pairs = [(entry.text.casefold(), entry.match_type) for entry in entries]
     if len(set(pairs)) != len(pairs):
-        raise ValueError("List each keyword and match type once per ad group.")
+        raise ValueError(f"List each keyword and match type once per {scope}.")
 
 
 class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
@@ -122,8 +124,8 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
 
     @model_validator(mode="after")
     def _distinct(self) -> Self:
-        _distinct_keywords(self.keywords)
-        _distinct_keywords(self.negative_keywords)
+        distinct_keywords(self.keywords)
+        distinct_keywords(self.negative_keywords)
         return self
 
     @property

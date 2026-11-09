@@ -56,6 +56,12 @@ from .schemas.ad_groups import (
     GoogleAdsNewAdGroup,
 )
 from .utils.accounts import approval_accounts, writable_entry
+from .utils.ad_group_builds import (
+    MAX_AUDIT_ITEM_CHARS,
+    STRATEGY_NAMES,
+    ad_group_item_fields,
+    ad_group_problems,
+)
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -72,18 +78,6 @@ _IDENTITY = ("step",)
 _MISSING = "This campaign is removed, or no longer exists in Google Ads."
 _NOT_SEARCH = "New ad groups with keywords only go in Search campaigns."
 _KINDS = ("ad_group", "keyword", "negative_keyword", "ad")
-# Keeps a build at the object limit inside one audit event, whatever alphabet the keywords use.
-_MAX_AUDIT_ITEM_CHARS = 40
-_STRATEGY_NAMES = {
-    "MANUAL_CPC": "Manual CPC",
-    "ENHANCED_CPC": "Enhanced CPC",
-    "MAXIMIZE_CONVERSIONS": "Maximise Conversions",
-    "MAXIMIZE_CONVERSION_VALUE": "Maximise Conversion Value",
-    "TARGET_CPA": "Target CPA",
-    "TARGET_ROAS": "Target ROAS",
-    "TARGET_SPEND": "Maximise Clicks",
-    "TARGET_IMPRESSION_SHARE": "Target Impression Share",
-}
 
 
 def _campaign_name(reference: GoogleAdsCampaignReference) -> str:
@@ -194,24 +188,6 @@ def _campaign_problem(facts: SearchCampaignFacts | None) -> str | None:
     return None if facts.channel == "SEARCH" else _NOT_SEARCH
 
 
-def _ad_group_problems(ad_group: GoogleAdsNewAdGroup, facts: SearchCampaignFacts) -> list[str]:
-    """Why Google would refuse or ignore this ad group's name or bids."""
-    strategy = _STRATEGY_NAMES.get(facts.strategy, "its own bidding")
-    uses = f"the campaign uses {strategy}"
-    problems = []
-    if ad_group.name.casefold() in {name.casefold() for name in facts.ad_group_names}:
-        problems.append(f"{ad_group.name}: the campaign already has an ad group with this name.")
-    if ad_group.cpc_bid and not facts.accepts_cpc_bid:
-        problems.append(f"{ad_group.name}: has a click bid, but {uses}.")
-    if any(keyword.cpc_bid for keyword in ad_group.keywords) and not facts.accepts_cpc_bid:
-        problems.append(f"{ad_group.name}: has keyword click bids, but {uses}.")
-    if ad_group.target_cpa and not facts.accepts_target_cpa:
-        problems.append(f"{ad_group.name}: has a target CPA that {strategy} doesn't use here.")
-    if ad_group.target_roas is not None and not facts.accepts_target_roas:
-        problems.append(f"{ad_group.name}: has a target ROAS that {strategy} doesn't use here.")
-    return problems
-
-
 def _refusal(
     request: GoogleAdsCreateAdGroupsRequest, facts: SearchCampaignFacts | None
 ) -> str | None:
@@ -220,7 +196,7 @@ def _refusal(
     if problem is not None or facts is None:
         return problem
     problems = [
-        item for ad_group in request.ad_groups for item in _ad_group_problems(ad_group, facts)
+        item for ad_group in request.ad_groups for item in ad_group_problems(ad_group, facts)
     ]
     return " ".join(problems) or None
 
@@ -256,7 +232,7 @@ def _pending_detail(
                 fields={
                     "step": str(position),
                     "kind": source.kind,
-                    "item": step.label[:_MAX_AUDIT_ITEM_CHARS],
+                    "item": step.label[:MAX_AUDIT_ITEM_CHARS],
                 }
             )
         )
@@ -381,7 +357,7 @@ async def _checks(
             "key": _campaign_name(request.campaign),
             "name": facts.name if facts else request.campaign.label,
             "strategy": facts.strategy if facts else None,
-            "strategy_name": _STRATEGY_NAMES.get(facts.strategy) if facts else None,
+            "strategy_name": STRATEGY_NAMES.get(facts.strategy) if facts else None,
             "accepts_cpc_bid": facts.accepts_cpc_bid if facts else False,
             "accepts_target_cpa": facts.accepts_target_cpa if facts else False,
             "accepts_target_roas": facts.accepts_target_roas if facts else False,
@@ -410,7 +386,7 @@ async def _dry_run(
         [
             index
             for index, ad_group in enumerate(request.ad_groups)
-            if not _ad_group_problems(ad_group, facts)
+            if not ad_group_problems(ad_group, facts)
         ],
     )
     if not build.steps:
@@ -424,23 +400,13 @@ async def _dry_run(
         if problem.step is None:
             request_problems.append(message)
         else:
-            problems.append({**_item_fields(request, _source(problem.step)), "message": message})
+            problems.append(
+                {
+                    **ad_group_item_fields(request.ad_groups, _source(problem.step)),
+                    "message": message,
+                }
+            )
     return problems, request_problems
-
-
-def _item_fields(request: GoogleAdsCreateAdGroupsRequest, source: AdGroupItem) -> dict[str, Any]:
-    """Names a rejected item by its content, because the card can reorder and cancel ad groups."""
-    ad_group = request.ad_groups[source.ad_group]
-    fields: dict[str, Any] = {"ad_group": ad_group.name, "kind": source.kind}
-    if source.kind == "keyword":
-        keyword = ad_group.keywords[source.position]
-        fields |= {"text": keyword.text, "match_type": keyword.match_type}
-    elif source.kind == "negative_keyword":
-        negative = ad_group.negative_keywords[source.position]
-        fields |= {"text": negative.text, "match_type": negative.match_type}
-    elif source.kind == "ad":
-        fields["ad"] = ad_group.ads[source.position].model_dump(mode="json")
-    return fields
 
 
 DEFINITION = RuntimeToolDefinition(

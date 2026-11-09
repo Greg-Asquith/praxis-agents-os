@@ -23,6 +23,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   ad groups in a Search campaign with their keywords, negative keywords, and
   ads in one all-or-nothing request. Keywords can be pasted, and the card
   refuses bids the campaign's bidding doesn't use.
+- Google Ads Search campaign creation: `google_ads_create_campaign` builds a
+  complete Search campaign, with its budget, bidding, networks, locations,
+  dates, negative keywords, and up to 20 ad groups with keywords and ads, in
+  one all-or-nothing request. The card shows about a month's spend, and the
+  create cards can add ad groups.
 - Google Ads create cards check edits with Google before approval. **Check
   Changes** shows Google's answer on the card, with no agent turn, and approval
   of an unchecked edit is refused.

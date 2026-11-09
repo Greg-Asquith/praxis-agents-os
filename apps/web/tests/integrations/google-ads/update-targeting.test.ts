@@ -148,7 +148,9 @@ describe("approval", () => {
 
     expect(campaignRows(edited, checked)[0]?.problems).toEqual([])
     expect(needsCheck(edited, checked)).toBe(true)
-    expect(targetingBlock(edited, checked)).toBe("Check the changes before approving.")
+    expect(targetingBlock(edited, checked)).toBe(
+      "Click Check Changes so Google can check your edits, then approve."
+    )
   })
 
   it("blocks and asks for a new check when Google couldn't be reached", () => {

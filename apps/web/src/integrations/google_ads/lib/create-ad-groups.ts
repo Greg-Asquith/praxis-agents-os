@@ -29,6 +29,7 @@ const KEYWORD_WORDS = 10
 const MAX_KEYWORDS = 1_000
 const MAX_NEGATIVES = 500
 export const MAX_ADS = 3
+const MAX_AD_GROUPS = 20
 const MAX_OBJECTS = 2_500
 const MONEY_PATTERN = /^\d+(?:\.\d{1,6})?$/
 const URL_PATTERN = /^https?:\/\/\S+$/i
@@ -55,17 +56,17 @@ export type CampaignTarget = {
   reference: Record<string, unknown>
 }
 
-type CampaignCheck = {
+/** What a campaign's bidding lets its ad groups set. */
+export type BidRules = {
   acceptsCpcBid: boolean
   acceptsTargetCpa: boolean
   acceptsTargetRoas: boolean
-  key: string
-  name: string
-  problem: string | null
   strategyName: string | null
 }
 
-type ItemProblem = {
+type CampaignCheck = BidRules & { key: string; name: string; problem: string | null }
+
+export type ItemProblem = {
   adCopy: string | null
   adGroup: string
   kind: string
@@ -99,12 +100,12 @@ export type AdGroupRow = {
   problems: string[]
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
-
 function parseMatchType(value: unknown): KeywordMatchType | null {
   return value === "EXACT" || value === "PHRASE" || value === "BROAD" ? value : null
+}
+
+export function text(value: unknown): string {
+  return typeof value === "string" ? value : ""
 }
 
 export function parseCampaign(value: unknown): CampaignTarget | null {
@@ -131,14 +132,14 @@ function parseKeyword(value: unknown): DraftKeyword | null {
   }
 }
 
-function roasPercent(value: unknown): string {
+export function roasPercent(value: unknown): string {
   if (typeof value === "string") return value
   if (typeof value !== "number") return ""
   // Rounds away floating point noise, so 3.5 reads as 350 and not 350.00000000000006.
   return String(Math.round(value * 1_000_000) / 10_000)
 }
 
-function parseEach<T>(value: unknown, parse: (item: unknown) => T | null): T[] | null {
+export function parseEach<T>(value: unknown, parse: (item: unknown) => T | null): T[] | null {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) return null
   const items: T[] = []
@@ -150,7 +151,7 @@ function parseEach<T>(value: unknown, parse: (item: unknown) => T | null): T[] |
   return items
 }
 
-function parseAdGroup(value: unknown): DraftAdGroup | null {
+export function parseAdGroup(value: unknown): DraftAdGroup | null {
   if (!isRecord(value) || typeof value["name"] !== "string") return null
   const keywords = parseEach(value["keywords"], parseKeyword)
   const negatives = parseEach(value["negative_keywords"], parseKeyword)
@@ -169,14 +170,17 @@ function parseAdGroup(value: unknown): DraftAdGroup | null {
 
 /** Reads the cancelled ad groups the card keeps across a check, in the tool's own shape. */
 /** What Restore brings back. A reset of the card's edits can return them to the request. */
-export function parseCancelledAdGroups(value: unknown, args: CreateAdGroupsArgs): DraftAdGroup[] {
-  const current = new Set(serializeAdGroups(args.adGroups).map((item) => JSON.stringify(item)))
+export function parseCancelledAdGroups(
+  value: unknown,
+  adGroups: readonly DraftAdGroup[]
+): DraftAdGroup[] {
+  const current = new Set(serializeAdGroups(adGroups).map((item) => JSON.stringify(item)))
   return (parseEach(value, parseAdGroup) ?? []).filter(
     (item) => !current.has(JSON.stringify(serializeAdGroups([item])[0]))
   )
 }
 
-function parseItemProblem(value: unknown): ItemProblem[] {
+export function parseItemProblem(value: unknown): ItemProblem[] {
   if (!isRecord(value) || typeof value["message"] !== "string") return []
   const copy = parseCopy(value["ad"])
   return [
@@ -243,7 +247,20 @@ export function campaignCheck(args: CreateAdGroupsArgs): CampaignCheck | null {
   return args.checks.campaign
 }
 
-function nameProblems(name: string, others: readonly DraftAdGroup[], args: CreateAdGroupsArgs) {
+/** What the ad group rules need to know about the campaign the ad groups go in. */
+export type AdGroupContext = {
+  currency: string | null
+  // Names the campaign already has, folded; null for a new campaign or before a check.
+  existing: { campaign: string; names: Set<string> } | null
+  // Google's rejections from the last check, while they still apply.
+  googleProblems: readonly ItemProblem[]
+  // A new campaign's ad groups need a keyword and an ad, so Google can show them.
+  requireServing: boolean
+  // Null while the campaign's bidding isn't known.
+  rules: BidRules | null
+}
+
+function nameProblems(name: string, others: readonly DraftAdGroup[], context: AdGroupContext) {
   const problems: string[] = []
   const folded = foldName(name)
   if (!folded) problems.push("Give this ad group a name.")
@@ -251,20 +268,18 @@ function nameProblems(name: string, others: readonly DraftAdGroup[], args: Creat
     problems.push(`The name is over ${String(NAME_LENGTH)} characters.`)
   if (folded && others.filter((other) => foldName(other.name) === folded).length > 1)
     problems.push("Another new ad group has this name.")
-  const check = campaignCheck(args)
-  if (check && !args.checks.unavailable && args.checks.existingNames.has(folded))
-    problems.push(`${check.name} already has an ad group with this name.`)
+  if (context.existing?.names.has(folded))
+    problems.push(`${context.existing.campaign} already has an ad group with this name.`)
   return problems
 }
 
-function money(amount: string, args: CreateAdGroupsArgs): string {
-  const currency = [...args.accounts.values()][0]?.currencyCode
-  return currency ? formatCurrencyAmount(amount, currency) : amount
+function money(amount: string, context: AdGroupContext): string {
+  return context.currency ? formatCurrencyAmount(amount, context.currency) : amount
 }
 
-function bidProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
+function bidProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
   const problems: string[] = []
-  const check = campaignCheck(args)
+  const check = context.rules
   const strategy = check?.strategyName ?? "its own bidding"
   const cpc = group.cpcBid.trim()
   const cpa = group.targetCpa.trim()
@@ -272,7 +287,7 @@ function bidProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
   if (cpc && !validMoney(cpc)) problems.push("Enter the click bid as an amount above zero.")
   else if (cpc && check && !check.acceptsCpcBid)
     problems.push(
-      `Has a ${money(cpc, args)} click bid, but the campaign uses ${strategy}. Remove the bid to continue.`
+      `Has a ${money(cpc, context)} click bid, but the campaign uses ${strategy}. Remove the bid to continue.`
     )
   if (group.keywords.some((keyword) => keyword.cpcBid.trim()) && check && !check.acceptsCpcBid)
     problems.push(
@@ -287,11 +302,11 @@ function bidProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
   return problems
 }
 
-function validMoney(value: string): boolean {
+export function validMoney(value: string): boolean {
   return MONEY_PATTERN.test(value) && Number(value) > 0
 }
 
-function validRoas(value: string): boolean {
+export function validRoas(value: string): boolean {
   const percent = Number(value)
   return Number.isFinite(percent) && percent >= 1 && percent <= 100_000
 }
@@ -300,10 +315,14 @@ function keywordKey(keyword: PastedKeyword): string {
   return `${keyword.text.toLowerCase()}|${keyword.matchType}`
 }
 
-function listProblems(noun: string, keywords: readonly PastedKeyword[], limit: number): string[] {
+export function listProblems(
+  noun: string,
+  keywords: readonly PastedKeyword[],
+  limit: number,
+  owner = "An ad group"
+): string[] {
   const problems: string[] = []
-  if (keywords.length > limit)
-    problems.push(`An ad group can have at most ${String(limit)} ${noun}s.`)
+  if (keywords.length > limit) problems.push(`${owner} can have at most ${String(limit)} ${noun}s.`)
   const over = keywords.filter((keyword) => {
     const words = keyword.text.split(/\s+/).length
     return characterCount(keyword.text) > KEYWORD_LENGTH || words > KEYWORD_WORDS
@@ -342,10 +361,9 @@ function adProblems(group: DraftAdGroup): string[] {
 }
 
 /** Google's rejections for this ad group, while the item it rejected is still in it. */
-function googleProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
-  if (args.checks.unavailable || campaignCheck(args) === null) return []
+function googleProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
   const name = group.name.trim()
-  return args.checks.itemProblems.flatMap((problem) => {
+  return context.googleProblems.flatMap((problem) => {
     if (problem.adGroup !== name) return []
     const matches = (keyword: PastedKeyword) =>
       keyword.text === problem.text && keyword.matchType === problem.matchType
@@ -363,11 +381,24 @@ function googleProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[]
   })
 }
 
-/** What the card can find without asking Google again, so these block a check. */
-function cardProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
+function servingProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
+  if (!context.requireServing) return []
   return [
-    ...nameProblems(group.name, args.adGroups, args),
-    ...bidProblems(group, args),
+    ...(group.keywords.length === 0 ? ["Needs at least 1 keyword to serve."] : []),
+    ...(group.ads.length === 0 ? ["Needs at least 1 ad to serve."] : []),
+  ]
+}
+
+/** What the card can find without asking Google again, so these block a check. */
+export function adGroupCardProblems(
+  group: DraftAdGroup,
+  adGroups: readonly DraftAdGroup[],
+  context: AdGroupContext
+): string[] {
+  return [
+    ...servingProblems(group, context),
+    ...nameProblems(group.name, adGroups, context),
+    ...bidProblems(group, context),
     ...listProblems("keyword", group.keywords, MAX_KEYWORDS),
     ...listProblems("negative keyword", group.negatives, MAX_NEGATIVES),
     ...keywordUrlProblems(group),
@@ -375,17 +406,39 @@ function cardProblems(group: DraftAdGroup, args: CreateAdGroupsArgs): string[] {
   ]
 }
 
-export function adGroupRows(args: CreateAdGroupsArgs): AdGroupRow[] {
-  return args.adGroups.map((adGroup, index) => ({
+export function newAdGroupRows(
+  adGroups: readonly DraftAdGroup[],
+  context: AdGroupContext
+): AdGroupRow[] {
+  return adGroups.map((adGroup, index) => ({
     adGroup,
     index,
-    problems: args.checks.unavailable
-      ? [UNAVAILABLE]
-      : [...cardProblems(adGroup, args), ...googleProblems(adGroup, args)],
+    problems: [
+      ...adGroupCardProblems(adGroup, adGroups, context),
+      ...googleProblems(adGroup, context),
+    ],
   }))
 }
 
-function objectCount(adGroups: readonly DraftAdGroup[]): number {
+function adGroupContext(args: CreateAdGroupsArgs): AdGroupContext {
+  const check = campaignCheck(args)
+  const checks = args.checks.unavailable || check === null ? null : args.checks
+  return {
+    currency: [...args.accounts.values()][0]?.currencyCode ?? null,
+    existing: checks && check ? { campaign: check.name, names: checks.existingNames } : null,
+    googleProblems: checks?.itemProblems ?? [],
+    requireServing: false,
+    rules: check,
+  }
+}
+
+export function adGroupRows(args: CreateAdGroupsArgs): AdGroupRow[] {
+  if (args.checks.unavailable)
+    return args.adGroups.map((adGroup, index) => ({ adGroup, index, problems: [UNAVAILABLE] }))
+  return newAdGroupRows(args.adGroups, adGroupContext(args))
+}
+
+export function objectCount(adGroups: readonly DraftAdGroup[]): number {
   return adGroups.reduce(
     (total, group) => total + 1 + group.keywords.length + group.negatives.length + group.ads.length,
     0
@@ -448,7 +501,9 @@ export function canCheckAdGroups(args: CreateAdGroupsArgs): boolean {
   return (
     args.adGroups.length > 0 &&
     objectCount(args.adGroups) <= MAX_OBJECTS &&
-    args.adGroups.every((group) => !cardProblems(group, args).length)
+    args.adGroups.every(
+      (group) => !adGroupCardProblems(group, args.adGroups, adGroupContext(args)).length
+    )
   )
 }
 
@@ -465,7 +520,9 @@ export function createAdGroupsBlock(
   if (problem) return problem
   if (counts.problems > 0)
     return `Fix or cancel ${approvalCountLine(counts.problems, "ad group")} to continue.`
-  return adGroupsNeedCheck(args, checked) ? "Check the changes before approving." : null
+  return adGroupsNeedCheck(args, checked)
+    ? "Click Check Changes so Google can check your edits, then approve."
+    : null
 }
 
 export function createAdGroupsPrompt(args: CreateAdGroupsArgs): string {
@@ -495,7 +552,7 @@ export function createAdGroupsDetails(args: CreateAdGroupsArgs | null): FanOutDe
   ]
 }
 
-function serializeRoas(percent: string): number | string | null {
+export function serializeRoas(percent: string): number | string | null {
   const trimmed = percent.trim()
   if (!trimmed) return null
   // Left as typed when invalid, so the card can show it and approval stays blocked.
@@ -546,5 +603,22 @@ export function blankAd(first: AdCopy | undefined): AdCopy {
     mobileFinalUrl: first?.mobileFinalUrl ?? "",
     path1: first?.path1 ?? "",
     path2: first?.path2 ?? "",
+  }
+}
+
+/** A new ad group for the operator to fill in, or null at Google's 20 per request. */
+export function blankAdGroup(adGroups: readonly DraftAdGroup[]): DraftAdGroup | null {
+  if (adGroups.length >= MAX_AD_GROUPS) return null
+  const names = new Set(adGroups.map((group) => foldName(group.name)))
+  let number = adGroups.length + 1
+  while (names.has(foldName(`Ad Group ${String(number)}`))) number += 1
+  return {
+    ads: [blankAd(adGroups.find((group) => group.ads[0])?.ads[0])],
+    cpcBid: "",
+    keywords: [],
+    name: `Ad Group ${String(number)}`,
+    negatives: [],
+    targetCpa: "",
+    targetRoas: "",
   }
 }

@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/create-ad-groups.tsx
 
 import { CreateAdGroupsApproval } from "@/integrations/google_ads/components/create-ad-groups-approval"
-import { CreateAdGroupsOutcome } from "@/integrations/google_ads/components/create-ad-groups-outcome"
+import { CampaignBuildOutcome } from "@/integrations/google_ads/components/campaign-build-outcome"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   createAdGroupsApproveLabel,
@@ -15,9 +15,9 @@ import {
   hasFailures,
   hasUnverified,
   nothingCreated,
-  parseCreateAdGroupsResult,
-  type CreateAdGroupsResult,
-} from "@/integrations/google_ads/lib/create-ad-groups-result"
+  parseCampaignBuildResult,
+  type CampaignBuildResult,
+} from "@/integrations/google_ads/lib/campaign-build-result"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -28,7 +28,7 @@ export const googleAdsCreateAdGroupsPresenter = createIntegrationWritePresenter(
   variants: {
     google_ads_create_ad_groups: defineIntegrationWriteVariant<
       CreateAdGroupsArgs,
-      CreateAdGroupsResult
+      CampaignBuildResult
     >(googleAdsProvider, {
       copy: { verb: "Create", object: "ad groups", effect: "created" },
       approval: {
@@ -52,22 +52,26 @@ export const googleAdsCreateAdGroupsPresenter = createIntegrationWritePresenter(
         ),
       },
       details: createAdGroupsDetails,
-      parseResult: parseCreateAdGroupsResult,
+      parseResult: parseCampaignBuildResult,
       settledPartial: (result) => hasFailures(result) && !nothingCreated(result),
       settledUnverified: hasUnverified,
       settledFailure: (result) =>
         nothingCreated(result) ? "Google Ads didn't create any of these ad groups." : null,
       renderFailure: (args, description, result) =>
         result ? (
-          <CreateAdGroupsOutcome result={result} />
+          <CampaignBuildOutcome exportName="google-ads-created-ad-groups" result={result} />
         ) : (
           <GoogleAdsFailureTargets
             targets={args?.adGroups.map((group) => group.name) ?? []}
             description={description}
           />
         ),
-      renderOutcome: (result) => <CreateAdGroupsOutcome result={result} />,
-      renderUnverifiedOutcome: (result) => <CreateAdGroupsOutcome result={result} />,
+      renderOutcome: (result) => (
+        <CampaignBuildOutcome exportName="google-ads-created-ad-groups" result={result} />
+      ),
+      renderUnverifiedOutcome: (result) => (
+        <CampaignBuildOutcome exportName="google-ads-created-ad-groups" result={result} />
+      ),
     }),
   },
 })

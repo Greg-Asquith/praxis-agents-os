@@ -706,7 +706,8 @@ export function targetingBlock(
   if (args === null) return null
   const counts = targetingCounts(campaignRows(args, checked))
   if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (needsCheck(args, checked)) return "Check the changes before approving."
+  if (needsCheck(args, checked))
+    return "Click Check Changes so Google can check your edits, then approve."
   if (counts.problems > 0)
     return `Fix or cancel ${approvalCountLine(counts.problems, "campaign")} to continue.`
   if (counts.apply === 0) return "These campaigns already have these settings."

@@ -4,7 +4,9 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic_ai import ModelRetry
 
@@ -27,6 +29,14 @@ class GoogleAdsAccountFacts:
             "currency": self.currency,
             "time_zone": self.time_zone,
         }
+
+    def today(self) -> date:
+        """Returns the date in the account time zone, or in UTC when Google's zone is unknown."""
+        try:
+            zone = ZoneInfo(self.time_zone)
+        except (ValueError, ZoneInfoNotFoundError):
+            zone = UTC
+        return datetime.now(zone).date()
 
 
 def account_facts(entry: ResolvedContextEntry) -> GoogleAdsAccountFacts:

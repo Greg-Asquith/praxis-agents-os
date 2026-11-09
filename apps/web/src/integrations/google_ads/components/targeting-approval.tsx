@@ -768,6 +768,7 @@ function AddPanel({
         <TabsContent className="pt-3" value="paste">
           <LocationPaste
             disabled={disabled}
+            fieldKey="changes"
             onFound={(choices) => {
               onAdd(field, choices)
             }}

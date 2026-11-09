@@ -7,6 +7,7 @@ import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/pre
 import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
 import { googleAdsCreateAdsPresenter } from "@/integrations/google_ads/presenters/create-ads"
 import { googleAdsCreateAdGroupsPresenter } from "@/integrations/google_ads/presenters/create-ad-groups"
+import { googleAdsCreateCampaignPresenter } from "@/integrations/google_ads/presenters/create-campaign"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
@@ -46,6 +47,7 @@ export default {
     googleAdsUpdateTargetingPresenter,
     googleAdsCreateAdsPresenter,
     googleAdsCreateAdGroupsPresenter,
+    googleAdsCreateCampaignPresenter,
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,

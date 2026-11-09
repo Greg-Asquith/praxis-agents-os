@@ -426,6 +426,10 @@ display in Title Case, in the picker and after a decision: upper-case provider
 values such as `LEARN_MORE` read as "Learn More", and common acronyms such as
 URL stay upper case.
 
+While approval is blocked, the approval card states why in its footer, beside
+**Decline** and the approve button, so the reason is next to the button it
+disables however long the card is.
+
 Approval fields sit on a six-column grid on wider screens. A field's `width`
 is `full`, `half`, or `third` of a row; `auto`, the default, makes long text,
 lists, records, and entity pickers full width and everything else half.

@@ -134,7 +134,9 @@ describe("Google Ads create ads arguments", () => {
     const edited = parsed({ ...value, ads: editedAds })
     expect(adsNeedCheck(edited, checked)).toBe(true)
     expect(canCheckAds(edited)).toBe(true)
-    expect(createAdsBlock(edited, checked)).toBe("Check the changes before approving.")
+    expect(createAdsBlock(edited, checked)).toBe(
+      "Click Check Changes so Google can check your edits, then approve."
+    )
 
     // Undoing the edit sends blank options as null, which Google has already answered for.
     const undone = parsed({ ...value, ads: serializeAds(checked.ads) })

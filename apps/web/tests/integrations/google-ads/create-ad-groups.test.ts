@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import { formatKeywordLine, parseKeywordLines } from "@/integrations/ads/lib/keyword-notation"
 import {
   adGroupRows,
+  blankAdGroup,
   canCheckAdGroups,
   createAdGroupsApproveLabel,
   createAdGroupsBlock,
@@ -197,15 +198,27 @@ describe("Google Ads create ad groups arguments", () => {
       campaign: { customer_id: CUSTOMER, campaign_id: "11", label: "Other" },
     })
     expect(canCheckAdGroups(parsed(moved))).toBe(true)
-    expect(createAdGroupsBlock(parsed(moved), checked)).toBe("Check the changes before approving.")
+    expect(createAdGroupsBlock(parsed(moved), checked)).toBe(
+      "Click Check Changes so Google can check your edits, then approve."
+    )
 
     const renamed = args([group({ name: "Narrow Fit" })])
     expect(createAdGroupsBlock(parsed(renamed), checked)).toBe(
-      "Check the changes before approving."
+      "Click Check Changes so Google can check your edits, then approve."
     )
 
     // The card already knows this campaign ignores click bids, so asking Google can wait.
     expect(canCheckAdGroups(parsed(args([group({ cpc_bid: "0.90" })])))).toBe(false)
+  })
+
+  it("adds an ad group with a free name and the first ad's links, up to 20", () => {
+    const groups = parsed(args([group({ name: "Ad Group 2" })])).adGroups
+    const [first] = groups
+    if (!first) throw new Error("expected an ad group")
+    const added = blankAdGroup(groups)
+    expect(added?.name).toBe("Ad Group 3")
+    expect(added?.ads[0]?.finalUrl).toBe("https://shop.test/trail")
+    expect(blankAdGroup(Array.from({ length: 20 }, () => first))).toBeNull()
   })
 
   it("sends a ROAS percentage as a ratio and survives a round trip", () => {

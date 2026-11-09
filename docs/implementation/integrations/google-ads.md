@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending.
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-responsive search ad creation, status changes, location and language targeting, device bid adjustments, campaign-budget creation,
+Search campaign, ad group, and responsive search ad creation, status changes, location and language targeting, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
@@ -206,6 +206,60 @@ result counts each kind of object and returns a reference for each ad group,
 for other tools to use. When Google refuses the request, the result gives each
 distinct reason once. Audit intents are grouped by ad group and keyed by build
 step.
+
+### Campaign creation
+
+`google_ads_create_campaign` builds a complete Search campaign in one approval: a budget,
+the campaign, its locations and negative keywords, and 1 to 20 ad groups using the ad group
+model above. It builds in the one Google Ads account with permission to make changes in
+Active Context, as Meta's create tools do, because integration tools never take an account
+argument. Approval pins that account: after approval, the trusted `_accounts` must still
+name it, or the tool stops with nothing sent. `status` is `PAUSED` unless the operator
+chooses Active, and covers the campaign, ad groups, and ads.
+
+The `campaign` argument holds the settings, as follows:
+
+| Field | What it does |
+| --- | --- |
+| `budget` | `{kind: "new", daily_amount}` creates a daily budget with standard delivery, named after the campaign. `{kind: "shared", budget}` uses an existing shared budget from the same account. |
+| `bidding` | One of `MANUAL_CPC`; `MAXIMIZE_CLICKS` with an optional `max_cpc`; `MAXIMIZE_CONVERSIONS` with an optional `target_cpa`; `MAXIMIZE_CONVERSION_VALUE` with an optional `target_roas` ratio; or `TARGET_IMPRESSION_SHARE` with `location`, `share_percent`, and the `max_cpc` Google requires. Maximise Clicks is Google's `targetSpend`. |
+| `search_partners`, `display_expansion` | Off by default. Google Search is always on. |
+| `locations`, `excluded_locations` | Location keys from `google_ads_search_targeting`, up to 1,000 of each. At least one location is required, so the ads can't show everywhere. |
+| `location_setting` | `PRESENCE` (the default) or `PRESENCE_OR_INTEREST`. |
+| `start_date`, `end_date` | Dates in the account time zone. A start on or before today, or none, starts the campaign when it's turned on, because Google refuses a start time in the past. The end is the end of that day. |
+| `negative_keywords` | Campaign negative keywords, up to 1,000. |
+| `contains_eu_political_advertising` | Google's required declaration; false unless the operator says the ads are political and aimed at the EU. |
+
+Languages aren't part of a Search campaign, because Google matches each ad's language.
+
+The tool refuses, before approval and again after it, a campaign with no location, an
+ad group with no keyword or no ad, and ad group bids the new bidding doesn't use. The bid
+rules are those in the table above, applied to the new campaign's own bidding
+(`new_campaign_facts` in `operations/search_campaigns.py`): click bids only under Manual
+CPC, and a target CPA or ROAS override only when the campaign sets that target. After
+approval it also refuses a start or end date before today in the account time zone, and a
+shared budget from another account. One request creates at most 2,500 objects, counting
+the budget, campaign, and criteria.
+
+`operations/search_campaigns.py` compiles the budget, campaign, and campaign criteria
+(`add_search_campaign`), and each ad group goes through `add_search_ad_group` with the
+campaign's temporary name. Each step records its `source` (`CampaignItem` or
+`AdGroupItem`), so a rejection names its item.
+
+While preparing the approval, the tool reads Google's names for every location key, then
+dry runs the build. Unknown locations, and ad groups with a problem the card already shows,
+are left out of the dry run. The trusted `_checks` display argument holds the date in the
+account time zone, Google's location names, the unknown keys, Google's rejections of the
+campaign's own items (by kind, with the location key or negative keyword), its rejections
+of ad group items (as in ad group creation), and whole-request problems. The tool declares
+`campaign` and `ad_groups` in `approval_review_fields`, so an edit to either needs a new
+check; `campaign` leads the review with the `google_ads_location` entity kind.
+
+After approval, one atomic request creates everything or nothing. The result counts each
+kind of object and returns references for the campaign (with its budget) and each ad
+group, for other tools to use. When Google refuses the request, the result gives each
+distinct reason once. Audit intents are grouped by the campaign and each ad group, keyed by
+build step, and record locations by key. Sitelinks and callouts on create are pending.
 
 ### Targeting
 
@@ -509,7 +563,8 @@ After an edit to the ads, `adsNeedCheck` makes approval wait for **Check Changes
 comparing the draft with the request the server last checked. `canCheckAds` holds
 the check back while the card can already see a problem, to save a call to Google.
 When Google couldn't be reached, the same control reads **Check Again**. A status
-change needs no check.
+change needs no check. On every create card the control is the last thing in the card,
+beside the approve button that waits on it.
 
 The card (`components/create-ads-approval.tsx`) shows `StatusChoice`
 (Paused or Active). With more than one ad it adds `ChangeSummary`
@@ -553,12 +608,42 @@ plain text for broad; parsing is in `integrations/ads/lib/keyword-notation.ts`).
 Review opens a table for match types, click bids, and final URLs. A pasted keyword
 keeps its bid and URL when its text and match type stay the same. Ads use
 `AdCopyEditor`, shared with Create Ads. Inputs inside a table cell save when the
-field loses focus, so typing doesn't redraw the table.
+field loses focus, so typing doesn't redraw the table. The table, the ad group editor,
+`AdGroupSummary`, and `ProblemList` live in `components/new-ad-groups.tsx`, shared with
+Create Search Campaign. **Add Ad Group** adds one named "Ad Group N", with a blank ad that
+starts from the first ad's links, up to 20 per request (`blankAdGroup`). The open ad group
+is one bordered box with its rows inside. The ad group rules take an `AdGroupContext` (bid rules, live names,
+Google's rejections, and whether an ad group must be able to serve), so both cards apply
+the same rules.
 
-The result (`components/create-ad-groups-outcome.tsx`) has one row per kind of
-object. When nothing was created, it says so with Google's reason, or lists the
+The result (`components/campaign-build-outcome.tsx`, parsed by
+`lib/campaign-build-result.ts` and shared with Create Search Campaign) has one row per kind
+of object. When nothing was created, it says so with Google's reason, or lists the
 reasons in a table when there are several. Google Ads links aren't shown, because
 no deep-link helper exists yet.
+
+### Create Search Campaign card
+
+`lib/create-campaign.ts` parses the request with `_accounts` and `_checks`, keeping every
+bidding strategy's fields in the draft so switching strategy and back keeps what was
+entered; only the chosen strategy's fields are sent. The campaign's problems are its name,
+budget, bidding fields, locations (none, too many, or unknown to Google), dates against the
+checked date, negative keyword limits, and Google's rejections while the rejected location
+or negative keyword is still there. A shared budget that belongs to one campaign is a
+problem too. Ad groups use the shared rules with the new campaign's bidding
+(`biddingRules`) and must have a keyword and an ad. Any problem blocks approval.
+`campaignNeedsCheck` and `canCheckCampaign` make approval wait for **Check Changes** after
+an edit to the campaign or ad groups, as on the other create cards.
+
+The card (`components/create-campaign-approval.tsx`) shows `ChangeBanner` with the daily
+budget and about a month's spend (30.4 days, Google's monthly charging limit), then
+`StatusChoice`, then `SettingRows`: Name, Budget (an amount, or a shared budget from the
+budget lookup), Bidding (`ChoiceCards` and the chosen strategy's fields), Locations (chips
+for shown and excluded places, search or paste with `LocationPaste`, and Who Counts), and
+More Settings (networks, dates, the EU political declaration, and campaign negatives with
+`KeywordPaste`). The ad groups follow with `AdGroupSummary` and `NewAdGroups`, as on Create
+Ad Groups, with the same Cancel These N and Restore. The approve button reads **Create
+Campaign**.
 
 ### Update Targeting card
 

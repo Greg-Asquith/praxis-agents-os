@@ -129,16 +129,6 @@ export function CreateAdsApproval({
         pausedNote="Paused. Will not appear or spend until activated."
         value={args.status === "ENABLED" ? "active" : "paused"}
       />
-      {adsNeedCheck(args, checked) ? (
-        <CheckChanges
-          canCheck={canCheckAds(args)}
-          disabled={disabled}
-          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
-          note="Google hasn't checked these changes yet."
-          onCheck={controls.onReview}
-          submitting={controls.submitting}
-        />
-      ) : null}
       {wholeRequest.length > 0 ? (
         <ul className="text-destructive grid gap-0.5 text-sm" role="alert">
           {wholeRequest.map((problem) => (
@@ -228,6 +218,17 @@ export function CreateAdsApproval({
           }}
           row={openRow}
           position={many ? { total: rows.length, onOpen: setOpen } : null}
+        />
+      ) : null}
+      {/* At the end, beside the approve button that waits on it. */}
+      {adsNeedCheck(args, checked) ? (
+        <CheckChanges
+          canCheck={canCheckAds(args)}
+          disabled={disabled}
+          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
+          note="Google hasn't checked these changes yet."
+          onCheck={controls.onReview}
+          submitting={controls.submitting}
         />
       ) : null}
     </div>

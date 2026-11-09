@@ -191,7 +191,7 @@ export function statusListEdit(
 export function statusProblem(args: StatusChangeArgs | null): string | null {
   if (args === null) return null
   if (args.targets.length === 0) return "Choose at least one object, or decline this request."
-  return args.needsReview ? "Check the changes before approving." : null
+  return args.needsReview ? "Click Check Changes so Meta can check your edits, then approve." : null
 }
 
 /** True when the object can't deliver after the change, or the check couldn't tell. */

@@ -118,6 +118,7 @@ export function ToolApprovalDecisionCard({
             hasInvalidRecordFields ||
             effectiveValidationError !== null
           }
+          blockedReason={effectiveValidationError}
           controls={controls}
           disabled={disabled}
           isDeclining={isDeclining}
@@ -178,11 +179,6 @@ export function ToolApprovalDecisionCard({
             onEntityValidityChange={handleEntityValidityChange}
             toolName={toolName}
           />
-          {effectiveValidationError ? (
-            <p aria-live="polite" className="text-destructive text-xs">
-              {effectiveValidationError}
-            </p>
-          ) : null}
         </>
       )}
       {controls.decision.decision === "denied" && controls.decision.message ? (
@@ -302,6 +298,7 @@ export function ToolApprovalLoadingCard() {
 function ApprovalFooter({
   approveLabel,
   approveDisabled,
+  blockedReason,
   controls,
   disabled,
   isDeclining,
@@ -313,6 +310,8 @@ function ApprovalFooter({
 }: {
   approveLabel: string
   approveDisabled: boolean
+  // Why approval is waiting, shown beside the button so it can't be missed on a long card.
+  blockedReason: string | null
   controls: ToolApprovalDecisionControls
   disabled: boolean
   isDeclining: boolean
@@ -340,9 +339,14 @@ function ApprovalFooter({
       <div
         aria-busy={controls.submitting || undefined}
         aria-label={`Decision for ${label}`}
-        className="flex min-w-0 items-center justify-end gap-1"
+        className="flex min-w-0 flex-wrap items-center justify-end gap-1"
         role="group"
       >
+        {decision === "pending" && !isDeclining && !controls.error && blockedReason ? (
+          <p aria-live="polite" className="text-destructive mr-auto min-w-0 text-xs wrap-anywhere">
+            {blockedReason}
+          </p>
+        ) : null}
         {controls.error ? (
           <>
             <Button disabled={disabled} onClick={onDecline} size="sm" type="button" variant="ghost">

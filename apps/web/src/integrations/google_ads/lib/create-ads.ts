@@ -321,7 +321,9 @@ export function createAdsBlock(args: CreateAdsArgs | null, checked: CreateAdsArg
   if (problem) return problem
   if (counts.problems > 0)
     return `Fix or cancel ${approvalCountLine(counts.problems, "ad")} to continue.`
-  return adsNeedCheck(args, checked) ? "Check the changes before approving." : null
+  return adsNeedCheck(args, checked)
+    ? "Click Check Changes so Google can check your edits, then approve."
+    : null
 }
 
 export function createAdsPrompt(args: CreateAdsArgs): string {

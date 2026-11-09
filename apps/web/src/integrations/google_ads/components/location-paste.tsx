@@ -15,10 +15,13 @@ type Found = { found: number; lines: number; missing: string[]; notTried: number
 /** Finds pasted places, one per line, in Google's list; lines Google doesn't know are counted. */
 export function LocationPaste({
   disabled,
+  fieldKey,
   onFound,
   toolName,
 }: {
   disabled: boolean
+  // The tool field whose lookup finds the places.
+  fieldKey: string
   onFound: (choices: EntityChoice[]) => void
   toolName: string
 }) {
@@ -42,7 +45,7 @@ export function LocationPaste({
           conversationId: conversationId ?? "",
           dependentArgs: {},
           entityKind: "google_ads_location",
-          fieldKey: "changes",
+          fieldKey,
           pageSize: 50,
           search: batch.join("\n"),
           toolName,
