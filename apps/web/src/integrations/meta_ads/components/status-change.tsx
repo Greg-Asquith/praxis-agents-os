@@ -7,7 +7,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
+import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
 import {
   MetaAdsLink,

@@ -125,7 +125,11 @@ def operation_index(location: Any) -> int | None:
     if not isinstance(location, dict):
         return None
     for element in location.get("fieldPathElements", []):
-        if isinstance(element, dict) and element.get("fieldName") == "operations":
+        # Service mutates name the list "operations"; googleAds:mutate names it "mutate_operations".
+        if isinstance(element, dict) and element.get("fieldName") in {
+            "operations",
+            "mutate_operations",
+        }:
             try:
                 return int(element.get("index"))
             except (TypeError, ValueError):

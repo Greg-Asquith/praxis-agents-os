@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/ad-set-placements.tsx
 
 import { Checkbox } from "@/components/ui/checkbox"
-import { ChoiceCards, SelectField } from "@/integrations/meta_ads/components/campaign-controls"
+import { ChoiceCards, SelectField } from "@/integrations/ads/components/controls"
 import {
   DEFAULT_POSITIONS,
   PLACEMENT_GROUPS,

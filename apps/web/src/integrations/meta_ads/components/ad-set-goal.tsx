@@ -1,9 +1,9 @@
 // apps/web/src/integrations/meta_ads/components/ad-set-goal.tsx
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { EntityPicker } from "@/integrations/meta_ads/components/ad-set-entity"
-import { SelectField, SwitchField } from "@/integrations/meta_ads/components/campaign-controls"
-import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
+import { EntityPicker } from "@/integrations/ads/components/entity-picker"
+import { SelectField, SwitchField } from "@/integrations/ads/components/controls"
+import { MoneyField } from "@/integrations/ads/components/money-field"
 import { BID_OPTIONS, type BidStrategy } from "@/integrations/meta_ads/lib/create-campaign"
 import {
   bidAmountTitle,
@@ -69,6 +69,7 @@ export function AdSetGoal({
           onChoose={(value) => {
             onEdit({ [asset]: value })
           }}
+          toolName="meta_ads_create_ad_set"
         />
       ) : null}
       {asset === "pixel" ? (

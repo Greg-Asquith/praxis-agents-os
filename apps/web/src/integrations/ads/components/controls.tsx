@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/campaign-controls.tsx
+// apps/web/src/integrations/ads/components/controls.tsx
 
 import { XIcon } from "lucide-react"
 import { useId, type ReactNode } from "react"

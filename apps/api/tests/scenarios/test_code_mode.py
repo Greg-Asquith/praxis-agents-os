@@ -1335,7 +1335,11 @@ async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_
         connection_label="Google Ads",
         connection_status="active",
         write_allowed=True,
-        permissions_metadata={"login_customer_id": "111", "currency_code": "GBP"},
+        permissions_metadata={
+            "login_customer_id": "111",
+            "currency_code": "GBP",
+            "time_zone": "Europe/London",
+        },
     )
     active = ResolvedActiveContext(entries=(selected,))
     monkeypatch.setattr(

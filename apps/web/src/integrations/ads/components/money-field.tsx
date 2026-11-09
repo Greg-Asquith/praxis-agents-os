@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/campaign-money-field.tsx
+// apps/web/src/integrations/ads/components/money-field.tsx
 
 import { useId } from "react"
 

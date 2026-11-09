@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/change-banner.tsx
+// apps/web/src/integrations/ads/components/change-banner.tsx
 
 import { TriangleAlertIcon } from "lucide-react"
 import type { ReactNode } from "react"

@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/ad-set-entity.tsx
+// apps/web/src/integrations/ads/components/entity-picker.tsx
 
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { use } from "react"
@@ -16,13 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { FormField } from "@/integrations/meta_ads/components/campaign-controls"
+import { FormField } from "@/integrations/ads/components/controls"
 import type { EntityReferenceValue } from "@/features/tools/types"
 import { getErrorMessage } from "@/lib/api/errors"
 
 const CURRENT = "current"
 
-/** Picks the Page, pixel, or app a goal needs from what the ad account can use.
+/** Picks one of the account's objects a setting needs, such as a Page, pixel, or conversion.
  *
  * Inside a structured field, `fieldKey` is that field and `entityKind` names the kind. */
 export function EntityPicker({
@@ -32,7 +32,7 @@ export function EntityPicker({
   fieldKey,
   label,
   onChoose,
-  toolName = "meta_ads_create_ad_set",
+  toolName,
 }: {
   currentLabel: string | null
   disabled: boolean
@@ -40,7 +40,7 @@ export function EntityPicker({
   fieldKey: string
   label: string
   onChoose: (value: EntityReferenceValue) => void
-  toolName?: string
+  toolName: string
 }) {
   const conversationId = use(ToolConversationContext)
   const results = useInfiniteQuery({

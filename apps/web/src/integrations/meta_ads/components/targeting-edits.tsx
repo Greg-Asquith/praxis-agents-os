@@ -13,15 +13,15 @@ import {
   SelectField,
   SwitchField,
   TextField,
-} from "@/integrations/meta_ads/components/campaign-controls"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+} from "@/integrations/ads/components/controls"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
 import {
   AGE_OPTIONS,

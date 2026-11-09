@@ -4,7 +4,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
 import { scheduleSummary } from "@/integrations/meta_ads/lib/create-summary"
 import { OBJECTIVE_KEYS, OBJECTIVES, type Objective } from "@/integrations/meta_ads/lib/objectives"
-import type { CreateStatus } from "@/integrations/meta_ads/components/status-choice"
+import type { CreateStatus } from "@/integrations/ads/components/status-choice"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray, stringValue } from "@/lib/guards"
 
 const OBJECTIVE_SET: ReadonlySet<Objective> = new Set(OBJECTIVE_KEYS)

@@ -11,14 +11,10 @@ import {
   AdSetLocations,
   AdSetPeople,
 } from "@/integrations/meta_ads/components/ad-set-targeting"
-import { SelectField, TextField } from "@/integrations/meta_ads/components/campaign-controls"
-import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
-import {
-  SettingLine,
-  SettingRow,
-  SettingRows,
-} from "@/integrations/meta_ads/components/setting-rows"
-import { StatusChoice } from "@/integrations/meta_ads/components/status-choice"
+import { SelectField, TextField } from "@/integrations/ads/components/controls"
+import { MoneyField } from "@/integrations/ads/components/money-field"
+import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
+import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
 import {
   adSetStatusNote,

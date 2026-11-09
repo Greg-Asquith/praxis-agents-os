@@ -3,19 +3,15 @@
 import { CircleAlertIcon } from "lucide-react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
-import {
-  SelectField,
-  SwitchField,
-  TextField,
-} from "@/integrations/meta_ads/components/campaign-controls"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+import { MoneyField } from "@/integrations/ads/components/money-field"
+import { SelectField, SwitchField, TextField } from "@/integrations/ads/components/controls"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
 import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
 import {

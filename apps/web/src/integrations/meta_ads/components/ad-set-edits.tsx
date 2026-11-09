@@ -4,14 +4,14 @@ import { TriangleAlertIcon } from "lucide-react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { AdSetEditField } from "@/integrations/meta_ads/components/ad-set-edit-field"
-import { SwitchField } from "@/integrations/meta_ads/components/campaign-controls"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+import { SwitchField } from "@/integrations/ads/components/controls"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import {
   adSetEditRows,
   adSetLabels,

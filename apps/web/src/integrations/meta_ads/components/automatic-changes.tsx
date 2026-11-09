@@ -7,7 +7,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { SettingRow } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow } from "@/integrations/ads/components/setting-rows"
 import {
   CHANGE_GROUP_TITLES,
   CHANGE_GROUPS,

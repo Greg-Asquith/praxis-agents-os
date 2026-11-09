@@ -4,7 +4,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdEditor } from "@/integrations/meta_ads/components/ad-editor"
 import { CreateAdSetApproval } from "@/integrations/meta_ads/components/ad-set-summary"
-import { SettingRow } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow } from "@/integrations/ads/components/setting-rows"
 import { AdsList } from "@/integrations/meta_ads/components/ads-list"
 import {
   adSetBlockSummary,

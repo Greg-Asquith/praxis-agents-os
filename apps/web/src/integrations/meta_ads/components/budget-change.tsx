@@ -6,7 +6,7 @@ import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,

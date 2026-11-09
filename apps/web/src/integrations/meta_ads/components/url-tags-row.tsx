@@ -2,7 +2,7 @@
 
 import { Checkbox } from "@/components/ui/checkbox"
 import { LabelledInput } from "@/integrations/meta_ads/components/editor-fields"
-import { SettingRow } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow } from "@/integrations/ads/components/setting-rows"
 import type { CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
 import { checksFor, hasError, type AdRow } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {

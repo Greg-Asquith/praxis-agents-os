@@ -2,14 +2,14 @@
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { AdCreativeEdit } from "@/integrations/meta_ads/components/ad-creative-edit"
-import { SwitchField, TextField } from "@/integrations/meta_ads/components/campaign-controls"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+import { SwitchField, TextField } from "@/integrations/ads/components/controls"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import {
   adEditRows,
   adEditSummary,

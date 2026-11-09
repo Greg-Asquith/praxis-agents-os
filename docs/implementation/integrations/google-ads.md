@@ -48,6 +48,41 @@ prevents applied outcomes for its siblings but never hides that contradiction.
 Unverified outcomes are
 recorded, never raised, so the audit record keeps every operation's evidence.
 
+### Edit and build seams
+
+Task-shaped write tools send every change through one `googleAds:mutate`
+request per account (`operations/mutate.py`), rather than one service
+endpoint per resource type. Two seams build on it:
+
+- **Edit seam** (`operations/edits.py`). A tool describes each change as a
+  `FieldChange` (new values for some settings of one object, by JSON field
+  path) or a `CriterionChange` (add or remove one criterion, because a
+  criterion's value can't be updated). The tool supplies a read function
+  that returns each object's live values. `prepare_edits` fills the
+  **Before** values, then dry runs the real changes with `validateOnly`
+  and partial failure. A missing object or Google's rejection comes back as
+  the edit's `refused` reason, for the approval card to show as a problem.
+  `apply_edits` reads again and refuses any object whose live values differ
+  from **Before** as `CHANGED_SINCE_APPROVAL`. It skips edits already at
+  their values as `already_set` without sending them, sends the rest in one
+  partial-failure request, and reads each object back. The read-back settles
+  an unclear reply and fails a change Google accepted but didn't keep. If
+  the read-back fails, Google's reply stands and **After** is empty.
+- **Build seam** (`operations/build.py`). `CampaignBuild` collects the
+  objects to create in one account. Budgets, assets, campaigns, ad groups,
+  and asset groups get temporary resource names (`-1`, `-2`, and so on).
+  A step that refers to a temporary name the build hasn't made is
+  rejected. Steps are sent parents first: budgets, assets, campaigns,
+  campaign criteria, ad groups, keywords, ads, asset groups, then links.
+  `dry_run_build` reports each step Google rejects. `send_build` sends one
+  atomic request (`partialFailure: false`), so a rejection creates nothing,
+  and maps each temporary name to its real resource name.
+
+Both seams return the shared mutation ledger, so `terminal_operation_detail`
+records them like any other write. A request Google never received or
+rejected outright is failed; any other request error, or a cancellation,
+leaves the sent changes unverified.
+
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
@@ -184,6 +219,16 @@ Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`
 It reconciles operation-specific exact rows, per-target counts, aggregate
 counts, and truncated samples while retaining historical count-only results.
 Account metadata requires a nonblank label and a valid currency code.
+
+New Google cards build from the shared ads card kit in
+`integrations/ads/components/`, which Meta also uses: `SettingRows`,
+`SettingRow`, `SettingLine`, `StatusChoice`, `ChangeBanner`, `MoneyField`,
+`EntityPicker`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
+`Chip`, and the labelled fields). The kit depends on no provider package,
+and dependency rules enforce that. The older Google kit
+(`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
+`GoogleAdsOutcomeTable`) stays only for the tools plans 307, 308, and 312
+replace.
 
 ### Outcome evidence
 

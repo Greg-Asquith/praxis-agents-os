@@ -4,7 +4,7 @@ import { PlusIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ChoiceCards, SelectField } from "@/integrations/meta_ads/components/campaign-controls"
+import { ChoiceCards, SelectField } from "@/integrations/ads/components/controls"
 import {
   DAY_LABELS,
   formatAdSchedule,

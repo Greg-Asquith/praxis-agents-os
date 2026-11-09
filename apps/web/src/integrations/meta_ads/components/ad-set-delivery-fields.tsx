@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/ad-set-delivery-fields.tsx
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { ChoiceCards, SelectField } from "@/integrations/meta_ads/components/campaign-controls"
+import { ChoiceCards, SelectField } from "@/integrations/ads/components/controls"
 import {
   fromText,
   parseAttribution,

@@ -96,9 +96,17 @@ module.exports = {
     {
       name: "integration-providers-do-not-import-siblings",
       severity: "error",
-      comment: "A provider UI package must not depend on another provider package.",
+      comment:
+        "A provider UI package must not depend on another provider package. Ad providers share the ads card kit, which depends on no provider.",
       from: { path: "^src/integrations/([^/]+)/" },
-      to: { path: "^src/integrations/(?!$1(?:/|$))[^/]+/" },
+      to: { path: "^src/integrations/(?!$1(?:/|$)|ads/)[^/]+/" },
+    },
+    {
+      name: "ads-kit-stays-provider-neutral",
+      severity: "error",
+      comment: "The shared ads card kit must not depend on any provider package.",
+      from: { path: "^src/integrations/ads/" },
+      to: { path: "^src/integrations/(?!ads/)[^/]+/" },
     },
     {
       name: "integration-providers-do-not-import-registry",

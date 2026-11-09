@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/components/campaign-categories.tsx
 
 import { Checkbox } from "@/components/ui/checkbox"
-import { Chip, SelectField } from "@/integrations/meta_ads/components/campaign-controls"
+import { Chip, SelectField } from "@/integrations/ads/components/controls"
 import { COUNTRY_OPTIONS } from "@/integrations/meta_ads/lib/campaign-countries"
 import {
   CATEGORY_OPTIONS,

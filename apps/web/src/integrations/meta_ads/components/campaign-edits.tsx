@@ -6,19 +6,15 @@ import { useId, type ReactNode } from "react"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { ChoiceCards, SwitchField } from "@/integrations/meta_ads/components/campaign-controls"
-import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
-import { ChangeBanner } from "@/integrations/meta_ads/components/change-banner"
+import { ChoiceCards, SwitchField } from "@/integrations/ads/components/controls"
+import { MoneyField } from "@/integrations/ads/components/money-field"
+import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import {
   MetaAdsLink,
   MetaAdsOutcomeTable,
   type MetaAdsOutcomeRow,
 } from "@/integrations/meta_ads/components/outcome-table"
-import {
-  SettingLine,
-  SettingRow,
-  SettingRows,
-} from "@/integrations/meta_ads/components/setting-rows"
+import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
 import { budgetMoney } from "@/integrations/meta_ads/lib/budget-change"
 import {

@@ -7,9 +7,9 @@ import {
   AttributionField,
   FrequencyField,
 } from "@/integrations/meta_ads/components/ad-set-delivery-fields"
-import { EntityPicker } from "@/integrations/meta_ads/components/ad-set-entity"
-import { SelectField, TextField } from "@/integrations/meta_ads/components/campaign-controls"
-import { MoneyField } from "@/integrations/meta_ads/components/campaign-money-field"
+import { EntityPicker } from "@/integrations/ads/components/entity-picker"
+import { SelectField, TextField } from "@/integrations/ads/components/controls"
+import { MoneyField } from "@/integrations/ads/components/money-field"
 import { fromText, parseAdSchedule } from "@/integrations/meta_ads/lib/ad-set-delivery"
 import {
   ASSET_SETTINGS,

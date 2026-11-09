@@ -13,8 +13,8 @@ import {
   AdOutcomeLinks,
   MetaAdsOutcomeTable,
 } from "@/integrations/meta_ads/components/outcome-table"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
-import { StatusChoice } from "@/integrations/meta_ads/components/status-choice"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
+import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import {
   copyNextStep,
   copyRows,

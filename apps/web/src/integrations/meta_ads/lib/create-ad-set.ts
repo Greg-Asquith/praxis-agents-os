@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/lib/create-ad-set.ts
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import type { CreateStatus } from "@/integrations/meta_ads/components/status-choice"
+import type { CreateStatus } from "@/integrations/ads/components/status-choice"
 import { budgetMoney, isBudgetAmount } from "@/integrations/meta_ads/lib/budget-change"
 import {
   AMOUNT_FORMAT,

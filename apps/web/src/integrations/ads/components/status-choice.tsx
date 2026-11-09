@@ -1,9 +1,9 @@
-// apps/web/src/integrations/meta_ads/components/status-choice.tsx
+// apps/web/src/integrations/ads/components/status-choice.tsx
 
 import { CirclePauseIcon, CirclePlayIcon } from "lucide-react"
 import { useId } from "react"
 
-import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
+import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { cn } from "@/lib/utils"
 
 export type CreateStatus = "paused" | "active"

@@ -1,4 +1,4 @@
-// apps/web/src/integrations/meta_ads/components/setting-rows.tsx
+// apps/web/src/integrations/ads/components/setting-rows.tsx
 
 import { ChevronDownIcon } from "lucide-react"
 import { createContext, use, useId, useMemo, useState, type ReactNode } from "react"

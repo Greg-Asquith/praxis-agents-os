@@ -12,11 +12,11 @@ import { FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { editApprovalFields } from "@/integrations/approval-edits"
 import type { ToolActivity } from "@/integrations/contract"
-import { SegmentedChoice } from "@/integrations/meta_ads/components/campaign-controls"
+import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { MetaAdsLogo } from "@/integrations/meta_ads/components/logo"
 import { InsightsFilters } from "@/integrations/meta_ads/components/insights-filters"
 import { ReportChoice, ReportMultiChoice } from "@/integrations/meta_ads/components/report-choice"
-import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import {
   insightsApprovalError,
   insightsDatePresets,
