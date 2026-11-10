@@ -19,6 +19,29 @@ describe("document tool results", () => {
 
     expect(result).toBeNull()
   })
+
+  it("previews nested JSON rows by path, and leaves out a preview with nothing readable", () => {
+    const file = { file_id: "file-1", name: "report.json", revision_id: "revision-1" }
+    const nested = documentToolResult("read_table", {
+      ...file,
+      columns: ["campaign", "metrics"],
+      rows: [{ campaign: { id: "10", name: "Trail" }, metrics: { clicks: 12 } }],
+      total_rows: 2293,
+      next_offset: 1,
+    })
+    expect(nested).toMatchObject({
+      previewColumns: ["campaign.id", "campaign.name", "metrics.clicks"],
+      preview: [["10", "Trail", "12"]],
+    })
+
+    const empty = documentToolResult("read_table", {
+      ...file,
+      columns: ["campaign"],
+      rows: [{ campaign: null }],
+      total_rows: 1,
+    })
+    expect(empty).toMatchObject({ preview: [] })
+  })
 })
 
 describe("document operation summaries", () => {

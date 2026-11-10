@@ -13,6 +13,7 @@ const PROGRESS = {
   Forward: "Forwarding",
   Link: "Linking",
   Move: "Moving",
+  Optimise: "Optimising",
   Remove: "Removing",
   Save: "Saving",
   Send: "Sending",

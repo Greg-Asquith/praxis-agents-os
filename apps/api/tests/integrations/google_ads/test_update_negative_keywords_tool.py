@@ -2,7 +2,6 @@
 
 """Negative keywords on campaigns, ad groups, and lists: checks before approval, then one send."""
 
-import re
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
@@ -17,140 +16,12 @@ from integrations.google_ads.tools.schemas.negative_keywords import (
     GoogleAdsUpdateNegativeKeywordsRequest,
 )
 from services.integrations.context.domain import ResolvedActiveContext
-from tests.integrations.google_ads.support import _writable_google_ads_entry
+from tests.integrations.google_ads.support import (
+    KeywordsAccount as _Account,
+    _writable_google_ads_entry,
+)
 
 _C = "customers/111"
-
-
-class _Account:
-    """One Google Ads account: answers negative keyword reads and applies mutate requests."""
-
-    def __init__(self) -> None:
-        self.campaigns = {"10": "Trail", "20": "Road", "30": "Kids"}
-        self.ad_groups = {"40": ("Trail Shoes", "10")}
-        self.lists = {"50": "Brand Protection"}
-        # (collection, owner ID, text, match type) by resource name.
-        self.negatives: dict[str, tuple[str, str, str, str]] = {
-            f"{_C}/adGroupCriteria/40~7": ("adGroups", "40", "cheap", "BROAD"),
-        }
-        self.uses: set[tuple[str, str]] = set()
-        self.bid_keywords = [("10", "40", "Trail Shoes", "trail running shoes")]
-        self.mutates: list[dict[str, Any]] = []
-        self.next_id = 900
-
-    async def post(self, path: str, **kwargs: Any) -> Any:
-        body = kwargs["json"]
-        if path.endswith("googleAds:searchStream"):
-            return [{"results": self._search(body["query"])}]
-        assert path == f"{_C}/googleAds:mutate"
-        self.mutates.append(body)
-        return self._mutate(body)
-
-    def _search(self, query: str) -> list[dict[str, Any]]:
-        match = re.search(r"IN \(([^)]*)\)", query)
-        ids = set(re.findall(r"\d+", match.group(1))) if match else set()
-        resource = re.search(r"FROM (\w+)", query).group(1)
-        if resource == "campaign":
-            return [
-                {"campaign": {"id": key, "name": name, "status": "ENABLED"}}
-                for key, name in self.campaigns.items()
-                if key in ids
-            ]
-        if resource == "ad_group":
-            return [
-                {
-                    "adGroup": {"id": key, "name": name, "status": "ENABLED"},
-                    "campaign": {"id": campaign},
-                }
-                for key, (name, campaign) in self.ad_groups.items()
-                if key in ids
-            ]
-        if resource == "shared_set":
-            return [
-                {"sharedSet": {"id": key, "name": name, "status": "ENABLED"}}
-                for key, name in self.lists.items()
-            ]
-        if resource == "ad_group_criterion" and "negative = FALSE" in query:
-            field = "campaign" if "campaign.id IN" in query else "ad_group"
-            return [
-                {
-                    "campaign": {"id": campaign},
-                    "adGroup": {"id": ad_group, "name": name},
-                    "adGroupCriterion": {"keyword": {"text": text}},
-                }
-                for campaign, ad_group, name, text in self.bid_keywords
-                if (campaign if field == "campaign" else ad_group) in ids
-            ]
-        if resource == "campaign_shared_set":
-            return [
-                {
-                    "campaignSharedSet": {
-                        "resourceName": f"{_C}/campaignSharedSets/{campaign}~{shared_set}",
-                        "campaign": f"{_C}/campaigns/{campaign}",
-                        "sharedSet": f"{_C}/sharedSets/{shared_set}",
-                    }
-                }
-                for campaign, shared_set in self.uses
-                if shared_set in ids
-            ]
-        collection, row_key, owner_key = {
-            "campaign_criterion": ("campaigns", "campaignCriterion", "campaign"),
-            "ad_group_criterion": ("adGroups", "adGroupCriterion", "adGroup"),
-            "shared_criterion": ("sharedSets", "sharedCriterion", "sharedSet"),
-        }[resource]
-        return [
-            {
-                owner_key: {"id": owner},
-                row_key: {
-                    "resourceName": name,
-                    "keyword": {"text": text, "matchType": match_type},
-                },
-            }
-            for name, (kind, owner, text, match_type) in self.negatives.items()
-            if kind == collection and owner in ids
-        ]
-
-    def _mutate(self, body: dict[str, Any]) -> dict[str, Any]:
-        created: dict[str, str] = {}
-        responses = []
-        for operation in body["mutateOperations"]:
-            ((key, value),) = operation.items()
-            name = self._apply(key.removesuffix("Operation"), value, created, body["validateOnly"])
-            responses.append({key.replace("Operation", "Result"): {"resourceName": name}})
-        return {"mutateOperationResponses": responses}
-
-    def _apply(self, resource: str, value: dict, created: dict, dry: bool) -> str:
-        if "remove" in value:
-            if not dry:
-                self.negatives.pop(value["remove"], None)
-            return value["remove"]
-        create = {
-            key: created.get(item, item) if isinstance(item, str) else item
-            for key, item in value["create"].items()
-        }
-        self.next_id += 1
-        if resource == "sharedSet":
-            name = f"{_C}/sharedSets/{self.next_id}"
-            created[create["resourceName"]] = name
-            if not dry:
-                self.lists[str(self.next_id)] = create["name"]
-            return name
-        if resource == "campaignSharedSet":
-            campaign, shared_set = (create[k].rsplit("/", 1)[1] for k in ("campaign", "sharedSet"))
-            if not dry:
-                self.uses.add((campaign, shared_set))
-            return f"{_C}/campaignSharedSets/{campaign}~{shared_set}"
-        owner_field, collection, criteria = {
-            "campaignCriterion": ("campaign", "campaigns", "campaignCriteria"),
-            "adGroupCriterion": ("adGroup", "adGroups", "adGroupCriteria"),
-            "sharedCriterion": ("sharedSet", "sharedSets", "sharedCriteria"),
-        }[resource]
-        owner = create[owner_field].rsplit("/", 1)[1]
-        name = f"{_C}/{criteria}/{owner}~{self.next_id}"
-        if not dry:
-            keyword = create["keyword"]
-            self.negatives[name] = (collection, owner, keyword["text"], keyword["matchType"])
-        return name
 
 
 def _campaign(campaign_id: str, label: str = "Campaign") -> dict[str, Any]:

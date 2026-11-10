@@ -3,7 +3,8 @@
 """Reads negative keywords on campaigns, ad groups, and lists, and the keywords they could block."""
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -80,6 +81,26 @@ def blocks(negative: str, match_type: str, keyword: str) -> bool:
         size = len(blocked)
         return any(words[index : index + size] == blocked for index in range(len(words) - size + 1))
     return set(blocked) <= set(words)
+
+
+class BlockedKeywords:
+    """Finds the keywords bid on that a negative would block, indexed by word for speed."""
+
+    def __init__(self, keywords: Sequence[BidKeyword]) -> None:
+        self._by_word: dict[str, list[BidKeyword]] = defaultdict(list)
+        for keyword in keywords:
+            for word in set(keyword.text.casefold().split()):
+                self._by_word[word].append(keyword)
+
+    def first(
+        self, text: str, match_type: str, *, campaigns: Collection[str], ad_group: str | None
+    ) -> BidKeyword | None:
+        """Returns the first keyword in the campaigns, or the ad group, that the negative blocks."""
+        for keyword in self._by_word.get(text.casefold().split()[0], ()):
+            in_scope = keyword.ad_group == ad_group if ad_group else keyword.campaign in campaigns
+            if in_scope and blocks(text, match_type, keyword.text):
+                return keyword
+        return None
 
 
 async def read_negative_keywords(

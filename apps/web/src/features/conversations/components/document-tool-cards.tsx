@@ -100,7 +100,7 @@ export function TableCard({
           <table className="w-full text-xs">
             <thead className="bg-muted/40">
               <tr>
-                {result.columns.slice(0, result.preview[0]?.length).map((column, index) => (
+                {result.previewColumns.map((column, index) => (
                   <th
                     className="px-2 py-1 text-left font-medium"
                     key={`${String(index)}:${column}`}

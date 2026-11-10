@@ -4,7 +4,7 @@
 
 import asyncio
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Literal
 
@@ -48,9 +48,8 @@ from ..operations.mutation_outcomes import (
     joined_ledger,
 )
 from ..operations.negative_keyword_criteria import (
-    BidKeyword,
+    BlockedKeywords,
     LiveNegatives,
-    blocks,
     list_use_key,
     negative_key,
     read_negative_keywords,
@@ -231,31 +230,12 @@ def _refused(planned: Iterable[_Planned], reason: str | None) -> list[_Planned]:
     return [replace(item, refused=item.refused or reason) if reason else item for item in planned]
 
 
-class _Blocked:
-    """Finds the keywords bid on that a negative would block, indexed by word for speed."""
-
-    def __init__(self, keywords: Sequence[BidKeyword]) -> None:
-        self._by_word: dict[str, list[BidKeyword]] = defaultdict(list)
-        for keyword in keywords:
-            for word in set(keyword.text.casefold().split()):
-                self._by_word[word].append(keyword)
-
-    def first(
-        self, text: str, match_type: str, *, campaigns: Collection[str], ad_group: str | None
-    ) -> BidKeyword | None:
-        for keyword in self._by_word.get(text.casefold().split()[0], ()):
-            in_scope = keyword.ad_group == ad_group if ad_group else keyword.campaign in campaigns
-            if in_scope and blocks(text, match_type, keyword.text):
-                return keyword
-        return None
-
-
 @dataclass(frozen=True, slots=True)
 class _Live:
     """One account's live state, and what follows from it for each target."""
 
     negatives: LiveNegatives
-    blocked: _Blocked
+    blocked: BlockedKeywords
 
     def target_problem(self, entry: GoogleAdsNegativeKeywordChange) -> str | None:
         if isinstance(entry, GoogleAdsNewListNegatives):
@@ -752,7 +732,7 @@ async def _account_checks(
             deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
         )
         negatives = await _read_live(client, entry, changes, check_keywords=True)
-        live = _Live(negatives, _Blocked(negatives.bid_keywords))
+        live = _Live(negatives, BlockedKeywords(negatives.bid_keywords))
         plans = {change.target_key: live.plan(change) for change in changes}
         google = await _dry_run(client, entry, plans)
     except (IntegrationError, LookupError):
@@ -874,7 +854,8 @@ DEFINITION = RuntimeToolDefinition(
         "its own entry. A negative already in place is reported already_set, and a removal "
         "that isn't there is reported not_found, without a change. A negative that would "
         "block a keyword the account bids on in the same campaign or ad group is refused. "
-        "Find search terms to exclude with google_ads_run_report on search_term_view."
+        "To block or add terms from a search terms report, use "
+        "google_ads_optimise_search_terms instead."
     ),
     provider="google_ads",
     label="Update Google Ads Negative Keywords",

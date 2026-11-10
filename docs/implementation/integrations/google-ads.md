@@ -27,7 +27,7 @@ costs. Billing and spending limits are pending.
 ## Backend writes
 
 Google Ads contributes report and field discovery plus approval-only
-writes for recommendations, negative keywords, positive-keyword creation and
+writes for recommendations, negative keywords, search terms, positive-keyword creation and
 mutable-field updates, and permanent removal,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
@@ -473,13 +473,56 @@ refused.
 The display result has one row per change with its outcome. The agent gets the counts
 and only the changes that failed or are unconfirmed, up to 50.
 
+### Search terms
+
+`google_ads_optimise_search_terms` acts on a search terms report in one approval. The agent
+reads `search_term_view` with `google_ads_run_report`, then passes the report's
+`start_date` and `end_date` with up to 1,000 decisions. Each decision names the
+`search_term`, the `ad_group` it matched in, an `action`, and a `match_type`:
+
+| Action | Target | Fields |
+| --- | --- | --- |
+| `add_negative` | The matched ad group, its campaign, or a negative keyword list. | `level` (`ad_group`, `campaign`, or `list`), and `negative_list` for a list |
+| `add_keyword` | The matched ad group, or another ad group in the same account. | `keyword_ad_group`, optional |
+
+A term is at most 80 characters and 10 words, like any keyword. Two decisions can't add
+the same criterion to the same place, and the date range is at most a year.
+
+Before approval, `operations/read_search_terms.py` reads `search_term_view` for the
+matched ad groups and the date range in one GAQL query per account, summing a term's rows,
+and reads the keywords the keyword targets already bid on. Targets, negatives, lists, and
+keywords that could be blocked come from `read_negative_keywords`. The card's clicks,
+cost, and conversions come from that read, never from the agent's arguments. Every
+decision is one criterion change on the edit seam (a negative on `campaignCriterion`,
+`adGroupCriterion`, or `sharedCriterion`, and a keyword on `adGroupCriterion` with
+`negative: false`), so one account's negatives and keywords go in one partial-failure
+`googleAds:mutate`, reconciled per row and read back. A criterion already there is
+`already_set` without a write.
+
+The tool refuses these before Google's dry run:
+
+- A term the report doesn't have for that ad group and date range.
+- A matched ad group or target that doesn't exist or has been removed.
+- A negative that would block a keyword the account bids on in its scope, or a keyword
+  the same request adds. It uses the same word comparison as negative keywords.
+
+The trusted `_checks` display argument holds, per decision key (matched ad group, action,
+and lower-case term), the names, the term's status and figures, the live resource name,
+the state, and the problem. The tool declares `decisions` in `approval_review_fields`, so
+any edit needs a new check, and approval plans against the decision the operator saw: a
+decision whose criterion differs from its check is refused. The display result has one
+row per decision with the figures the approver saw and its outcome; the agent gets the
+counts and up to 50 decisions that failed or are unconfirmed.
+
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
 inside `run_code`.
 Reports consume all `searchStream` batches without adding a GAQL `LIMIT` or
-discarding rows. An explicit query `LIMIT` remains unchanged; the tool description
-reserves it for requested limited or top-N reports. Large successful results
+discarding rows. An explicit query `LIMIT` remains unchanged. The tool description tells
+the agent to filter, order, and limit nearly every query, and to read search terms for one
+date range ordered by cost with a `LIMIT` of at most 500, because an unlimited search terms
+report fills the context. Large successful results
 retain every row in
 the saved File, with only the model and transcript preview shortened. The agent
 uses `read_file` or `read_table` to inspect that File instead of repeating the query.
@@ -860,6 +903,29 @@ Negative Keywords (with a new list's creation and the campaigns starting a list)
 Removed Negative Keywords, each a standard `DataTable` of 10 rows a page with Negative
 Keyword, Match Type, Added To or Removed From, and Outcome, tabs per outcome, opening on
 Failed when that table has a failure.
+
+### Optimise Search Terms card
+
+`lib/search-terms.ts` parses `decisions` with `_accounts` and `_checks`, and keeps each
+decision as received. A decision's problem applies while it matches what Google last
+answered for; once edited, it waits for **Check Changes**, keeping the term's figures.
+Any problem blocks approval.
+
+The card (`components/search-terms-approval.tsx`) has a `ChangeBanner` with the cost of
+the terms being blocked, and one `DataTable` sorted by cost: Search Term, Matched In,
+Clicks, Cost, Conv., then Action, Match Type, and Target as inline selects. A negative's
+target is its ad group, its campaign, or a list in the request; a keyword's is any ad
+group in the request in the same account. From ten rows the card adds `ChangeSummary`
+(Block as Negatives, Add as Keywords, Already Set, and Needs Attention with **Cancel
+These**), `AttentionLine`, search, filter tabs, and a bulk bar that sets the action,
+match type, or a negative's target, or cancels. An edit that would add the same
+criterion twice keeps the first decision and cancels the other. Each row has **Cancel
+This Change**, and cancelled decisions stay in the retained state, so **Undo** restores
+them. The card can't add search terms the agent didn't propose.
+
+The result (`components/search-terms-outcome.tsx`) is one `DataTable` with Search Term,
+Action, Match Type, Target, Cost, and Outcome, tabs for Blocked, Added, Already Set,
+Failed, and Unconfirmed, opening on Failed when anything failed.
 
 ### Update Campaigns card
 

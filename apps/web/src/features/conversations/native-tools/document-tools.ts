@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/native-tools/document-tools.ts
 
-import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { isUntrustedNode, nodeText } from "@/components/tool-ui/untrusted-node"
 import type { FileEntitySnapshot } from "@/features/conversations/native-tools/file-tools"
 import { WORKSPACE_FILE_MIME_TYPES } from "@/lib/file"
 import { pluralize } from "@/lib/format"
@@ -27,6 +27,7 @@ const MAX_OUTLINE_ITEMS = 20
 const MAX_READBACK_ITEMS = 50
 const TABLE_PREVIEW_ROWS = 5
 const TABLE_PREVIEW_COLUMNS = 6
+const MAX_FLATTEN_DEPTH = 4
 const HEADING_STYLE = /^(Title|Heading \d)$/
 const TITLE_PLACEHOLDERS = new Set(["title", "center_title"])
 
@@ -64,6 +65,8 @@ export type DocumentTableResult = {
   file: DocumentFile
   columns: string[]
   preview: string[][]
+  // The preview's own columns, which name nested values by path, such as `campaign.name`.
+  previewColumns: string[]
   rowsRead: number
   totalRows: number
   more: boolean
@@ -333,20 +336,42 @@ function tableRead(
   const totalRows = result["total_rows"]
   if (!Array.isArray(columns) || !rows || typeof totalRows !== "number") return null
   const names = columns.map((column) => nodeText(column) ?? "")
-  const shown = names.slice(0, TABLE_PREVIEW_COLUMNS)
+  // JSON rows can nest objects, such as a provider report's `campaign.name`.
+  const flat = rows.slice(0, TABLE_PREVIEW_ROWS).map((row) => flattenRow(row))
+  const leaves = [...new Set(flat.flatMap((row) => [...row.keys()]))]
+  const shown = leaves.slice(0, TABLE_PREVIEW_COLUMNS)
+  const preview = flat.map((row) => shown.map((column) => row.get(column) ?? ""))
   return {
     kind: "table",
     file,
     columns: names,
-    preview: rows
-      .slice(0, TABLE_PREVIEW_ROWS)
-      .map((row) => shown.map((column) => cellText(row[column]))),
+    previewColumns: shown,
+    // A preview with nothing readable in it is left out rather than shown empty.
+    preview: preview.some((row) => row.some(Boolean)) ? preview : [],
     rowsRead: rows.length,
     totalRows,
     more: typeof result["next_offset"] === "number",
     uncalculatedCount:
       typeof result["uncalculated_count"] === "number" ? result["uncalculated_count"] : 0,
   }
+}
+
+/** Flattens a row's nested objects into dotted columns; lists of values join with commas. */
+function flattenRow(row: Record<string, unknown>): Map<string, string> {
+  const cells = new Map<string, string>()
+  const visit = (value: unknown, path: string, depth: number) => {
+    if (isRecord(value) && !isUntrustedNode(value) && depth < MAX_FLATTEN_DEPTH) {
+      for (const [key, item] of Object.entries(value))
+        visit(item, path ? `${path}.${key}` : key, depth + 1)
+      return
+    }
+    const text = Array.isArray(value)
+      ? value.map(cellText).filter(Boolean).join(", ")
+      : cellText(value)
+    if (path) cells.set(path, text)
+  }
+  visit(row, "", 0)
+  return cells
 }
 
 function saveResult(

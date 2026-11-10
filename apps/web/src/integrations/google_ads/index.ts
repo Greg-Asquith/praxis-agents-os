@@ -20,6 +20,7 @@ import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presen
 import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsUpdateNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/update-negative-keywords"
+import { googleAdsOptimiseSearchTermsPresenter } from "@/integrations/google_ads/presenters/optimise-search-terms"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
@@ -39,6 +40,7 @@ export default {
     googleAdsLabelAssociationsPresenter,
     googleAdsDeleteLabelsPresenter,
     googleAdsUpdateNegativeKeywordsPresenter,
+    googleAdsOptimiseSearchTermsPresenter,
     googleAdsUpdateStatusPresenter,
     googleAdsUpdateCampaignsPresenter,
     googleAdsSearchTargetingPresenter,
