@@ -9,7 +9,6 @@ import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
-import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
@@ -134,25 +133,6 @@ describe("Google Ads tool presenters", () => {
         outcome: "applied",
       },
       label: "Summer Sale",
-    },
-    {
-      presenter: googleAdsDeleteLabelsPresenter,
-      name: "google_ads_delete_labels",
-      key: "labels",
-      row: {
-        label_id: "8",
-        label_name: "Black Friday",
-        association_counts: {
-          campaign: 2,
-          ad_group: 0,
-          keyword: 5,
-          other_criterion: 0,
-          ad: 0,
-          truncated: false,
-        },
-        outcome: "deleted",
-      },
-      label: "2 campaigns, 5 keywords",
     },
   ])("renders and guards the $column result table", ({ presenter, name, key, row, label }) => {
     const resultHtml = (rows: unknown[]) =>
@@ -284,44 +264,6 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("red shoes")
     expect(html).not.toContain("&quot;kind&quot;")
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Remove<\/button>/)
-  })
-
-  it("shows live association counts on the destructive label deletion approval", () => {
-    const html = render(
-      googleAdsDeleteLabelsPresenter.render(
-        props(
-          {
-            id: "delete-labels-approval",
-            kind: "approval",
-            name: "google_ads_delete_labels",
-            status: "awaiting_approval",
-            args: {
-              labels: [
-                {
-                  entity_kind: "google_ads_label",
-                  customer_id: "111",
-                  label_id: "8",
-                  label: "Black Friday",
-                  association_counts: {
-                    campaign: 1,
-                    ad_group: 3,
-                    keyword: 0,
-                    other_criterion: 0,
-                    ad: 0,
-                    truncated: true,
-                  },
-                },
-              ],
-            },
-          },
-          approvalControls(),
-          toolUi([])
-        )
-      )
-    )
-
-    expect(html).toContain("At least 1 campaign, 3 ad groups")
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Delete<\/button>/)
   })
 
   it("keeps every label row visible when one label is unverified", () => {

@@ -2,7 +2,6 @@
 
 """Operation-specific Google Ads tool-result contracts."""
 
-from .campaign_budgets import GoogleAdsRemoveCampaignBudgetsOutput
 from .device_bid_modifiers import (
     GoogleAdsDeviceAdjustment,
     GoogleAdsDeviceBidModifierOutput,
@@ -10,7 +9,6 @@ from .device_bid_modifiers import (
 from .labels import (
     GoogleAdsApplyLabelsOutput,
     GoogleAdsCreateLabelsOutput,
-    GoogleAdsDeleteLabelsOutput,
     GoogleAdsLabelDraft,
     GoogleAdsLabelTarget,
     GoogleAdsRemoveLabelsOutput,
@@ -41,7 +39,6 @@ __all__ = [
     "GoogleAdsCpcBid",
     "GoogleAdsCreateLabelsOutput",
     "GoogleAdsCreatePositiveKeywordsOutput",
-    "GoogleAdsDeleteLabelsOutput",
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",
@@ -53,7 +50,6 @@ __all__ = [
     "GoogleAdsPositiveKeywordEntry",
     "GoogleAdsPositiveKeywordPatch",
     "GoogleAdsRecommendationApplyParameters",
-    "GoogleAdsRemoveCampaignBudgetsOutput",
     "GoogleAdsRemoveLabelsOutput",
     "GoogleAdsReportFieldDetail",
     "GoogleAdsReportFieldSummary",

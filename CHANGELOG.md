@@ -44,6 +44,16 @@ minor release. Patch releases contain backward-compatible fixes only.
   card shows each term's clicks, cost, and conversions as Google reports them
   for the date range, and each action, match type, and target can be changed
   before approving.
+- Google Ads budgets in one approval: `google_ads_update_budgets` changes up
+  to 100 daily budgets, by campaign or shared budget, and moves campaigns onto
+  shared budgets. The card shows each budget's spend this month from Google,
+  lists every campaign a shared budget funds, and sends decreases before
+  increases.
+- Google Ads removal in one approval: `google_ads_remove_objects` permanently
+  removes up to 500 campaigns, ad groups, ads, keywords, asset groups, unused
+  budgets and bid strategies, labels, and negative keyword lists. The card
+  counts the ads and keywords each removal takes with it, and refuses a
+  budget or bid strategy a campaign still uses.
 - Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
   search ads across existing ad groups in one all-or-nothing request, with a
   search result preview and character counts on the card.
@@ -377,6 +387,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 ### Removed
 
 - `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
+- `google_ads_update_campaign_budget_amounts`,
+  `google_ads_assign_campaign_budgets`, and `google_ads_create_campaign_budget`,
+  replaced by `google_ads_update_budgets`.
+- `google_ads_remove_keywords`, `google_ads_remove_campaign_budgets`, and
+  `google_ads_delete_labels`, replaced by `google_ads_remove_objects`.
 - The eight Google Ads negative keyword tools (add and remove for lists,
   campaigns, and ad groups, `google_ads_create_negative_keyword_list`, and
   `google_ads_link_negative_keyword_list`), replaced by

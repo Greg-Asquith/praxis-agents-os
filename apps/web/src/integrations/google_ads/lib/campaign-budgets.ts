@@ -1,31 +1,10 @@
 // apps/web/src/integrations/google_ads/lib/campaign-budgets.ts
 
-import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   CURRENCY_CODE_PATTERN,
   GOOGLE_ADS_ID_PATTERN,
 } from "@/integrations/google_ads/lib/field-values"
-import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
-
-export function formatCampaignBudgetAmount(budget: CampaignBudgetWithCurrency): string {
-  const micros = budget.period === "DAILY" ? budget.amountMicros : budget.totalAmountMicros
-  if (micros === null) {
-    return "Amount unavailable"
-  }
-  const padded = micros.padStart(7, "0")
-  const whole = padded.slice(0, -6)
-  const fraction = padded.slice(-6).padStart(6, "0").replace(/0+$/, "")
-  return formatCurrencyAmount(fraction ? `${whole}.${fraction}` : whole, budget.currencyCode)
-}
-
-export function budgetPeriodLabel(period: string | null): string {
-  return period === "DAILY"
-    ? "Daily"
-    : period === "CUSTOM_PERIOD"
-      ? "Campaign total"
-      : googleAdsTokenLabel(period ?? "", "Period unavailable")
-}
 
 export type CampaignBudgetReference = {
   amountMicros: string | null
@@ -41,8 +20,6 @@ export type CampaignBudgetReference = {
   status: string | null
   totalAmountMicros: string | null
 }
-
-export type CampaignBudgetWithCurrency = CampaignBudgetReference & { currencyCode: string }
 
 export function parseCampaignBudgetReference(value: unknown): CampaignBudgetReference | null {
   if (

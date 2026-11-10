@@ -28,11 +28,10 @@ costs. Billing and spending limits are pending.
 
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, search terms, positive-keyword creation and
-mutable-field updates, and permanent removal,
+mutable-field updates,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, budget
-changes, and unused-budget removal. Label creation, apply,
-and remove default to approval and also support auto policy; label deletion
-is approval-only. Keyword and budget
+changes, and permanent removal of any supported kind. Label creation, apply,
+and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
@@ -303,6 +302,55 @@ After approval, the edits are sorted so decreases go before increases, as
 Meta's budget tool does. Each edit is one audit intent. The result has one
 row per change with a setting outcome for each of `amount`, `delivery`, and
 `shared_budget`; a shared budget is shown by name.
+
+### Removal
+
+`google_ads_remove_objects` is the one destructive tool. It removes up to 500
+items in one approval, across kinds and accounts. Each entry names its `kind`
+and the matching reference:
+
+| Kind | Reference | Mutate resource |
+| --- | --- | --- |
+| `campaign` | `google_ads_campaign` | `campaign` |
+| `ad_group` | `google_ads_ad_group` | `adGroup` |
+| `ad` | `google_ads_ad` | `adGroupAd` |
+| `keyword` | `google_ads_keyword` (positive keywords only) | `adGroupCriterion` |
+| `asset_group` | `google_ads_asset_group` | `assetGroup` |
+| `budget` | `google_ads_campaign_budget` | `campaignBudget` |
+| `label` | `google_ads_label` | `label` |
+| `bidding_strategy` | `google_ads_bidding_strategy` (portfolio) | `biddingStrategy` |
+| `negative_keyword_list` | `google_ads_shared_set` | `sharedSet` |
+
+`operations/read_removals.py` reads each kind in one GAQL read per account,
+removed objects included, through `read_statuses` for campaigns, ad groups,
+ads, keywords, and asset groups. For the approval it also counts what each
+removal takes with it: the live ad groups, ads, and positive keywords under a
+campaign or ad group; the items a label is on (`count_label_associations`);
+a list's negative keywords (`shared_set.member_count`) and the campaigns it is
+applied to; and the campaigns still using a budget or portfolio strategy, up
+to three named. Each dependant query reads up to 10,001 rows; more than 10,000
+marks the counts as lower bounds.
+
+A missing item, and a budget or bid strategy that a non-removed campaign still
+uses, are problems on the card. The rest are dry run through the edit seam as
+`Removal` edits. An item already removed is shown as such and skipped. `_checks`,
+keyed by resource name, holds the name, `status`, `campaign_name`,
+`ad_group_name`, `dependants` (`campaigns`, `ad_groups`, `ads`, `keywords`,
+`truncated`), and `problem`. The card can only cancel items: the tool refuses
+an item that wasn't in the proposal.
+
+After approval, each account's removals go in one partial-failure request,
+children before parents (keywords, ads, ad groups, asset groups, campaigns,
+then budgets, strategies, lists, and labels), so removing an ad group never
+fails a keyword in it. A removed object reads back with a `REMOVED` status or
+not at all, and both count as removed. Each result row has the kind, name,
+campaign, the dependants the card showed, and `removed`, `already_removed`,
+`failed`, or `unverified`. Audit intents are grouped by entity kind, one per
+item, with what the removal takes with it.
+
+Removing a campaign leaves its own budget in place; remove the budget in a
+later call. Assets, bid adjustments, and other kinds are pending: their plans
+add them here instead of shipping their own removal tool.
 
 ### Ad edits
 
@@ -692,18 +740,12 @@ bids are not keyword fields. Before provider execution, keyword updates reserve
 per-account shares of the complete transcript budget, including all account
 envelopes and maximally escaped diagnostics. Live preparation must fit the
 reserved share and the terminal audit bound. Public results retain all accepted
-rows; only model results sample. Keyword removal accepts up to 500 selected
-criteria, rejects changed criterion state during reference hydration and
-post-approval verification, and retains each prior configuration with its
-requested removal and independent outcome. Removed criteria cannot be
-re-enabled. Keyword suffixes, custom parameters, and mobile
+rows; only model results sample. Keyword suffixes, custom parameters, and mobile
 destinations support inherited ad destinations. Changing a keyword tracking
 template or final URL preserves Google's template-to-final-URL dependency;
 unrelated status changes leave inherited settings intact. URL
 custom-parameter names use ASCII letters and numbers, are unique ignoring
-case, and use Google Ads' UTF-8 byte limits. Budget
-removal fails before mutation when any selected budget has a live campaign
-reference.
+case, and use Google Ads' UTF-8 byte limits.
 
 ### Labels
 
@@ -729,7 +771,8 @@ such as negative keywords, and ads. Each entity type
 reads up to 10,001 association rows as a sentinel and reports at most 10,000;
 more than 10,000 marks the counts as lower bounds. `verify_labels` re-reads
 label IDs and fails when a label is missing or removed. The label resolver
-registers with the apply, remove, and delete tools.
+registers with the apply and remove tools. Deleting a label is a `label`
+removal in `google_ads_remove_objects`.
 
 `google_ads_apply_labels` attaches 1 to 10 label references to 1 to 500
 targets, and `google_ads_remove_labels` detaches them. Each target is an
@@ -752,16 +795,6 @@ service's pairs as failed or unverified instead of raising. Remove never
 changes the label itself. The audit record groups intents by label, with one
 item per target.
 
-`google_ads_delete_labels` permanently deletes 1 to 50 label references, and
-Google Ads detaches each deleted label from every item. It is approval-only and
-doesn't support auto policy. The approval hydrates each label through the
-resolver and shows its live association counts by entity type. After approval,
-`verify_labels_with_associations` re-reads the labels and their counts and
-fails before any write when a label is missing or removed. The tool sends one
-partial-failure `labels:mutate` remove request per account. Each result row
-and audit intent records the re-read counts, which for a deleted label are the
-associations Google Ads removed with it.
-
 ## Frontend modules
 
 Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
@@ -777,9 +810,7 @@ authoritative. `GoogleAdsLabelChip` always shows the label name beside a decorat
 swatch. `labels.ts` also parses label and target arguments for apply and remove,
 rejecting unknown target kinds and repeated targets. Their approval shows the
 labels and the targets grouped by type, and the result shows one outcome row
-per label and target pair, ordered by type. Label deletion uses a destructive
-approval card with each label's association counts as text; truncated counts
-read as "at least", and missing counts are stated rather than shown as zero.
+per label and target pair, ordered by type.
 Account metadata requires a nonblank label and a valid currency code.
 
 New Google cards build from the shared ads card kit in
@@ -793,7 +824,7 @@ choice, and a note such as "Paused. Will not appear or spend until
 activated." or "Active, pending approval. Will go live once approved by
 Google." Campaign and ad group notes leave out approval. The older Google kit
 (`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
-`GoogleAdsOutcomeTable`) stays only for the tools plans 307, 308 B, and 312
+`GoogleAdsOutcomeTable`) stays only for the tools plans 308 B and 312
 replace.
 
 ### Outcome evidence
@@ -1171,6 +1202,30 @@ The result (`components/update-budgets-outcome.tsx`) is the standard
 `DataTable` result card: Campaign or Budget, Setting, Before, After, and
 Outcome, with the edit seam's outcome tabs.
 
+### Remove Items card
+
+`lib/remove-objects.ts` parses `items` with `_accounts` and `_checks` and
+gives one row per item (`removalRows`) with what it takes with it as text,
+such as "92 keywords, 6 ads", "Funds 1 campaign", or "Comes off 3 campaigns".
+Counts at the read bound show "+". A problem blocks approval until the item is
+cancelled, since there's nothing to edit; cancelled items are kept for
+**Undo**.
+
+The card (`components/remove-objects-approval.tsx`) opens with
+`ChangeBanner` in its danger tone, "Removal can't be undone", with the item
+count and the ads, keywords, and ad groups that campaign and ad group
+removals take with them. The `DataTable` has Item (with its ad group for ads
+and keywords, and its problem), Kind, Campaign, Also Removes, and Cancel.
+From ten rows, `ChangeSummary` has one line per kind and Needs Attention
+with **Cancel These N**, tabs filter by kind, and selected rows take
+**Cancel These Changes**. The approve label counts the items, such as
+"Remove 98 Items".
+
+The result (`components/remove-objects-outcome.tsx`) is the standard
+`DataTable` result card: Item, Kind, Campaign, Also Removed, and Outcome,
+with Removed, Already Removed, Failed, and Unconfirmed tabs, opening on
+Failed when any failed.
+
 ### Update Ads card
 
 `lib/update-ads.ts` parses `changes` with `_accounts` and `_checks`, reads each
@@ -1294,4 +1349,4 @@ Faults the tests found:
   had added, which the operator declined. See FOLLOW_UPS.
 
 Left in the test account: an empty, unlinked negative keyword list from
-`7c6fa4e9`, because no tool removes a list until 307 B.
+`7c6fa4e9`. Check 25 removes it.

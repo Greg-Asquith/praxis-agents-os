@@ -30,12 +30,10 @@ from integrations.google_ads.references import (
 )
 from integrations.google_ads.tools.apply_labels import google_ads_apply_labels
 from integrations.google_ads.tools.create_labels import google_ads_create_labels
-from integrations.google_ads.tools.delete_labels import google_ads_delete_labels
 from integrations.google_ads.tools.remove_labels import google_ads_remove_labels
 from integrations.google_ads.tools.schemas import (
     GoogleAdsApplyLabelsOutput,
     GoogleAdsCreateLabelsOutput,
-    GoogleAdsDeleteLabelsOutput,
     GoogleAdsLabelDraft,
 )
 from integrations.google_ads.tools.schemas.labels import (
@@ -629,91 +627,3 @@ async def test_verify_label_targets_rejects_removed_ad_groups(monkeypatch) -> No
         await verify_label_targets(
             AsyncMock(), entry=entry, campaigns=[], ad_groups=[ad_group], keywords=[]
         )
-
-
-async def test_delete_labels_records_rechecked_counts_and_partial_failure(monkeypatch) -> None:
-    entry = _writable_google_ads_entry()
-    client = _LabelClient(
-        search_payload=None,
-        mutate_payload={
-            "results": [{"resourceName": "customers/111/labels/7"}, {}],
-            "partialFailureError": _partial_failure(1, "CANNOT_REMOVE_LABEL"),
-        },
-    )
-    audits: list = []
-
-    async def capture_audit(_ctx, _entry, **kwargs):
-        await kwargs["prepare_pending_operation"]()
-        outcome = await kwargs["execute"]()
-        audits.append(outcome)
-        return outcome.value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.delete_labels.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.delete_labels.run_audited_integration_operation",
-        capture_audit,
-    )
-    verifier = "integrations.google_ads.tools.verifiers.label"
-    monkeypatch.setattr(
-        f"{verifier}.list_labels",
-        AsyncMock(return_value=[_label_row("7", "Q4")["label"], _label_row("8", "Q1")["label"]]),
-    )
-    live_counts = GoogleAdsLabelAssociationCounts(
-        campaign=2, ad_group=0, keyword=5, other_criterion=1, ad=0
-    )
-    empty_counts = GoogleAdsLabelAssociationCounts(
-        campaign=0, ad_group=0, keyword=0, other_criterion=0, ad=0
-    )
-    monkeypatch.setattr(
-        f"{verifier}.count_label_associations",
-        AsyncMock(return_value={"7": live_counts, "8": empty_counts}),
-    )
-    # The model-supplied counts are stale; the tool must record the re-read ones.
-    stale = _label("7").model_copy(update={"association_counts": empty_counts})
-
-    result = await google_ads_delete_labels(_create_ctx(entry), [stale, _label("8")])
-
-    assert client.calls[-1]["json"] == {
-        "operations": [
-            {"remove": "customers/111/labels/7"},
-            {"remove": "customers/111/labels/8"},
-        ],
-        "partialFailure": True,
-    }
-    rows = GoogleAdsDeleteLabelsOutput.model_validate(result).results[0].data.labels
-    assert [(row.label_name, row.outcome) for row in rows] == [("Q4", "deleted"), ("Q1", "failed")]
-    assert rows[0].association_counts == live_counts
-    assert rows[1].error_code == "CANNOT_REMOVE_LABEL"
-    assert audits[0].status == AuditStatus.PARTIAL
-    intent = audits[0].operation_detail.intent_groups[0].items[0].fields
-    assert intent["association_counts"]["keyword"] == 5
-    assert audits[0].external_ref == "customers/111/labels/7"
-
-
-async def test_delete_labels_fails_before_mutation_for_a_removed_label(monkeypatch) -> None:
-    entry = _writable_google_ads_entry()
-    client = _LabelClient(search_payload=None, mutate_payload={"results": []})
-
-    async def capture_audit(_ctx, _entry, **kwargs):
-        await kwargs["prepare_pending_operation"]()
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.delete_labels.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.delete_labels.run_audited_integration_operation",
-        capture_audit,
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.verifiers.label.list_labels", AsyncMock(return_value=[])
-    )
-
-    result = await google_ads_delete_labels(_create_ctx(entry), [_label("7")])
-
-    assert result["results"][0]["error_code"] == "ModelRetry"
-    assert client.calls == []

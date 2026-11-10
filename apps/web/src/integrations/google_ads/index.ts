@@ -18,14 +18,12 @@ import { googleAdsCreatePositiveKeywordsPresenter } from "@/integrations/google_
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
-import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsUpdateNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/update-negative-keywords"
 import { googleAdsOptimiseSearchTermsPresenter } from "@/integrations/google_ads/presenters/optimise-search-terms"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
-import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
-import { googleAdsRemovePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/remove-positive-keywords"
+import { googleAdsRemoveObjectsPresenter } from "@/integrations/google_ads/presenters/remove-objects"
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
 export default {
@@ -38,7 +36,6 @@ export default {
     googleAdsAccountsPresenter,
     googleAdsCreateLabelsPresenter,
     googleAdsLabelAssociationsPresenter,
-    googleAdsDeleteLabelsPresenter,
     googleAdsUpdateNegativeKeywordsPresenter,
     googleAdsOptimiseSearchTermsPresenter,
     googleAdsUpdateStatusPresenter,
@@ -56,7 +53,6 @@ export default {
     googleAdsCreatePositiveKeywordsPresenter,
     googleAdsUpdateBudgetsPresenter,
     googleAdsUpdatePositiveKeywordsPresenter,
-    googleAdsRemovePositiveKeywordsPresenter,
-    googleAdsRemoveCampaignBudgetsPresenter,
+    googleAdsRemoveObjectsPresenter,
   ],
 } satisfies IntegrationUiModule
