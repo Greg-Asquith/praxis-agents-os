@@ -164,7 +164,44 @@ class CriterionChange:
         return resource_name.startswith(prefix) and resource_name[len(prefix) :].isdigit()
 
 
-type Edit = FieldChange | CriterionChange
+@dataclass(frozen=True, slots=True)
+class Removal:
+    """Removes one object, such as a campaign budget that no campaign uses any more."""
+
+    # The mutate resource type, such as `campaignBudget`.
+    resource: str
+    resource_name: str
+    # The object's resource name while it exists, filled by `prepare_edits`.
+    before: str | None = None
+    refused: str | None = None
+    atomic_group: str | None = None
+
+    @property
+    def key(self) -> str:
+        return self.resource_name
+
+    @property
+    def unchanged(self) -> bool:
+        return self.before is None
+
+    @property
+    def settings(self) -> str:
+        return "remove"
+
+    def operation(self) -> MutateOperation:
+        return MutateOperation(self.resource, {"remove": self.resource_name})
+
+    def live(self, values: SettingValues | None) -> str | None:
+        # Google keeps removed objects readable with a `REMOVED` status.
+        if values is None or values.get("status") == "REMOVED":
+            return None
+        return self.resource_name
+
+    def produces(self, resource_name: str) -> bool:
+        return resource_name == self.resource_name
+
+
+type Edit = FieldChange | CriterionChange | Removal
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,6 +413,10 @@ def _checked_outcome(
     state = outcome[0]
     if state == "failed" or not read_back:
         return outcome
+    if isinstance(edit, Removal):
+        if edit.live(after) is None:
+            return ("applied", edit.resource_name, None, None)
+        return outcome if state == "unverified" else _not_confirmed("the removal")
     if isinstance(edit, CriterionChange):
         present = edit.live(after)
         if edit.action == "add" and present is not None:

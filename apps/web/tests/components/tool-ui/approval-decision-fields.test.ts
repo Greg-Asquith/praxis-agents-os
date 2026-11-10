@@ -168,7 +168,7 @@ describe("ApprovalRequestFields", () => {
           submitting: false,
         },
         label: "Update Campaign Budget",
-        toolName: "google_ads_update_campaign_budget_amounts",
+        toolName: "google_ads_update_budgets",
       })
     )
 

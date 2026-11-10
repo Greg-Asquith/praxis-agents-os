@@ -16,7 +16,7 @@ CORPUS = [
     "read_artifact",
     "update_artifact",
     "google_ads_update_status",
-    "google_ads_create_campaign_budget",
+    "google_ads_update_budgets",
     "google_ads_run_report",
     "outlook_mail_send_message",
     "gmail_send_message",
@@ -46,12 +46,12 @@ def test_provider_limits_matches_to_its_tools() -> None:
     campaign_matches = _search("Google Ads campaigns")
     assert set(campaign_matches[:2]) == {
         "google_ads_update_status",
-        "google_ads_create_campaign_budget",
+        "google_ads_update_budgets",
     }
     assert "outlook_mail_send_message" not in campaign_matches
     assert set(_search("google ads")) == {
         "google_ads_update_status",
-        "google_ads_create_campaign_budget",
+        "google_ads_update_budgets",
         "google_ads_run_report",
     }
     assert _search("Outlook email") == ["outlook_mail_send_message"]

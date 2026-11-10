@@ -5,12 +5,7 @@
 import pytest
 
 from core.exceptions.general import AppValidationError
-from integrations.google_ads.tools.create_campaign_budget import (
-    DEFINITION as CREATE_CAMPAIGN_BUDGET_DEFINITION,
-)
-from integrations.google_ads.tools.update_campaign_budget_amounts import (
-    DEFINITION as CAMPAIGN_BUDGET_AMOUNT_DEFINITION,
-)
+from integrations.google_ads.tools.update_budgets import DEFINITION as BUDGETS_DEFINITION
 from integrations.google_ads.tools.update_device_bid_modifiers import (
     DEFINITION as DEVICE_BID_MODIFIER_DEFINITION,
 )
@@ -50,8 +45,7 @@ from services.agents.utils import validate_tool_configuration
     "definition",
     [
         STATUS_DEFINITION,
-        CAMPAIGN_BUDGET_AMOUNT_DEFINITION,
-        CREATE_CAMPAIGN_BUDGET_DEFINITION,
+        BUDGETS_DEFINITION,
         DEVICE_BID_MODIFIER_DEFINITION,
         META_ADS_STATUS_DEFINITION,
         META_ADS_BUDGETS_DEFINITION,

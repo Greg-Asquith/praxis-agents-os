@@ -1,0 +1,205 @@
+// apps/web/tests/integrations/google-ads/update-budgets.test.ts
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { createElement, type ReactNode } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { describe, expect, it, vi } from "vitest"
+
+import type { ToolActivity } from "@/integrations/contract"
+import {
+  budgetRows,
+  budgetsBlock,
+  editedBudgetChanges,
+  monthAtAmount,
+  parseUpdateBudgetsArgs,
+  totalDailyDelta,
+  withAmount,
+  type UpdateBudgetsArgs,
+} from "@/integrations/google_ads/lib/update-budgets"
+import { googleAdsUpdateBudgetsPresenter } from "@/integrations/google_ads/presenters/update-budgets"
+
+const CUSTOMER = "1234567890"
+const campaignKey = (id: string) => `customers/${CUSTOMER}/campaigns/${id}`
+const budgetKey = (id: string) => `customers/${CUSTOMER}/campaignBudgets/${id}`
+const TOO_LOW = "Google says: The budget is below the minimum."
+
+function campaign(id: string) {
+  return { customer_id: CUSTOMER, campaign_id: id, label: `Campaign ${id}` }
+}
+
+function view(id: string, over: Record<string, unknown> = {}) {
+  return {
+    resource_name: budgetKey(id),
+    name: `Budget ${id}`,
+    shared: false,
+    amount: "45",
+    delivery: "STANDARD",
+    campaign_count: 1,
+    campaigns: [{ name: "Trail Running Shoes", spend: "300" }],
+    spend_this_month: "300",
+    ...over,
+  }
+}
+
+function check(over: Record<string, unknown> = {}) {
+  return {
+    unavailable: false,
+    kind: "campaign",
+    name: "Trail Running Shoes",
+    budget: view("1"),
+    destination: null,
+    removes_budget: false,
+    spend_this_month: "300",
+    days_left: 10,
+    current: { amount: "45", delivery: "STANDARD", shared_budget: budgetKey("1") },
+    requested: { amount: "0.5" },
+    problem: TOO_LOW,
+    ...over,
+  }
+}
+
+function raw(over: Record<string, unknown> = {}) {
+  return {
+    changes: [{ campaign: campaign("10"), amount: "0.50" }],
+    _accounts: [
+      { customer_id: CUSTOMER, name: "Northwind", currency: "GBP", time_zone: "Europe/London" },
+    ],
+    _checks: { [campaignKey("10")]: check() },
+    ...over,
+  }
+}
+
+function parsed(value: unknown = raw()): UpdateBudgetsArgs {
+  const args = parseUpdateBudgetsArgs(value)
+  if (args === null) throw new Error("Expected valid args")
+  return args
+}
+
+describe("approval", () => {
+  it("holds Google's answer to the amount it checked, and an edit waits for a new check", () => {
+    const checked = parsed()
+    expect(budgetRows(checked, checked)[0]?.problem).toBe(TOO_LOW)
+    expect(budgetsBlock(checked, checked)).toBe("Fix or cancel 1 change to continue.")
+
+    const next = parsed({
+      ...raw(),
+      changes: editedBudgetChanges(checked, new Set([campaignKey("10")]), (change) =>
+        withAmount(change, "60.00")
+      ),
+    })
+
+    expect(budgetRows(next, checked)[0]?.problem).toBeNull()
+    expect(budgetsBlock(next, checked)).toBe(
+      "Click Check Changes so Google can check your edits, then approve."
+    )
+  })
+
+  it("adds the new amount for each day left to this month's spend", () => {
+    const args = parsed(
+      raw({
+        changes: [{ campaign: campaign("10"), amount: "60" }],
+        _checks: { [campaignKey("10")]: check({ requested: { amount: "60" }, problem: null }) },
+      })
+    )
+    const [row] = budgetRows(args, args)
+    if (!row) throw new Error("Expected a row")
+
+    expect(monthAtAmount(row, row.amount)).toBe(900)
+    expect(totalDailyDelta([row])).toBe(15)
+  })
+})
+
+describe("presenters", () => {
+  const html = (node: ReactNode) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement("div", null, node)
+      )
+    )
+  const props = (activity: ToolActivity, withApproval = false) => ({
+    activity,
+    ...(withApproval
+      ? {
+          approvalDecision: {
+            decision: { decision: "pending" as const, edits: {}, message: "" as const },
+            error: null,
+            onDecisionChange: vi.fn(),
+            onRetry: vi.fn(),
+            pendingCount: 1,
+            submitting: false,
+          },
+        }
+      : {}),
+    compact: false,
+    defaultOpen: true,
+    live: false,
+    providerKey: "google_ads",
+  })
+
+  it("renders the approval and the result", () => {
+    const approval = html(
+      googleAdsUpdateBudgetsPresenter.render(
+        props(
+          {
+            id: "budgets-1",
+            kind: "approval",
+            name: "google_ads_update_budgets",
+            status: "awaiting_approval",
+            args: raw(),
+          },
+          true
+        )
+      )
+    )
+    expect(approval).toContain(TOO_LOW)
+
+    const result = html(
+      googleAdsUpdateBudgetsPresenter.render(
+        props({
+          id: "budgets-2",
+          kind: "result",
+          name: "google_ads_update_budgets",
+          status: "completed",
+          args: raw(),
+          result: {
+            results: [
+              {
+                provider_key: "google_ads",
+                display_name: "Northwind",
+                external_id: CUSTOMER,
+                status: "success",
+                data: {
+                  account_id: CUSTOMER,
+                  currency: "GBP",
+                  budgets: [
+                    {
+                      resource_name: campaignKey("30"),
+                      kind: "campaign",
+                      name: "Walking Socks",
+                      budget_name: "Walking Socks budget",
+                      shared: false,
+                      spend_this_month: "12",
+                      read_back: true,
+                      settings: [
+                        {
+                          setting: "shared_budget",
+                          before: "Walking Socks budget",
+                          requested: "Footwear Shared",
+                          after: "Footwear Shared",
+                          outcome: "updated",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        })
+      )
+    )
+    expect(result).toContain("Footwear Shared")
+  })
+})

@@ -29,8 +29,8 @@ costs. Billing and spending limits are pending.
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, search terms, positive-keyword creation and
 mutable-field updates, and permanent removal,
-Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, campaign-budget creation,
-amount updates, assignment, and unused-budget removal. Label creation, apply,
+Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, budget
+changes, and unused-budget removal. Label creation, apply,
 and remove default to approval and also support auto policy; label deletion
 is approval-only. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
@@ -56,8 +56,9 @@ endpoint per resource type. Two seams build on it:
 
 - **Edit seam** (`operations/edits.py`). A tool describes each change as a
   `FieldChange` (new values for some settings of one object, by JSON field
-  path) or a `CriterionChange` (add or remove one criterion, because a
-  criterion's value can't be updated). Campaign, ad group, and shared list
+  path), a `CriterionChange` (add or remove one criterion, because a
+  criterion's value can't be updated), or a `Removal` (remove one object,
+  such as a budget no campaign uses). Campaign, ad group, and shared list
   criteria are criteria here, and so is a campaign's use of a shared list
   (`campaignSharedSet`). The tool supplies a read function
   that returns each object's live values. `prepare_edits` fills the
@@ -265,6 +266,43 @@ sets `FieldChange.compared` to the campaign's `biddingStrategyType` and
 `campaign.biddingStrategy`), so a bid whose campaign changed strategy since
 approval is refused (`CHANGED_SINCE_APPROVAL`). Approval, refusal, and the
 result follow Update Campaigns; the result carries the account `currency`.
+
+### Budgets
+
+`google_ads_update_budgets` makes up to 100 budget changes in one approval.
+Each entry names either a campaign (`google_ads_campaign`) or a budget
+(`google_ads_campaign_budget`, usually a shared one) and only what changes:
+
+| Field | What it does |
+| --- | --- |
+| `amount` | Sets the daily amount (`amountMicros`) of the budget the campaign uses, or of the named budget. |
+| `delivery` | `STANDARD` or `ACCELERATED` (`deliveryMethod`). |
+| `use_shared_budget` | For a campaign: moves it onto a shared budget from the same account (`campaign.campaignBudget`). It can't be combined with `amount` or `delivery`. |
+
+`operations/budget_settings.py` reads the named campaigns and the budgets
+they use (`read_campaigns`, `read_budgets`), then every campaign on those
+budgets and its cost this month (`read_budget_campaigns`). Cost is a second
+query with `segments.date DURING THIS_MONTH`, because a campaign with no cost
+has no metrics row. Google reports the month in the account time zone.
+
+While preparing the approval, the tool works out the budget each change acts
+on. A missing or removed campaign or budget, a total (`CUSTOM_PERIOD`) budget,
+a move onto a budget that isn't shared, and a move of a draft or experiment
+campaign are problems. Two changes to one budget are a problem on the later
+campaign change. Moving a campaign off a budget nothing else uses also
+removes that budget: the move and the `Removal` share an `atomic_group`, so
+Google makes both or neither. The removal isn't dry run, because it depends
+on the move. The rest are dry run through the edit seam. `_checks`, keyed by
+the campaign or budget resource name, holds the name, the budget and the
+destination (each with its campaigns, up to 50 named, and this month's
+spend), `removes_budget`, `spend_this_month`, `days_left` in the month
+counting today, `current`, `requested`, `values` by edit, and `problem`.
+Spend comes only from these reads, never from the agent's arguments.
+
+After approval, the edits are sorted so decreases go before increases, as
+Meta's budget tool does. Each edit is one audit intent. The result has one
+row per change with a setting outcome for each of `amount`, `delivery`, and
+`shared_budget`; a shared budget is shown by name.
 
 ### Ad edits
 
@@ -761,25 +799,21 @@ replace.
 ### Outcome evidence
 
 Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
-separate modules. Device bid modifiers, budget amount
-updates, budget assignments, budget removals, recommendations,
+separate modules. Device bid modifiers, budget removals, recommendations,
 and positive-keyword creation, update, and removal
 share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
 outcome labels, stat order and tones, conditional detail and error columns,
 and sample notices. Tool columns and result validation stay with each tool. Keyword update results
-separate Before, Requested, and verified After values. Budget assignment and
-amount results use the same distinction, with Unconfirmed after values for failed
-or unverified outcomes. Budget amount deltas and monthly estimates describe
-requested values. Budget and keyword-creation sample envelopes use shared
-per-outcome count validation, including truncated sample upper bounds.
-Budget creation retains its single card and uses the shared outcome label.
+separate Before, Requested, and verified After values. Budget removal and
+keyword-creation sample envelopes use shared per-outcome count validation,
+including truncated sample upper bounds.
 
 ### Approval composition
 
 Approval summaries use `GoogleAdsApprovalSection` and `GoogleAdsEntityCard`.
 Ad-group targets use `GoogleAdsEntityGroup`; approval scale uses one count
-line instead of result stats. Budget amount changes, budget assignments, and
-keyword status use `GoogleAdsBeforeAfter`, whose proposed slot accepts the
+line instead of result stats. Keyword status uses `GoogleAdsBeforeAfter`,
+whose proposed slot accepts the
 existing status editor. Budget removal uses the destructive section. Keyword
 removal retains its consequence warning in a neutral section.
 Every write variant uses `googleAdsWriteCopy`; keep semantic overrides visible
@@ -1110,6 +1144,32 @@ The result (`components/update-ad-groups-outcome.tsx`) is the standard
 `DataTable` result card: Ad Group, Setting, Before, After, and Outcome, with
 the edit seam's outcome tabs and `editOutcomeSummary` from
 `lib/edit-outcomes.ts`.
+
+### Update Budgets card
+
+`lib/update-budgets.ts` parses `changes` with `_accounts` and `_checks` and
+gives one row per change (`budgetRows`). A problem applies while the row
+matches what Google checked, an edit waits for **Check Changes**, and a row
+at its live values is Already Set. Cancelled changes are kept in the
+approval controls' retained state for **Undo**.
+
+The card (`components/update-budgets-approval.tsx`) shows the banner with the
+change to daily spending and about a month of it (30.4 days, Google's monthly
+charging limit). The `DataTable` has Campaign or Budget (with its problem,
+and the campaigns a shared budget funds), Budget (Own, Shared with its
+campaign count, or the move with **Choose Another** to pick a different
+shared budget), Daily Amount (the live amount, an arrow, and an inline
+amount, plus a Standard or Accelerated choice when delivery changes), Change,
+Spent This Month, Month at New Amount (spend so far plus the amount for each
+day left), Est. Monthly, and Cancel. From ten rows, `ChangeSummary` lines for
+Raise, Lower, Shared, Move, and Needs Attention filter the table; the Raise
+line takes a percentage that changes every raised amount from its live value
+(`scaledMoney`). Selected rows can take one amount, a percentage, or
+**Cancel These Changes**.
+
+The result (`components/update-budgets-outcome.tsx`) is the standard
+`DataTable` result card: Campaign or Budget, Setting, Before, After, and
+Outcome, with the edit seam's outcome tabs.
 
 ### Update Ads card
 

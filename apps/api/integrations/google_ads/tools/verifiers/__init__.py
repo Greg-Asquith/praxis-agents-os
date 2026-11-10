@@ -3,7 +3,6 @@
 from .ad_group import verify_ad_groups
 from .campaign import (
     verify_campaigns,
-    verify_campaigns_for_budget_assignment,
     verify_campaigns_for_device_bidding,
 )
 from .campaign_budget import campaign_budget_reference_from_row, verify_campaign_budgets
@@ -16,7 +15,6 @@ __all__ = [
     "verify_ad_groups",
     "verify_campaign_budgets",
     "verify_campaigns",
-    "verify_campaigns_for_budget_assignment",
     "verify_campaigns_for_device_bidding",
     "verify_label_targets",
     "verify_labels",

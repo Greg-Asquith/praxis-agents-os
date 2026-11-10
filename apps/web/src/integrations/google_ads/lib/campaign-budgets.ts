@@ -5,15 +5,8 @@ import {
   CURRENCY_CODE_PATTERN,
   GOOGLE_ADS_ID_PATTERN,
 } from "@/integrations/google_ads/lib/field-values"
-import { formatCurrency, formatCurrencyAmount } from "@/lib/format"
+import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
-
-export function formatDailyEstimate(amount: string, currencyCode: string): string {
-  const numeric = Number(amount)
-  return Number.isFinite(numeric)
-    ? `${formatCurrency(numeric * 30.4, currencyCode, { maximumFractionDigits: 2 })} estimated per month`
-    : "Monthly estimate unavailable"
-}
 
 export function formatCampaignBudgetAmount(budget: CampaignBudgetWithCurrency): string {
   const micros = budget.period === "DAILY" ? budget.amountMicros : budget.totalAmountMicros

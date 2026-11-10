@@ -6,6 +6,7 @@ import { googleAdsUpdateStatusPresenter } from "@/integrations/google_ads/presen
 import { googleAdsUpdateCampaignsPresenter } from "@/integrations/google_ads/presenters/update-campaigns"
 import { googleAdsUpdateAdsPresenter } from "@/integrations/google_ads/presenters/update-ads"
 import { googleAdsUpdateAdGroupsPresenter } from "@/integrations/google_ads/presenters/update-ad-groups"
+import { googleAdsUpdateBudgetsPresenter } from "@/integrations/google_ads/presenters/update-budgets"
 import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/presenters/search-targeting"
 import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
 import { googleAdsCreateAdsPresenter } from "@/integrations/google_ads/presenters/create-ads"
@@ -15,18 +16,15 @@ import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
 import { googleAdsCreatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/create-positive-keywords"
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
-import { googleAdsAssignCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/assign-campaign-budgets"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
 import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
-import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsUpdateNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/update-negative-keywords"
 import { googleAdsOptimiseSearchTermsPresenter } from "@/integrations/google_ads/presenters/optimise-search-terms"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
-import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
 import { googleAdsRemovePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/remove-positive-keywords"
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
@@ -56,11 +54,9 @@ export default {
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,
     googleAdsCreatePositiveKeywordsPresenter,
-    googleAdsCreateCampaignBudgetPresenter,
-    googleAdsUpdateCampaignBudgetAmountsPresenter,
+    googleAdsUpdateBudgetsPresenter,
     googleAdsUpdatePositiveKeywordsPresenter,
     googleAdsRemovePositiveKeywordsPresenter,
-    googleAdsAssignCampaignBudgetsPresenter,
     googleAdsRemoveCampaignBudgetsPresenter,
   ],
 } satisfies IntegrationUiModule
