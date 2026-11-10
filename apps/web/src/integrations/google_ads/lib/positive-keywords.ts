@@ -9,7 +9,7 @@ import {
 import { isRecord } from "@/lib/guards"
 
 type PositiveKeywordMatchType = "EXACT" | "PHRASE" | "BROAD"
-export type PositiveKeywordStatus = "ENABLED" | "PAUSED"
+type PositiveKeywordStatus = "ENABLED" | "PAUSED"
 
 const POSITIVE_KEYWORD_MATCH_TYPES: ReadonlySet<PositiveKeywordMatchType> = new Set([
   "EXACT",
@@ -18,7 +18,7 @@ const POSITIVE_KEYWORD_MATCH_TYPES: ReadonlySet<PositiveKeywordMatchType> = new 
 ])
 const POSITIVE_KEYWORD_STATUSES: ReadonlySet<PositiveKeywordStatus> = new Set(["ENABLED", "PAUSED"])
 
-export type PositiveKeywordInput = {
+type PositiveKeywordInput = {
   bidModifier: number | null
   cpcBid: string | null
   finalMobileUrls: string[]
@@ -37,7 +37,7 @@ type PositiveKeywordUrls = Pick<
   "finalMobileUrls" | "finalUrls" | "finalUrlSuffix" | "trackingUrlTemplate"
 >
 
-export function parsePositiveKeywordInput(value: unknown): PositiveKeywordInput | null {
+function parsePositiveKeywordInput(value: unknown): PositiveKeywordInput | null {
   if (!isRecord(value)) return null
   const core = positiveKeywordCore(value)
   const urls = positiveKeywordUrls(value)
@@ -92,33 +92,6 @@ function positiveKeywordUrls(value: Record<string, unknown>): PositiveKeywordUrl
     return null
   if (trackingUrlTemplate !== null && finalUrls.length === 0) return null
   return { finalUrls, finalMobileUrls, finalUrlSuffix, trackingUrlTemplate }
-}
-
-export function positiveKeywordInputValidationError(value: unknown): string | null {
-  if (!isRecord(value)) return "Each keyword row must contain valid fields."
-  if (parseGoogleAdsCustomParameters(value["url_custom_parameters"] ?? {}) === undefined) {
-    return (
-      "URL custom parameters accept at most eight entries. Names must use 1-16 ASCII letters " +
-      "or numbers and be unique ignoring case. Values can use at most 200 UTF-8 bytes."
-    )
-  }
-  if (optionalMoneyBid(value["cpc_bid"]) === undefined) {
-    return "CPC bids must be positive, use at most six decimal places, and fit Google Ads' limit."
-  }
-  if (optionalBidModifier(value["bid_modifier"]) === undefined) {
-    return "Bid adjustments must be a number from 0.1 through 10."
-  }
-  const finalUrls = urlList(value["final_urls"])
-  const trackingTemplate = value["tracking_url_template"]
-  if (
-    typeof trackingTemplate === "string" &&
-    trackingTemplate.trim() &&
-    trackingTemplate.length <= 2048 &&
-    finalUrls?.length === 0
-  ) {
-    return "Add at least one final URL when using a tracking URL template."
-  }
-  return parsePositiveKeywordInput(value) ? null : "Review the invalid keyword fields."
 }
 
 function optionalMoneyBid(value: unknown): string | null | undefined {

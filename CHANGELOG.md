@@ -12,8 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads keyword additions per ad group: `google_ads_create_keywords` takes
+  each ad group with its own keywords, up to 1,000 across 50 ad groups, adds
+  them paused by default, checks each with Google first, and refuses a keyword
+  the ad group already has. The card lists the ad groups first, then the open
+  ad group's keywords, and Add Keywords adds more to any ad group.
 - Google Ads status changes with approval: `google_ads_update_status` turns up
-  to 100 campaigns, ad groups, ads, keywords, and asset groups on or off in one
+  to 500 campaigns, ad groups, ads, keywords, and asset groups on or off in one
   approval, checks each with Google first, refuses anything changed since the
   card was shown, and reads each one back.
 - Google Ads campaign settings with approval: `google_ads_update_campaigns`
@@ -54,6 +59,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   budgets and bid strategies, labels, and negative keyword lists. The card
   counts the ads and keywords each removal takes with it, and refuses a
   budget or bid strategy a campaign still uses.
+- Google Ads keyword changes in one approval: `google_ads_update_keywords`
+  changes the max CPC, URLs, and match type of up to 500 keywords. A new match
+  type pauses the keyword and adds the same text with the new match type in
+  one all-or-nothing request, instead of two approvals. The card refuses a
+  bid the campaign's strategy ignores and a match type the ad group already
+  has.
 - Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
   search ads across existing ad groups in one all-or-nothing request, with a
   search result preview and character counts on the card.
@@ -387,11 +398,17 @@ minor release. Patch releases contain backward-compatible fixes only.
 ### Removed
 
 - `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
+- `google_ads_create_keywords`'s `ad_groups` and `keywords` arguments, which added
+  every keyword to every ad group, with per-keyword status, bid adjustments,
+  and URL options. Each ad group now has its own `keywords`, and one `status`
+  covers the request.
 - `google_ads_update_campaign_budget_amounts`,
   `google_ads_assign_campaign_budgets`, and `google_ads_create_campaign_budget`,
   replaced by `google_ads_update_budgets`.
 - `google_ads_remove_keywords`, `google_ads_remove_campaign_budgets`, and
   `google_ads_delete_labels`, replaced by `google_ads_remove_objects`.
+- Keyword status and bid adjustments in `google_ads_update_keywords`. Keywords
+  are paused and enabled with `google_ads_update_status`.
 - The eight Google Ads negative keyword tools (add and remove for lists,
   campaigns, and ad groups, `google_ads_create_negative_keyword_list`, and
   `google_ads_link_negative_keyword_list`), replaced by

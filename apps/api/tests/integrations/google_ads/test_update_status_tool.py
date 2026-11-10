@@ -210,7 +210,8 @@ async def test_one_request_turns_off_every_kind_and_reports_an_equal_status_as_a
             ("adGroupCriterion", _KEYWORD),
         )
     ]
-    rows = GoogleAdsUpdateStatusOutput.model_validate(result).results[0].data.objects
+    shown = GoogleAdsUpdateStatusOutput.model_validate(result.metadata["public_result"])
+    rows = shown.results[0].data.objects
     assert [(row.name, row.before, row.after, row.outcome) for row in rows] == [
         ("Trail", "ENABLED", "PAUSED", "updated"),
         ("Shoes", "ENABLED", "PAUSED", "updated"),
@@ -218,6 +219,10 @@ async def test_one_request_turns_off_every_kind_and_reports_an_equal_status_as_a
         ("trail shoes", "ENABLED", "PAUSED", "updated"),
         ("Spring", "PAUSED", "PAUSED", "already_set"),
     ]
+    # The agent gets the counts and only what didn't change, so a 500 row result stays small.
+    told = result.return_value["results"][0]["data"]
+    assert told["counts"] == {"updated": 4, "already_set": 1, "failed": 0, "unverified": 0}
+    assert told["objects"] == []
     assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
 
 

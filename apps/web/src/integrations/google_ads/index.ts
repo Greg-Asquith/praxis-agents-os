@@ -14,7 +14,7 @@ import { googleAdsCreateAdGroupsPresenter } from "@/integrations/google_ads/pres
 import { googleAdsCreateCampaignPresenter } from "@/integrations/google_ads/presenters/create-campaign"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
-import { googleAdsCreatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/create-positive-keywords"
+import { googleAdsCreateKeywordsPresenter } from "@/integrations/google_ads/presenters/create-keywords"
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
@@ -24,7 +24,7 @@ import { googleAdsOptimiseSearchTermsPresenter } from "@/integrations/google_ads
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveObjectsPresenter } from "@/integrations/google_ads/presenters/remove-objects"
-import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
+import { googleAdsUpdateKeywordsPresenter } from "@/integrations/google_ads/presenters/update-keywords"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -50,9 +50,9 @@ export default {
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,
-    googleAdsCreatePositiveKeywordsPresenter,
+    googleAdsCreateKeywordsPresenter,
     googleAdsUpdateBudgetsPresenter,
-    googleAdsUpdatePositiveKeywordsPresenter,
+    googleAdsUpdateKeywordsPresenter,
     googleAdsRemoveObjectsPresenter,
   ],
 } satisfies IntegrationUiModule

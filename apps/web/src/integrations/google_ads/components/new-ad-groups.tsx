@@ -708,7 +708,7 @@ function KeywordReview({
   )
 }
 
-function MatchTypeCell({
+export function MatchTypeCell({
   disabled,
   keyword,
   onChange,

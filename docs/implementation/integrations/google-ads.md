@@ -28,7 +28,7 @@ costs. Billing and spending limits are pending.
 
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, search terms, positive-keyword creation and
-mutable-field updates,
+bid, URL, and match type changes,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, budget
 changes, and permanent removal of any supported kind. Label creation, apply,
 and remove default to approval and also support auto policy. Keyword and budget
@@ -71,7 +71,9 @@ endpoint per resource type. Two seams build on it:
   `atomic_group` go in their own request with `partialFailure: false`, so
   Google applies all of them or none. Google's rejection of a whole request
   doesn't name the operation that caused it, so every edit in the group
-  fails with Google's message. The read-back settles
+  fails with Google's message. A group happens whole or not at all, so an
+  edit refused at approval or as changed since approval refuses the rest of
+  its group without a request. The read-back settles
   an unclear reply and fails a change Google accepted but didn't keep. If
   the read-back fails or doesn't return the object, Google's reply stands and
   **After** is empty. A cancel during the read-back keeps Google's reply as the
@@ -100,7 +102,7 @@ leaves the sent changes unverified.
 ### Status changes
 
 `google_ads_update_status` turns campaigns, ad groups, ads, positive
-keywords, and asset groups on (`ENABLED`) or off (`PAUSED`): up to 100
+keywords, and asset groups on (`ENABLED`) or off (`PAUSED`): up to 500
 objects per call across kinds and accounts, in one approval. Each entry in
 `changes` is tagged by `kind`, carries that kind's scoped reference, and
 sets its own status, so one call can turn some objects off and others on.
@@ -730,22 +732,82 @@ ones Google Ads does not know in `missing`, so the model never probes fields one
 at a time. An unknown resource name for the list tool still maps the Google Ads
 404 to a `ModelRetry` naming the missing value.
 
-### Keyword targets and evidence
+### Keyword additions
 
-Positive-keyword creation and updates
-accept only Search-standard and Display-standard targets. CPC bids require
-manual CPC and, for Display, a keyword custom-bid dimension. Display placement
-targeting may instead use a keyword bid modifier. CPM, CPV, and percent-CPC
-bids are not keyword fields. Before provider execution, keyword updates reserve
-per-account shares of the complete transcript budget, including all account
-envelopes and maximally escaped diagnostics. Live preparation must fit the
-reserved share and the terminal audit bound. Public results retain all accepted
-rows; only model results sample. Keyword suffixes, custom parameters, and mobile
-destinations support inherited ad destinations. Changing a keyword tracking
-template or final URL preserves Google's template-to-final-URL dependency;
-unrelated status changes leave inherited settings intact. URL
-custom-parameter names use ASCII letters and numbers, are unique ignoring
-case, and use Google Ads' UTF-8 byte limits.
+`google_ads_create_keywords` adds keywords on the edit seam, in one approval:
+up to 50 ad groups and 1,000 keywords. Each entry in `entries` names a
+`google_ads_ad_group` and its own keywords, each with `text` (at most 10
+words), `match_type`, an optional `cpc_bid`, and an optional `final_url`, the
+same keyword model Create Ad Groups uses. `status` is `PAUSED` by default. Each
+keyword compiles to an add `CriterionChange` keyed by `keyword_key`.
+
+`operations/keyword_additions.py` reads the ad groups with their campaigns and
+bidding in one query. For the approval, the tool also reads the keywords the ad
+groups bid on, then dry runs the rest. `_ad_groups`, keyed by ad group resource
+name, carries the names, the campaign's strategy, whether it uses keyword bids,
+the ad group's default bid when it does, and an ad group `problem`: missing,
+removed, a removed campaign, or not a standard Search or Display ad group.
+`_checks`, keyed by ad group, match type, and lower-cased text (the card can't
+case fold), carries the keyword as checked and a `problem`:
+
+- A keyword the ad group already has with that match type.
+- A max CPC under a strategy that doesn't use keyword bids.
+- Google's dry-run rejection, prefixed "Google says:".
+
+Edits need a new check (`approval_review_fields`). After approval, a keyword
+that differs from its check, or whose check showed a problem, is refused
+without a request, and one added since approval is refused as changed since
+approval. The card gets every keyword with its outcome (`added`,
+`already_set`, `failed`, or `unverified`) and the new keyword's resource name;
+the agent gets the counts and only the keywords that weren't added.
+
+### Keyword changes
+
+`google_ads_update_keywords` changes up to 500 positive keywords in one
+approval, on the edit seam. Each entry in `changes` names a `google_ads_keyword`
+reference and only the settings that change:
+
+| Setting | Field path | Notes |
+| --- | --- | --- |
+| `cpc_bid` | `cpcBidMicros` | Account currency. `"none"` removes the keyword's own bid, so it uses its ad group's. |
+| `final_urls`, `final_mobile_urls` | `finalUrls`, `finalMobileUrls` | Up to 10 each; an empty list clears them, so the ad's URLs apply. |
+| `url_options` | `finalUrlSuffix`, `trackingUrlTemplate`, `urlCustomParameters` | As for campaigns; an empty value clears it. |
+| `match_type` | `keyword.matchType` | `EXACT`, `PHRASE`, or `BROAD`. |
+
+Status isn't a setting here: `google_ads_update_status` pauses and enables
+keywords, and `google_ads_remove_objects` removes them.
+
+Google can't change a keyword's match type. A new match type compiles to two
+edits in one `atomic_group`: a `FieldChange` that pauses the keyword and a
+`CriterionChange` that adds the same text with the new match type, the old
+keyword's status, and its bid and URLs with the requested ones on top. The pause
+compares every carried setting, so a keyword whose bid or URLs changed since
+approval is refused and nothing is added. A match type equal to the live one is
+never sent and reports `already_set`. Labels and the old keyword's history stay
+with the paused keyword.
+
+`operations/keyword_settings.py` reads each keyword with its ad group, campaign,
+and campaign bidding in one query by resource name. For the approval, the tool
+also reads the keywords the ad groups bid on (`read_ad_group_keywords`), then dry
+runs the edits. The trusted `_checks` display argument, keyed by resource name,
+carries the keyword's text, live match type, ad group and campaign names, the
+campaign's strategy and the bids it uses, the `current` settings, the
+`requested` settings the check covered, Google's `values` that approval plans
+against, a `problem` (missing, removed, a removed ad group or campaign, or
+Google's dry-run rejection prefixed "Google says:"), and per-setting
+`problems`:
+
+- A max CPC under a strategy that doesn't use keyword bids, naming the
+  campaign's strategy. Removing a bid is always allowed.
+- A new match type the ad group already has for the same text.
+
+Edits on the card need a new check (`approval_review_fields`). After approval,
+a keyword whose settings differ from its check, or whose check showed a
+problem, is refused without a request. Each result row is one keyword with its
+settings' **Before**, **Requested**, and **After**, the keyword's outcome, and,
+for a new match type, the added keyword's resource name in `replacement`. The
+card gets every keyword; the agent gets the counts and only the keywords that
+didn't change.
 
 ### Labels
 
@@ -824,29 +886,24 @@ choice, and a note such as "Paused. Will not appear or spend until
 activated." or "Active, pending approval. Will go live once approved by
 Google." Campaign and ad group notes leave out approval. The older Google kit
 (`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
-`GoogleAdsOutcomeTable`) stays only for the tools plans 308 B and 312
-replace.
+`GoogleAdsOutcomeTable`) stays only for the tools plan 312 replaces and
+keyword creation.
 
 ### Outcome evidence
 
 Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
-separate modules. Device bid modifiers, budget removals, recommendations,
-and positive-keyword creation, update, and removal
+separate modules. Device bid modifiers, recommendations, and positive-keyword creation
 share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
 outcome labels, stat order and tones, conditional detail and error columns,
-and sample notices. Tool columns and result validation stay with each tool. Keyword update results
-separate Before, Requested, and verified After values. Budget removal and
-keyword-creation sample envelopes use shared per-outcome count validation,
+and sample notices. Tool columns and result validation stay with each tool.
+Keyword-creation sample envelopes use shared per-outcome count validation,
 including truncated sample upper bounds.
 
 ### Approval composition
 
 Approval summaries use `GoogleAdsApprovalSection` and `GoogleAdsEntityCard`.
 Ad-group targets use `GoogleAdsEntityGroup`; approval scale uses one count
-line instead of result stats. Keyword status uses `GoogleAdsBeforeAfter`,
-whose proposed slot accepts the
-existing status editor. Budget removal uses the destructive section. Keyword
-removal retains its consequence warning in a neutral section.
+line instead of result stats.
 Every write variant uses `googleAdsWriteCopy`; keep semantic overrides visible
 in the presenter, including declined recommendation dismissal.
 Presenters compose `google_ads/components` and `google_ads/lib`: a new tool
@@ -1176,6 +1233,38 @@ The result (`components/update-ad-groups-outcome.tsx`) is the standard
 the edit seam's outcome tabs and `editOutcomeSummary` from
 `lib/edit-outcomes.ts`.
 
+### Update Keywords card
+
+`lib/update-keywords.ts` follows Update Ad Groups: one row per keyword and
+setting (`keywordRows`), a problem that applies while the row matches what
+Google checked, **Check Changes** after an edit, and Already Set for a row at
+its live value. A removed bid is written back as `"none"`, URL lists as lists,
+and URL options inside `url_options`. `replacesKeyword` marks a match type row
+that differs from the live match type.
+
+The card (`components/update-keywords-approval.tsx`) shows the banner with the
+count of changes. When more than one keyword changes, the ad groups come
+first in `ParentTable` (Keywords and Changes), and a click filters the change
+table to one ad group; Cancel on an ad group cancels all of its changes. When
+a match type changes, the card notes that the keyword is
+paused and the same text added with the new match type, together or not at
+all. Each such row says which keyword is paused and which is added. One keyword
+is a list under a line naming its match type, ad group, campaign, and the
+campaign's strategy. More than one is a `DataTable` with Keyword (its match type
+and problem), Ad Group (its campaign and strategy), Setting, Change, and Cancel
+columns. Match type is an Exact, Phrase, or Broad choice; Max CPC takes an
+amount, and an empty bid uses the ad group's; URLs are separated by spaces;
+custom parameters are `key=value` pairs. From ten rows, the Match Type summary
+line sets every match type, the Max CPC line takes a percentage
+(`scaledMoney`), and the bulk bar sets the match type of the selected rows.
+**Add a Change** offers Max CPC only where the campaign's strategy uses keyword
+bids. The approve label names a sole change ("Change Match Type", "Remove Max
+CPC") and otherwise counts the changes.
+
+The result (`components/update-keywords-outcome.tsx`) is the standard edit
+seam result card: Keyword, Ad Group, Setting, Before, After, and Outcome. A
+match type row whose replacement was added says the old keyword was paused.
+
 ### Update Budgets card
 
 `lib/update-budgets.ts` parses `changes` with `_accounts` and `_checks` and
@@ -1280,24 +1369,36 @@ before paging, so counts, pages, and the row total follow the view:
   stop the click's propagation.
 - CSV export and copy hold every row, not only the filtered view.
 
-### Keyword editors
+### Add Keywords card
 
-Google Ads positive-keyword creation groups approval context by campaign,
-keeps optional bid and URL fields behind each row's progressive disclosure,
-applies provider byte and dependency checks before approval, and shows
-requested settings separately from an observed duplicate. It shows one
-guarded, exportable outcome row per ad-group and keyword pair. Its update
-action uses compact fixed, paginated keyword rows with shared account context
-and per-row More fields disclosures. Fields are directly editable, with colour
-and before/after indicators for changed values. It shows trusted currencies, supports
-explicit nullable scalar clears, and keeps recoverable invalid drafts mounted
-while blocking approval. Literal URL settings remain exact in comparisons and
-exports; requested projections are labelled as requested state. Complete
-results validate per-outcome counts and unique keyword identities before
-presenting one exportable row per selected criterion. Keyword removal has a
-separate approval card with a permanent-removal warning and account and ad-group context. Its
-paginated result table distinguishes confirmed removal, failure, and
-unverified outcomes, and rejects incomplete or contradictory result evidence.
+`lib/create-keywords.ts` reads the entries, `_ad_groups`, and `_checks`. A
+keyword's problem is the card's own (a max CPC that isn't an amount, a URL that
+isn't a web address), then its ad group's, then the one Google gave for the
+keyword as checked. Any edit, or an ad group the check hasn't seen, needs
+**Check Changes**.
+
+The card (`components/create-keywords-approval.tsx`) follows rule 10 of plan
+303's tool model. **Add Ad Group** above the ad groups opens a search of the
+account (`AdGroupCombobox`), and the chosen ad group joins them with no
+keywords. The ad groups are in `ParentTable`: Keywords, Bid (the default bid,
+or the strategy where keyword bids aren't used), and Problems. Clicking one
+shows its keywords in the table below: Keyword with its problem, Match Type,
+Max CPC where the campaign's bidding uses it, Final URL from the column
+chooser, and Cancel. The table's footer has a line that adds a keyword with its
+match type, or several pasted one per line in Google's notation. Cancelling an
+ad group's last keyword cancels the ad group, and Undo restores it. From ten
+keywords the change summary appears: a max CPC for every keyword, and Needs
+Attention with Cancel These N. The result is one table:
+Keyword, Match Type, Ad Group, Bid, and Outcome.
+
+### Parent tables
+
+`ParentTable` lists the campaigns, ad groups, or lists a card changes, above
+the table of the changes in them. Each row has the parent's name, where it sits,
+the caller's columns, and Cancel or Undo for all of its changes. A click
+selects the parent and the card filters the changes to it. From ten rows it
+gets search and a Needs Attention tab. Add Keywords and Update Keywords use it;
+plan 303 D moves Update Targeting and Update Status onto it.
 
 ## Live QA record
 

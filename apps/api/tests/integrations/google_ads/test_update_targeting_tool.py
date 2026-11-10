@@ -492,9 +492,7 @@ async def test_a_location_removed_after_the_check_stops_the_last_location_remova
     assert {row["outcome"] for row in _rows(result)} == {"failed"}
 
 
-async def test_a_criterion_changed_since_approval_is_refused_and_the_rest_are_sent(
-    monkeypatch,
-) -> None:
+async def test_a_location_changed_since_approval_refuses_its_whole_swap(monkeypatch) -> None:
     account = _Account([_location("2826"), _location("1006")])
     args = _args(
         remove_locations=[{"key": "1006"}],
@@ -507,7 +505,9 @@ async def test_a_criterion_changed_since_approval_is_refused_and_the_rest_are_se
 
     by_action = {row["action"]: row for row in _rows(result)}
     assert by_action["remove"]["error_code"] == "CHANGED_SINCE_APPROVAL"
-    assert by_action["add"]["outcome"] == "updated"
+    # The swap is one unit, so its add isn't sent alone.
+    assert by_action["add"]["error_code"] == "CHANGED_SINCE_APPROVAL"
+    assert account.mutates[-1]["validateOnly"] is True
 
 
 async def test_a_campaign_google_couldnt_check_is_never_sent(monkeypatch) -> None:

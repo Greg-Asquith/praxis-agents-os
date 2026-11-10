@@ -13,13 +13,7 @@ from .labels import (
     GoogleAdsLabelTarget,
     GoogleAdsRemoveLabelsOutput,
 )
-from .positive_keywords import (
-    GoogleAdsCpcBid,
-    GoogleAdsCreatePositiveKeywordsOutput,
-    GoogleAdsPositiveKeywordEntry,
-    GoogleAdsPositiveKeywordPatch,
-    GoogleAdsUpdatePositiveKeywordsOutput,
-)
+from .positive_keywords import GoogleAdsCpcBid
 from .recommendations import (
     GoogleAdsApplyRecommendationsOutput,
     GoogleAdsDismissRecommendationsOutput,
@@ -38,7 +32,6 @@ __all__ = [
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsCpcBid",
     "GoogleAdsCreateLabelsOutput",
-    "GoogleAdsCreatePositiveKeywordsOutput",
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",
@@ -47,12 +40,9 @@ __all__ = [
     "GoogleAdsLabelDraft",
     "GoogleAdsLabelTarget",
     "GoogleAdsListReportFieldsOutput",
-    "GoogleAdsPositiveKeywordEntry",
-    "GoogleAdsPositiveKeywordPatch",
     "GoogleAdsRecommendationApplyParameters",
     "GoogleAdsRemoveLabelsOutput",
     "GoogleAdsReportFieldDetail",
     "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",
-    "GoogleAdsUpdatePositiveKeywordsOutput",
 ]

@@ -42,12 +42,6 @@ export function parseApprovalAccounts(value: unknown): Map<string, GoogleAdsAppr
   return accounts
 }
 
-export function accountContextLine(account: GoogleAdsApprovalAccount | undefined): string {
-  return account
-    ? `${account.label} · ${account.currencyCode} · ${account.timeZone}`
-    : "Google Ads account · Currency unavailable"
-}
-
 export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountOverview | null {
   if (!isRecord(value)) return null
   const customerId = googleAdsId(value["customer_id"])

@@ -17,7 +17,7 @@ from ...references import (
 )
 from .base import GoogleAdsStrictModel
 
-MAX_STATUS_CHANGES = 100
+MAX_STATUS_CHANGES = 500
 
 type GoogleAdsStatusKind = Literal["campaign", "ad_group", "ad", "keyword", "asset_group"]
 # ENABLED turns an object on and PAUSED turns it off; removal is google_ads_remove_objects.
@@ -161,9 +161,19 @@ class GoogleAdsStatusOutcome(GoogleAdsStrictModel):
     message: str | None = None
 
 
+class GoogleAdsStatusCounts(GoogleAdsStrictModel):
+    updated: int = Field(ge=0)
+    already_set: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
 class GoogleAdsUpdateStatusData(GoogleAdsStrictModel):
     account_id: str
+    counts: GoogleAdsStatusCounts
+    # Every object on the card; the agent gets only the ones that didn't change.
     objects: list[GoogleAdsStatusOutcome] = Field(max_length=MAX_STATUS_CHANGES)
+    objects_truncated: bool = False
 
 
 class GoogleAdsUpdateStatusEntry(IntegrationFanOutEntry):

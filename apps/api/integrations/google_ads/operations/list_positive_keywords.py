@@ -2,7 +2,6 @@
 
 """List Google Ads positive keywords for lookup and live verification."""
 
-import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -135,49 +134,6 @@ async def list_positive_keywords(
         json={"query": query},
     )
     return [row for row in stream_rows(payload, max_rows=limit) if isinstance(row, Mapping)]
-
-
-async def list_positive_keyword_pairs(
-    client: GoogleAdsClient,
-    *,
-    customer_id: str,
-    login_customer_id: str,
-    keyword_targets: Sequence[tuple[str, str, str]],
-) -> list[Mapping[str, Any]]:
-    """Return only requested case-insensitive keyword and match-type pairs."""
-    unique_targets: dict[tuple[str, str, str], tuple[str, str, str]] = {}
-    for ad_group_id, text, match_type in keyword_targets:
-        key = (ad_group_id, " ".join(text.split()).casefold(), match_type)
-        unique_targets.setdefault(key, (ad_group_id, text, match_type))
-    if not unique_targets:
-        return []
-    texts_by_scope: dict[tuple[str, str], set[str]] = {}
-    for ad_group_id, text, match_type in unique_targets.values():
-        texts_by_scope.setdefault((match_type, ad_group_id), set()).add(text)
-    grouped: dict[tuple[str, tuple[str, ...]], list[str]] = {}
-    for (match_type, ad_group_id), texts in texts_by_scope.items():
-        text_group = tuple(sorted(texts, key=lambda value: (value.casefold(), value)))
-        grouped.setdefault((match_type, text_group), []).append(ad_group_id)
-
-    rows_by_match_type = await asyncio.gather(
-        *(
-            list_positive_keywords(
-                client,
-                customer_id=customer_id,
-                login_customer_id=login_customer_id,
-                ad_group_ids=ad_group_ids,
-                keyword_texts=texts,
-                keyword_match_types=[match_type],
-                limit=len(ad_group_ids) * len(texts) + 1,
-            )
-            for (match_type, texts), ad_group_ids in grouped.items()
-        )
-    )
-    rows = [row for match_rows in rows_by_match_type for row in match_rows]
-    expected_maximum = len(unique_targets)
-    if len(rows) > expected_maximum:
-        raise ValueError("Google Ads returned contradictory positive keyword lookup results")
-    return rows
 
 
 def _escape_re2_literal(value: str) -> str:

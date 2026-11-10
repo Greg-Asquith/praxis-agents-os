@@ -3,13 +3,13 @@
 """Approval-only tool that turns Google Ads campaigns, ad groups, ads, keywords, or asset groups on or off."""
 
 import asyncio
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Annotated, Any
 
 from pydantic import Field, ValidationError
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import ModelRetry, RunContext, ToolReturn
 
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
@@ -30,7 +30,7 @@ from services.audit_events import (
 )
 from services.integrations.approved_display_args import approved_display_args, proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import serialize_fan_out_results
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
 from services.integrations.operations import (
@@ -64,6 +64,9 @@ _IDENTITY = ("object",)
 _MISSING = "This no longer exists in Google Ads."
 _REMOVED = "Removed items can't be turned on or off."
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
+# Every object with its names and statuses, for the most a call can carry.
+_MAX_PUBLIC_RESULT_CHARS = 1_000_000
+_MAX_MODEL_OUTCOMES = 50
 
 type _Key = tuple[str, str, str]
 
@@ -82,7 +85,7 @@ async def google_ads_update_status(
             description="One entry per object: its kind, its reference, and the new status.",
         ),
     ],
-) -> dict[str, Any]:
+) -> ToolReturn[dict[str, Any]]:
     request = validated_request(GoogleAdsUpdateStatusRequest, {"changes": changes})
     _require_proposed(proposed_args(ctx), request)
     checks = approved_display_args(ctx).get("_checks")
@@ -147,7 +150,7 @@ async def google_ads_update_status(
         references=[change.reference for change in request.changes],
         operation=operation,
     )
-    return {"results": serialize_fan_out_results(results)}
+    return split_fan_out_tool_return(results)
 
 
 def _require_proposed(proposed: Mapping[str, Any], request: GoogleAdsUpdateStatusRequest) -> None:
@@ -266,7 +269,23 @@ def _result(
                 "message": effect.message if effect is not None else None,
             }
         )
-    return {"account_id": entry.external_id, "objects": objects}
+    outcomes = Counter(item["outcome"] for item in objects)
+    missed = [item for item in objects if item["outcome"] in {"failed", "unverified"}]
+    base = {
+        "account_id": entry.external_id,
+        "counts": {
+            key: outcomes.get(key, 0) for key in ("updated", "already_set", "failed", "unverified")
+        },
+    }
+    # The card shows every object; the agent gets the counts and what didn't change.
+    return {
+        "display_result": {**base, "objects": objects, "objects_truncated": False},
+        "model_result": {
+            **base,
+            "objects": missed[:_MAX_MODEL_OUTCOMES],
+            "objects_truncated": len(missed) > _MAX_MODEL_OUTCOMES,
+        },
+    }
 
 
 def _name(change: GoogleAdsStatusChange, check: Any) -> str:
@@ -386,7 +405,7 @@ DEFINITION = RuntimeToolDefinition(
     function=google_ads_update_status,
     description=(
         "Turn Google Ads campaigns, ad groups, ads, positive keywords, or Performance Max "
-        "asset groups on (ENABLED) or off (PAUSED), up to 100 per call across kinds and "
+        "asset groups on (ENABLED) or off (PAUSED), up to 500 per call across kinds and "
         "accounts, in one approval. Each change names its kind, the object's reference, and "
         "its own status, so one call can turn some objects off and others on. Turning on an "
         "ad group, ad, or keyword whose campaign or ad group is off doesn't start delivery. "
@@ -404,6 +423,7 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=120,
     output_model=GoogleAdsUpdateStatusOutput,
+    max_public_result_chars=_MAX_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
     approval_display_args=_approval_display_args,

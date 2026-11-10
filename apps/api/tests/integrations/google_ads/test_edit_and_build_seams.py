@@ -345,6 +345,37 @@ async def test_an_atomic_group_is_sent_on_its_own_without_partial_failure() -> N
     ]
 
 
+async def test_a_stale_edit_stops_the_rest_of_its_atomic_group() -> None:
+    keyword = "customers/333/adGroupCriteria/20~40"
+    pause = FieldChange(
+        "adGroupCriterion",
+        keyword,
+        {"status": "PAUSED"},
+        before={"status": "ENABLED", "cpcBidMicros": "500000"},
+        compared=("cpcBidMicros",),
+        atomic_group=keyword,
+    )
+    add = CriterionChange(
+        "adGroupCriterion",
+        "add",
+        key=f"{_AD_GROUP}/keyword/PHRASE/trail shoes",
+        owner=_AD_GROUP,
+        criterion={"adGroup": _AD_GROUP, "keyword": {"text": "trail shoes", "matchType": "PHRASE"}},
+        atomic_group=keyword,
+    )
+    # The bid the new keyword copies changed after approval.
+    read = _LiveState({keyword: {"status": "ENABLED", "cpcBidMicros": "900000"}})
+    client = _MutateClient()
+
+    result = await _applied(client, read, [pause, add])
+
+    assert client.bodies == []
+    assert [effect.error_code for parent in result.ledger.parents for effect in parent.effects] == [
+        STALE_CODE,
+        STALE_CODE,
+    ]
+
+
 def _search_build() -> CampaignBuild:
     build = CampaignBuild("333")
     # Added out of order on purpose: the request must still send parents first.

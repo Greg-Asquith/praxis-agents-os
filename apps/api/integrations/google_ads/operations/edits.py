@@ -285,7 +285,8 @@ async def apply_edits(
 
     An object whose live values differ from the approved `before` values is refused as
     changed since approval. Edits already at their values are skipped as already set.
-    Refused edits from preparation are recorded as failed and never sent.
+    Refused edits from preparation are recorded as failed and never sent, with the rest of
+    their atomic group.
 
     Raises:
         asyncio.CancelledError: With a `ledger` attribute holding what is known of the sent edits.
@@ -297,6 +298,15 @@ async def apply_edits(
         for edit in edits
         if edit.refused is not None or edit.live(live.get(edit.key)) != edit.before
     }
+    # A group happens whole or not at all, so one refused edit refuses the rest of its group.
+    refused_groups = {
+        edit.atomic_group: refusals[edit.key]
+        for edit in edits
+        if edit.atomic_group is not None and edit.key in refusals
+    }
+    for edit in edits:
+        if edit.atomic_group in refused_groups:
+            refusals.setdefault(edit.key, refused_groups[edit.atomic_group])
     sent = [edit for edit in edits if edit.key not in refusals and not edit.unchanged]
     try:
         outcomes = await _send(
