@@ -7,9 +7,7 @@ import re
 import pytest
 
 from integrations.google_ads.operations.mutation_outcomes import (
-    CAMPAIGN_KEYWORD_MUTATION_SPEC,
     GoogleAdsMutationProjection,
-    build_keyword_mutation_ledger,
     build_mutation_ledger,
     reconcile_created_mutation_outcomes,
     reconcile_exact_mutation_outcomes,
@@ -37,7 +35,6 @@ def test_ledger_separates_parent_intents_from_any_expansion_effects() -> None:
             applied_key="removed",
             skipped_key="not_found",
             errors_key="keyword_errors",
-            error_scope="keyword",
         ),
     )
 
@@ -55,7 +52,6 @@ def test_ledger_separates_parent_intents_from_any_expansion_effects() -> None:
         "not_found": [{"text": "missing", "match_type": "PHRASE"}],
         "keyword_errors": [
             {
-                "scope": "keyword",
                 "text": "brand",
                 "match_type": "BROAD",
                 "message": "Criterion cannot be removed",
@@ -98,26 +94,6 @@ def test_ledger_rejects_missing_duplicate_and_out_of_range_accounting(
                 skipped_key="skipped",
                 errors_key="campaign_errors",
             ),
-        )
-
-
-@pytest.mark.parametrize(
-    "effect_fields",
-    [
-        {"campaign_id": "20", "text": "brand", "match_type": "EXACT"},
-    ],
-)
-def test_keyword_ledger_rejects_effects_attributed_to_a_different_parent(
-    effect_fields: dict[str, str],
-) -> None:
-    with pytest.raises(ValueError, match="does not match its parent intent"):
-        build_keyword_mutation_ledger(
-            spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
-            action="add",
-            parent_fields=[{"campaign_id": "10", "text": "Brand", "match_type": "EXACT"}],
-            skipped_indices={},
-            submitted=[(0, effect_fields)],
-            outcomes=[("applied", "customers/1/campaignCriteria/10~1", None, None)],
         )
 
 

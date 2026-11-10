@@ -1,394 +1,347 @@
 # apps/api/integrations/google_ads/operations/negative_keyword_criteria.py
 
-"""Shared Google Ads campaign and ad-group negative-keyword mechanics."""
+"""Reads negative keywords on campaigns, ad groups, and lists, and the keywords they could block."""
 
-import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Literal
+import asyncio
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .mutation_outcomes import (
-    AD_GROUP_KEYWORD_MUTATION_SPEC,
-    CAMPAIGN_KEYWORD_MUTATION_SPEC,
-    GoogleAdsKeywordMutationSpec,
-    GoogleAdsMutationLedger,
-    GoogleAdsMutationOutcome,
-    build_keyword_mutation_ledger,
-    reconcile_mutation_outcomes,
+from .utils import stream_rows
+
+# Google allows 5,000 keywords a list; these only stop an unbounded read.
+_MAX_NEGATIVES = 100_000
+_MAX_BID_KEYWORDS = 100_000
+_MAX_LISTS = 10_000
+_TOO_MANY = (
+    "These campaigns hold too many keywords to check at once. Change fewer campaigns or lists."
 )
-from .utils import grouped_partial_failure_errors, stream_rows
-
-MAX_ENTITY_NEGATIVE_OPERATIONS = 2_500
-
-type EntityIdKey = Literal["campaign_id", "ad_group_id"]
-type ErrorsKey = Literal["campaign_errors", "ad_group_errors"]
-
-_MATCH_TYPES = {"EXACT", "PHRASE", "BROAD"}
 
 
 @dataclass(frozen=True, slots=True)
-class NegativeKeywordEntitySpec:
-    """Provider-local fields that differ between supported criterion owners."""
+class LiveOwner:
+    """A campaign, ad group, or list that negatives belong to."""
 
-    entity_id_key: EntityIdKey
-    errors_key: ErrorsKey
-    entity_resource: Literal["campaign", "ad_group"]
-    criterion_resource: Literal["campaign_criterion", "ad_group_criterion"]
-    response_entity_key: Literal["campaign", "adGroup"]
-    response_criterion_key: Literal["campaignCriterion", "adGroupCriterion"]
-    create_field: Literal["campaign", "adGroup"]
-    entity_path: Literal["campaigns", "adGroups"]
-    criterion_path: Literal["campaignCriteria", "adGroupCriteria"]
-    operation_entity: Literal["campaign", "ad_group"]
-    entity_plural_label: Literal["Campaigns", "Ad groups"]
-    criterion_label: Literal["campaign", "ad group"]
-    max_operations: int
-    ledger_spec: GoogleAdsKeywordMutationSpec
+    resource_name: str
+    name: str
+    status: str
+    campaign: str | None = None
 
 
-CAMPAIGN_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
-    entity_id_key="campaign_id",
-    errors_key="campaign_errors",
-    entity_resource="campaign",
-    criterion_resource="campaign_criterion",
-    response_entity_key="campaign",
-    response_criterion_key="campaignCriterion",
-    create_field="campaign",
-    entity_path="campaigns",
-    criterion_path="campaignCriteria",
-    operation_entity="campaign",
-    entity_plural_label="Campaigns",
-    criterion_label="campaign",
-    max_operations=MAX_ENTITY_NEGATIVE_OPERATIONS,
-    ledger_spec=CAMPAIGN_KEYWORD_MUTATION_SPEC,
-)
-AD_GROUP_NEGATIVE_KEYWORD_SPEC = NegativeKeywordEntitySpec(
-    entity_id_key="ad_group_id",
-    errors_key="ad_group_errors",
-    entity_resource="ad_group",
-    criterion_resource="ad_group_criterion",
-    response_entity_key="adGroup",
-    response_criterion_key="adGroupCriterion",
-    create_field="adGroup",
-    entity_path="adGroups",
-    criterion_path="adGroupCriteria",
-    operation_entity="ad_group",
-    entity_plural_label="Ad groups",
-    criterion_label="ad group",
-    max_operations=MAX_ENTITY_NEGATIVE_OPERATIONS,
-    ledger_spec=AD_GROUP_KEYWORD_MUTATION_SPEC,
-)
-_KNOWN_SPECS = (CAMPAIGN_NEGATIVE_KEYWORD_SPEC, AD_GROUP_NEGATIVE_KEYWORD_SPEC)
+@dataclass(frozen=True, slots=True)
+class BidKeyword:
+    """A keyword the account bids on, which a negative in its scope could block."""
+
+    campaign: str
+    ad_group: str
+    ad_group_name: str
+    text: str
 
 
-async def add_entity_negative_keywords(
+@dataclass(frozen=True, slots=True)
+class LiveNegatives:
+    owners: Mapping[str, LiveOwner] = field(default_factory=dict)
+    # By `negative_key` or `list_use_key`, the live resource name.
+    criteria: Mapping[str, str] = field(default_factory=dict)
+    # Each list's keywords as `(text, match type)`.
+    list_keywords: Mapping[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
+    # Each list's campaigns.
+    list_campaigns: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    # Lists that aren't removed, by name in lower case.
+    list_names: Mapping[str, str] = field(default_factory=dict)
+    bid_keywords: tuple[BidKeyword, ...] = ()
+
+    def values(self) -> dict[str, dict[str, Any]]:
+        """Returns each negative and list use by edit key, for the edit seam."""
+        return {key: {"resourceName": name} for key, name in self.criteria.items()}
+
+
+def negative_key(owner: str, text: str, match_type: str) -> str:
+    """Names one negative on its campaign, ad group, or list; Google ignores case."""
+    return f"{owner}/negative/{match_type}/{' '.join(text.casefold().split())}"
+
+
+def list_use_key(campaign: str, shared_set: str) -> str:
+    """Names a campaign's use of a list, including a list the same request creates."""
+    return f"{campaign}/uses/{shared_set}"
+
+
+def blocks(negative: str, match_type: str, keyword: str) -> bool:
+    """Whether a negative blocks searches for the keyword's own words."""
+    words = keyword.casefold().split()
+    blocked = negative.casefold().split()
+    if match_type == "EXACT":
+        return words == blocked
+    if match_type == "PHRASE":
+        size = len(blocked)
+        return any(words[index : index + size] == blocked for index in range(len(words) - size + 1))
+    return set(blocked) <= set(words)
+
+
+async def read_negative_keywords(
     client: GoogleAdsClient,
     *,
-    spec: NegativeKeywordEntitySpec,
     customer_id: str,
     login_customer_id: str,
-    entity_ids: list[str],
-    keywords: list[dict[str, str]],
-) -> GoogleAdsMutationLedger:
-    _require_known_spec(spec)
-    normalized_customer_id = normalize_customer_id(customer_id)
-    normalized_entity_ids = _entity_ids(spec, entity_ids)
-    _validate_operation_count(spec, normalized_entity_ids, keywords, operation="add")
-    existing = await _negative_criteria(
-        client,
-        spec=spec,
-        customer_id=normalized_customer_id,
-        login_customer_id=login_customer_id,
-        entity_ids=normalized_entity_ids,
-    )
-    existing_pairs = {
-        (criterion[spec.entity_id_key], criterion["text"].casefold(), criterion["match_type"])
-        for criterion in existing
-    }
-    requested = [
-        {spec.entity_id_key: entity_id, **keyword}
-        for entity_id in normalized_entity_ids
-        for keyword in keywords
-    ]
-    skipped_indices = {
-        index: "already_exists"
-        for index, item in enumerate(requested)
-        if (item[spec.entity_id_key], item["text"].casefold(), item["match_type"]) in existing_pairs
-    }
-    submitted = [
-        (index, item) for index, item in enumerate(requested) if index not in skipped_indices
-    ]
-    creates = [item for _, item in submitted]
-    if not creates:
-        return _ledger(spec, "add", requested, skipped_indices, (), ())
+    campaign_ids: Sequence[str],
+    ad_group_ids: Sequence[str],
+    shared_set_ids: Sequence[str],
+    list_campaign_ids: Sequence[str],
+    check_keywords: bool,
+) -> LiveNegatives:
+    """Reads the targets that exist, removed ones included, and their negatives.
 
-    payload = await client.post(
-        f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
-        operation=f"add_{spec.operation_entity}_negative_keywords",
-        policy=IntegrationRequestPolicy.MUTATION,
-        login_customer_id=login_customer_id,
-        json={
-            "operations": [
-                {
-                    "create": {
-                        spec.create_field: (
-                            f"customers/{normalized_customer_id}/{spec.entity_path}/"
-                            f"{item[spec.entity_id_key]}"
-                        ),
-                        "negative": True,
-                        "keyword": {
-                            "text": item["text"],
-                            "matchType": item["match_type"],
-                        },
-                    }
-                }
-                for item in creates
-            ],
-            "partialFailure": True,
-        },
+    `campaign_ids` and `ad_group_ids` hold negatives; `list_campaign_ids` are campaigns a list
+    is applied to or taken from. With `check_keywords`, it also reads the keywords bid on in
+    every campaign and ad group whose searches the negatives would cover.
+
+    Raises:
+        IntegrationValidationError: When the targets hold too many keywords to compare.
+    """
+    ids = [*campaign_ids, *ad_group_ids, *shared_set_ids, *list_campaign_ids]
+    if any(not value.isdigit() for value in ids):
+        raise ValueError("Google Ads ids must contain only digits")
+    read = _Reader(client, normalize_customer_id(customer_id), login_customer_id)
+    campaigns = sorted({*campaign_ids, *list_campaign_ids})
+    owners, ad_groups, negatives, lists, list_keywords, uses = await asyncio.gather(
+        read.campaigns(campaigns),
+        read.ad_groups(sorted(set(ad_group_ids))),
+        read.owner_negatives(sorted(set(campaign_ids)), sorted(set(ad_group_ids))),
+        read.lists(),
+        read.list_keywords(sorted(set(shared_set_ids))),
+        read.list_uses(sorted(set(shared_set_ids))),
     )
-    outcomes = _mutation_outcomes(
-        payload,
-        creates,
-        spec=spec,
-        default_message=f"{spec.entity_plural_label[:-1]} negative keyword creation failed",
-        valid_resource_name=lambda index, name: (
-            re.fullmatch(
-                rf"customers/{normalized_customer_id}/{spec.criterion_path}/"
-                rf"{creates[index][spec.entity_id_key]}~\d+",
-                name,
+    all_owners = {**owners, **ad_groups, **lists}
+    criteria = {**negatives, **list_keywords[0], **uses[0]}
+    bid_keywords: tuple[BidKeyword, ...] = ()
+    if check_keywords:
+        used = {campaign for names in uses[1].values() for campaign in names}
+        scoped = {*campaign_ids, *list_campaign_ids, *(name.rpartition("/")[2] for name in used)}
+        bid_keywords = await read.bid_keywords(sorted(scoped), sorted(set(ad_group_ids)))
+    return LiveNegatives(
+        owners=all_owners,
+        criteria=criteria,
+        list_keywords=list_keywords[1],
+        list_campaigns=uses[1],
+        list_names={
+            owner.name.casefold(): name
+            for name, owner in lists.items()
+            if owner.status != "REMOVED"
+        },
+        bid_keywords=bid_keywords,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Reader:
+    client: GoogleAdsClient
+    customer: str
+    login_customer_id: str
+
+    async def _rows(self, query: str, operation: str, max_rows: int) -> list[dict[str, Any]]:
+        payload = await self.client.post(
+            f"customers/{self.customer}/googleAds:searchStream",
+            operation=operation,
+            policy=IntegrationRequestPolicy.READ,
+            login_customer_id=self.login_customer_id,
+            json={"query": query},
+        )
+        rows = stream_rows(payload, max_rows=max_rows)
+        if len(rows) >= max_rows:
+            raise IntegrationValidationError(
+                _TOO_MANY,
+                provider_key="google_ads",
+                failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
             )
-            is not None
-        ),
-    )
-    return _ledger(spec, "add", requested, skipped_indices, submitted, outcomes)
+        return rows
 
+    def _name(self, collection: str, value: Any) -> str:
+        return f"customers/{self.customer}/{collection}/{value}"
 
-async def remove_entity_negative_keywords(
-    client: GoogleAdsClient,
-    *,
-    spec: NegativeKeywordEntitySpec,
-    customer_id: str,
-    login_customer_id: str,
-    entity_ids: list[str],
-    keywords: list[dict[str, str]],
-) -> GoogleAdsMutationLedger:
-    _require_known_spec(spec)
-    normalized_customer_id = normalize_customer_id(customer_id)
-    normalized_entity_ids = _entity_ids(spec, entity_ids)
-    _validate_operation_count(spec, normalized_entity_ids, keywords, operation="remove")
-    existing = await _negative_criteria(
-        client,
-        spec=spec,
-        customer_id=normalized_customer_id,
-        login_customer_id=login_customer_id,
-        entity_ids=normalized_entity_ids,
-    )
-    requested = [
-        {spec.entity_id_key: entity_id, **keyword}
-        for entity_id in normalized_entity_ids
-        for keyword in keywords
-    ]
-    removals: list[tuple[int, dict[str, str]]] = []
-    skipped_indices: dict[int, str] = {}
-    parent_index = 0
-    for entity_id in normalized_entity_ids:
-        entity_criteria = [
-            criterion for criterion in existing if criterion[spec.entity_id_key] == entity_id
+    async def campaigns(self, ids: Sequence[str]) -> dict[str, LiveOwner]:
+        if not ids:
+            return {}
+        rows = await self._rows(
+            "SELECT campaign.id, campaign.name, campaign.status FROM campaign "  # noqa: S608 -- digit-only ids
+            f"WHERE campaign.id IN ({', '.join(ids)})",
+            "read_negative_keyword_campaigns",
+            len(ids) + 1,
+        )
+        owners = {}
+        for row in rows:
+            campaign = row.get("campaign") or {}
+            name = self._name("campaigns", campaign.get("id"))
+            owners[name] = LiveOwner(
+                name, str(campaign.get("name") or name), str(campaign.get("status") or "UNKNOWN")
+            )
+        return owners
+
+    async def ad_groups(self, ids: Sequence[str]) -> dict[str, LiveOwner]:
+        if not ids:
+            return {}
+        rows = await self._rows(
+            "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group "  # noqa: S608 -- digit-only ids
+            f"WHERE ad_group.id IN ({', '.join(ids)})",
+            "read_negative_keyword_ad_groups",
+            len(ids) + 1,
+        )
+        owners = {}
+        for row in rows:
+            ad_group = row.get("adGroup") or {}
+            name = self._name("adGroups", ad_group.get("id"))
+            owners[name] = LiveOwner(
+                name,
+                str(ad_group.get("name") or name),
+                str(ad_group.get("status") or "UNKNOWN"),
+                campaign=self._name("campaigns", (row.get("campaign") or {}).get("id")),
+            )
+        return owners
+
+    async def owner_negatives(
+        self, campaign_ids: Sequence[str], ad_group_ids: Sequence[str]
+    ) -> dict[str, str]:
+        queries = [
+            (resource, "campaigns" if resource == "campaign" else "adGroups", ids)
+            for resource, ids in (("campaign", campaign_ids), ("ad_group", ad_group_ids))
+            if ids
         ]
-        for keyword in keywords:
-            matches = [
-                criterion
-                for criterion in entity_criteria
-                if criterion["text"].casefold() == keyword["text"].casefold()
-                and (
-                    keyword["match_type"] == "ANY"
-                    or criterion["match_type"] == keyword["match_type"]
+        results = await asyncio.gather(
+            *(
+                self._rows(
+                    f"SELECT {resource}.id, {resource}_criterion.resource_name, "  # noqa: S608 -- fixed resources and digit-only ids
+                    f"{resource}_criterion.keyword.text, {resource}_criterion.keyword.match_type "
+                    f"FROM {resource}_criterion WHERE {resource}_criterion.negative = TRUE "
+                    f"AND {resource}_criterion.type = 'KEYWORD' "
+                    f"AND {resource}_criterion.status != 'REMOVED' "
+                    f"AND {resource}.id IN ({', '.join(ids)})",
+                    f"read_{resource}_negative_keywords",
+                    _MAX_NEGATIVES,
                 )
-            ]
-            if matches:
-                removals.extend((parent_index, match) for match in matches)
-            else:
-                skipped_indices[parent_index] = "not_found"
-            parent_index += 1
-
-    if len(removals) > spec.max_operations:
-        raise IntegrationValidationError(
-            f"The selected rows resolve to more than {spec.max_operations:,} "
-            f"{spec.criterion_label} "
-            "negative keywords. Split the request into smaller groups.",
-            provider_key="google_ads",
-            operation=f"remove_{spec.operation_entity}_negative_keywords",
+                for resource, _collection, ids in queries
+            )
         )
-    if not removals:
-        return _ledger(spec, "remove", requested, skipped_indices, (), ())
+        criteria: dict[str, str] = {}
+        for (resource, collection, _ids), rows in zip(queries, results, strict=True):
+            owner_key = "campaign" if resource == "campaign" else "adGroup"
+            for row in rows:
+                criterion = row.get(f"{owner_key}Criterion") or {}
+                keyword = criterion.get("keyword") or {}
+                name = criterion.get("resourceName")
+                if isinstance(name, str) and keyword.get("text") and keyword.get("matchType"):
+                    owner = self._name(collection, (row.get(owner_key) or {}).get("id"))
+                    key = negative_key(owner, str(keyword["text"]), str(keyword["matchType"]))
+                    criteria[key] = name
+        return criteria
 
-    removal_rows = [item for _, item in removals]
-
-    payload = await client.post(
-        f"customers/{normalized_customer_id}/{spec.criterion_path}:mutate",
-        operation=f"remove_{spec.operation_entity}_negative_keywords",
-        policy=IntegrationRequestPolicy.MUTATION,
-        login_customer_id=login_customer_id,
-        json={
-            "operations": [{"remove": item["resource_name"]} for item in removal_rows],
-            "partialFailure": True,
-        },
-    )
-    outcomes = _mutation_outcomes(
-        payload,
-        removal_rows,
-        spec=spec,
-        default_message=f"{spec.entity_plural_label[:-1]} negative keyword removal failed",
-        valid_resource_name=lambda index, name: name == removal_rows[index]["resource_name"],
-    )
-    concrete = [
-        (
-            parent,
-            {key: value for key, value in item.items() if key != "resource_name"},
+    async def lists(self) -> dict[str, LiveOwner]:
+        rows = await self._rows(
+            "SELECT shared_set.id, shared_set.name, shared_set.status FROM shared_set "
+            "WHERE shared_set.type = 'NEGATIVE_KEYWORDS'",
+            "read_negative_keyword_lists",
+            _MAX_LISTS,
         )
-        for parent, item in removals
-    ]
-    return _ledger(spec, "remove", requested, skipped_indices, concrete, outcomes)
+        owners = {}
+        for row in rows:
+            shared_set = row.get("sharedSet") or {}
+            name = self._name("sharedSets", shared_set.get("id"))
+            owners[name] = LiveOwner(
+                name,
+                str(shared_set.get("name") or name),
+                str(shared_set.get("status") or "UNKNOWN"),
+            )
+        return owners
 
-
-async def _negative_criteria(
-    client: GoogleAdsClient,
-    *,
-    spec: NegativeKeywordEntitySpec,
-    customer_id: str,
-    login_customer_id: str,
-    entity_ids: list[str],
-) -> list[dict[str, str]]:
-    query = (
-        f"SELECT {spec.entity_resource}.id, {spec.criterion_resource}.resource_name, "  # noqa: S608 -- spec literals and digit-only entity ids
-        f"{spec.criterion_resource}.keyword.text, "
-        f"{spec.criterion_resource}.keyword.match_type "
-        f"FROM {spec.criterion_resource} "
-        f"WHERE {spec.criterion_resource}.negative = TRUE "
-        f"AND {spec.criterion_resource}.type = 'KEYWORD' "
-        f"AND {spec.entity_resource}.id IN ({', '.join(entity_ids)})"
-    )
-    payload = await client.post(
-        f"customers/{customer_id}/googleAds:searchStream",
-        operation=f"list_{spec.operation_entity}_negative_keywords",
-        policy=IntegrationRequestPolicy.READ,
-        login_customer_id=login_customer_id,
-        json={"query": query},
-    )
-    criteria: list[dict[str, str]] = []
-    for row in stream_rows(payload):
-        entity = row.get(spec.response_entity_key)
-        criterion = row.get(spec.response_criterion_key)
-        if not isinstance(entity, Mapping) or not isinstance(criterion, Mapping):
-            continue
-        entity_id = str(entity.get("id", ""))
-        resource_name = criterion.get("resourceName")
-        keyword = criterion.get("keyword")
-        if (
-            entity_id not in entity_ids
-            or not isinstance(resource_name, str)
-            or not resource_name
-            or not isinstance(keyword, Mapping)
-        ):
-            continue
-        text = keyword.get("text")
-        match_type = keyword.get("matchType")
-        if not isinstance(text, str) or match_type not in _MATCH_TYPES:
-            continue
-        criteria.append(
-            {
-                spec.entity_id_key: entity_id,
-                "text": text,
-                "match_type": match_type,
-                "resource_name": resource_name,
-            }
+    async def list_keywords(
+        self, ids: Sequence[str]
+    ) -> tuple[dict[str, str], dict[str, tuple[tuple[str, str], ...]]]:
+        if not ids:
+            return {}, {}
+        rows = await self._rows(
+            "SELECT shared_set.id, shared_criterion.resource_name, "  # noqa: S608 -- digit-only ids
+            "shared_criterion.keyword.text, shared_criterion.keyword.match_type "
+            "FROM shared_criterion WHERE shared_criterion.type = 'KEYWORD' "
+            f"AND shared_set.id IN ({', '.join(ids)})",
+            "read_negative_keyword_list_keywords",
+            _MAX_NEGATIVES,
         )
-    return criteria
+        criteria: dict[str, str] = {}
+        keywords: dict[str, list[tuple[str, str]]] = {}
+        for row in rows:
+            criterion = row.get("sharedCriterion") or {}
+            keyword = criterion.get("keyword") or {}
+            name = criterion.get("resourceName")
+            text, match_type = keyword.get("text"), keyword.get("matchType")
+            if isinstance(name, str) and text and match_type:
+                owner = self._name("sharedSets", (row.get("sharedSet") or {}).get("id"))
+                criteria[negative_key(owner, str(text), str(match_type))] = name
+                keywords.setdefault(owner, []).append((str(text), str(match_type)))
+        return criteria, {owner: tuple(items) for owner, items in keywords.items()}
 
-
-def _entity_ids(spec: NegativeKeywordEntitySpec, entity_ids: list[str]) -> list[str]:
-    normalized = list(dict.fromkeys(normalize_customer_id(value) for value in entity_ids))
-    if not normalized:
-        raise ValueError(f"At least one Google Ads {spec.criterion_label} id is required")
-    return normalized
-
-
-def _validate_operation_count(
-    spec: NegativeKeywordEntitySpec,
-    entity_ids: list[str],
-    keywords: list[dict[str, str]],
-    *,
-    operation: str,
-) -> None:
-    if len(entity_ids) * len(keywords) > spec.max_operations:
-        raise IntegrationValidationError(
-            f"{spec.entity_plural_label} multiplied by keyword rows must not exceed "
-            f"{spec.max_operations:,}. "
-            "Split the request into smaller groups.",
-            provider_key="google_ads",
-            operation=f"{operation}_{spec.operation_entity}_negative_keywords",
+    async def list_uses(
+        self, ids: Sequence[str]
+    ) -> tuple[dict[str, str], dict[str, frozenset[str]]]:
+        if not ids:
+            return {}, {}
+        rows = await self._rows(
+            "SELECT campaign_shared_set.resource_name, campaign_shared_set.campaign, "  # noqa: S608 -- digit-only ids
+            "campaign_shared_set.shared_set FROM campaign_shared_set "
+            "WHERE campaign_shared_set.status = 'ENABLED' "
+            f"AND shared_set.id IN ({', '.join(ids)})",
+            "read_negative_keyword_list_campaigns",
+            _MAX_NEGATIVES,
         )
+        criteria: dict[str, str] = {}
+        campaigns: dict[str, set[str]] = {}
+        for row in rows:
+            use = row.get("campaignSharedSet") or {}
+            name, campaign, shared_set = (
+                use.get("resourceName"),
+                use.get("campaign"),
+                use.get("sharedSet"),
+            )
+            if isinstance(name, str) and isinstance(campaign, str) and isinstance(shared_set, str):
+                criteria[list_use_key(campaign, shared_set)] = name
+                campaigns.setdefault(shared_set, set()).add(campaign)
+        return criteria, {owner: frozenset(items) for owner, items in campaigns.items()}
 
-
-def _mutation_outcomes(
-    payload: Any,
-    operations: list[dict[str, str]],
-    *,
-    spec: NegativeKeywordEntitySpec,
-    default_message: str,
-    valid_resource_name: Callable[[int, str], bool],
-) -> list[GoogleAdsMutationOutcome]:
-    indexed_errors, unattributed_errors = grouped_partial_failure_errors(
-        payload,
-        operations,
-        value_to_error_fields=lambda item: _error_fields(spec, item),
-        unattributed_error_fields={
-            spec.entity_id_key: "",
-            "text": "",
-            "match_type": "",
-        },
-        default_message=default_message,
-    )
-    return reconcile_mutation_outcomes(
-        payload.get("results") if isinstance(payload, dict) else None,
-        operation_count=len(operations),
-        indexed_errors=indexed_errors,
-        unattributed_errors=unattributed_errors,
-        valid_resource_name=valid_resource_name,
-    )
-
-
-def _ledger(
-    spec: NegativeKeywordEntitySpec,
-    action: Literal["add", "remove"],
-    requested: list[dict[str, str]],
-    skipped_indices: dict[int, str],
-    submitted: Any,
-    outcomes: Any,
-) -> GoogleAdsMutationLedger:
-    return build_keyword_mutation_ledger(
-        spec=spec.ledger_spec,
-        action=action,
-        parent_fields=requested,
-        skipped_indices=skipped_indices,
-        submitted=submitted,
-        outcomes=outcomes,
-    )
-
-
-def _error_fields(spec: NegativeKeywordEntitySpec, item: Mapping[str, str]) -> dict[str, str]:
-    return {
-        spec.entity_id_key: item[spec.entity_id_key],
-        "text": item["text"],
-        "match_type": item["match_type"],
-    }
-
-
-def _require_known_spec(spec: NegativeKeywordEntitySpec) -> None:
-    if spec not in _KNOWN_SPECS:
-        raise ValueError("Unsupported Google Ads negative-keyword entity specification")
+    async def bid_keywords(
+        self, campaign_ids: Sequence[str], ad_group_ids: Sequence[str]
+    ) -> tuple[BidKeyword, ...]:
+        filters = [
+            f"{resource}.id IN ({', '.join(ids)})"
+            for resource, ids in (("campaign", campaign_ids), ("ad_group", ad_group_ids))
+            if ids
+        ]
+        results = await asyncio.gather(
+            *(
+                self._rows(
+                    "SELECT campaign.id, ad_group.id, ad_group.name, "  # noqa: S608 -- fixed resources and digit-only ids
+                    "ad_group_criterion.keyword.text FROM ad_group_criterion "
+                    "WHERE ad_group_criterion.type = 'KEYWORD' "
+                    "AND ad_group_criterion.negative = FALSE "
+                    "AND ad_group_criterion.status != 'REMOVED' "
+                    f"AND ad_group.status != 'REMOVED' AND {condition}",
+                    "read_negative_keyword_bid_keywords",
+                    _MAX_BID_KEYWORDS,
+                )
+                for condition in filters
+            )
+        )
+        keywords: dict[tuple[str, str, str], BidKeyword] = {}
+        for row in (row for rows in results for row in rows):
+            ad_group = row.get("adGroup") or {}
+            text = ((row.get("adGroupCriterion") or {}).get("keyword") or {}).get("text")
+            if not text:
+                continue
+            keyword = BidKeyword(
+                campaign=self._name("campaigns", (row.get("campaign") or {}).get("id")),
+                ad_group=self._name("adGroups", ad_group.get("id")),
+                ad_group_name=str(ad_group.get("name") or ""),
+                text=str(text),
+            )
+            keywords[keyword.campaign, keyword.ad_group, keyword.text.casefold()] = keyword
+        return tuple(keywords.values())

@@ -12,8 +12,6 @@ from .campaign_budgets import (
     GoogleAdsTotalBudgetAmount,
     GoogleAdsUpdateCampaignBudgetAmountsOutput,
 )
-from .campaign_links import GoogleAdsCampaignLinkOutput
-from .create_negative_keyword_list import GoogleAdsCreateNegativeKeywordListOutput
 from .device_bid_modifiers import (
     GoogleAdsDeviceAdjustment,
     GoogleAdsDeviceBidModifierOutput,
@@ -25,10 +23,6 @@ from .labels import (
     GoogleAdsLabelDraft,
     GoogleAdsLabelTarget,
     GoogleAdsRemoveLabelsOutput,
-)
-from .negative_keywords import (
-    GoogleAdsAddNegativeKeywordsOutput,
-    GoogleAdsRemoveNegativeKeywordsOutput,
 )
 from .positive_keywords import (
     GoogleAdsCpcBid,
@@ -49,27 +43,16 @@ from .report_fields import (
     GoogleAdsReportFieldSummary,
 )
 from .run_report import GoogleAdsJsonValue, GoogleAdsRunReportOutput
-from .scoped_negative_keywords import (
-    GoogleAdsAddAdGroupKeywordOutput,
-    GoogleAdsAddCampaignKeywordOutput,
-    GoogleAdsRemoveAdGroupKeywordOutput,
-    GoogleAdsRemoveCampaignKeywordOutput,
-)
 
 __all__ = [
-    "GoogleAdsAddAdGroupKeywordOutput",
-    "GoogleAdsAddCampaignKeywordOutput",
-    "GoogleAdsAddNegativeKeywordsOutput",
     "GoogleAdsApplyLabelsOutput",
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsAssignCampaignBudgetsOutput",
     "GoogleAdsCampaignBudgetAmount",
     "GoogleAdsCampaignBudgetAmountUpdate",
-    "GoogleAdsCampaignLinkOutput",
     "GoogleAdsCpcBid",
     "GoogleAdsCreateCampaignBudgetOutput",
     "GoogleAdsCreateLabelsOutput",
-    "GoogleAdsCreateNegativeKeywordListOutput",
     "GoogleAdsCreatePositiveKeywordsOutput",
     "GoogleAdsDailyBudgetAmount",
     "GoogleAdsDeleteLabelsOutput",
@@ -84,11 +67,8 @@ __all__ = [
     "GoogleAdsPositiveKeywordEntry",
     "GoogleAdsPositiveKeywordPatch",
     "GoogleAdsRecommendationApplyParameters",
-    "GoogleAdsRemoveAdGroupKeywordOutput",
     "GoogleAdsRemoveCampaignBudgetsOutput",
-    "GoogleAdsRemoveCampaignKeywordOutput",
     "GoogleAdsRemoveLabelsOutput",
-    "GoogleAdsRemoveNegativeKeywordsOutput",
     "GoogleAdsReportFieldDetail",
     "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",

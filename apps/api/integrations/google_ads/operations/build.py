@@ -37,6 +37,9 @@ type BuildResource = Literal[
     "adGroupAsset",
     "assetGroupAsset",
     "assetGroupSignal",
+    "sharedSet",
+    "sharedCriterion",
+    "campaignSharedSet",
 ]
 
 # Each resource's collection and its place in the request. A temporary name must be created
@@ -55,9 +58,12 @@ _COLLECTIONS: dict[str, tuple[str, int]] = {
     "adGroupAsset": ("adGroupAssets", 8),
     "assetGroupAsset": ("assetGroupAssets", 8),
     "assetGroupSignal": ("assetGroupSignals", 8),
+    "sharedSet": ("sharedSets", 1),
+    "sharedCriterion": ("sharedCriteria", 3),
+    "campaignSharedSet": ("campaignSharedSets", 8),
 }
 # Objects other operations refer to get a temporary name; Google names the rest.
-_NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup"}
+_NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup", "sharedSet"}
 _TEMPORARY_NAME = re.compile(r"customers/\d+/[A-Za-z]+/-\d+")
 _NOTHING_CREATED = "Google Ads created nothing, because part of the request was rejected."
 

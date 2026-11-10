@@ -21,7 +21,7 @@ from .ad_groups import (
 )
 from .base import GoogleAdsStrictModel
 from .campaign_budgets import GoogleAdsMoneyAmount
-from .negative_keyword import NegativeKeywordEntry
+from .negative_keywords import NegativeKeywordEntry
 from .positive_keywords import money_bid_to_micros
 
 MAX_CAMPAIGN_LOCATIONS = 1_000

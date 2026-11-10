@@ -7,50 +7,31 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-from pydantic_ai import (
-    Agent,
-    DeferredToolRequests,
-    DeferredToolResults,
-    ModelRetry,
-    ToolApproved,
-)
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai import ModelRetry
 
-from integrations.google_ads.references import (
-    GoogleAdsCampaignReference,
-    GoogleAdsSharedSetReference,
-)
-from integrations.google_ads.tools.add_negative_keywords import (
-    _pending_negative_keyword_operation_detail,
+from integrations.google_ads.operations.mutation_outcomes import (
+    GoogleAdsMutationProjection,
+    build_mutation_ledger,
 )
 from integrations.google_ads.tools.get_report_field import google_ads_get_report_field
-from integrations.google_ads.tools.link_negative_keyword_list import (
-    _campaign_link_result,
-    google_ads_link_negative_keyword_list,
-)
 from integrations.google_ads.tools.list_report_fields import google_ads_list_report_fields
-from integrations.google_ads.tools.schemas.negative_keyword import (
-    NegativeKeywordEntry,
-    NegativeKeywordRemovalEntry,
-)
-from integrations.google_ads.tools.utils import (
-    normalize_negative_keywords,
-)
+from integrations.google_ads.tools.schemas.negative_keywords import NegativeKeywordEntry
 from integrations.google_ads.tools.utils.mutation_evidence import (
+    google_ads_account_target,
     terminal_operation_detail,
 )
-from services.audit_events import AuditStatus
+from services.audit_events import (
+    AuditStatus,
+    IntegrationOperationIntent,
+    IntegrationOperationIntentGroup,
+    PendingIntegrationOperationDetail,
+)
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
-from tests.integrations.google_ads.support import (
-    _writable_google_ads_entry,
-    mutation_ledger,
-)
+from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 
 def _read_entry(external_id: str = "111") -> ResolvedContextEntry:
@@ -103,33 +84,36 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
         ),
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
     )
     entry = _writable_google_ads_entry()
-    detail = _pending_negative_keyword_operation_detail(
-        entry,
-        GoogleAdsSharedSetReference(
-            customer_id=entry.external_id,
-            shared_set_id="50",
-            label="Brand Protection",
-        ),
-        [{"text": "brand", "match_type": "EXACT"}],
+    key = "customers/111/campaigns/10/negative/EXACT/brand"
+    detail = PendingIntegrationOperationDetail(
+        target=google_ads_account_target(entry),
+        intent_groups=[
+            IntegrationOperationIntentGroup(
+                key="campaign:keyword:add",
+                action="add",
+                entity_type="google_ads_campaign_negative_keyword",
+                items=[IntegrationOperationIntent(fields={"object": key})],
+            )
+        ],
     )
+    fields = {"object": key, "settings": "add"}
     terminal_detail = terminal_operation_detail(
         detail,
-        mutation_ledger(
-            {
-                "added": [
-                    {
-                        "text": "brand",
-                        "match_type": "EXACT",
-                        "resource_name": "customers/111/sharedCriteria/50~1",
-                    }
-                ],
-                "skipped_existing": [],
-                "keyword_errors": [],
-            }
+        build_mutation_ledger(
+            family="negative_keywords",
+            action="update",
+            parent_fields=[fields],
+            skipped_indices={},
+            submitted=[(0, fields)],
+            outcomes=[("applied", "customers/111/campaignCriteria/10~1", None, None)],
+            projection=GoogleAdsMutationProjection(
+                applied_key="updated", skipped_key="already_set", errors_key="errors"
+            ),
         ),
+        identity_keys=("object",),
     )
     execute.return_value = IntegrationAuditOutcome({"ok": True}, operation_detail=terminal_detail)
     monkeypatch.setattr(
@@ -140,8 +124,8 @@ async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkey
         await run_audited_integration_operation(
             ctx,
             entry,
-            tool_name="google_ads_add_negative_keywords",
-            operation="add_negative_keywords",
+            tool_name="google_ads_update_negative_keywords",
+            operation="update_negative_keywords",
             execute=execute,
             pending_operation_detail=detail,
         )
@@ -159,45 +143,14 @@ async def test_durable_audit_requires_pending_evidence() -> None:
 
     with pytest.raises(ValueError, match="require pending operation detail"):
         await run_audited_integration_operation(
-            SimpleNamespace(tool_name="google_ads_add_negative_keywords"),  # type: ignore[arg-type]
+            SimpleNamespace(tool_name="google_ads_update_negative_keywords"),  # type: ignore[arg-type]
             _writable_google_ads_entry(),
-            tool_name="google_ads_add_negative_keywords",
-            operation="add_negative_keywords",
+            tool_name="google_ads_update_negative_keywords",
+            operation="update_negative_keywords",
             execute=execute,
         )
 
     execute.assert_not_awaited()
-
-
-def test_negative_keyword_normalization_is_pairwise_and_bounded() -> None:
-    normalized = normalize_negative_keywords(
-        [
-            NegativeKeywordEntry(text="  Brand   Term ", match_type="EXACT"),
-            NegativeKeywordEntry(text="brand term", match_type="EXACT"),
-            NegativeKeywordEntry(text="brand term", match_type="PHRASE"),
-        ]
-    )
-
-    assert [item.model_dump() for item in normalized] == [
-        {"text": "Brand Term", "match_type": "EXACT"},
-        {"text": "brand term", "match_type": "PHRASE"},
-    ]
-
-
-def test_negative_keyword_removal_any_absorbs_same_text_precise_rows() -> None:
-    normalized = normalize_negative_keywords(
-        [
-            NegativeKeywordRemovalEntry(text="Brand Term", match_type="EXACT"),
-            NegativeKeywordRemovalEntry(text="brand term", match_type="ANY"),
-            NegativeKeywordRemovalEntry(text="BRAND TERM", match_type="PHRASE"),
-            NegativeKeywordRemovalEntry(text="other", match_type="BROAD"),
-        ]
-    )
-
-    assert [item.model_dump() for item in normalized] == [
-        {"text": "brand term", "match_type": "ANY"},
-        {"text": "other", "match_type": "BROAD"},
-    ]
 
 
 def test_negative_keyword_entry_normalizes_whitespace_before_length_validation() -> None:
@@ -207,208 +160,3 @@ def test_negative_keyword_entry_normalizes_whitespace_before_length_validation()
     )
 
     assert entry.text == "Brand Term"
-
-
-def test_negative_keyword_entry_rejects_81_normalized_characters() -> None:
-    with pytest.raises(ValidationError, match="at most 80 characters"):
-        NegativeKeywordEntry(text=f"  {'x' * 81}  ", match_type="EXACT")
-
-
-async def test_negative_keyword_approval_resume_validates_canonical_override_text() -> None:
-    executed: list[NegativeKeywordEntry] = []
-
-    def model(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        if not any(message.kind == "request" for message in messages[1:]):
-            return ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        tool_name="add_keywords",
-                        args={"keywords": [{"text": "original", "match_type": "EXACT"}]},
-                        tool_call_id="approval-call",
-                    )
-                ]
-            )
-        return ModelResponse(parts=[TextPart(content="done")])
-
-    agent = Agent(
-        FunctionModel(model),
-        output_type=[str, DeferredToolRequests],
-    )
-
-    @agent.tool_plain(requires_approval=True)
-    def add_keywords(keywords: list[NegativeKeywordEntry]) -> str:
-        executed.extend(keywords)
-        return "added"
-
-    suspended = await agent.run("Add a keyword")
-    assert isinstance(suspended.output, DeferredToolRequests)
-
-    resumed = await agent.run(
-        message_history=suspended.all_messages(),
-        deferred_tool_results=DeferredToolResults(
-            approvals={
-                "approval-call": ToolApproved(
-                    override_args={
-                        "keywords": [
-                            {
-                                "text": f"   Edited{' ' * 81}Brand   ",
-                                "match_type": "PHRASE",
-                            }
-                        ]
-                    }
-                )
-            }
-        ),
-    )
-
-    assert resumed.output == "done"
-    assert [entry.model_dump() for entry in executed] == [
-        {"text": "Edited Brand", "match_type": "PHRASE"}
-    ]
-
-
-async def test_negative_list_campaign_links_reject_cross_account_references(
-    monkeypatch,
-) -> None:
-    ctx = SimpleNamespace(deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=())))
-    provider_client = AsyncMock()
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
-        provider_client,
-    )
-
-    with pytest.raises(ModelRetry, match="must belong to the same Google Ads account"):
-        await google_ads_link_negative_keyword_list(
-            ctx,
-            GoogleAdsSharedSetReference(
-                customer_id="111",
-                shared_set_id="50",
-                label="Brand Protection",
-            ),
-            [
-                GoogleAdsCampaignReference(
-                    customer_id="222",
-                    campaign_id="10",
-                    label="Search",
-                )
-            ],
-            "LINK",
-        )
-
-    provider_client.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    ("shared_sets", "campaign_payload", "message"),
-    [
-        ([], None, "list is unavailable"),
-    ],
-)
-async def test_negative_list_campaign_links_fail_closed_for_stale_references(
-    monkeypatch,
-    shared_sets,
-    campaign_payload,
-    message,
-) -> None:
-    entry = ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-        external_id="111",
-        display_name="Ads account",
-        connection_id=uuid4(),
-        connection_label="Agency",
-        connection_status="active",
-        write_allowed=True,
-        permissions_metadata={"login_customer_id": "999"},
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
-        tool_name="google_ads_link_negative_keyword_list",
-    )
-    client = AsyncMock()
-    if campaign_payload is not None:
-        client.post.return_value = campaign_payload
-    provider_link = AsyncMock()
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.verifiers.shared_set.list_shared_sets",
-        AsyncMock(return_value=shared_sets),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.link_negative_keyword_list",
-        provider_link,
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.link_negative_keyword_list.run_audited_integration_operation",
-        passthrough_audit,
-    )
-
-    result = await google_ads_link_negative_keyword_list(
-        ctx,
-        GoogleAdsSharedSetReference(
-            customer_id=entry.external_id,
-            shared_set_id="50",
-            label="Brand Protection",
-        ),
-        [
-            GoogleAdsCampaignReference(
-                customer_id=entry.external_id,
-                campaign_id="10",
-                label="Search",
-            )
-        ],
-        "LINK",
-    )
-
-    assert result["results"][0]["error_code"] == "ModelRetry"
-    assert message in result["results"][0]["error_message"]
-    provider_link.assert_not_awaited()
-
-
-def test_negative_list_campaign_link_result_rejects_contradictory_accounting() -> None:
-    negative_list = GoogleAdsSharedSetReference(
-        customer_id="111",
-        shared_set_id="50",
-        label="Brand Protection",
-    )
-    campaigns = [
-        GoogleAdsCampaignReference(
-            customer_id="111",
-            campaign_id="10",
-            label="Search",
-        ),
-        GoogleAdsCampaignReference(
-            customer_id="111",
-            campaign_id="20",
-            label="Shopping",
-        ),
-    ]
-    contradictory_results = [
-        {
-            "resource_names": ["customers/111/campaignSharedSets/10~50"],
-            "skipped_existing": ["10", "20"],
-            "campaign_errors": [],
-        },
-        {
-            "resource_names": ["customers/111/campaignSharedSets/10~50"],
-            "skipped_existing": [],
-            "campaign_errors": [],
-        },
-    ]
-
-    for provider_result in contradictory_results:
-        with pytest.raises(ValueError, match="contradictory campaign link accounting"):
-            _campaign_link_result(
-                negative_list,
-                campaigns,
-                "LINK",
-                provider_result,
-            )

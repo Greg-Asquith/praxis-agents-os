@@ -9,7 +9,6 @@ import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/pre
 import { googleAdsCreateAdsPresenter } from "@/integrations/google_ads/presenters/create-ads"
 import { googleAdsCreateAdGroupsPresenter } from "@/integrations/google_ads/presenters/create-ad-groups"
 import { googleAdsCreateCampaignPresenter } from "@/integrations/google_ads/presenters/create-campaign"
-import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
 import { googleAdsCreatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/create-positive-keywords"
@@ -20,8 +19,7 @@ import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/p
 import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
 import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
-import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
-import { googleAdsNegativeKeywordsPresenters } from "@/integrations/google_ads/presenters/negative-keywords"
+import { googleAdsUpdateNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/update-negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
@@ -37,12 +35,10 @@ export default {
     googleAdsReportPresenter,
     googleAdsReportFieldsPresenter,
     googleAdsAccountsPresenter,
-    googleAdsNegativeKeywordListsPresenter,
     googleAdsCreateLabelsPresenter,
     googleAdsLabelAssociationsPresenter,
     googleAdsDeleteLabelsPresenter,
-    ...googleAdsNegativeKeywordsPresenters,
-    googleAdsCampaignLinksPresenter,
+    googleAdsUpdateNegativeKeywordsPresenter,
     googleAdsUpdateStatusPresenter,
     googleAdsUpdateCampaignsPresenter,
     googleAdsSearchTargetingPresenter,

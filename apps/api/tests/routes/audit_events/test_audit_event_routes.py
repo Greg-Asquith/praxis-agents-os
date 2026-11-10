@@ -363,7 +363,7 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
         status=AuditStatus.PENDING,
         occurred_at=base_time,
         details={"run_id": "run-1"},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     completed = await _seed_audit_event(
@@ -376,7 +376,7 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
         status=AuditStatus.SUCCESS,
         occurred_at=base_time + timedelta(seconds=2),
         details={"run_id": "run-1"},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     provider_failure = await _seed_audit_event(
@@ -389,7 +389,7 @@ async def test_audit_event_list_rolls_up_before_pagination_and_uses_provider_sta
         status=AuditStatus.FAILURE,
         occurred_at=base_time + timedelta(seconds=1),
         details={"run_id": "run-1", "tool_call_id": tool_call_id},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     unrelated = await _seed_audit_event(
@@ -452,7 +452,7 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
         status=AuditStatus.PENDING,
         occurred_at=base_time,
         details={"run_id": "run-filtered"},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     completed = await _seed_audit_event(
@@ -465,7 +465,7 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
         status=AuditStatus.SUCCESS,
         occurred_at=base_time + timedelta(seconds=2),
         details={"run_id": "run-filtered"},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     provider_failure = await _seed_audit_event(
@@ -478,7 +478,7 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
         status=AuditStatus.FAILURE,
         occurred_at=base_time + timedelta(seconds=1),
         details={"run_id": "run-filtered", "tool_call_id": tool_call_id},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     await _seed_audit_event(
@@ -524,7 +524,7 @@ async def test_audit_event_rollup_filters_qualify_complete_groups_from_members(
             "resource_id": integration_resource_id,
             "actor_user_id": str(actor.id),
             "action": "update",
-            "tool_name": "google_ads_add_negative_keywords",
+            "tool_name": "google_ads_update_negative_keywords",
             "tool_provider": "google_ads",
             "occurred_after": (base_time + timedelta(milliseconds=500)).isoformat(),
             "occurred_before": (base_time + timedelta(milliseconds=1500)).isoformat(),
@@ -580,7 +580,7 @@ async def test_audit_event_rollup_scopes_reused_tool_call_ids_to_the_run(
             status=AuditStatus.SUCCESS,
             occurred_at=occurred_at + timedelta(seconds=1),
             details={"run_id": run_id},
-            tool_name="google_ads_add_negative_keywords",
+            tool_name="google_ads_update_negative_keywords",
             tool_provider="google_ads",
         )
         provider_event = await _seed_audit_event(
@@ -597,7 +597,7 @@ async def test_audit_event_rollup_scopes_reused_tool_call_ids_to_the_run(
                 "tool_call_id": tool_call_id,
                 "operation_detail": {"run_marker": run_id},
             },
-            tool_name="google_ads_add_negative_keywords",
+            tool_name="google_ads_update_negative_keywords",
             tool_provider="google_ads",
         )
         expected[str(completed.id)] = {
@@ -756,12 +756,12 @@ async def test_integration_operation_audit_persists_and_round_trips_full_detail(
         agent=SimpleNamespace(id=uuid4(), name="Ads operator"),
         run=SimpleNamespace(id=uuid4(), user_id=actor.id),
         tool_call_id="call-persisted-detail",
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         provider_key="google_ads",
         connection_id=uuid4(),
         integration_resource_id=uuid4(),
         external_id="111",
-        operation="add_negative_keywords",
+        operation="update_negative_keywords",
         status=AuditStatus.SUCCESS,
         external_ref="customers/111/sharedCriteria/50~1",
         error_code=None,
@@ -798,7 +798,7 @@ async def test_audit_roll_up_keeps_pending_provider_evidence_when_finalization_f
             "tool_call_id": tool_call_id,
             "operation_detail": {"phase": "pending"},
         },
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     tool_failure = await _seed_audit_event(
@@ -811,7 +811,7 @@ async def test_audit_roll_up_keeps_pending_provider_evidence_when_finalization_f
         status=AuditStatus.FAILURE,
         occurred_at=base_time + timedelta(seconds=1),
         details={"run_id": "run-2"},
-        tool_name="google_ads_add_negative_keywords",
+        tool_name="google_ads_update_negative_keywords",
         tool_provider="google_ads",
     )
     await db_session.commit()

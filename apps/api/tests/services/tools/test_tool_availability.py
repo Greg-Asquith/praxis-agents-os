@@ -171,7 +171,7 @@ async def test_tool_policy_replaces_and_clears_without_enabling_a_disabled_tool(
         await set_tool_policy(
             db_session,
             workspace=workspace,
-            tool_name="google_ads_add_ad_group_negative_keywords",
+            tool_name="google_ads_update_negative_keywords",
             policy="auto",
             actor=actor,
             request=None,

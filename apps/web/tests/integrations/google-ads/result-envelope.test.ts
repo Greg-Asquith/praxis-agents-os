@@ -36,7 +36,6 @@ const budget = {
   delivery_method: "STANDARD",
 }
 const campaign = { campaign_id: "10", customer_id: "1234567890", label: "Search" }
-const keyword = { text: "running shoes", match_type: "EXACT" }
 const cases = [
   {
     name: "google_ads_assign_campaign_budgets",
@@ -66,20 +65,6 @@ const cases = [
     column: "Budget",
     label: "Requested budget",
   },
-  {
-    name: "google_ads_add_negative_keywords",
-    applied: "added",
-    skipped: "skipped_existing",
-    metadata: {},
-    sample: {
-      ...keyword,
-      resource_name: "customers/123/sharedCriteria/1",
-      scope: "keyword",
-      message: "Rejected keyword",
-    },
-    column: "Keyword",
-    label: "running shoes",
-  },
 ]
 
 const expectedCsv: Record<string, string> = {
@@ -87,17 +72,11 @@ const expectedCsv: Record<string, string> = {
     "Campaign,Campaign ID,Before,Requested,After,Outcome\r\nSearch,10,Previous budget,Requested budget,Requested budget,Assigned",
   google_ads_update_campaign_budget_amounts:
     "Budget,Before,Requested,After,Requested change,Period,Linked Campaigns,Outcome,Details\r\nRequested budget,£10.00,£15.00,£15.00,+50%,Daily,0 campaigns,Updated,Requested: £456.00 estimated per month",
-  google_ads_add_negative_keywords: "Keyword,Match Type,Outcome\r\nrunning shoes,EXACT,Added",
 }
 
 type Case = (typeof cases)[number]
 function envelope(test: Case, truncated = false) {
-  const outcomes = [
-    test.applied,
-    ...(test.skipped ? [test.skipped] : []),
-    "failed",
-    ...(test.name.includes("negative_keywords") ? [] : ["unverified"]),
-  ]
+  const outcomes = [test.applied, ...(test.skipped ? [test.skipped] : []), "failed", "unverified"]
   return {
     ...test.metadata,
     counts: Object.fromEntries(
@@ -239,22 +218,3 @@ describe("budget requested and confirmed values", () => {
     }
   )
 })
-
-it.each(cases.filter((test) => test.name.includes("negative_keywords")))(
-  "retains account-level errors in $name",
-  (test) => {
-    const data = envelope(test)
-    data.counts["failed"] = 1
-    data.samples["failed"] = [
-      { scope: "account", message: "Account access denied", error_code: "AUTHORIZATION_ERROR" },
-    ]
-    const html = render(test.name, data)
-    expect(html).toContain("Account access denied")
-    expect(html).not.toContain("couldn&#x27;t verify this account&#x27;s")
-    const table = captured.tables[0]
-    if (!table) throw new Error("Expected an outcome table")
-    expect(tableToCsv(dataTableExport(table.columns, table.rows))).toContain(
-      "Account access denied"
-    )
-  }
-)

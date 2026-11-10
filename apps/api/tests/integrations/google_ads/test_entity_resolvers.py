@@ -47,8 +47,8 @@ from integrations.google_ads.references import (
     GoogleAdsKeywordReference,
     GoogleAdsSharedSetReference,
 )
-from integrations.google_ads.tools.add_campaign_negative_keywords import (
-    DEFINITION as GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
+from integrations.google_ads.tools.update_device_bid_modifiers import (
+    DEFINITION as GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
 )
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -421,7 +421,7 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
         actor=object(),
         workspace=object(),
         active_context=ResolvedActiveContext(entries=(entry,)),
-        tool_definition=GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
+        tool_definition=GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
     )
     reference = _campaign_reference(entry, "10").model_dump(mode="json")
     authorized = SimpleNamespace(
@@ -433,7 +433,7 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
     )
     monkeypatch.setattr(
         "services.agents.runtime.tools.registry.get_runtime_tool_definition",
-        lambda _tool_name: GOOGLE_ADS_ADD_CAMPAIGN_NEGATIVE_KEYWORDS_DEFINITION,
+        lambda _tool_name: GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
     )
     monkeypatch.setattr(
         "services.agents.runtime.entity_references.service.authorize_entity_field",
@@ -452,10 +452,10 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
             membership=SimpleNamespace(),
             run=SimpleNamespace(conversation_id=uuid4()),
             tool_call=SimpleNamespace(
-                tool_name="google_ads_add_campaign_negative_keywords",
+                tool_name="google_ads_update_device_bid_modifiers",
                 args={
                     "campaign_ids": [reference],
-                    "keywords": [{"text": "free", "match_type": "EXACT"}],
+                    "adjustments": [{"device": "MOBILE", "bid_modifier": 1.2}],
                 },
             ),
             override_args=None,

@@ -39,6 +39,14 @@ _MISSING_MESSAGE = "This no longer exists in Google Ads."
 _NOT_CONFIRMED = "Google Ads accepted the change, but {settings} still shows a different value."
 _DRY_RUN_FAILED = "Google Ads rejected this change"
 _GROUP_REJECTED = "Google Ads rejected these changes together, so none were made."
+# Each criterion resource's collection. Its names start with the owner's ID.
+_CRITERION_COLLECTIONS = {
+    "campaignCriterion": "campaignCriteria",
+    "adGroupCriterion": "adGroupCriteria",
+    "sharedCriterion": "sharedCriteria",
+    # A campaign's use of a shared list, named `{campaign}~{list}`.
+    "campaignSharedSet": "campaignSharedSets",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,15 +108,16 @@ class FieldChange:
 class CriterionChange:
     """Adds or removes one criterion, such as a location, audience, or negative keyword.
 
-    A criterion's value can't be updated, so changing one is a remove plus an add.
+    A criterion's value can't be updated, so changing one is a remove plus an add. A
+    campaign's use of a shared list is added and removed the same way.
     """
 
-    # `campaignCriterion` or `adGroupCriterion`.
+    # A key of `_CRITERION_COLLECTIONS`, such as `campaignCriterion`.
     resource: str
     action: Literal["add", "remove"]
     # A stable name for the criterion on its owner, such as `campaigns/1/location/2826`.
     key: str
-    # The campaign or ad group resource name the criterion belongs to.
+    # The campaign, ad group, or list resource name the criterion belongs to.
     owner: str
     # The create body for an add, without a resource name.
     criterion: Mapping[str, Any] = field(default_factory=dict)
@@ -118,6 +127,8 @@ class CriterionChange:
     atomic_group: str | None = None
 
     def __post_init__(self) -> None:
+        if self.resource not in _CRITERION_COLLECTIONS:
+            raise ValueError("Google Ads can't add or remove this resource as a criterion")
         if (self.action == "add") != bool(self.criterion):
             raise ValueError("Only an added Google Ads criterion has a create body")
 
@@ -141,12 +152,9 @@ class CriterionChange:
     def produces(self, resource_name: str) -> bool:
         if self.action == "remove":
             return resource_name == self.before
-        # The owner is `customers/{customer}/{campaigns or adGroups}/{id}`.
+        # The owner is `customers/{customer}/{campaigns, adGroups, or sharedSets}/{id}`.
         _customers, customer_id, _owners, owner_id = self.owner.split("/")
-        collection = (
-            "campaignCriteria" if self.resource == "campaignCriterion" else "adGroupCriteria"
-        )
-        prefix = f"customers/{customer_id}/{collection}/{owner_id}~"
+        prefix = f"customers/{customer_id}/{_CRITERION_COLLECTIONS[self.resource]}/{owner_id}~"
         return resource_name.startswith(prefix) and resource_name[len(prefix) :].isdigit()
 
 

@@ -57,7 +57,9 @@ endpoint per resource type. Two seams build on it:
 - **Edit seam** (`operations/edits.py`). A tool describes each change as a
   `FieldChange` (new values for some settings of one object, by JSON field
   path) or a `CriterionChange` (add or remove one criterion, because a
-  criterion's value can't be updated). The tool supplies a read function
+  criterion's value can't be updated). Campaign, ad group, and shared list
+  criteria are criteria here, and so is a campaign's use of a shared list
+  (`campaignSharedSet`). The tool supplies a read function
   that returns each object's live values. `prepare_edits` fills the
   **Before** values, then dry runs the real changes with `validateOnly`
   and partial failure. A missing object or Google's rejection comes back as
@@ -80,7 +82,8 @@ endpoint per resource type. Two seams build on it:
   Working policy."
 - **Build seam** (`operations/build.py`). `CampaignBuild` collects the
   objects to create in one account. Budgets, assets, campaigns, ad groups,
-  and asset groups get temporary resource names (`-1`, `-2`, and so on).
+  asset groups, and shared lists get temporary resource names (`-1`, `-2`,
+  and so on).
   A step that refers to a temporary name the build hasn't made is
   rejected. Steps are sent parents first: budgets, assets, campaigns,
   campaign criteria, ad groups, keywords, ads, asset groups, then links.
@@ -421,6 +424,55 @@ The result has one row per campaign, setting, action, and outcome, with up to 10
 names and a count, so it stays small at any request size. Audit records each change by
 key, never the names of places.
 
+### Negative keywords
+
+`google_ads_update_negative_keywords` adds and removes negative keywords on campaigns,
+ad groups, and negative keyword lists, and changes which campaigns use a list, in one
+approval. Each entry names one target by `kind`:
+
+| Kind | Target | Fields |
+| --- | --- | --- |
+| `campaign` | A campaign reference. | `add`, `remove` |
+| `ad_group` | An ad group reference. | `add`, `remove` |
+| `list` | A negative keyword list reference. | `add`, `remove`, `apply_to_campaigns`, `remove_from_campaigns` |
+| `new_list` | The new list's name. | `add` and `apply_to_campaigns`, both needed |
+
+Each keyword is `{text, match_type}`, with `EXACT`, `PHRASE`, or `BROAD`, at most 80
+characters and 10 words. A new list goes in the account of its campaigns, because tool
+arguments name an account only through references; a list's campaigns must be in its
+own account. One call holds up to 100 targets, 1,000 keywords, and 1,000 campaign
+changes.
+
+`operations/negative_keyword_criteria.py` reads the targets, removed ones included,
+with their negatives, each list's keywords and campaigns, and the account's list names.
+Negatives are keyed by owner, match type, and lower-case text, because Google ignores
+case. Existing targets go through the edit seam as criterion adds and removes; a
+negative already there is `already_set` and a removal that isn't there is `not_found`,
+without a write. Each new list, with its keywords and campaigns, goes through the build
+seam in one atomic request. `joined_ledger` joins the two ledgers, so one audit record
+names every change by key.
+
+The tool refuses these before Google's dry run:
+
+- A target that doesn't exist or has been removed, and a new list whose name is taken.
+- A campaign that doesn't exist or has been removed, as a list's new campaign.
+- A negative that would block a keyword the account bids on in the same campaign or ad
+  group, or in a campaign that uses the list. It compares the keyword's own words: an
+  exact negative matches them all, a phrase negative matches them in order, and a broad
+  negative matches each word anywhere. A list keyword that would block a keyword in a
+  campaign newly using the list is a problem on that campaign.
+
+The trusted `_checks` display argument holds, per target, its name, status, problem, and
+one row per change with its live resource name, its state (`change`, `already_set`, or
+`not_found`), and its problem. The tool declares `entries` in `approval_review_fields`, so
+any edit needs a new check. Approval plans against the rows the operator saw; a change
+with no row is refused. The card can add campaigns, ad groups, and lists the agent didn't
+propose; like any edit, they need **Check Changes**, and a target without a check is
+refused.
+
+The display result has one row per change with its outcome. The agent gets the counts
+and only the changes that failed or are unconfirmed, up to 50.
+
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
@@ -553,9 +605,6 @@ labels and the targets grouped by type, and the result shows one outcome row
 per label and target pair, ordered by type. Label deletion uses a destructive
 approval card with each label's association counts as text; truncated counts
 read as "at least", and missing counts are stated rather than shown as zero.
-Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`.
-It reconciles operation-specific exact rows, per-target counts, aggregate
-counts, and truncated samples while retaining historical count-only results.
 Account metadata requires a nonblank label and a valid currency code.
 
 New Google cards build from the shared ads card kit in
@@ -569,26 +618,23 @@ choice, and a note such as "Paused. Will not appear or spend until
 activated." or "Active, pending approval. Will go live once approved by
 Google." Campaign and ad group notes leave out approval. The older Google kit
 (`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
-`GoogleAdsOutcomeTable`) stays only for the tools plans 307, 308, and 312
+`GoogleAdsOutcomeTable`) stays only for the tools plans 307, 308 B, and 312
 replace.
 
 ### Outcome evidence
 
 Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
-separate modules. Device bid modifiers, campaign list links, budget amount
-updates, budget assignments, budget removals, recommendations, list/campaign/
-ad-group negative keywords, and positive-keyword creation, update, and removal
+separate modules. Device bid modifiers, budget amount
+updates, budget assignments, budget removals, recommendations,
+and positive-keyword creation, update, and removal
 share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
 outcome labels, stat order and tones, conditional detail and error columns,
-and sample notices. Tool columns and result validation stay with each tool. Legacy negative-keyword aggregates
-retain counts without reconstructing keyword identities. Keyword update results
+and sample notices. Tool columns and result validation stay with each tool. Keyword update results
 separate Before, Requested, and verified After values. Budget assignment and
 amount results use the same distinction, with Unconfirmed after values for failed
 or unverified outcomes. Budget amount deltas and monthly estimates describe
-requested values. Budget and keyword-creation sample envelopes and list negative
-keyword results use shared per-outcome count validation, including truncated
-sample upper bounds. List errors retain account-level failure semantics. Negative keyword list
-creation also uses the shared outcome table, with Name as its leading column.
+requested values. Budget and keyword-creation sample envelopes use shared
+per-outcome count validation, including truncated sample upper bounds.
 Budget creation retains its single card and uses the shared outcome label.
 
 ### Approval composition
@@ -600,8 +646,7 @@ keyword status use `GoogleAdsBeforeAfter`, whose proposed slot accepts the
 existing status editor. Budget removal uses the destructive section. Keyword
 removal retains its consequence warning in a neutral section.
 Every write variant uses `googleAdsWriteCopy`; keep semantic overrides visible
-in the presenter, including declined recommendation dismissal. Campaign and
-ad-group negative keywords each declare their add and remove variants directly.
+in the presenter, including declined recommendation dismissal.
 Presenters compose `google_ads/components` and `google_ads/lib`: a new tool
 adds no outcome table, approval section, or lifecycle template. Architecture
 checks forbid direct Stat and Badge imports, and only the two report
@@ -783,6 +828,38 @@ as on Update Status: Campaign, Setting, Before, After, and Outcome, with tabs fo
 Changed, Already Set, Failed, and Unconfirmed when any, opening on Failed when anything
 failed. The search result (`components/targeting-search-table.tsx`) has columns that
 follow the kind.
+
+### Update Negative Keywords card
+
+`lib/negative-keywords.ts` parses `entries` with `_accounts` and `_checks`, and keeps
+each entry as received. An edit rewrites only the lists it changes, so an untouched
+target keeps the answers Google gave for it. A target's problems apply while its entry
+matches what Google last answered for; once edited, it waits for **Check Changes**. Any
+problem blocks approval.
+
+The card (`components/negative-keywords-approval.tsx`) has two tables: **Add Negative
+Keywords** (Added To) and **Remove Negative Keywords** (Removed From), each with one row
+per change: the keyword or campaign, its match type, and its target. A campaign starting
+or stopping a list sits in the matching table, and an Already in Place or Not There row
+says it's skipped. One change reads as a sentence instead of a table. Tables show 10 rows
+a page. From ten changes the card adds `ChangeSummary` (Already in Place, Not There to
+Remove, and Needs Attention with **Cancel These**), and `AttentionLine`; selecting a line
+filters whichever table holds its rows. From ten rows a table adds search, filter tabs
+(per target when there's more than one), and a bulk bar that sets the match type or
+cancels the selected rows. Match type edits in the row, and each row has **Cancel This
+Change**. A new list left without keywords or campaigns leaves the request whole;
+cancelled rows and targets stay in the approval controls' retained state, so **Undo**
+restores them through a check's redraw. **Add Negative Keywords** opens a panel with
+`NegativeTargetCombobox` (the targets as chips; typing searches campaigns, ad groups, and
+negative keyword lists at once, and the list stays closed until then), quick links back
+to request targets taken out, `KeywordPaste`, and an `EntityPicker` per list to use it
+in another campaign.
+
+The result (`components/negative-keywords-outcome.tsx`) splits the same way: Added
+Negative Keywords (with a new list's creation and the campaigns starting a list) and
+Removed Negative Keywords, each a standard `DataTable` of 10 rows a page with Negative
+Keyword, Match Type, Added To or Removed From, and Outcome, tabs per outcome, opening on
+Failed when that table has a failure.
 
 ### Update Campaigns card
 

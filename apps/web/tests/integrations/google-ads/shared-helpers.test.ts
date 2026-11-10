@@ -22,10 +22,6 @@ import {
 import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import { parseAdGroupReference } from "@/integrations/google_ads/lib/ad-groups"
 import { parseCampaignReference } from "@/integrations/google_ads/lib/campaigns"
-import {
-  parseKeywordRow,
-  parseNegativeListReference,
-} from "@/integrations/google_ads/lib/negative-keywords"
 import { parsePositiveKeywordReference } from "@/integrations/google_ads/lib/positive-keywords"
 import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
@@ -220,7 +216,7 @@ describe("Google Ads reference parsers", () => {
       expect(parsePositiveKeywordReference({ ...keyword, ...patch })).toBeNull()
     expect(parseAdGroupReference({ ...adGroup, entity_kind: "other" })).toBeNull()
   })
-  it("parses recommendation and negative-list server references", () => {
+  it("parses recommendation server references", () => {
     expect(
       parseRecommendationReference({
         entity_kind: "google_ads_recommendation",
@@ -231,22 +227,6 @@ describe("Google Ads reference parsers", () => {
       })?.label
     ).toBe("Add keyword")
     expect(parseRecommendationReference({})).toBeNull()
-    expect(
-      parseNegativeListReference({
-        entity_kind: "google_ads_shared_set",
-        customer_id: "1",
-        shared_set_id: "2",
-      })
-    ).toEqual({ customerId: "1", listId: "2", label: "Selected negative keyword list" })
-    expect(parseNegativeListReference({ customer_id: "1", shared_set_id: "bad" })).toBeNull()
-  })
-  it("preserves keyword row match types and optional ANY", () => {
-    expect(parseKeywordRow({ text: "example", match_type: "EXACT" })).toEqual({
-      text: "example",
-      matchType: "EXACT",
-    })
-    expect(parseKeywordRow({ text: "example", match_type: "ANY" })).toBeNull()
-    expect(parseKeywordRow({ text: "example", match_type: "ANY" }, true)?.matchType).toBe("ANY")
   })
   it("keeps complete account facts and ignores accounts missing a currency or time zone", () => {
     const account = {

@@ -11,7 +11,7 @@ from services.integrations.context.results import IntegrationFanOutEntry, Integr
 from ...references import GoogleAdsAdGroupReference, GoogleAdsCampaignReference
 from .ads import GoogleAdsResponsiveSearchAd
 from .base import GoogleAdsStrictModel
-from .negative_keyword import NegativeKeywordEntry
+from .negative_keywords import NegativeKeywordEntry
 from .positive_keywords import (
     GoogleAdsCpcBid,
     GoogleAdsFinalUrl,

@@ -10,7 +10,6 @@ from .campaign_budget import campaign_budget_reference_from_row, verify_campaign
 from .keyword import verify_positive_keywords
 from .label import verify_label_targets, verify_labels, verify_labels_with_associations
 from .recommendation import verify_recommendations
-from .shared_set import verify_shared_sets
 
 __all__ = [
     "campaign_budget_reference_from_row",
@@ -24,5 +23,4 @@ __all__ = [
     "verify_labels_with_associations",
     "verify_positive_keywords",
     "verify_recommendations",
-    "verify_shared_sets",
 ]
