@@ -1,12 +1,15 @@
 // apps/web/src/integrations/google_ads/components/create-ad-groups-approval.tsx
 
-import { InfoIcon } from "lucide-react"
-import { useMemo } from "react"
+import { InfoIcon, PencilIcon } from "lucide-react"
+import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import type { DataColumn } from "@/components/ui/data-table"
 import { EntityPicker } from "@/integrations/ads/components/entity-picker"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import {
@@ -30,6 +33,11 @@ import {
 } from "@/integrations/google_ads/lib/create-ad-groups"
 
 const TOOL_NAME = "google_ads_create_ad_groups"
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "adGroups", kind: "number", label: "Ad Groups", width: 110 },
+  { key: "problems", kind: "text", label: "Problems", width: 140 },
+]
+
 export function CreateAdGroupsApproval({
   args,
   checked,
@@ -48,6 +56,7 @@ export function CreateAdGroupsApproval({
   const counts = createAdGroupsCounts(rows)
   // Cancelled ad groups, so Restore puts them back with their edits.
   const cancelled = parseCancelledAdGroups(controls.retained, args.adGroups)
+  const [changing, setChanging] = useState(false)
 
   const save = (adGroups: readonly DraftAdGroup[]) => {
     onFieldEdit("ad_groups", serializeAdGroups(adGroups))
@@ -63,6 +72,8 @@ export function CreateAdGroupsApproval({
     controls.onRetain?.([])
   }
   const wholeRequest = requestProblems(args)
+  const problems = counts.problems + wholeRequest.length
+  const campaignCancelled = rows.length === 0 && cancelled.length > 0
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -76,16 +87,64 @@ export function CreateAdGroupsApproval({
         pausedNote="Paused. Will not appear or spend until activated."
         value={args.status === "ENABLED" ? "active" : "paused"}
       />
-      <EntityPicker
-        currentLabel={args.campaign.label}
-        disabled={disabled}
-        fieldKey="campaign"
-        label="Campaign"
-        onChoose={(reference) => {
-          if (parseCampaign(reference)) onFieldEdit("campaign", reference)
-        }}
-        toolName={TOOL_NAME}
-      />
+      <div className="grid min-w-0 gap-1.5">
+        {changing ? (
+          <EntityPicker
+            currentLabel={args.campaign.label}
+            disabled={disabled}
+            fieldKey="campaign"
+            label="Campaign"
+            onChoose={(reference) => {
+              if (parseCampaign(reference)) onFieldEdit("campaign", reference)
+              setChanging(false)
+            }}
+            toolName={TOOL_NAME}
+          />
+        ) : (
+          <Button
+            className="w-fit justify-self-end"
+            disabled={disabled}
+            onClick={() => {
+              setChanging(true)
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <PencilIcon aria-hidden="true" />
+            Change Campaign
+          </Button>
+        )}
+        {/* One campaign per request, so its row only summarises and cancels. */}
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaign"
+          onCancel={() => {
+            cancel(new Set(rows.map((row) => row.index)))
+          }}
+          onSelect={() => undefined}
+          onUndo={restore}
+          rowNoun={["campaign", "campaigns"]}
+          rows={[
+            {
+              cancelled: campaignCancelled,
+              key: args.campaign.key,
+              name: campaignCheck(args)?.name ?? args.campaign.label,
+              problems: campaignCancelled ? 0 : problems,
+              values: {
+                adGroups: campaignCancelled ? cancelled.length : counts.adGroups,
+                problems: campaignCancelled
+                  ? "Cancelled"
+                  : problems > 0
+                    ? `${String(problems)} to fix`
+                    : "None",
+              },
+            },
+          ]}
+          selected={args.campaign.key}
+        />
+      </div>
       <ProblemList problems={wholeRequest} />
       {rows.length > 1 || cancelled.length > 0 ? (
         <AdGroupSummary

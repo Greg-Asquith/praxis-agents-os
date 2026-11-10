@@ -67,7 +67,11 @@ export type AdRow = {
   // The ad's position in the edited request, from zero.
   index: number
   problems: string[]
+  // The same problems with the ad group each names; null for one with the whole ad.
+  issues: AdProblem[]
 }
+
+type AdProblem = { adGroup: string | null; message: string }
 
 const UNAVAILABLE =
   "Google Ads couldn't check these ads. Check again, or decline and ask the agent to prepare them again."
@@ -256,27 +260,31 @@ export function adCopyProblems(ad: AdCopy): string[] {
 }
 
 /** What the card can find without asking Google again, so these block a check. */
-function cardProblems(ad: DraftAd, checks: AdsChecks): string[] {
-  const problems = adCopyProblems(ad)
-  if (ad.adGroups.length === 0) problems.push("Choose at least one ad group.")
+function cardProblems(ad: DraftAd, checks: AdsChecks): AdProblem[] {
+  const problems = adCopyProblems(ad).map((message): AdProblem => ({ adGroup: null, message }))
+  if (ad.adGroups.length === 0)
+    problems.push({ adGroup: null, message: "Choose at least one ad group." })
   if (checks.unavailable) return problems
   for (const group of ad.adGroups) {
     const problem = checks.adGroups.get(group.key)?.problem
-    if (problem) problems.push(`${adGroupName(group, checks)}: ${problem}`)
+    if (problem)
+      problems.push({ adGroup: group.key, message: `${adGroupName(group, checks)}: ${problem}` })
   }
   return problems
 }
 
 /** Everything that blocks this ad, from the card's own checks and Google's dry run. */
-function adProblems(ad: DraftAd, checks: AdsChecks): string[] {
+function adProblems(ad: DraftAd, checks: AdsChecks): AdProblem[] {
   const problems = cardProblems(ad, checks)
-  if (checks.unavailable) return [...problems, UNAVAILABLE]
-  const groups = new Set(ad.adGroups.map((group) => group.key))
+  if (checks.unavailable) return [...problems, { adGroup: null, message: UNAVAILABLE }]
   // Google checked this exact copy, so its rejections stop applying once the copy changes.
   for (const problem of checks.googleProblems.get(copyKey(ad)) ?? []) {
-    if (problem.adGroup !== null && !groups.has(problem.adGroup)) continue
     const group = ad.adGroups.find((item) => item.key === problem.adGroup)
-    problems.push(group ? `${adGroupName(group, checks)}: ${problem.message}` : problem.message)
+    if (problem.adGroup !== null && !group) continue
+    problems.push({
+      adGroup: problem.adGroup,
+      message: group ? `${adGroupName(group, checks)}: ${problem.message}` : problem.message,
+    })
   }
   return problems
 }
@@ -286,7 +294,17 @@ export function adGroupName(group: AdGroupTarget, checks: AdsChecks): string {
 }
 
 export function adRows(args: CreateAdsArgs): AdRow[] {
-  return args.ads.map((ad, index) => ({ ad, index, problems: adProblems(ad, args.checks) }))
+  return args.ads.map((ad, index) => {
+    const problems = adProblems(ad, args.checks)
+    return { ad, index, issues: problems, problems: problems.map((problem) => problem.message) }
+  })
+}
+
+/** The problems that stop this ad in one ad group, so cancelling it there clears them. */
+export function problemsIn(row: AdRow, key: string): string[] {
+  return row.issues
+    .filter((issue) => issue.adGroup === null || issue.adGroup === key)
+    .map((issue) => issue.message)
 }
 
 export type CreateAdsCounts = { adGroups: number; ads: number; problems: number; writes: number }
@@ -315,7 +333,7 @@ export function adsNeedCheck(args: CreateAdsArgs, checked: CreateAdsArgs): boole
 }
 
 export function canCheckAds(args: CreateAdsArgs): boolean {
-  return args.ads.length > 0 && args.ads.every((ad) => !cardProblems(ad, args.checks).length)
+  return args.ads.length > 0 && args.ads.every((ad) => cardProblems(ad, args.checks).length === 0)
 }
 
 /** Why the request can't be approved yet, or null. */
@@ -368,11 +386,137 @@ export function serializeCopy(ad: AdCopy): Record<string, unknown> {
   }
 }
 
-/** What Restore brings back. A reset of the card's edits can return them to the request. */
-export function cancelledAds(retained: unknown, args: CreateAdsArgs): Record<string, unknown>[] {
-  if (!Array.isArray(retained)) return []
-  const current = new Set(serializeAds(args.ads).map((ad) => JSON.stringify(ad)))
-  return retained.filter(isRecord).filter((ad) => !current.has(JSON.stringify(ad)))
+/** What the card keeps beside the request: cancelled ads for Undo, and ad groups with no ads yet. */
+export type CreateAdsRetained = { adGroups: AdGroupTarget[]; ads: DraftAd[] }
+
+/** Each ad's ad groups already in the request, keyed by the ad's copy. */
+function groupsByCopy(ads: readonly DraftAd[]): Map<string, Set<string>> {
+  const byCopy = new Map<string, Set<string>>()
+  for (const ad of ads) {
+    const groups = byCopy.get(copyKey(ad)) ?? new Set<string>()
+    for (const group of ad.adGroups) groups.add(group.key)
+    byCopy.set(copyKey(ad), groups)
+  }
+  return byCopy
+}
+
+/** Reads what the card retained. A reset of the card's edits can return it to the request. */
+export function parseRetained(value: unknown, args: CreateAdsArgs): CreateAdsRetained {
+  if (!isRecord(value)) return { adGroups: [], ads: [] }
+  const current = groupsByCopy(args.ads)
+  const ads = (Array.isArray(value["ads"]) ? value["ads"] : []).flatMap((item) => {
+    const ad = parseAd(item)
+    if (ad === null) return []
+    const inRequest = current.get(copyKey(ad))
+    const adGroups = ad.adGroups.filter((group) => !inRequest?.has(group.key))
+    return adGroups.length > 0 ? [{ ...ad, adGroups }] : []
+  })
+  const used = new Set([...args.ads, ...ads].flatMap((ad) => ad.adGroups.map((group) => group.key)))
+  const adGroups = (Array.isArray(value["ad_groups"]) ? value["ad_groups"] : []).flatMap((item) => {
+    const group = parseAdGroup(item)
+    return group && !used.has(group.key) ? [group] : []
+  })
+  return { adGroups, ads }
+}
+
+export function serializeRetained(retained: CreateAdsRetained): Record<string, unknown> {
+  return {
+    ad_groups: retained.adGroups.map((group) => group.reference),
+    ads: serializeAds(retained.ads),
+  }
+}
+
+type AdsEdit = { ads: DraftAd[]; retained: CreateAdsRetained }
+
+/** Takes each ad out of the ad groups `take` names, keeping what was taken for Undo. */
+export function cancelInAdGroups(
+  ads: readonly DraftAd[],
+  retained: CreateAdsRetained,
+  take: (ad: DraftAd, index: number) => ReadonlySet<string>
+): AdsEdit {
+  const kept: DraftAd[] = []
+  const cancelled = [...retained.ads]
+  ads.forEach((ad, index) => {
+    const taken = take(ad, index)
+    const out = ad.adGroups.filter((group) => taken.has(group.key))
+    const rest = ad.adGroups.filter((group) => !taken.has(group.key))
+    if (out.length > 0) cancelled.push({ ...ad, adGroups: out })
+    if (rest.length > 0) kept.push({ ...ad, adGroups: rest })
+  })
+  return { ads: kept, retained: { ...retained, ads: cancelled } }
+}
+
+/** Puts cancelled ads back in one ad group, or in all of them, joining an ad with the same copy. */
+export function restoreAdGroups(
+  ads: readonly DraftAd[],
+  retained: CreateAdsRetained,
+  key: string | null
+): AdsEdit {
+  const restored = ads.map((ad) => ({ ...ad, adGroups: [...ad.adGroups] }))
+  const cancelled: DraftAd[] = []
+  for (const ad of retained.ads) {
+    const back = ad.adGroups.filter((group) => key === null || group.key === key)
+    const rest = ad.adGroups.filter((group) => key !== null && group.key !== key)
+    if (rest.length > 0) cancelled.push({ ...ad, adGroups: rest })
+    if (back.length === 0) continue
+    const same = restored.find((item) => copyKey(item) === copyKey(ad))
+    if (!same) {
+      restored.push({ ...ad, adGroups: back })
+      continue
+    }
+    const known = new Set(same.adGroups.map((group) => group.key))
+    same.adGroups.push(...back.filter((group) => !known.has(group.key)))
+  }
+  return { ads: restored, retained: { ...retained, ads: cancelled } }
+}
+
+export type AdGroupParent = {
+  // Positions of the request's ads in this ad group.
+  ads: number[]
+  campaignName: string | null
+  // Ads cancelled in this ad group, for Undo.
+  cancelled: number
+  name: string
+  problems: number
+  // A cancelled ad group has no ads left in the request; a new one hasn't had any yet.
+  state: "live" | "cancelled" | "new"
+  target: AdGroupTarget
+}
+
+/** The ad groups the ads go in, in request order, then cancelled ones, then new ones. */
+export function adGroupParents(
+  args: CreateAdsArgs,
+  rows: readonly AdRow[],
+  retained: CreateAdsRetained
+): AdGroupParent[] {
+  const parents = new Map<string, AdGroupParent>()
+  const parent = (target: AdGroupTarget, state: AdGroupParent["state"]) => {
+    const found = parents.get(target.key)
+    if (found) return found
+    const check = args.checks.unavailable ? undefined : args.checks.adGroups.get(target.key)
+    const made: AdGroupParent = {
+      ads: [],
+      campaignName: check?.campaignName ?? null,
+      cancelled: 0,
+      name: adGroupName(target, args.checks),
+      problems: 0,
+      state,
+      target,
+    }
+    parents.set(target.key, made)
+    return made
+  }
+  for (const row of rows) {
+    for (const group of row.ad.adGroups) {
+      const item = parent(group, "live")
+      item.ads.push(row.index)
+      if (problemsIn(row, group.key).length > 0) item.problems += 1
+    }
+  }
+  for (const ad of retained.ads)
+    for (const group of ad.adGroups) parent(group, "cancelled").cancelled += 1
+  for (const group of retained.adGroups) parent(group, "new")
+  return [...parents.values()]
 }
 
 /** The `ads` value for the given drafts, keeping each entry's other fields. */

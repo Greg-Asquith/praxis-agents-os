@@ -7,15 +7,19 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
-  cancelledAds,
+  adGroupParents,
   adRows,
   adsNeedCheck,
   canCheckAds,
   createAdsApproveLabel,
+  cancelInAdGroups,
   createAdsBlock,
   parseCreateAdsArgs,
+  parseRetained,
   previewAssets,
+  restoreAdGroups,
   serializeAds,
+  serializeRetained,
   HEADLINE_PINS,
   type CreateAdsArgs,
 } from "@/integrations/google_ads/lib/create-ads"
@@ -78,11 +82,46 @@ function parsed(value: unknown = args()): CreateAdsArgs {
 }
 
 describe("Google Ads create ads arguments", () => {
-  it("doesn't offer to restore an ad that a reset put back in the request", () => {
+  it("cancels a shared ad in one ad group and Undo joins it back to the same ad", () => {
     const request = parsed()
-    const [first] = serializeAds(request.ads)
-    const other = { ...first, final_url: "https://example.com/other" }
-    expect(cancelledAds([first, other], request)).toEqual([other])
+    const none = { adGroups: [], ads: [] }
+    const cancelled = cancelInAdGroups(request.ads, none, () => new Set([GROUP_21]))
+    expect(cancelled.ads.map((ad) => ad.adGroups.map((group) => group.key))).toEqual([[GROUP_20]])
+    expect(cancelled.retained.ads.map((ad) => ad.adGroups.map((group) => group.key))).toEqual([
+      [GROUP_21],
+    ])
+
+    const undone = restoreAdGroups(cancelled.ads, cancelled.retained, GROUP_21)
+    expect(serializeAds(undone.ads)).toEqual(serializeAds(request.ads))
+    expect(undone.retained.ads).toEqual([])
+  })
+
+  it("doesn't offer to restore an ad group that a reset put back in the request", () => {
+    const request = parsed()
+    const [ad] = request.ads
+    if (!ad) throw new Error("expected an ad")
+    const other = { ...ad, finalUrl: "https://example.com/other" }
+    const retained = serializeRetained({ adGroups: [], ads: [ad, other] })
+    expect(parseRetained(retained, request).ads.map((item) => item.finalUrl)).toEqual([
+      "https://example.com/other",
+    ])
+  })
+
+  it("lists each ad group once with its own ads, and counts a rejection only where Google made it", () => {
+    const base = args()
+    const request = parsed({
+      ...base,
+      ads: [
+        ...base.ads,
+        { ...copy, final_url: "https://example.com/road", ad_groups: [adGroup("22")] },
+      ],
+    })
+    const parents = adGroupParents(request, adRows(request), { adGroups: [], ads: [] })
+    expect(parents.map((parent) => [parent.target.key, parent.ads, parent.problems])).toEqual([
+      [GROUP_20, [0], 0],
+      [GROUP_21, [0], 1],
+      [`customers/${CUSTOMER}/adGroups/22`, [1], 0],
+    ])
   })
 
   it("applies Google's rejection to the copy it checked and drops it once the copy changes", () => {

@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/components/create-ads-approval.tsx
 
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -13,36 +13,63 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
-import { Chip } from "@/integrations/ads/components/controls"
-import { EntityPicker } from "@/integrations/ads/components/entity-picker"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import { AdCopyEditor } from "@/integrations/google_ads/components/ad-copy-editor"
+import {
+  AdGroupCombobox,
+  type ChosenAdGroup,
+} from "@/integrations/google_ads/components/ad-group-combobox"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   adGroupName,
+  adGroupParents,
   adRows,
   adsNeedCheck,
   adsRequestProblems,
   canCheckAds,
+  cancelInAdGroups,
   createAdsCounts,
   parseAdGroup,
+  parseRetained,
+  problemsIn,
+  restoreAdGroups,
   serializeAds,
+  serializeRetained,
   sharedValue,
+  type AdGroupParent,
+  type AdGroupTarget,
   type AdRow,
-  cancelledAds,
   type CreateAdsArgs,
+  type CreateAdsRetained,
   type DraftAd,
 } from "@/integrations/google_ads/lib/create-ads"
 
+const TOOL = "google_ads_create_ads"
 // Below this many ads the table's search only adds noise.
 const SEARCH_FROM = 10
+// Google creates one ad in at most this many ad groups.
+const MAX_AD_GROUPS_PER_AD = 10
+const NONE = new Set<string>()
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "ads", kind: "number", label: "Ads", width: 90 },
+  { key: "problems", kind: "text", label: "Problems", width: 140 },
+]
 
 const COLUMNS: DataColumn[] = [
-  { key: "adGroups", kind: "text", label: "Ad Group", width: 220 },
-  { key: "headline", kind: "text", label: "Headline 1", width: 280 },
+  { key: "headline", kind: "text", label: "Headline 1", width: 320 },
   { key: "headlines", kind: "number", label: "Headlines", width: 100 },
   { key: "descriptions", kind: "number", label: "Descriptions", width: 110 },
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
@@ -74,49 +101,101 @@ export function CreateAdsApproval({
 }) {
   const rows = useMemo(() => adRows(args), [args])
   const counts = createAdsCounts(rows)
+  // Cancelled ads and ad groups with no ads yet. A review redraws the card, so they live beside it.
+  const retained = useMemo(() => parseRetained(controls.retained, args), [controls.retained, args])
+  const parents = useMemo(() => adGroupParents(args, rows, retained), [args, rows, retained])
+  const [chosen, setChosen] = useState<string | null>(null)
+  const [openAd, setOpenAd] = useState<number | null>(null)
+  const [finding, setFinding] = useState(false)
   const [tab, setTab] = useState("all")
-  const [open, setOpen] = useState(() => firstToOpen(rows))
-  // Cancelled ads as sent, so Restore puts them back with their edits.
-  const cancelled = cancelledAds(controls.retained, args)
-  const openRow = rows[Math.min(open, rows.length - 1)]
+  const firstProblem = parents.find((parent) => parent.state === "live" && parent.problems > 0)
+  const group =
+    parents.find((parent) => parent.target.key === chosen) ?? firstProblem ?? parents[0] ?? null
+  const groupKey = group?.target.key ?? ""
+  const groupRows = useMemo(
+    () => group?.ads.flatMap((index) => rows[index] ?? []) ?? [],
+    [group, rows]
+  )
+  const openRow =
+    groupRows.find((row) => row.index === openAd) ??
+    groupRows.find((row) => problemsIn(row, groupKey).length > 0) ??
+    groupRows[0]
 
-  const editAds = (ads: DraftAd[]) => {
+  const save = (ads: readonly DraftAd[], nextRetained: CreateAdsRetained = retained) => {
+    controls.onRetain?.(serializeRetained(nextRetained))
     onFieldEdit("ads", serializeAds(ads))
   }
+  const apply = (edit: { ads: DraftAd[]; retained: CreateAdsRetained }) => {
+    save(edit.ads, edit.retained)
+  }
   const editAd = (index: number, patch: Partial<DraftAd>) => {
-    editAds(args.ads.map((ad, at) => (at === index ? { ...ad, ...patch } : ad)))
+    save(args.ads.map((ad, at) => (at === index ? { ...ad, ...patch } : ad)))
   }
-  const editEvery = (patch: Partial<DraftAd>) => {
-    editAds(args.ads.map((ad) => ({ ...ad, ...patch })))
+  const cancelGroup = (key: string) => {
+    if (retained.adGroups.some((item) => item.key === key)) {
+      save(args.ads, {
+        ...retained,
+        adGroups: retained.adGroups.filter((item) => item.key !== key),
+      })
+      return
+    }
+    apply(cancelInAdGroups(args.ads, retained, () => new Set([key])))
   }
-  const cancel = (indexes: ReadonlySet<number>) => {
-    controls.onRetain?.([
-      ...cancelled,
-      ...serializeAds(args.ads.filter((_, at) => indexes.has(at))),
-    ])
-    editAds(args.ads.filter((_, at) => !indexes.has(at)))
-    setOpen(0)
+  const cancelAd = (index: number) => {
+    apply(
+      cancelInAdGroups(args.ads, retained, (_, at) => (at === index ? new Set([groupKey]) : NONE))
+    )
   }
-  const restore = () => {
-    onFieldEdit("ads", [...serializeAds(args.ads), ...cancelled])
-    controls.onRetain?.([])
+  const cancelProblems = () => {
+    apply(
+      cancelInAdGroups(args.ads, retained, (ad, at) => {
+        const issues = rows[at]?.issues ?? []
+        if (issues.some((issue) => issue.adGroup === null))
+          return new Set(ad.adGroups.map((item) => item.key))
+        return new Set(issues.flatMap((issue) => issue.adGroup ?? []))
+      })
+    )
+  }
+  const addAdGroups = (picked: readonly ChosenAdGroup[]) => {
+    const known = new Set(parents.map((parent) => parent.target.key))
+    const fresh = picked.flatMap((item) => parseAdGroup(item.raw) ?? [])
+    const added = fresh.filter((item) => !known.has(item.key))
+    if (added.length > 0)
+      save(args.ads, { ...retained, adGroups: [...retained.adGroups, ...added] })
+    setChosen(fresh.at(-1)?.key ?? chosen)
+    setOpenAd(null)
+    setFinding(false)
+  }
+  const copyHere = (index: number, target: AdGroupTarget) => {
+    const ad = args.ads[index]
+    if (ad) editAd(index, { adGroups: [...ad.adGroups, target] })
+    setOpenAd(index)
+  }
+  const newAd = (target: AdGroupTarget) => {
+    save([...args.ads, blankAd(args.ads, target)])
+    setOpenAd(args.ads.length)
   }
 
-  const many = rows.length > 1
   const wholeRequest = adsRequestProblems(args)
   const tableRows = useMemo<DataRow[]>(
     () =>
-      rows.map((row) => ({
-        adGroups: adGroupsLine(row.ad, args),
-        attention: row.problems.length > 0 ? "yes" : "no",
+      groupRows.map((row) => ({
+        attention: problemsIn(row, groupKey).length > 0 ? "yes" : "no",
         cancel: "",
         descriptions: row.ad.descriptions.length,
         headline: row.ad.headlines[0]?.text ?? "",
         headlines: row.ad.headlines.length,
         key: String(row.index),
       })),
-    [args, rows]
+    [groupKey, groupRows]
   )
+  const parentRows = useMemo<ParentRow[]>(() => parents.map(parentRow), [parents])
+  const others = rows.filter(
+    (row) =>
+      row.ad.adGroups.length < MAX_AD_GROUPS_PER_AD &&
+      !row.ad.adGroups.some((item) => item.key === groupKey)
+  )
+  const position = groupRows.findIndex((row) => row.index === openRow?.index)
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -138,28 +217,106 @@ export function CreateAdsApproval({
           ))}
         </ul>
       ) : null}
-      {many ? (
+      {rows.length > 1 ? (
         <SharedSettings
           ads={args.ads}
-          cancelled={cancelled.length}
+          cancelled={retained.ads.reduce((total, ad) => total + ad.adGroups.length, 0)}
           disabled={disabled}
-          onCancelProblems={() => {
-            cancel(new Set(rows.filter((row) => row.problems.length > 0).map((row) => row.index)))
+          onCancelProblems={cancelProblems}
+          onEditEvery={(patch) => {
+            save(args.ads.map((ad) => ({ ...ad, ...patch })))
           }}
-          onEditEvery={editEvery}
-          onRestore={restore}
+          onRestore={() => {
+            apply(restoreAdGroups(args.ads, retained, null))
+          }}
           problems={counts.problems}
         />
       ) : null}
       <AttentionLine
         count={counts.problems}
         onShow={() => {
+          setChosen(firstProblem?.target.key ?? null)
+          setOpenAd(null)
           setTab("attention")
-          setOpen(firstToOpen(rows))
         }}
       />
-      {many ? (
+      <div className="grid min-w-0 gap-1.5">
+        {finding ? (
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <AdGroupCombobox
+                chosen={[]}
+                disabled={disabled}
+                fieldKey="ads"
+                onChange={addAdGroups}
+                toolName={TOOL}
+              />
+            </div>
+            <Button
+              disabled={disabled}
+              onClick={() => {
+                setFinding(false)
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button
+            className="w-fit justify-self-end"
+            disabled={disabled}
+            onClick={() => {
+              setFinding(true)
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <PlusIcon aria-hidden="true" />
+            Add Ad Group
+          </Button>
+        )}
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Ad Groups"
+          onCancel={cancelGroup}
+          onSelect={(key) => {
+            if (key === null) return
+            setChosen(key)
+            setOpenAd(null)
+            setTab("all")
+          }}
+          onUndo={(key) => {
+            apply(restoreAdGroups(args.ads, retained, key))
+          }}
+          rowNoun={["ad group", "ad groups"]}
+          rows={parentRows}
+          selected={group?.target.key ?? null}
+        />
+      </div>
+      {group?.state === "cancelled" ? (
+        <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+          {group.name} is cancelled, so none of its {approvalCountLine(group.cancelled, "ad")} will
+          be created.
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              apply(restoreAdGroups(args.ads, retained, group.target.key))
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Undo
+          </Button>
+        </p>
+      ) : group ? (
         <DataTable
+          key={group.target.key}
           activeTab={tab}
           columns={COLUMNS}
           exportFilename="google-ads-new-ads.csv"
@@ -168,7 +325,8 @@ export function CreateAdsApproval({
           renderCell={(column, row) => {
             const adRow = rows[Number(row["key"])]
             if (!adRow) return null
-            if (column.key === "headline") return <HeadlineCell row={adRow} />
+            if (column.key === "headline")
+              return <HeadlineCell problem={problemsIn(adRow, groupKey)[0] ?? null} row={adRow} />
             if (column.key === "cancel")
               return (
                 <Button
@@ -177,7 +335,7 @@ export function CreateAdsApproval({
                   onClick={(event) => {
                     // The row opens the ad on click; cancelling shouldn't.
                     event.stopPropagation()
-                    cancel(new Set([adRow.index]))
+                    cancelAd(adRow.index)
                   }}
                   size="icon-xs"
                   title="Cancel This Change"
@@ -195,33 +353,45 @@ export function CreateAdsApproval({
               : undefined
           }
           onRowClick={(row) => {
-            setOpen(Number(row["key"]))
+            setOpenAd(Number(row["key"]))
           }}
+          rowDetails={false}
           rowNoun={["ad", "ads"]}
           rows={tableRows}
-          searchable={rows.length >= SEARCH_FROM}
+          searchable={groupRows.length >= SEARCH_FROM}
+          summary={
+            <NewAd
+              disabled={disabled}
+              onCopy={(index) => {
+                copyHere(index, group.target)
+              }}
+              onNew={() => {
+                newAd(group.target)
+              }}
+              others={others}
+            />
+          }
           tabs={TABS}
         />
       ) : null}
-      {!many && cancelled.length > 0 ? (
-        <Button onClick={restore} size="sm" type="button" variant="outline">
-          Restore {approvalCountLine(cancelled.length, "Cancelled Ad")}
-        </Button>
-      ) : null}
-      {openRow ? (
+      {openRow && group?.state === "live" ? (
         <AdEditor
           key={openRow.index}
           args={args}
           disabled={disabled}
+          groupKey={groupKey}
           onEdit={(patch) => {
             editAd(openRow.index, patch)
           }}
+          onOpen={(at) => {
+            setOpenAd(groupRows[at]?.index ?? null)
+          }}
+          position={{ at: position, total: groupRows.length }}
           row={openRow}
-          position={many ? { total: rows.length, onOpen: setOpen } : null}
         />
       ) : null}
       {/* At the end, beside the approve button that waits on it. */}
-      {adsNeedCheck(args, checked) ? (
+      {adsNeedCheck(args, checked) && args.ads.length > 0 ? (
         <CheckChanges
           canCheck={canCheckAds(args)}
           disabled={disabled}
@@ -235,28 +405,95 @@ export function CreateAdsApproval({
   )
 }
 
-function firstToOpen(rows: readonly AdRow[]): number {
-  return rows.find((row) => row.problems.length > 0)?.index ?? 0
+function parentRow(parent: AdGroupParent): ParentRow {
+  return {
+    cancelled: parent.state === "cancelled",
+    context: parent.campaignName,
+    key: parent.target.key,
+    name: parent.name,
+    problems: parent.state === "live" ? parent.problems : 0,
+    values: {
+      ads: parent.state === "cancelled" ? parent.cancelled : parent.ads.length,
+      problems:
+        parent.state === "cancelled"
+          ? "Cancelled"
+          : parent.state === "new"
+            ? "No ads yet"
+            : parent.problems > 0
+              ? `${String(parent.problems)} to fix`
+              : "None",
+    },
+  }
 }
 
-function adGroupsLine(ad: DraftAd, args: CreateAdsArgs): string {
-  const [first, ...rest] = ad.adGroups
-  if (first === undefined) return "No ad group"
-  const name = adGroupName(first, args.checks)
-  return rest.length ? `${name} +${String(rest.length)}` : name
+/** A new ad in one ad group, with the links every ad already shares. */
+function blankAd(ads: readonly DraftAd[], target: AdGroupTarget): DraftAd {
+  return {
+    adGroups: [target],
+    descriptions: [],
+    entry: {},
+    finalUrl: sharedValue(ads, "finalUrl") ?? "",
+    headlines: [],
+    mobileFinalUrl: "",
+    path1: sharedValue(ads, "path1") ?? "",
+    path2: sharedValue(ads, "path2") ?? "",
+  }
 }
 
-function HeadlineCell({ row }: { row: AdRow }) {
+function adTitle(row: AdRow): string {
+  return row.ad.headlines[0]?.text.trim() ? row.ad.headlines[0].text : `Ad ${String(row.index + 1)}`
+}
+
+/** The add line under an ad group's ads: one of the other ads here too, or a new one. */
+function NewAd({
+  disabled,
+  onCopy,
+  onNew,
+  others,
+}: {
+  disabled: boolean
+  onCopy: (index: number) => void
+  onNew: () => void
+  // Ads in the request that aren't in this ad group yet.
+  others: readonly AdRow[]
+}) {
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {others.length > 0 ? (
+        <Select<string>
+          disabled={disabled}
+          onValueChange={(value) => {
+            if (value !== null) onCopy(Number(value))
+          }}
+          value={null}
+        >
+          <SelectTrigger aria-label="Use another ad here too" className="w-56" size="sm">
+            <SelectValue placeholder="Use Another Ad Here" />
+          </SelectTrigger>
+          <SelectContent align="start">
+            <SelectGroup>
+              {others.map((row) => (
+                <SelectItem key={row.index} label={adTitle(row)} value={String(row.index)}>
+                  {adTitle(row)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      ) : null}
+      <Button disabled={disabled} onClick={onNew} size="sm" type="button" variant="outline">
+        <PlusIcon aria-hidden="true" />
+        New Ad
+      </Button>
+    </span>
+  )
+}
+
+function HeadlineCell({ problem, row }: { problem: string | null; row: AdRow }) {
   return (
     <span className="grid min-w-0 gap-0.5 whitespace-normal">
-      <span className="font-medium wrap-anywhere">
-        {row.ad.headlines[0]?.text.trim()
-          ? row.ad.headlines[0].text
-          : `Ad ${String(row.index + 1)}`}
-      </span>
-      {row.problems[0] ? (
-        <span className="text-destructive text-xs wrap-anywhere">{row.problems[0]}</span>
-      ) : null}
+      <span className="font-medium wrap-anywhere">{adTitle(row)}</span>
+      {problem ? <span className="text-destructive text-xs wrap-anywhere">{problem}</span> : null}
     </span>
   )
 }
@@ -360,39 +597,46 @@ function SharedSettings({
 function AdEditor({
   args,
   disabled,
+  groupKey,
   onEdit,
+  onOpen,
   position,
   row,
 }: {
   args: CreateAdsArgs
   disabled: boolean
+  // The ad group whose ads the editor steps through.
+  groupKey: string
   onEdit: (patch: Partial<DraftAd>) => void
-  // Set when the card has more than one ad, to say which this is and step between them.
-  position: { total: number; onOpen: (index: number) => void } | null
+  // Opens another of the ad group's ads, by its place in the ad group.
+  onOpen: (at: number) => void
+  // Which of the ad group's ads this is.
+  position: { at: number; total: number }
   row: AdRow
 }) {
   const { ad } = row
-  const chosen = new Set(ad.adGroups.map((group) => group.key))
+  const many = position.total > 1
+  const elsewhere = ad.adGroups.filter((group) => group.key !== groupKey)
   return (
     <section
-      aria-label={position ? `Ad ${String(row.index + 1)}` : "Ad"}
+      aria-label={many ? `Ad ${String(position.at + 1)}` : "Ad"}
       className="grid min-w-0 gap-4 rounded-lg border px-3 py-3"
     >
-      {position ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">
-            Ad {String(row.index + 1)} of {String(position.total)}
-            <span className="text-muted-foreground font-normal">
-              {" "}
-              · {approvalCountLine(ad.headlines.length, "headline")} ·{" "}
-              {approvalCountLine(ad.descriptions.length, "description")}
-            </span>
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">
+          {many ? `Ad ${String(position.at + 1)} of ${String(position.total)}` : "Ad"}
+          <span className="text-muted-foreground font-normal">
+            {" "}
+            · {approvalCountLine(ad.headlines.length, "headline")} ·{" "}
+            {approvalCountLine(ad.descriptions.length, "description")}
+          </span>
+        </p>
+        {many ? (
           <span className="flex gap-1">
             <Button
-              disabled={row.index === 0}
+              disabled={position.at <= 0}
               onClick={() => {
-                position.onOpen(row.index - 1)
+                onOpen(position.at - 1)
               }}
               size="sm"
               type="button"
@@ -402,9 +646,9 @@ function AdEditor({
               Previous
             </Button>
             <Button
-              disabled={row.index >= position.total - 1}
+              disabled={position.at >= position.total - 1}
               onClick={() => {
-                position.onOpen(row.index + 1)
+                onOpen(position.at + 1)
               }}
               size="sm"
               type="button"
@@ -414,7 +658,13 @@ function AdEditor({
               <ChevronRightIcon />
             </Button>
           </span>
-        </div>
+        ) : null}
+      </div>
+      {elsewhere.length > 0 ? (
+        <p className="text-muted-foreground text-sm wrap-anywhere">
+          Also created in {elsewhere.map((group) => adGroupName(group, args.checks)).join(", ")}.
+          Edits change it in every one.
+        </p>
       ) : null}
       {row.problems.length > 0 ? (
         <ul className="text-destructive grid gap-0.5 text-sm" role="alert">
@@ -426,35 +676,6 @@ function AdEditor({
         </ul>
       ) : null}
       <AdCopyEditor ad={ad} disabled={disabled} onEdit={onEdit} />
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">Ad Groups</p>
-        <div className="flex flex-wrap gap-1.5">
-          {ad.adGroups.map((group) => (
-            <Chip
-              key={group.key}
-              disabled={disabled}
-              label={adGroupName(group, args.checks)}
-              onRemove={() => {
-                onEdit({ adGroups: ad.adGroups.filter((item) => item.key !== group.key) })
-              }}
-            />
-          ))}
-        </div>
-        {ad.adGroups.length < 10 ? (
-          <EntityPicker
-            currentLabel={null}
-            disabled={disabled}
-            entityKind="google_ads_ad_group"
-            fieldKey="ads"
-            label="Add an Ad Group"
-            onChoose={(reference) => {
-              const target = parseAdGroup(reference)
-              if (target && !chosen.has(target.key)) onEdit({ adGroups: [...ad.adGroups, target] })
-            }}
-            toolName="google_ads_create_ads"
-          />
-        ) : null}
-      </div>
     </section>
   )
 }

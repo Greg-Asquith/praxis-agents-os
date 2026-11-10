@@ -975,17 +975,31 @@ The card (`components/create-ads-approval.tsx`) shows `StatusChoice`
 (Paused or Active). With more than one ad it adds `ChangeSummary`
 lines for a final URL and display paths that every ad shares, edited once;
 Needs Attention with Cancel These N; and Cancelled with Restore. Then
-`AttentionLine`, and one `DataTable` of ads with All and Needs Attention
-tabs. Clicking an ad's row opens it below (Previous and Next step
-through the ads), with
-`SearchAdPreview` (a Google result in Google's light or dark colours,
+`AttentionLine`, and the ad groups first, on the shared `ParentTable`: each
+row is an ad group with its campaign, its ads, and its problems. A problem
+counts against an ad group only when it names that ad group or the whole
+ad (`problemsIn`), so a rejection in one ad group doesn't flag the others.
+**Add Ad Group** above the table searches the account's ad groups, and the
+chosen one joins the table with no ads yet. Clicking an ad group shows only
+its ads in the `DataTable` below (All and Needs Attention tabs), with an add
+line in its footer: **Use Another Ad Here** adds the ad group to one of the
+request's other ads, and **New Ad** adds a blank one with the shared final
+URL and paths. Clicking an ad's row opens it below (Previous and Next step
+through the ad group's ads), naming the other ad groups it's created in,
+with `SearchAdPreview` (a Google result in Google's light or dark colours,
 named from the final URL's host; pinned assets in place, then the rest in
-order),
-`TextAssetList` for headlines and descriptions (counters, pins, the
-minimum, the first three until Show All), link fields, and ad group chips
-with an `EntityPicker` to add one. Cancelling takes the ad out of `ads`;
-the approval controls keep cancelled ads through a check's redraw so Restore
-can put them back. Reloading the page loses them.
+order), `TextAssetList` for headlines and descriptions (counters, pins, the
+minimum, the first three until Show All), and link fields.
+
+One ad can go in up to ten ad groups, so cancelling works per ad group
+(`cancelInAdGroups`): Cancel on an ad's row takes it out of the selected
+ad group only, Cancel on an ad group takes all of its ads out of it, and
+Cancel These N takes each ad out of the ad groups its problems name, or out
+of every one for a problem with the ad itself. An ad left in no ad group
+leaves `ads`. The approval controls keep what was cancelled, and ad groups
+added with no ads, through a check's redraw (`parseRetained`). Undo on an
+ad group and Restore join each cancelled ad back to the request's ad with
+the same copy (`restoreAdGroups`). Reloading the page loses them.
 
 The result (`components/create-ads-outcome.tsx`) is one `DataTable` with Ad
 Group, Headline 1, Status, Review, and Outcome. When nothing was created it
@@ -1004,7 +1018,10 @@ and rejections stop applying until they check it. Any problem blocks approval.
 as on the Create Ads card, after an edit to the campaign or ad groups.
 
 The card (`components/create-ad-groups-approval.tsx`) names the campaign's bidding
-once, then shows `StatusChoice` and the campaign `EntityPicker`. With more than one
+once, then shows `StatusChoice` and the campaign first, as a one-row `ParentTable`
+with its ad group count and problems. Cancel on it cancels every ad group, and
+Undo restores them. The tool takes one campaign, so **Change Campaign** above
+the table opens an `EntityPicker` in place of an Add button. With more than one
 ad group it adds `ChangeSummary`, with counts, Cancel These N, and Restore, and one
 `DataTable` of ad groups with editable names. Clicking a row opens the ad group
 below, in `SettingRows`: Name, Keywords, Ads, Negatives, and Bids. Keywords and
