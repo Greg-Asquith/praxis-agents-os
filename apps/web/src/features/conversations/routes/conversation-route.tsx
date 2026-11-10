@@ -187,10 +187,9 @@ function ConversationDetail({
         pendingDelegations,
         pendingUserMessages,
         pendingWorkflow:
-          approvalStateQuery.data?.workflows?.find(
-            (workflow) => workflow.owner_run_id === activeRunId
-          ) ?? null,
-        pendingWorkflows: approvalStateQuery.data?.workflows ?? [],
+          recovery.pendingWorkflows.find((workflow) => workflow.owner_run_id === activeRunId) ??
+          null,
+        pendingWorkflows: recovery.pendingWorkflows,
         approvalRevision,
         readOnly:
           conversation.source === "delegated" ||
@@ -208,7 +207,7 @@ function ConversationDetail({
         transcriptRun,
       }),
     [
-      approvalStateQuery.data?.workflows,
+      recovery.pendingWorkflows,
       approvalRevision,
       approvalReady,
       activeRunId,

@@ -5,6 +5,7 @@
 import asyncio
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from unittest.mock import AsyncMock
@@ -12,6 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.general import ConflictError
@@ -428,6 +430,56 @@ async def test_gated_nested_call_suspends_without_partial_effect(
     assert workflow.outer_tool_call_id == "workflow-call"
     assert workflow.pending.tool_call_id == "workflow-call:1"
     assert approval_state.approvals[0].tool_call_id == "workflow-call:1"
+
+
+async def test_nested_approval_preview_reads_without_locking_the_paused_run(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
+    run_row_free: list[bool] = []
+
+    async def preview(deps: Any, args: dict[str, Any]) -> dict[str, Any]:
+        # A provider preview loads credentials through the run's session, once per concurrent read.
+        credential = select(Workspace.id).where(Workspace.id == deps.workspace.id)
+        await asyncio.gather(deps.db.scalar(credential), deps.db.scalar(credential))
+        async with committed_db_session_factory() as heartbeat_db:
+            try:
+                locked_id = await heartbeat_db.scalar(
+                    select(AgentRun.id)
+                    .where(AgentRun.id == deps.run.id)
+                    .with_for_update(nowait=True)
+                )
+                run_row_free.append(locked_id == deps.run.id)
+            except DBAPIError:
+                run_row_free.append(False)
+        return {**args, "_preview": "checked"}
+
+    RUNTIME_TOOL_CATALOG[definition.name] = replace(definition, approval_display_args=preview)
+    context = await build_scenario_agent(committed_db_session_factory, tool_names=[definition.name])
+
+    result = await run_scenario(
+        committed_db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            RUN_CODE_TOOL_NAME,
+                            {"code": "await scenario_code_forced_write(value='preview')"},
+                            "workflow-call",
+                        ),
+                    )
+                ),
+            ],
+        ),
+    )
+
+    assert run_row_free == [True]
+    assert result.run.status == "awaiting_approval"
+    state = result.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]
+    assert state["nested_call_id"] == "workflow-call:1"
 
 
 async def test_batch_override_executes_and_audits_only_the_edited_rows(

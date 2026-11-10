@@ -120,7 +120,8 @@ export function parseConversationMessages(
                 script: codeModeScriptFromPendingWorkflow(
                   matchingWorkflow,
                   activity.agentRunId ?? null,
-                  liveResultsByCallIdentity
+                  liveResultsByCallIdentity,
+                  activeRun.status === "running"
                 ),
               }
             : activityWithDelegate
@@ -518,7 +519,8 @@ function codeModeScriptFromMetadata(
 export function codeModeScriptFromPendingWorkflow(
   workflow: PendingWorkflowState,
   agentRunId: string | null,
-  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
+  liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
+  resumed = false
 ): CodeModeScriptActivity {
   const children = workflow.nested_trace.map((entry): ToolActivity => ({
     id: entry.tool_call_id,
@@ -564,7 +566,10 @@ export function codeModeScriptFromPendingWorkflow(
   const mergedChildren = children.map((child): ToolActivity => {
     const live = liveResultsByCallIdentity?.get(toolActivityIdentity(agentRunId, child.id))
     if (!live) {
-      return child
+      // Once the decision is in, the call it covered is running, not waiting.
+      return resumed && child.status === "awaiting_approval"
+        ? { ...child, kind: "call", status: "running" }
+        : child
     }
     return {
       ...child,

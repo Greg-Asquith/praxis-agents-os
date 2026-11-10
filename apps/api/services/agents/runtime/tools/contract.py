@@ -282,6 +282,7 @@ class RuntimeToolDefinition:
         ]
         | None
     ) = None
+    """Read-only approval preview; may read providers at length but must not write via deps.db."""
     approval_review_fields: tuple[str, ...] = ()
     approval_input_model: type[BaseModel] | None = None
     presentation: ToolPresentation = ToolPresentation()

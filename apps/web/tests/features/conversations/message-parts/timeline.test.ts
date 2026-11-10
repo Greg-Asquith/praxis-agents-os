@@ -515,3 +515,45 @@ describe("persisted run failure notices", () => {
     }
   )
 })
+
+it("keeps an approved script's row while its run resumes", () => {
+  const timeline = projectConversationTimeline(
+    input({
+      messages: [
+        runMessage("workflow-call", "root", [
+          {
+            args: { code: "await write_file(name='report.txt')" },
+            part_kind: "tool-call",
+            tool_call_id: "workflow",
+            tool_name: "run_code",
+          },
+        ]),
+      ],
+      transcriptRun: { id: "root", status: "running" },
+      pendingWorkflows: [
+        {
+          owner_run_id: "root",
+          root_run_id: "root",
+          outer_tool_call_id: "workflow",
+          code: "await write_file(name='report.txt')",
+          reason: "Save report",
+          status: "suspended",
+          nested_trace: [],
+          trace_truncated: false,
+          recovery: null,
+          pending: {
+            ...approval("nested"),
+            name: "write_file",
+            owner_run_id: "root",
+            parent_tool_call_id: "workflow",
+          },
+        },
+      ],
+    })
+  )
+
+  const [script] = transcriptActivities(timeline)
+  expect(script?.script?.children).toMatchObject([
+    { id: "nested", name: "write_file", status: "running" },
+  ])
+})

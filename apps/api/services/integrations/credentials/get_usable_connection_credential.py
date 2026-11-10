@@ -2,6 +2,7 @@
 
 """Load the currently usable credential for a visible connection."""
 
+import asyncio
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from models.integrations import ExternalCredential, IntegrationConnection
 from models.user import User
 from models.workspace import Workspace
 from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
+
+_SESSION_LOCK_KEY = "usable_connection_credential_lock"
 
 
 async def get_usable_connection_credential(
@@ -25,21 +28,23 @@ async def get_usable_connection_credential(
     visibility = (IntegrationConnection.owner_workspace_id == workspace.id) | (
         IntegrationConnection.owner_user_id == actor.id
     )
-    row = (
-        await db.execute(
-            select(IntegrationConnection, ExternalCredential)
-            .join(
-                ExternalCredential,
-                ExternalCredential.id == IntegrationConnection.credential_id,
+    # Concurrent provider requests share this session, which opens its connection for one caller at a time.
+    async with db.info.setdefault(_SESSION_LOCK_KEY, asyncio.Lock()):
+        row = (
+            await db.execute(
+                select(IntegrationConnection, ExternalCredential)
+                .join(
+                    ExternalCredential,
+                    ExternalCredential.id == IntegrationConnection.credential_id,
+                )
+                .where(
+                    IntegrationConnection.id == connection_id,
+                    IntegrationConnection.deleted.is_(False),
+                    visibility,
+                )
+                .execution_options(populate_existing=True)
             )
-            .where(
-                IntegrationConnection.id == connection_id,
-                IntegrationConnection.deleted.is_(False),
-                visibility,
-            )
-            .execution_options(populate_existing=True)
-        )
-    ).one_or_none()
+        ).one_or_none()
     if row is None:
         raise IntegrationNotFoundError(
             "Integration connection not found",

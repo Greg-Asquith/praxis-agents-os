@@ -2,6 +2,7 @@
 
 """Credential encryption, deduplication, refresh failure, and crypto-shred tests."""
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -358,6 +359,28 @@ async def test_provider_credential_use_refreshes_and_rejects_in_flight_revocatio
             actor=actor,
             workspace=workspace,
         )
+
+
+async def test_concurrent_provider_requests_share_a_session_with_no_open_connection(
+    committed_db_session_factory,
+) -> None:
+    async with committed_db_session_factory() as db:
+        credential = await _stored(db)
+        connection = await _connection(db, credential)
+        actor = await db.get(User, connection.connected_by_user_id)
+        workspace = await db.get(Workspace, connection.owner_workspace_id)
+        await db.commit()
+
+        usable = await asyncio.gather(
+            *(
+                get_usable_connection_credential(
+                    db, connection_id=connection.id, actor=actor, workspace=workspace
+                )
+                for _ in range(3)
+            )
+        )
+
+    assert [item.id for item in usable] == [credential.id] * 3
 
 
 async def test_revoke_crypto_shreds_and_audit_contains_no_tokens(db_session) -> None:

@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from uuid import UUID, uuid4
 
-from pydantic_ai import Agent as PydanticAgent, DeferredToolResults
+from pydantic_ai import Agent as PydanticAgent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.messages import ModelMessage, ToolCallPart, UserContent
 from pydantic_ai.models import Model
@@ -23,7 +23,10 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
     RUN_TRIGGER_INTERACTIVE,
 )
-from services.agents.runtime.approval_events import build_deferred_tool_result_metadata
+from services.agents.runtime.approval_events import (
+    add_approval_display_args,
+    build_deferred_tool_result_metadata,
+)
 from services.agents.runtime.cancellation import (
     clear_agent_run_cancel_request,
 )
@@ -285,6 +288,12 @@ async def execute_run(
 
                 if terminal_result is None:
                     raise RuntimeError("Pydantic AI stream ended without a terminal result")
+                # Approval previews can read providers at length, so they run under the run deadline, not the finalise timeout.
+                approval_requests = (
+                    await add_approval_display_args(prepared.deps, terminal_result.output)
+                    if isinstance(terminal_result.output, DeferredToolRequests)
+                    else None
+                )
 
             execution_control.phase = ExecutionPhase.FINALISING
             metering.freeze()
@@ -297,6 +306,7 @@ async def execute_run(
                     conversation=conversation,
                     run=run,
                     terminal_result=terminal_result,
+                    approval_requests=approval_requests,
                     client_message_id=client_message_id,
                     history=built_agent.history,
                     deferred_tool_results=deferred_tool_results,

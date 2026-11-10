@@ -2,7 +2,9 @@
 
 """Approval-only presentation metadata contracts."""
 
+from contextlib import nullcontext
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic_ai import DeferredToolRequests
@@ -48,7 +50,10 @@ async def test_adds_display_args_without_changing_replay_args(monkeypatch, neste
     )
 
     enriched = await add_approval_display_args(
-        SimpleNamespace(workspace_tool_definitions=()),
+        SimpleNamespace(
+            workspace_tool_definitions=(),
+            db=SimpleNamespace(no_autoflush=nullcontext(), connection=AsyncMock()),
+        ),
         DeferredToolRequests(approvals=[outer], metadata=metadata),
     )
 
@@ -83,7 +88,10 @@ async def test_display_arg_failure_persists_blocked_approval_without_changing_re
     )
 
     enriched = await add_approval_display_args(
-        SimpleNamespace(workspace_tool_definitions=()),
+        SimpleNamespace(
+            workspace_tool_definitions=(),
+            db=SimpleNamespace(no_autoflush=nullcontext(), connection=AsyncMock()),
+        ),
         DeferredToolRequests(approvals=[call]),
     )
 

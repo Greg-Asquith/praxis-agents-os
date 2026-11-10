@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/hooks/use-conversation-recovery.ts
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { agentRunApprovalStateQueryOptions } from "@/features/conversations/api/get-approval-state"
@@ -11,7 +11,12 @@ import {
   createConversationRecoveryCounter,
   isConversationReadRecoverable,
 } from "@/features/conversations/conversation-heal-polling"
-import type { ConversationActiveRunResponse } from "@/features/conversations/types"
+import type {
+  ConversationActiveRunResponse,
+  PendingWorkflowState,
+} from "@/features/conversations/types"
+
+const NO_WORKFLOWS: PendingWorkflowState[] = []
 
 export function useConversationRecovery(
   conversationId: string,
@@ -49,7 +54,17 @@ export function useConversationRecovery(
     enabled: false,
   })
 
+  // A resumed run has no approval state, so its script keeps the last one fetched.
+  const [retained, setRetained] = useState<{ runId: string; workflows: PendingWorkflowState[] }>()
+  const workflows = approvalStateQuery.data?.workflows
+  if (active && workflows && retained?.workflows !== workflows) {
+    setRetained({ runId: active.id, workflows })
+  }
+  const pendingWorkflows =
+    workflows ?? (active && retained?.runId === active.id ? retained.workflows : NO_WORKFLOWS)
+
   return {
+    pendingWorkflows,
     activeRunQuery,
     messagesQuery,
     approvalStateQuery,

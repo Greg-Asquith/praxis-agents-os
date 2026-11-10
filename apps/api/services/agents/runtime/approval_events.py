@@ -123,6 +123,25 @@ async def add_approval_display_args(
     metadata = {
         call_id: dict(value) for call_id, value in (deferred_tool_requests.metadata or {}).items()
     }
+    # Pending run state must not flush here, or the run row stays locked while a hook reads providers.
+    with deps.db.no_autoflush:
+        # A hook may read concurrently, which the session only allows once its connection is open.
+        await deps.db.connection()
+        changed = await _project_display_args(deps, deferred_tool_requests, metadata)
+    if not changed:
+        return deferred_tool_requests
+    return DeferredToolRequests(
+        calls=list(deferred_tool_requests.calls),
+        approvals=list(deferred_tool_requests.approvals),
+        metadata=metadata,
+    )
+
+
+async def _project_display_args(
+    deps: RuntimeDeps,
+    deferred_tool_requests: DeferredToolRequests,
+    metadata: dict[str, dict[str, Any]],
+) -> bool:
     changed = False
     for approval in deferred_tool_requests.approvals:
         approval_metadata = metadata.get(approval.tool_call_id, {})
@@ -149,13 +168,7 @@ async def add_approval_display_args(
             "display_args": display_args,
         }
         changed = True
-    if not changed:
-        return deferred_tool_requests
-    return DeferredToolRequests(
-        calls=list(deferred_tool_requests.calls),
-        approvals=list(deferred_tool_requests.approvals),
-        metadata=metadata,
-    )
+    return changed
 
 
 async def emit_deferred_tool_resume_events(

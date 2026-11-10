@@ -2,7 +2,10 @@
 
 """SharePoint approval destinations and private display metadata."""
 
+from contextlib import nullcontext
 from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
@@ -43,6 +46,7 @@ async def test_library_display_is_retained_without_becoming_replay_arguments(
     selected = replace(entry(), write_allowed=True, display_name=LABEL)
     deps = context(selected).deps
     deps.workspace_tool_definitions = ()
+    deps.db = SimpleNamespace(no_autoflush=nullcontext(), connection=AsyncMock())
     monkeypatch.setattr(
         "services.agents.runtime.approval_events.resolve_runtime_tool_definition",
         lambda _name, _definitions: definition,

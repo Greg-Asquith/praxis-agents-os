@@ -4,6 +4,7 @@
 
 import asyncio
 import importlib
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -368,7 +369,11 @@ async def test_invalid_approval_projection_keeps_private_values_out_of_logs(
         approvals=[outer if nested else call], metadata={call_id: metadata}
     )
     result = await add_approval_display_args(
-        SimpleNamespace(workspace_tool_definitions=()), requests
+        SimpleNamespace(
+            workspace_tool_definitions=(),
+            db=SimpleNamespace(no_autoflush=nullcontext(), connection=AsyncMock()),
+        ),
+        requests,
     )
     display = result.metadata[call_id]["display_args"]
     assert display["_approval_display_error"]

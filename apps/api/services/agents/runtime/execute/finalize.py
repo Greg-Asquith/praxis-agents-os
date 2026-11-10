@@ -26,7 +26,6 @@ from services.agent_runs.domain import (
 )
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agents.runtime.approval_events import (
-    add_approval_display_args,
     approval_events_for_projection,
     build_deferred_tool_result_metadata,
     emit_deferred_tool_resume_events,
@@ -65,6 +64,7 @@ async def finalize_terminal_run(
     conversation: Conversation,
     run: AgentRun,
     terminal_result: Any,
+    approval_requests: DeferredToolRequests | None,
     client_message_id: str | None,
     history: Sequence[ModelMessage],
     deferred_tool_results: DeferredToolResults | None,
@@ -84,13 +84,14 @@ async def finalize_terminal_run(
             already_emitted_tool_call_ids=live_deferred_result_ids,
         )
 
-    if isinstance(terminal_result.output, DeferredToolRequests):
+    if approval_requests is not None:
         return await finalize_suspended_run(
             db,
             event_sink=event_sink,
             conversation=conversation,
             run=run,
             terminal_result=terminal_result,
+            deferred_tool_requests=approval_requests,
             client_message_id=client_message_id,
             deps=deps,
             skip_initial_user_prompt=skip_initial_user_prompt,
@@ -122,6 +123,7 @@ async def finalize_suspended_run(
     conversation: Conversation,
     run: AgentRun,
     terminal_result: Any,
+    deferred_tool_requests: DeferredToolRequests,
     client_message_id: str | None,
     deps: RuntimeDeps,
     skip_initial_user_prompt: bool = False,
@@ -129,8 +131,6 @@ async def finalize_suspended_run(
     usage_event: AIUsageEventData | None = None,
     checkpoint: MessageCheckpoint | None = None,
 ) -> ExecuteRunResult:
-    deferred_tool_requests = terminal_result.output
-    deferred_tool_requests = await add_approval_display_args(deps, deferred_tool_requests)
     await record_policy_approval_request_audit_events(
         deps=deps,
         deferred_tool_requests=deferred_tool_requests,
