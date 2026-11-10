@@ -168,7 +168,13 @@ function parseChecks(value: unknown): AdsChecks {
         : []
     )
     const key = copyKey(copy)
-    googleProblems.set(key, [...(googleProblems.get(key) ?? []), ...problems])
+    // Two ads with the same copy get the same problems, which the card shows once.
+    const merged = [...(googleProblems.get(key) ?? []), ...problems]
+    googleProblems.set(key, [
+      ...new Map(
+        merged.map((problem) => [`${String(problem.adGroup)}|${problem.message}`, problem])
+      ).values(),
+    ])
   }
   const requestProblems = Array.isArray(value["problems"])
     ? value["problems"].filter((item): item is string => typeof item === "string")
@@ -362,7 +368,6 @@ export function serializeCopy(ad: AdCopy): Record<string, unknown> {
   }
 }
 
-/** The `ads` value for the given drafts, keeping each entry's other fields. */
 /** What Restore brings back. A reset of the card's edits can return them to the request. */
 export function cancelledAds(retained: unknown, args: CreateAdsArgs): Record<string, unknown>[] {
   if (!Array.isArray(retained)) return []
@@ -370,6 +375,7 @@ export function cancelledAds(retained: unknown, args: CreateAdsArgs): Record<str
   return retained.filter(isRecord).filter((ad) => !current.has(JSON.stringify(ad)))
 }
 
+/** The `ads` value for the given drafts, keeping each entry's other fields. */
 export function serializeAds(ads: readonly DraftAd[]): Record<string, unknown>[] {
   return ads.map((ad) => ({
     ...ad.entry,
@@ -388,7 +394,6 @@ export function sharedValue<K extends keyof DraftAd>(
   return ads.every((ad) => ad[field] === first[field]) ? first[field] : null
 }
 
-/** The display URL a searcher sees: the final URL's domain, then the paths. */
 /** The site name and URL Google shows above the headline: the host, then the display paths. */
 export function previewSite(ad: Pick<AdCopy, "finalUrl" | "path1" | "path2">): {
   name: string

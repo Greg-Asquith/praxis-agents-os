@@ -180,7 +180,7 @@ export function parseCancelledAdGroups(
   )
 }
 
-export function parseItemProblem(value: unknown): ItemProblem[] {
+function parseItemProblem(value: unknown): ItemProblem[] {
   if (!isRecord(value) || typeof value["message"] !== "string") return []
   const copy = parseCopy(value["ad"])
   return [
@@ -193,6 +193,12 @@ export function parseItemProblem(value: unknown): ItemProblem[] {
       text: text(value["text"]) || null,
     },
   ]
+}
+
+/** Reads Google's item problems once each; two identical ads get the same problem twice. */
+export function parseItemProblems(value: unknown): ItemProblem[] {
+  const problems = (Array.isArray(value) ? value : []).flatMap(parseItemProblem)
+  return [...new Map(problems.map((problem) => [JSON.stringify(problem), problem])).values()]
 }
 
 function parseChecks(value: unknown): AdGroupChecks {
@@ -213,9 +219,7 @@ function parseChecks(value: unknown): AdGroupChecks {
       strategyName: text(campaign["strategy_name"]) || null,
     },
     existingNames: new Set(strings(value["existing_names"]).map(foldName)),
-    itemProblems: (Array.isArray(value["problems"]) ? value["problems"] : []).flatMap(
-      parseItemProblem
-    ),
+    itemProblems: parseItemProblems(value["problems"]),
     requestProblems: strings(value["request_problems"]),
   }
 }

@@ -63,7 +63,7 @@ from .schemas.targeting import (
     GoogleAdsUpdateTargetingOutput,
     GoogleAdsUpdateTargetingRequest,
 )
-from .utils.accounts import approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -87,10 +87,6 @@ _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified
 
 _MISSING = "This campaign no longer exists in Google Ads."
 _REMOVED = "This campaign has been removed, so its targeting can't change."
-_NOT_SHOWN = (
-    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
-    "prepare the change again."
-)
 _NO_LOCATION = (
     "This would leave the campaign with no location, so its ads could show anywhere. Keep at "
     "least one location."
@@ -630,7 +626,7 @@ def _approved_plan(
         or not isinstance(names, Mapping)
     ):
         planned = _plan(change, {}, None, {"locations": {}, "languages": {}})
-        return [replace(item, edit=replace(item.edit, refused=_NOT_SHOWN)) for item in planned]
+        return [replace(item, edit=replace(item.edit, refused=NOT_SHOWN)) for item in planned]
     criteria = {
         key: LiveCriterion(**values) for key, values in (check.get("criteria") or {}).items()
     }

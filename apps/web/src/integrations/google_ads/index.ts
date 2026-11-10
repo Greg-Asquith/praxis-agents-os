@@ -4,6 +4,7 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsUpdateStatusPresenter } from "@/integrations/google_ads/presenters/update-status"
 import { googleAdsUpdateCampaignsPresenter } from "@/integrations/google_ads/presenters/update-campaigns"
+import { googleAdsUpdateAdsPresenter } from "@/integrations/google_ads/presenters/update-ads"
 import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/presenters/search-targeting"
 import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
 import { googleAdsCreateAdsPresenter } from "@/integrations/google_ads/presenters/create-ads"
@@ -43,6 +44,7 @@ export default {
     googleAdsOptimiseSearchTermsPresenter,
     googleAdsUpdateStatusPresenter,
     googleAdsUpdateCampaignsPresenter,
+    googleAdsUpdateAdsPresenter,
     googleAdsSearchTargetingPresenter,
     googleAdsUpdateTargetingPresenter,
     googleAdsCreateAdsPresenter,

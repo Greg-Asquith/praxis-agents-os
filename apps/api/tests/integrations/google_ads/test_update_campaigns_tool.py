@@ -261,7 +261,7 @@ async def test_a_change_the_approval_check_did_not_cover_is_refused(monkeypatch)
     data, _audit = await _run(monkeypatch, account, edited, display)
 
     assert [body["validateOnly"] for body in account.mutates] == [True]
-    assert data.campaigns[0].message == tool_module._NOT_SHOWN
+    assert data.campaigns[0].message == tool_module.NOT_SHOWN
     assert account.campaigns[_SEARCH]["name"] == "Campaign 10"
 
 

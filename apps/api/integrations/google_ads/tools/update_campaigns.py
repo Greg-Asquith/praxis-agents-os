@@ -71,7 +71,7 @@ from .schemas.campaign_updates import (
     GoogleAdsUpdateCampaignsOutput,
     GoogleAdsUpdateCampaignsRequest,
 )
-from .utils.accounts import account_facts, approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -94,10 +94,6 @@ _NETWORK_CHANNELS: dict[CampaignSetting, frozenset[str]] = {
 
 _MISSING = "This campaign no longer exists in Google Ads."
 _REMOVED = "This campaign has been removed, so its settings can't change."
-_NOT_SHOWN = (
-    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
-    "prepare the change again."
-)
 _STARTED = "This campaign has already started, so Google Ads won't change its start date."
 _START_PAST = "Choose a start date after today."
 _END_PAST = "Choose an end date of today or later."
@@ -297,7 +293,7 @@ def _approved_edit(change: GoogleAdsCampaignUpdate, check: Any) -> FieldChange:
         or check.get("requested") != change.requested
         or not isinstance(check.get("current"), Mapping)
     ):
-        return replace(_edit(change, {}), refused=_NOT_SHOWN)
+        return replace(_edit(change, {}), refused=NOT_SHOWN)
     edit = _edit(change, check["current"])
     problems = check.get("problems")
     problem = check.get("problem") or next(

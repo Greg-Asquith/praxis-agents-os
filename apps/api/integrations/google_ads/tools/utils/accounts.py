@@ -14,6 +14,12 @@ from services.integrations.context.domain import ResolvedActiveContext, Resolved
 
 from .bindings import GOOGLE_ADS_WRITE_BINDING
 
+# Why an edit tool refuses a change whose approval check didn't cover exactly what was approved.
+NOT_SHOWN = (
+    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
+    "prepare the change again."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class GoogleAdsAccountFacts:

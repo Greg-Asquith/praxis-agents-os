@@ -225,6 +225,58 @@ its outcome; a setting already at its value is `already_set`. Bidding values in
 the result are card terms; the result also carries the account `currency` and
 the `portfolios` named, so the card can write them out.
 
+### Ad edits
+
+`google_ads_update_ads` edits up to 50 live responsive search ads in one
+approval. Each entry names one ad with a `google_ads_ad` reference and only
+the edits to make:
+
+| Field | What it does |
+| --- | --- |
+| `add_headlines`, `add_descriptions` | Adds text (30 or 90 characters) with an optional pin. |
+| `remove_headlines`, `remove_descriptions` | Removes the headline or description with this exact text. |
+| `pins` | Pins the headline or description with this text, or unpins it with a null pin. |
+| `path1`, `path2` | Sets the display path (15 characters). An empty value clears it. |
+| `final_url` | Replaces the ad's final URL. |
+
+`operations/responsive_search_ad_edits.py` reads each ad by its `adGroupAds`
+resource name (`read_responsive_search_ads`), including removed ads, with its
+ad group and campaign names. It holds the copy in two forms: Google's, by
+JSON field path (`responsiveSearchAd.headlines`, `responsiveSearchAd.path1`,
+`finalUrls`), which the edit seam compares and masks, and the card's, with
+headlines and descriptions as text and pin, no path as null, and one final
+URL. `merged_copy` applies an entry to the live copy. An added headline or
+description takes the place of a removed one, in order, so a swap keeps its
+position; the rest go at the end. A pin applies to the asset with that text.
+
+The edit is one `FieldChange` on the `ad` resource, named
+`customers/{id}/ads/{ad_id}`, so it goes through `AdService` in the shared
+`googleAds:mutate` request. Headlines and descriptions are always compared,
+and sent whole when they change. Repeated fields are leaves in a field mask,
+so `responsiveSearchAd.headlines` is a valid path. Paths and the final URL
+are compared and sent only when the entry names them, and a cleared path is
+masked with no value.
+
+While preparing the approval, the tool reads the ads and refuses, before the
+dry run, an ad that is missing, removed (or under a removed ad group or
+campaign), or not a responsive search ad, and a merge that removes text the ad
+doesn't have, repeats a headline or description, pins missing text, sets path
+2 without path 1, or leaves fewer than 3 or more than 15 headlines or fewer
+than 2 or more than 4 descriptions. The rest go through the edit seam's dry
+run. The trusted `_checks` display argument, keyed by `adGroupAds` resource
+name, holds the ad's name (its first headline when it has no name), ad group
+and campaign names, status, `current` copy, the `requested` edits the check
+covered, the merged `after` copy, Google's `values` for the paths it sends, a
+`problem` (missing, removed, not a responsive search ad, or Google's dry-run
+rejection prefixed "Google says:"), and the merge `problems`. Edits on the card
+need a new check (`approval_review_fields`), and after approval an ad whose
+edits differ from its check, or whose check showed a problem, is refused
+without a request. Each result row is one ad with **Before**, **Requested**
+(the merge), **After** (read back), the outcome, and Google's policy review
+(`read_ad_reviews`), which a changed ad starts again. Whether Google accepts
+an in-place update of an enabled ad is check 22 of the live QA; if it
+doesn't, the edit becomes a replacement ad with the old one paused.
+
 ### Ad creation
 
 `google_ads_create_ads` creates up to 50 responsive search ads in existing
@@ -978,6 +1030,38 @@ The result (`components/update-campaigns-outcome.tsx`) is the standard
 edit seam's outcome tabs from `lib/edit-outcomes.ts`, which Update Status and
 Update Targeting share. After is blank when Google's reply couldn't be read back.
 
+### Update Ads card
+
+`lib/update-ads.ts` parses `changes` with `_accounts` and `_checks`, reads each
+entry's edits the way the server does, and runs the same merge
+(`mergedCopy`), so the card shows the copy that will be sent and raises the
+merge problems, empty or long text, long paths, and a bad final URL itself.
+Google's `problem` and `problems` apply while the ad's edits match what was
+checked (`editsSignature`); an edit waits for **Check Changes** instead
+(`adsNeedCheck`), and Check Changes waits until the card's own problems are
+fixed (`canCheckAds`). An ad whose merge leaves it as it is shows Already Set.
+
+The card (`components/update-ads-approval.tsx`) opens with a banner saying
+edited ads go back through Google's review. One ad shows **Now** and **After**
+search result previews (`SearchAdPreview`) over an editor of the after copy:
+`TextAssetList` for headlines and descriptions with counters and pins, and the
+final URL and paths. `editsFor` turns the editor's copy back into edits: an
+edited headline is a removal and an add that the merge puts back in the same
+place, keeping its pin. With several ads that share one edit, a **Replace**
+and **With** pair per swapped headline or description changes every ad at
+once, with one ad's Now and After previews under it. A `DataTable` lists the
+ads (Ad, Ad Group, Campaign, and the headline count before and after), and a
+row opens that ad's editor; editing one ad takes it out of the shared edit.
+From ten ads, a `ChangeSummary` with Needs Attention and **Cancel These**,
+search, and row selection appear. Cancelled ads move into the approval
+controls' retained state, so **Undo** restores them through a check's redraw.
+The approve label counts the ads that change ("Update 3 Ads").
+
+The result (`components/update-ads-outcome.tsx`) is the standard `DataTable`
+result card: Ad, Ad Group, Before (the text taken out), After (the text put
+in), and Outcome. A changed ad still in Google's review shows In Review, and a
+disapproved one shows Disapproved.
+
 ### Data table extensions
 
 The core `DataTable` stays generic and also serves bulk cards. It filters rows
@@ -1018,3 +1102,55 @@ presenting one exportable row per selected criterion. Keyword removal has a
 separate approval card with a permanent-removal warning and account and ad-group context. Its
 paginated result table distinguishes confirmed removal, failure, and
 unverified outcomes, and rejects incomplete or contradictory result evidence.
+
+## Live QA record
+
+The operator tested the new write tools in the running app against live
+accounts from 2026-11-08 to 2026-11-10, at the commits of the day and
+before 305 E was committed. Most tests ran in a paused campaign of the test
+account; the search term tests ran on two client accounts. The record below
+comes from the conversations and the audit log in the local database, keyed
+by conversation ID. Check numbers are those of
+[plan 338](../../plans/google-ads/338-google-ads-live-qa.md) C.
+
+| Check | Result | What happened |
+| --- | --- | --- |
+| 1. Time zone on the card | Passed | An approval in `c6324d66` failed before the connection was refreshed. Every write after the refresh ran. |
+| 2. Status changes | Passed in part | `244b1251`: an ad group and an ad paused, then enabled, each read back. Keywords and an `already_set` reply weren't tried. |
+| 3. Create ads | Passed in part | `f2458033`: two paused ads in one ad group, read back in review. A placeholder landing page was disapproved as prohibited, correctly. Ads in two ad groups and the 31-character block weren't tried. |
+| 4. Create ad groups | Passed in part | `ab802fc2`: three ad groups, nine keywords, and six ads in one request. The CPC bid refusal wasn't tried. |
+| 5. Ad group and its ad in one atomic request | Passed | `ab802fc2` and `9f27e98d` created new ad groups and their ads in one request each. |
+| 6. Campaign build | Passed | `9f27e98d`: a paused Search campaign with its budget, two locations, two ad groups (one added on the card), seven keywords, six negatives, and two ads, read back. |
+| 7. Rejected build leaves nothing | Not run for a campaign | Rejected ad creations in `244b1251` and `f2458033` left nothing behind (`NOTHING_CREATED`). |
+| 8 to 10. Check Changes and card driving | Not recorded | The operator edited cards in several tests (an ad group on Create Ads, status on Create Ad Groups, an ad group on Create Campaign, Target Impression Share values, location bid adjustments), and the edited values were what ran. |
+| 11. Campaign settings | Passed | `bae50edc`: name, an end date set then removed, final URL suffix, tracking template, and custom parameters set then cleared, and both networks on then off, each read back. |
+| 12. Bidding switch | Passed in part | `bae50edc`: Maximise Clicks to Target Impression Share and back, then a cap cleared. Manual CPC to Maximise Conversions and the target ROAS refusal weren't tried. |
+| 13. Target Impression Share after the mask fix | Passed | `bae50edc`: the switch that failed before 9c94f931 ran after it. |
+| 14. Search for locations and languages | Passed | `93477bfe`: language names and France found. Cities weren't searched by name. |
+| 15. Location changes in one approval | Passed in part | `93477bfe`: France added with a −10% adjustment and a city excluded in one approval. A language on a Search campaign is correctly not offered. |
+| 16 to 18. Swap, radius by coordinates, radius by address | Not run | |
+| 19. Negative keywords | Passed | `7c6fa4e9`, through Code Mode: 302 negatives across a campaign, an ad group, and a new list; the list applied to the campaign and detached; duplicate adds reported `already_set` and missing removals `not_found`; everything removed again. |
+| 20. Negative blocking a keyword | Not run | |
+| 21. Search terms | Passed in part | `0f4c4b66` and `f7fe7886`: six and two negatives from search terms on two client accounts. Keyword adds and cost against the Google Ads UI weren't recorded. |
+| 22. Ad edits | Passed in part | `f399543e`: a headline added to two paused ads, updated in place through `AdService` and read back, with review status `REVIEWED` and approval `APPROVED` straight after. A swap, a pin, the two-headline refusal, and an enabled ad weren't tried. |
+
+Faults the tests found:
+
+- Google refuses a mask on a bidding field with subfields set. Fixed in
+  9c94f931 (305 B).
+- The ad group picker offered ad groups under removed campaigns, which Google
+  refused at the send after passing the dry run (`244b1251`). Fixed in 304 A:
+  entity lists leave out removed objects and their children.
+- Large Code Mode approvals never reached the card, and runs were abandoned
+  when their lease expired (`8127ab76`, `5839faeb`). The preview locked the
+  run, and concurrent reads failed with "This session is provisioning a new
+  connection". Fixed in 0be242be; plan 341 removes the repeated token lookups
+  behind it.
+- The agent can't tell when the operator changed its proposal on the card. In
+  `ab802fc2` the operator chose Launch; the agent reported that Google had
+  ignored its paused request and paused all nine objects again. In
+  `93477bfe` it tried to undo a bid adjustment and an exclusion the operator
+  had added, which the operator declined. See FOLLOW_UPS.
+
+Left in the test account: an empty, unlinked negative keyword list from
+`7c6fa4e9`, because no tool removes a list until 307 B.

@@ -47,7 +47,7 @@ from .schemas.status import (
     GoogleAdsUpdateStatusOutput,
     GoogleAdsUpdateStatusRequest,
 )
-from .utils.accounts import approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -61,10 +61,6 @@ from .utils.routing import login_customer_id
 
 _OPERATION = "update_status"
 _IDENTITY = ("object",)
-_NOT_SHOWN = (
-    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
-    "prepare the change again."
-)
 _MISSING = "This no longer exists in Google Ads."
 _REMOVED = "Removed items can't be turned on or off."
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
@@ -175,7 +171,7 @@ def _approved_edit(change: GoogleAdsStatusChange, check: Any) -> FieldChange:
         requested={"status": change.status},
     )
     if not isinstance(check, Mapping) or check.get("unavailable") is not False:
-        return replace(edit, refused=_NOT_SHOWN)
+        return replace(edit, refused=NOT_SHOWN)
     before = check.get("status")
     if before is None:
         return replace(edit, refused=_MISSING)

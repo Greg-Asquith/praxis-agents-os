@@ -103,6 +103,17 @@ describe("Google Ads create ads arguments", () => {
     expect(createAdsApproveLabel(edited)).toBe("Create 2 Ads")
   })
 
+  it("shows a rejection once when two ads share the copy Google checked", () => {
+    const base = args()
+    const [checked] = base._checks.ads
+    const twice = parsed({
+      ...base,
+      ads: [...base.ads, ...base.ads],
+      _checks: { ...base._checks, ads: [checked, checked] },
+    })
+    expect(adRows(twice).map((row) => row.problems.length)).toEqual([1, 1])
+  })
+
   it("blocks approval for a 31-character headline and a path 2 without a path 1", () => {
     const value = args({
       ads: [

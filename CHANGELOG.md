@@ -27,6 +27,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   or changes only a target. The card shows recent conversions and ad groups
   with their own bids, counts campaigns that restart learning, and refuses
   targets the strategy doesn't take.
+- Google Ads ad edits with approval: `google_ads_update_ads` replaces, adds,
+  removes, and pins headlines and descriptions, and changes display paths and
+  final URLs, on up to 50 responsive search ads in one approval. The card
+  shows each ad now and after the edit, edits one shared change once for
+  every ad, and refuses an edit that would leave too few headlines or
+  descriptions. Each result shows the ad back in Google's review.
 - Google Ads negative keywords in one approval:
   `google_ads_update_negative_keywords` adds and removes up to 1,000 negative
   keywords across campaigns, ad groups, and negative keyword lists, starts new
@@ -383,6 +389,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Google Ads Create Ads, Create Ad Groups, and Create Campaign cards show a
+  Google rejection once when two ads share the same copy, instead of
+  repeating it.
 - `google_ads_update_targeting` sends a campaign's location removals and adds
   together, so an add Google rejects can't leave the campaign with its old
   locations removed.

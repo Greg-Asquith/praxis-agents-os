@@ -62,7 +62,7 @@ from .schemas.negative_keywords import (
     GoogleAdsUpdateNegativeKeywordsOutput,
     GoogleAdsUpdateNegativeKeywordsRequest,
 )
-from .utils.accounts import approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -87,10 +87,6 @@ _RESOURCES = {
     "ad_group": ("adGroupCriterion", "adGroup"),
     "list": ("sharedCriterion", "sharedSet"),
 }
-_NOT_SHOWN = (
-    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
-    "prepare the change again."
-)
 _LIST_EXISTS = "A negative keyword list with this name already exists. Add to that list instead."
 _CAMPAIGN_MISSING = "This campaign no longer exists in Google Ads."
 _CAMPAIGN_REMOVED = "This campaign has been removed, so it can't use the list."
@@ -511,7 +507,7 @@ async def _send_lists(
 ) -> list[GoogleAdsMutationLedger]:
     build, left_out = _list_build(entry.external_id, parts)
     ledgers: list[GoogleAdsMutationLedger] = []
-    refused = [replace(item, refused=item.refused or _NOT_SHOWN) for item in left_out]
+    refused = [replace(item, refused=item.refused or NOT_SHOWN) for item in left_out]
     if build.steps:
         keys = [step.source for step in build.steps]
         try:
@@ -558,7 +554,7 @@ def _failed_ledger(
         parent_fields=fields,
         skipped_indices={},
         submitted=list(enumerate(fields)),
-        outcomes=[("failed", None, code, message or item.refused or _NOT_SHOWN) for item in parts],
+        outcomes=[("failed", None, code, message or item.refused or NOT_SHOWN) for item in parts],
         projection=GoogleAdsMutationProjection(
             applied_key="updated", skipped_key="already_set", errors_key="errors"
         ),
@@ -586,7 +582,7 @@ def _approved_plan(change: GoogleAdsNegativeKeywordChange, check: Any) -> list[_
     """
     planned = _plan(change)
     if not isinstance(check, Mapping) or check.get("unavailable") is not False:
-        return _refused(planned, _NOT_SHOWN)
+        return _refused(planned, NOT_SHOWN)
     shown = {
         (row.get("item"), row.get("key")): row
         for row in check.get("rows") or ()
@@ -600,7 +596,7 @@ def _approved_plan(change: GoogleAdsNegativeKeywordChange, check: Any) -> list[_
             continue
         row = shown.get((item.item, _row_key(item)))
         if row is None or row.get("action") != item.action:
-            approved.append(replace(item, refused=_NOT_SHOWN))
+            approved.append(replace(item, refused=NOT_SHOWN))
             continue
         before = row.get("before") if isinstance(row.get("before"), str) else None
         reason = problem or (row.get("problem") if isinstance(row.get("problem"), str) else None)

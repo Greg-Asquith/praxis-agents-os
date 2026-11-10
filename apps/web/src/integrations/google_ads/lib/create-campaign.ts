@@ -15,7 +15,7 @@ import {
   objectCount,
   parseAdGroup,
   parseEach,
-  parseItemProblem,
+  parseItemProblems,
   roasPercent,
   serializeAdGroups,
   serializeRoas,
@@ -251,7 +251,7 @@ function parseChecks(value: unknown): CampaignChecks {
   return {
     unavailable: false,
     campaignProblems: list("campaign_problems").flatMap(parseCampaignItemProblem),
-    itemProblems: list("problems").flatMap(parseItemProblem),
+    itemProblems: parseItemProblems(value["problems"]),
     locationNames: new Map(
       Object.entries(names).flatMap(([key, name]) =>
         typeof name === "string" ? [[key, name] as const] : []

@@ -59,7 +59,7 @@ from .schemas.search_terms import (
     GoogleAdsOptimiseSearchTermsRequest,
     GoogleAdsSearchTermDecision,
 )
-from .utils.accounts import account_facts, approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.money import micros_to_money
@@ -80,10 +80,6 @@ _MAX_PUBLIC_RESULT_CHARS = 1_000_000
 _MAX_MODEL_OUTCOMES = 50
 
 _NOUNS = {"campaign": "campaign", "ad_group": "ad group", "list": "negative keyword list"}
-_NOT_SHOWN = (
-    "Google Ads couldn't check this before approval, so it wasn't changed. Ask the agent to "
-    "prepare the change again."
-)
 _MATCHED_GONE = "The ad group this term matched in no longer exists in Google Ads."
 _NOT_IN_REPORT = "Not in the search terms report for {start} to {end} in {ad_group}."
 _GONE = "This {noun} no longer exists in Google Ads."
@@ -369,7 +365,7 @@ def _approved_edit(decision: GoogleAdsSearchTermDecision, check: Any) -> Criteri
         or check.get("unavailable") is not False
         or check.get("key") != decision.write_key
     ):
-        return _edit(decision, None, _NOT_SHOWN)
+        return _edit(decision, None, NOT_SHOWN)
     before = check.get("before")
     problem = check.get("problem")
     return _edit(
