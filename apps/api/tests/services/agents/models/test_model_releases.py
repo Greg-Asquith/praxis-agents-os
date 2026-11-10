@@ -22,10 +22,15 @@ from tests.support.google_native import mock_google_native
 
 
 @pytest.mark.parametrize(
-    ("vertex", "thinking", "level"), [(False, "minimal", "LOW"), (True, False, "LOW")]
+    ("model_id", "vertex", "thinking"),
+    [
+        ("gemini-4-argon", False, "minimal"),
+        ("gemini-4-carbon", False, "minimal"),
+        ("gemini-4-carbon", True, False),
+    ],
 )
-async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
-    monkeypatch, vertex, thinking, level
+async def test_gemini_4_tool_loop_preserves_signatures_and_supported_thinking(
+    monkeypatch, model_id, vertex, thinking
 ):
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("test-key"))
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
@@ -65,15 +70,13 @@ async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
                     "thoughtsTokenCount": 7,
                     "totalTokenCount": 22,
                 },
-                "modelVersion": "gemini-4-argon",
+                "modelVersion": model_id,
             },
         )
 
     async with mock_google_native(monkeypatch, respond, vertex=vertex) as requests:
         model = factory.build_model(
-            resolve_catalog_model(
-                "google", "gemini-4-argon", settings_overrides={"thinking": thinking}
-            )
+            resolve_catalog_model("google", model_id, settings_overrides={"thinking": thinking})
         )
         result = await Agent(model, tools=[lookup], output_type=NativeOutput(Answer)).run(
             "Look up the record."
@@ -85,7 +88,7 @@ async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
     assert result.usage.cache_read_tokens == 4
     assert result.usage.output_tokens == 24
     request = requests[0]
-    assert request.url.path.endswith("/models/gemini-4-argon:generateContent")
+    assert request.url.path.endswith(f"/models/{model_id}:generateContent")
     if vertex:
         assert request.url.host == "aiplatform.eu.rep.googleapis.com"
         assert "/projects/test-project/locations/eu/" in request.url.path
@@ -95,7 +98,7 @@ async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
         assert request.url.host == "generativelanguage.googleapis.com"
         assert request.headers["x-goog-api-key"] == "test-key"
     config = bodies[0]["generationConfig"]
-    assert config.get("thinkingConfig", {}).get("thinking_level") == level
+    assert config.get("thinkingConfig", {}).get("thinking_level") == "LOW"
     assert "thinking_budget" not in config.get("thinkingConfig", {})
     assert config["responseMimeType"] == "application/json"
     assert bodies[1]["contents"][1]["parts"][0]["thoughtSignature"] == "c2lnbmVk"

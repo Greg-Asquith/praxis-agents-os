@@ -22,22 +22,28 @@ def test_pricing_catalogue_returns_one_effective_rate_per_model() -> None:
 
 
 def test_effective_date_lookup_selects_latest_applicable_price() -> None:
-    launch = find_price("google", "gemini-4-argon", date(2026, 11, 30))
-    standard = find_price("google", "gemini-4-argon", date(2026, 12, 1))
+    launch = find_price("google", "gemini-4-carbon", date(2026, 11, 30))
+    standard = find_price("google", "gemini-4-carbon", date(2026, 12, 1))
 
     assert launch is not None
     assert launch.input_usd_per_mtok == 2
+    assert launch.cache_read_usd_per_mtok == Decimal("0.1")
+    assert launch.cache_write_usd_per_mtok == 0
+    assert launch.output_usd_per_mtok == 10
     assert standard is not None
     assert standard.input_usd_per_mtok == 4
+    assert standard.cache_read_usd_per_mtok == Decimal("0.2")
+    assert standard.cache_write_usd_per_mtok == 0
+    assert standard.output_usd_per_mtok == 20
 
 
 def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
     assert find_price("azure", "customer-deployment", date(2026, 8, 12)) is None
-    assert find_price("openai", "gpt-5.6-sol", date(2026, 7, 8)) is None
+    assert find_price("google", "gemini-4-carbon", date(2026, 11, 9)) is None
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 11, 5)
+    on_date = date(2026, 11, 10)
     missing = [
         model.qualified_id
         for model in list_models()

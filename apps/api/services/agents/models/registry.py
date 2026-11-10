@@ -152,6 +152,19 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_vision=True,
     ),
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-carbon
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model="gemini-4-carbon",
+        display_name="Gemini 4 Carbon",
+        context_window=1_048_576,
+        model_type="max",
+        supports_thinking=True,
+        supports_vision=True,
+        vertex_model="gemini-4-carbon",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
+    ),
     # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon
     ModelInfo(
         provider=PROVIDER_GOOGLE,

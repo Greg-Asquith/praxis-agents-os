@@ -45,9 +45,14 @@ _PROVIDER_KEY_SETTING = {
 
 def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
     """Supplies profile settings for catalogue models Pydantic AI does not cover."""
-    if provider == PROVIDER_GOOGLE and model == "gemini-4-argon":
-        # Argon can't turn thinking off; Pydantic AI's profile doesn't say so.
-        return {**(google_model_profile(model) or {}), "thinking_always_enabled": True}
+    if provider == PROVIDER_GOOGLE and model in {"gemini-4-argon", "gemini-4-carbon"}:
+        # Pydantic AI lacks always-on thinking for both models and Carbon's level limits.
+        return {
+            **(google_model_profile(model) or {}),
+            "thinking_always_enabled": True,
+            "google_supports_minimal_thinking_level": False,
+            "google_thinking_levels": frozenset({"LOW", "MEDIUM", "HIGH"}),
+        }
     if provider == PROVIDER_GOOGLE and model == "gemini-nano-banana-2.1":
         # Pydantic AI detects image models by an `image` substring in their IDs.
         return {

@@ -42,6 +42,54 @@ the Standard default. Terra accepts `none` to `max` reasoning efforts with
 `medium` as the default. Pydantic AI 2.66 profiles it like GPT-6 Sol. Live
 access hasn't been checked with a Praxis key.
 
+### Gemini 4 Carbon
+
+The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon),
+[release notes](https://ai.google.dev/gemini-api/docs/changelog), and
+[Google Cloud model page](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-carbon),
+checked on 10 November 2026, list `gemini-4-carbon` as generally available
+from that date. Both transports use the same ID. Carbon is Google's **Max**
+default; Argon remains **Powerful**. Existing agent selections and native
+helper defaults remain unchanged.
+
+Carbon accepts text, images, audio, video, and PDFs, returns text, and supports
+streaming, function calls, and structured output. Input, thinking, and output
+share a 1,048,576-token context window. The knowledge cutoff is March 2026.
+Vertex supports `global`, `us`, and `eu`; `GOOGLE_VERTEX_LOCATION=auto` selects
+`eu`. Unsupported locations fail before client construction. Live access
+hasn't been checked with a Praxis API key or Vertex project.
+
+Carbon accepts `low`, `medium` (the provider default), and `high` thinking.
+Pydantic AI 2.66 lacks Carbon's thinking restrictions, so
+`provider_model_profile` supplies its supported levels and always-on thinking.
+The UI's `minimal` preference and disabled thinking both send `low`.
+Explicit `thinking_budget` and `MINIMAL` settings are unsupported. Google
+ignores temperature, top-p, and top-k. Only implicit caching is supported,
+with a 4,096-token minimum. See the
+[Carbon migration guide](https://ai.google.dev/gemini-api/docs/whats-new-gemini-4-carbon).
+
+Praxis uses ordinary `generateContent` and `streamGenerateContent` calls.
+Google Cloud documents per-segment output limits of 65,536 streaming tokens
+and 32,768 non-streaming tokens, including thinking. Long decode up to the
+shared context limit remains pending verification of continuation handling,
+cumulative usage, and context accounting. Provider-native computer use and
+agentic video processing remain outside Praxis's governed tools.
+
+The [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-carbon)
+and [Google Cloud pricing](https://cloud.google.com/model-garden/pricing),
+checked on 10 November 2026, list these standard prices in USD per million tokens:
+
+| Transport | 10-30 November 2026: input / cache read / output | From 1 December 2026: input / cache read / output |
+| --- | --- | --- |
+| Gemini API and Vertex `global` | $2 / $0.10 / $10 | $4 / $0.20 / $20 |
+| Vertex `us` and `eu` | $2.20 / $0.11 / $11 | $4.40 / $0.22 / $22 |
+
+Thinking tokens count as output. Implicit caching has no separate write
+charge. Usage estimates use Gemini API and Vertex `global` rates. Regional
+premiums and Vertex promotional-credit reconciliation remain pending because
+the ledger does not record transport or location. Batch, Flex, Priority, and
+grounding charges remain outside standard token estimates.
+
 ### Gemini 4 Argon
 
 The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
@@ -244,7 +292,7 @@ follow the deployment runbook for a deployed environment.
 
 Google Vertex model and embedding calls share a
 process-owned Google client per project, location, and retry policy.
-`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: Gemini 4 Argon, Flash,
+`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: Gemini 4 Carbon, Argon, Flash,
 and Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
 `global`. Explicit locations must appear in the Gemini model's supported
 locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
