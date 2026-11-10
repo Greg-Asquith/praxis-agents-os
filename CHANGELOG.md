@@ -27,6 +27,17 @@ minor release. Patch releases contain backward-compatible fixes only.
   or changes only a target. The card shows recent conversions and ad groups
   with their own bids, counts campaigns that restart learning, and refuses
   targets the strategy doesn't take.
+- Google Ads negative keywords in one approval:
+  `google_ads_update_negative_keywords` adds and removes up to 1,000 negative
+  keywords across campaigns, ad groups, and negative keyword lists, starts new
+  lists, and changes which campaigns use a list. The card refuses a negative
+  that would block a keyword the account bids on, and can add keywords and
+  targets the agent didn't propose.
+- Google Ads search terms in one approval: `google_ads_optimise_search_terms`
+  turns up to 1,000 search terms into negative keywords or new keywords. The
+  card shows each term's clicks, cost, and conversions as Google reports them
+  for the date range, and each action, match type, and target can be changed
+  before approving.
 - Google Ads ad creation: `google_ads_create_ads` creates up to 50 responsive
   search ads across existing ad groups in one all-or-nothing request, with a
   search result preview and character counts on the card.
@@ -360,6 +371,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 ### Removed
 
 - `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
+- The eight Google Ads negative keyword tools (add and remove for lists,
+  campaigns, and ad groups, `google_ads_create_negative_keyword_list`, and
+  `google_ads_link_negative_keyword_list`), replaced by
+  `google_ads_update_negative_keywords`.
 - Run Code, which sent workspace files to an Anthropic, OpenAI, or Google
   sandbox, is gone, with its `NATIVE_RUN_CODE_*` settings. Agents work with
   Office files, CSV, and saved results through the document tools, and do
@@ -368,6 +383,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- `google_ads_update_targeting` sends a campaign's location removals and adds
+  together, so an add Google rejects can't leave the campaign with its old
+  locations removed.
+- Code Mode approvals that check a large change with the provider first, such
+  as 960 negative keywords, reach the approval card and run after approval.
+  They used to leave the run stuck until it timed out.
 - Line breaks you type in a message show in the conversation, instead of
   joining the lines into one.
 - Your own messages with long code lines stay inside the conversation

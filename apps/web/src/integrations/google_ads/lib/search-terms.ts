@@ -8,13 +8,12 @@ import {
 } from "@/integrations/google_ads/lib/accounts"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
 import { isRecord } from "@/lib/guards"
 
 export type SearchTermAction = "add_negative" | "add_keyword"
 type NegativeLevel = "ad_group" | "campaign" | "list"
 type RowState = "change" | "already_set" | "unchecked"
-
-const MATCH_TYPES: readonly KeywordMatchType[] = ["EXACT", "PHRASE", "BROAD"]
 
 export const ACTION_LABELS: Record<SearchTermAction, string> = {
   add_keyword: "Add Keyword",

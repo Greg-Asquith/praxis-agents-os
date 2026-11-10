@@ -2,6 +2,7 @@
 
 import type { DataTableTab } from "@/components/ui/data-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
 import type { SearchTermAction } from "@/integrations/google_ads/lib/search-terms"
 import { isRecord } from "@/lib/guards"
 
@@ -50,7 +51,6 @@ export const SEARCH_TERM_TOKEN_BADGES = {
 
 const OUTCOMES = ["added", "already_set", "failed", "unverified"]
 const KINDS = ["ad_group", "campaign", "list"]
-const MATCH_TYPES = ["EXACT", "PHRASE", "BROAD"]
 
 function parseRow(value: unknown): SearchTermOutcomeRow | null {
   if (!isRecord(value)) return null
@@ -63,7 +63,7 @@ function parseRow(value: unknown): SearchTermOutcomeRow | null {
     !KINDS.includes(kind) ||
     typeof term !== "string" ||
     typeof matchType !== "string" ||
-    !MATCH_TYPES.includes(matchType)
+    !(MATCH_TYPES as readonly string[]).includes(matchType)
   )
     return null
   const text = (key: string) => (typeof value[key] === "string" ? value[key] : null)

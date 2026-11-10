@@ -29,7 +29,7 @@ import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/compon
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { SearchTermTargetCombobox } from "@/integrations/google_ads/components/search-term-target-combobox"
-import { MATCH_TYPE_LABELS } from "@/integrations/google_ads/lib/negative-keywords"
+import { MATCH_TYPE_LABELS, MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
 import {
   ACTION_LABELS,
   accountCurrency,
@@ -55,7 +55,6 @@ import {
 
 // Below this many changes the summary and the table tools only add noise.
 const TOOLS_FROM = 10
-const MATCH_TYPES: readonly KeywordMatchType[] = ["EXACT", "PHRASE", "BROAD"]
 const ACTIONS: readonly SearchTermAction[] = ["add_negative", "add_keyword"]
 
 export function SearchTermsApproval({

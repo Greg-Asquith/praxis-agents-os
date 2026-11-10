@@ -47,7 +47,7 @@ from .schemas.status import (
     GoogleAdsUpdateStatusOutput,
     GoogleAdsUpdateStatusRequest,
 )
-from .utils.accounts import approval_accounts
+from .utils.accounts import approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -284,12 +284,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     by_account: dict[str, list[GoogleAdsStatusChange]] = defaultdict(list)
     for change in request.changes:
         by_account[change.reference.customer_id].append(change)
-    active = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ())
-        if entry.write_allowed
-    }
+    entries = writable_entries(deps.active_context)
     checks: dict[str, dict[str, Any]] = {}
     for customer_id, changes in by_account.items():
         checks.update(await _account_checks(deps, entries.get(customer_id), changes))

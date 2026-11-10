@@ -141,7 +141,8 @@ class GoogleAdsNewListNegatives(GoogleAdsStrictModel):
 
     @property
     def target_key(self) -> str:
-        return f"customers/{self.customer_id}/newSharedSets/{self.new_list.casefold()}"
+        # Lower case, as the card writes it; case folding would turn "ß" into "ss".
+        return f"customers/{self.customer_id}/newSharedSets/{self.new_list.lower()}"
 
     @property
     def campaigns(self) -> list[GoogleAdsCampaignReference]:

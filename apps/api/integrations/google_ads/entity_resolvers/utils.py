@@ -205,6 +205,7 @@ def _google_ads_choice_entity_ids(choice: EntityChoice) -> tuple[int, int] | Non
         "google_ads_ad": "ad_id",
         "google_ads_ad_group": "ad_group_id",
         "google_ads_asset_group": "asset_group_id",
+        "google_ads_bidding_strategy": "bidding_strategy_id",
         "google_ads_campaign_budget": "budget_id",
         "google_ads_campaign": "campaign_id",
         "google_ads_label": "label_id",

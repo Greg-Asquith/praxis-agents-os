@@ -75,7 +75,8 @@ endpoint per resource type. Two seams build on it:
   an unclear reply and fails a change Google accepted but didn't keep. If
   the read-back fails or doesn't return the object, Google's reply stands and
   **After** is empty. A cancel during the read-back keeps Google's reply as the
-  evidence.
+  evidence. A cancel between requests keeps the replies of the requests that
+  finished and leaves the rest unverified.
 - Partial-failure parsing (`grouped_partial_failure_errors`) replaces
   Google's generic policy message with the policy topics from the error's
   `policyFindingDetails`, such as "Disapproved under the Destination Not

@@ -15,6 +15,9 @@ from integrations.google_ads.entity_resolvers.ad import resolve_google_ads_ads
 from integrations.google_ads.entity_resolvers.ad_group import (
     resolve_google_ads_ad_groups,
 )
+from integrations.google_ads.entity_resolvers.bidding_strategy import (
+    search_google_ads_bidding_strategies,
+)
 from integrations.google_ads.entity_resolvers.campaign import (
     GOOGLE_ADS_CAMPAIGN_RESOLVER,
     resolve_google_ads_campaigns,
@@ -141,6 +144,26 @@ async def test_campaign_budget_resolver_searches_and_hydrates_live_references(
     assert resolved[0].value["amount_micros"] == "12500000"
     assert query.await_args_list[0].kwargs["search"] == "launch"
     assert query.await_args_list[1].kwargs["budget_ids"] == ["55"]
+
+
+async def test_bidding_strategy_search_lists_portfolio_strategies(monkeypatch) -> None:
+    selected = _writable_google_ads_entry()
+    ctx = SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,)))
+    row = {
+        "id": "55",
+        "name": "Brand tCPA",
+        "type": "TARGET_CPA",
+        "status": "ENABLED",
+        "campaignCount": "2",
+    }
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.bidding_strategy._query",
+        AsyncMock(return_value=[row]),
+    )
+
+    page = await search_google_ads_bidding_strategies(ctx, "brand", {}, 10, None)
+
+    assert [choice.value["bidding_strategy_id"] for choice in page.choices] == ["55"]
 
 
 async def test_recommendation_pages_interleave_every_active_account(monkeypatch) -> None:

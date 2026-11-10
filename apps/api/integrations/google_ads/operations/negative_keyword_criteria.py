@@ -113,21 +113,23 @@ async def read_negative_keywords(
     shared_set_ids: Sequence[str],
     list_campaign_ids: Sequence[str],
     check_keywords: bool,
+    named_campaign_ids: Sequence[str] = (),
 ) -> LiveNegatives:
     """Reads the targets that exist, removed ones included, and their negatives.
 
     `campaign_ids` and `ad_group_ids` hold negatives; `list_campaign_ids` are campaigns a list
-    is applied to or taken from. With `check_keywords`, it also reads the keywords bid on in
-    every campaign and ad group whose searches the negatives would cover.
+    is applied to or taken from; `named_campaign_ids` are read for their names only. With
+    `check_keywords`, it also reads the keywords bid on in every campaign and ad group whose
+    searches the negatives would cover.
 
     Raises:
         IntegrationValidationError: When the targets hold too many keywords to compare.
     """
-    ids = [*campaign_ids, *ad_group_ids, *shared_set_ids, *list_campaign_ids]
+    ids = [*campaign_ids, *ad_group_ids, *shared_set_ids, *list_campaign_ids, *named_campaign_ids]
     if any(not value.isdigit() for value in ids):
         raise ValueError("Google Ads ids must contain only digits")
     read = _Reader(client, normalize_customer_id(customer_id), login_customer_id)
-    campaigns = sorted({*campaign_ids, *list_campaign_ids})
+    campaigns = sorted({*campaign_ids, *list_campaign_ids, *named_campaign_ids})
     owners, ad_groups, negatives, lists, list_keywords, uses = await asyncio.gather(
         read.campaigns(campaigns),
         read.ad_groups(sorted(set(ad_group_ids))),

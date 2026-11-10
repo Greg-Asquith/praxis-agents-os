@@ -87,9 +87,9 @@ export function parseBidding(value: unknown): Bidding | null {
   if (strategy === PORTFOLIO) {
     const portfolio = portfolioName(value["portfolio"])
     if (portfolio === null) return null
-    return isRecord(value["portfolio"])
-      ? { strategy, portfolio, reference: value["portfolio"] }
-      : { strategy, portfolio }
+    // A value this already read keeps its reference, so a cancelled change can come back.
+    const reference = isRecord(value["portfolio"]) ? value["portfolio"] : value["reference"]
+    return isRecord(reference) ? { strategy, portfolio, reference } : { strategy, portfolio }
   }
   if (strategy === TARGETS) {
     const targets: Bidding = { strategy }

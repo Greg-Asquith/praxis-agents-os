@@ -59,7 +59,7 @@ from .schemas.search_terms import (
     GoogleAdsOptimiseSearchTermsRequest,
     GoogleAdsSearchTermDecision,
 )
-from .utils.accounts import account_facts, approval_accounts
+from .utils.accounts import account_facts, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.money import micros_to_money
@@ -261,8 +261,8 @@ async def _read_live(
             campaign_ids=campaigns,
             ad_group_ids=sorted({*matched, *keyword_targets}),
             shared_set_ids=lists,
-            # Read for their names only.
-            list_campaign_ids=sorted({decision.ad_group.campaign_id for decision in decisions}),
+            list_campaign_ids=(),
+            named_campaign_ids=sorted({decision.ad_group.campaign_id for decision in decisions}),
             check_keywords=checking,
         ),
         read_ad_group_keywords(
@@ -499,12 +499,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     by_account: dict[str, list[GoogleAdsSearchTermDecision]] = defaultdict(list)
     for decision in request.decisions:
         by_account[decision.customer_id].append(decision)
-    active = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ())
-        if entry.write_allowed
-    }
+    entries = writable_entries(deps.active_context)
     checks: dict[str, dict[str, Any]] = {}
     for customer_id, decisions in by_account.items():
         checks.update(await _account_checks(deps, entries.get(customer_id), request, decisions))

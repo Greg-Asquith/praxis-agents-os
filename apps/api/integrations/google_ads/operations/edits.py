@@ -39,6 +39,12 @@ _MISSING_MESSAGE = "This no longer exists in Google Ads."
 _NOT_CONFIRMED = "Google Ads accepted the change, but {settings} still shows a different value."
 _DRY_RUN_FAILED = "Google Ads rejected this change"
 _GROUP_REJECTED = "Google Ads rejected these changes together, so none were made."
+_INTERRUPTED: GoogleAdsMutationOutcome = (
+    "unverified",
+    None,
+    "CANCELLED",
+    "The change was interrupted.",
+)
 # Each criterion resource's collection. Its names start with the owner's ID.
 _CRITERION_COLLECTIONS = {
     "campaignCriterion": "campaignCriteria",
@@ -264,8 +270,7 @@ async def apply_edits(
             operation=operation,
         )
     except asyncio.CancelledError as exc:
-        unclear = [("unverified", None, "CANCELLED", "The change was interrupted.")] * len(sent)
-        exc.ledger = _ledger(family, edits, refusals, sent, unclear)
+        exc.ledger = _ledger(family, edits, refusals, sent, exc.outcomes)
         raise
     after: dict[str, SettingValues] = {}
     read_back = False
@@ -293,20 +298,29 @@ async def _send(
     sent: Sequence[Edit],
     operation: str,
 ) -> list[GoogleAdsMutationOutcome]:
-    """Sends ungrouped edits in one request and each atomic group in its own, in edit order."""
+    """Sends ungrouped edits in one request and each atomic group in its own, in edit order.
+
+    Raises:
+        asyncio.CancelledError: With an `outcomes` attribute keeping the replies of the
+            requests that finished; the rest are unclear.
+    """
     requests: dict[str | None, list[int]] = {}
     for index, edit in enumerate(sent):
         requests.setdefault(edit.atomic_group, []).append(index)
     outcomes: dict[int, GoogleAdsMutationOutcome] = {}
     for group, indices in requests.items():
-        replies = await _send_request(
-            client,
-            customer_id=customer_id,
-            login_customer_id=login_customer_id,
-            sent=[sent[index] for index in indices],
-            atomic=group is not None,
-            operation=operation,
-        )
+        try:
+            replies = await _send_request(
+                client,
+                customer_id=customer_id,
+                login_customer_id=login_customer_id,
+                sent=[sent[index] for index in indices],
+                atomic=group is not None,
+                operation=operation,
+            )
+        except asyncio.CancelledError as exc:
+            exc.outcomes = [outcomes.get(index, _INTERRUPTED) for index in range(len(sent))]
+            raise
         outcomes.update(zip(indices, replies, strict=True))
     return [outcomes[index] for index in range(len(sent))]
 

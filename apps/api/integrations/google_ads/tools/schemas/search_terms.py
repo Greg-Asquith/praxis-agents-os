@@ -82,7 +82,8 @@ class GoogleAdsSearchTermDecision(GoogleAdsStrictModel):
     @property
     def key(self) -> str:
         """Names the decision on the card: the term, where it matched, and the action."""
-        term = " ".join(self.search_term.casefold().split())
+        # Lower case, as the card writes it; case folding would turn "ß" into "ss".
+        term = " ".join(self.search_term.lower().split())
         return f"{self.matched_in}/{self.action}/{term}"
 
     @property

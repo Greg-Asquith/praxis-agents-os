@@ -62,6 +62,12 @@ def approval_accounts(entries: Iterable[ResolvedContextEntry]) -> list[dict[str,
     return [account_facts(entry).display() for entry in entries]
 
 
+def writable_entries(active: ResolvedActiveContext | None) -> dict[str, ResolvedContextEntry]:
+    """Returns the accounts in the active context that this run may write to, by customer ID."""
+    entries = active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ()
+    return {entry.external_id: entry for entry in entries if entry.write_allowed}
+
+
 def writable_entry(
     active: ResolvedActiveContext | None, customer_id: str
 ) -> ResolvedContextEntry | None:

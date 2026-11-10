@@ -63,7 +63,7 @@ from .schemas.targeting import (
     GoogleAdsUpdateTargetingOutput,
     GoogleAdsUpdateTargetingRequest,
 )
-from .utils.accounts import approval_accounts
+from .utils.accounts import approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -715,12 +715,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     by_account: dict[str, list[GoogleAdsTargetingChange]] = defaultdict(list)
     for change in request.changes:
         by_account[change.campaign.customer_id].append(change)
-    active = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ())
-        if entry.write_allowed
-    }
+    entries = writable_entries(deps.active_context)
     campaigns: dict[str, dict[str, Any]] = {}
     names: dict[str, dict[str, str]] = {"locations": {}, "languages": {}}
     for customer_id, changes in by_account.items():

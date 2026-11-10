@@ -35,6 +35,7 @@ import {
   addListCampaign,
   cancelRows,
   MATCH_TYPE_LABELS,
+  MATCH_TYPES,
   needsCheck,
   negativeCounts,
   negativeRows,
@@ -53,7 +54,6 @@ import {
 const TOOL = "google_ads_update_negative_keywords"
 // Below this many changes the summary and the table tools only add noise.
 const TOOLS_FROM = 10
-const MATCH_TYPES: readonly KeywordMatchType[] = ["EXACT", "PHRASE", "BROAD"]
 
 const COLUMNS: DataColumn[] = [
   { key: "name", kind: "text", label: "Negative Keyword", width: 220 },

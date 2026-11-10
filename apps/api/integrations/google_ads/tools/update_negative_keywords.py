@@ -62,7 +62,7 @@ from .schemas.negative_keywords import (
     GoogleAdsUpdateNegativeKeywordsOutput,
     GoogleAdsUpdateNegativeKeywordsRequest,
 )
-from .utils.accounts import approval_accounts
+from .utils.accounts import approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -249,23 +249,30 @@ class _Live:
             return f"This {noun} has been removed, so its negative keywords can't change."
         return None
 
-    def scope(self, entry: GoogleAdsNegativeKeywordChange) -> tuple[set[str], str | None]:
+    def scope(
+        self, entry: GoogleAdsNegativeKeywordChange, items: Sequence[_Planned]
+    ) -> tuple[set[str], str | None]:
         """The campaigns, or the ad group, whose searches the target's negatives cover."""
         if entry.kind == "ad_group":
             return set(), entry.target_key
         if entry.kind == "campaign":
             return {entry.target_key}, None
         campaigns = set(self.negatives.list_campaigns.get(entry.target_key, ()))
-        for item in _plan(entry):
+        for item in items:
             if item.item == "campaign" and item.campaign is not None:
                 (campaigns.add if item.action == "add" else campaigns.discard)(item.campaign)
         return campaigns, None
 
-    def item_problem(self, entry: GoogleAdsNegativeKeywordChange, item: _Planned) -> str | None:
+    def item_problem(
+        self,
+        entry: GoogleAdsNegativeKeywordChange,
+        item: _Planned,
+        scope: tuple[set[str], str | None],
+    ) -> str | None:
         if item.action != "add" or item.item == "list":
             return None
         if item.item == "keyword" and item.match_type is not None:
-            campaigns, ad_group = self.scope(entry)
+            campaigns, ad_group = scope
             hit = self.blocked.first(
                 item.name, item.match_type, campaigns=campaigns, ad_group=ad_group
             )
@@ -291,13 +298,16 @@ class _Live:
     def plan(self, entry: GoogleAdsNegativeKeywordChange) -> tuple[list[_Planned], str | None]:
         """Plans one target against what's live, with each problem that stops a change."""
         problem = self.target_problem(entry)
+        items = _plan(entry)
+        # Worked out once per target, not once per keyword.
+        scope = self.scope(entry, items)
         planned = [
             replace(
                 _with_before(item, self.negatives.criteria.get(item.key)),
                 name=self._name(item),
-                refused=problem or self.item_problem(entry, item),
+                refused=problem or self.item_problem(entry, item, scope),
             )
-            for item in _plan(entry)
+            for item in items
         ]
         return planned, problem
 
@@ -480,9 +490,11 @@ async def _send(
                 operation=_OPERATION,
             )
         except asyncio.CancelledError as exc:
-            if parts:
+            # A change interrupted before anything was sent carries no ledger.
+            sent = getattr(exc, "ledger", None)
+            if parts and sent is not None:
                 exc.ledger = joined_ledger(
-                    [exc.ledger, _failed_ledger(parts, "CANCELLED", _INTERRUPTED)], family=_FAMILY
+                    [sent, _failed_ledger(parts, "CANCELLED", _INTERRUPTED)], family=_FAMILY
                 )
             raise
         ledgers.append(result.ledger)
@@ -603,7 +615,8 @@ def _approved_plan(change: GoogleAdsNegativeKeywordChange, check: Any) -> list[_
 def _row_key(item: _Planned) -> str:
     """How the card names a row within its target, the same way the server checked it."""
     if item.item == "keyword":
-        return f"{item.match_type}:{' '.join(item.name.casefold().split())}"
+        # Lower case, as the card writes it; case folding would turn "ß" into "ss".
+        return f"{item.match_type}:{' '.join(item.name.lower().split())}"
     return item.campaign or item.key
 
 
@@ -706,12 +719,7 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     by_account: dict[str, list[GoogleAdsNegativeKeywordChange]] = defaultdict(list)
     for change in request.entries:
         by_account[change.customer_id].append(change)
-    active = deps.active_context
-    entries = {
-        entry.external_id: entry
-        for entry in (active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ())
-        if entry.write_allowed
-    }
+    entries = writable_entries(deps.active_context)
     checks: dict[str, dict[str, Any]] = {}
     for customer_id, changes in by_account.items():
         checks.update(await _account_checks(deps, entries.get(customer_id), changes))

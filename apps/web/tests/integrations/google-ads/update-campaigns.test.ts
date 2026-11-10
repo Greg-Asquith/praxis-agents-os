@@ -13,6 +13,7 @@ import {
   campaignsApproveLabel,
   campaignsBlock,
   editedChanges,
+  parseCancelled,
   parseUpdateCampaignsArgs,
   restoredChanges,
   type UpdateCampaignsArgs,
@@ -165,6 +166,15 @@ describe("bidding", () => {
 
     expect(toPortfolio[0]?.["bidding"]).toEqual({ strategy: "PORTFOLIO", portfolio })
     expect(toClicks[0]?.["bidding"]).toEqual({ strategy: "MAXIMIZE_CLICKS" })
+
+    // A cancelled portfolio change is read again from the card's own record before Undo.
+    const value = parseBidding({ strategy: "PORTFOLIO", portfolio })
+    const held = parseCancelled([
+      { campaign: campaign("10"), key: key("10"), setting: "bidding", value },
+    ])
+    expect(restoredChanges(edited([]), held)).toEqual([
+      { campaign: campaign("10"), bidding: { strategy: "PORTFOLIO", portfolio } },
+    ])
   })
 })
 

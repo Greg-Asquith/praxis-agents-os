@@ -2,7 +2,10 @@
 
 import type { DataTableTab } from "@/components/ui/data-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
-import type { NegativeTargetKind } from "@/integrations/google_ads/lib/negative-keywords"
+import {
+  MATCH_TYPES,
+  type NegativeTargetKind,
+} from "@/integrations/google_ads/lib/negative-keywords"
 import { isRecord } from "@/lib/guards"
 
 export type NegativeOutcome =
@@ -44,7 +47,6 @@ export const NEGATIVE_OUTCOME_BADGES = {
 
 const OUTCOMES = Object.keys(NEGATIVE_OUTCOME_LABELS)
 const KINDS = ["campaign", "ad_group", "list", "new_list"]
-const MATCH_TYPES = ["EXACT", "PHRASE", "BROAD"]
 
 function parseRow(value: unknown): NegativeOutcomeRow | null {
   if (!isRecord(value)) return null
@@ -57,7 +59,8 @@ function parseRow(value: unknown): NegativeOutcomeRow | null {
     typeof kind !== "string" ||
     !KINDS.includes(kind) ||
     typeof name !== "string" ||
-    (matchType != null && (typeof matchType !== "string" || !MATCH_TYPES.includes(matchType)))
+    (matchType != null &&
+      (typeof matchType !== "string" || !(MATCH_TYPES as readonly string[]).includes(matchType)))
   )
     return null
   const text = (key: string) => (typeof value[key] === "string" ? value[key] : null)

@@ -38,7 +38,7 @@ class _MutateClient:
         assert path == "customers/333/googleAds:mutate"
         self.bodies.append(kwargs["json"])
         reply = self.replies.pop(0)
-        if isinstance(reply, Exception):
+        if isinstance(reply, BaseException):
             raise reply
         return reply
 
@@ -196,6 +196,29 @@ async def test_a_cancel_during_the_read_back_keeps_what_google_confirmed() -> No
         await _applied(client, read, [edit])
 
     assert caught.value.ledger.effect_counts == {"applied": 1, "failed": 0, "unverified": 0}
+
+
+async def test_a_cancel_between_requests_keeps_what_google_already_answered() -> None:
+    uk = "customers/333/campaignCriteria/10~2826"
+    edit = FieldChange("campaign", _CAMPAIGN, {"status": "PAUSED"}, {"status": "ENABLED"})
+    removal = CriterionChange(
+        "campaignCriterion",
+        "remove",
+        key="campaigns/10/location/2826",
+        owner=_CAMPAIGN,
+        before=uk,
+        atomic_group=_CAMPAIGN,
+    )
+    read = _LiveState({_CAMPAIGN: {"status": "ENABLED"}, removal.key: {"resourceName": uk}})
+    client = _MutateClient(
+        {"mutateOperationResponses": [{"campaignResult": {"resourceName": _CAMPAIGN}}]},
+        asyncio.CancelledError(),
+    )
+
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await _applied(client, read, [edit, removal])
+
+    assert caught.value.ledger.effect_counts == {"applied": 1, "failed": 0, "unverified": 1}
 
 
 async def test_edit_records_a_partial_failure_per_object() -> None:

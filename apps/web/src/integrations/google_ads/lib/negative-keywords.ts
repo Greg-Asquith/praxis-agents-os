@@ -15,7 +15,7 @@ type RowItem = "keyword" | "campaign"
 type RowAction = "add" | "remove"
 type RowState = "change" | "already_set" | "not_found" | "unchecked"
 
-const MATCH_TYPES: readonly KeywordMatchType[] = ["EXACT", "PHRASE", "BROAD"]
+export const MATCH_TYPES: readonly KeywordMatchType[] = ["EXACT", "PHRASE", "BROAD"]
 
 export const MATCH_TYPE_LABELS: Record<KeywordMatchType, string> = {
   BROAD: "Broad",
