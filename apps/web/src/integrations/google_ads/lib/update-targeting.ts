@@ -315,7 +315,7 @@ export function campaignRows(
   ]
 }
 
-function itemCount(change: TargetingChange): number {
+export function itemCount(change: TargetingChange): number {
   return (
     TARGET_FIELDS.reduce((total, field) => total + change.targets[field].length, 0) +
     change.radius.length +
@@ -347,6 +347,24 @@ export function targetingCounts(rows: readonly CampaignRow[]) {
     problems: live.filter((row) => row.problems.length > 0).length,
     total: live.length,
   }
+}
+
+/** Applies an edit to one campaign, or to every campaign with null, and keeps the rest as they are. */
+export function editInScope(
+  changes: readonly TargetingChange[],
+  scope: string | null,
+  edit: (changes: readonly TargetingChange[]) => TargetingChange[]
+): TargetingChange[] {
+  if (scope === null) return edit(changes)
+  const [edited] = edit(changes.filter((change) => change.key === scope))
+  return changes.flatMap((change) => (change.key !== scope ? [change] : edited ? [edited] : []))
+}
+
+/** The request as one campaign sees it, or the whole request with null. */
+export function scopedArgs(args: UpdateTargetingArgs, scope: string | null): UpdateTargetingArgs {
+  return scope === null
+    ? args
+    : { ...args, changes: args.changes.filter((change) => change.key === scope) }
 }
 
 function targetName(args: UpdateTargetingArgs, field: TargetField, target: Target): string {

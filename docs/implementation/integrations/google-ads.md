@@ -933,7 +933,11 @@ live status is Already On or Already Off and isn't counted in the approve label.
 
 The card (`components/status-change-approval.tsx`) shows the banner, one
 `ChangeSummary` line per kind of change, an `AttentionLine` when anything
-blocks, and one change table grouped by campaign. Each summary line filters the
+blocks, a `ParentTable` of campaigns when the items sit in more than one, and
+the change table. Each campaign row counts its items, says whether the campaign
+is on or off once the request runs, and names its account when the request
+covers several; Cancel on it cancels all of its items, with one Undo. A click
+on a campaign filters the change table to its items. Each summary line filters the
 table, and the Turn Off and Turn On lines carry an On/Off choice that sets every
 item in the line. Below ten items the summary and table tools are left out.
 Edits go out as the whole `changes` value: each entry keeps its reference as
@@ -1053,29 +1057,34 @@ each entry as received so edits keep their fields. A campaign's problems apply w
 its entry matches what Google last answered for; once edited, it waits for
 **Check Changes** instead (`needsCheck`). Any problem blocks approval.
 
-The card (`components/targeting-approval.tsx`) shows each change once, in the same
-layout for one campaign or many:
+The card (`components/targeting-approval.tsx`) shows each change once:
 
 - A note says what approving does now. Paused campaigns get a neutral note, because
   they show no ads until someone turns them on. `ChangeBanner` appears only when a
   campaign is on.
-- Each blocked campaign has its own alert with **Cancel This Change**.
+- With more than one campaign, a `ParentTable` of campaigns comes first, with an
+  `AttentionLine` when any is blocked. Each row has its change count, what changes,
+  its languages before and after, and Cancel or Undo. Rows are ordered by
+  `campaignsByDifference`: blocked, then cancelled, then the least common change. A
+  click on a campaign scopes the sections below to it: they show only its changes,
+  edits and additions apply only to it (`editInScope`), and its problems show in an
+  alert above them. With nothing selected, the sections show and edit every
+  campaign's changes together. One campaign has no table, and its problems show
+  without a click.
 - **Where Ads Can Show** is one list of places, each marked **Adding**, **Excluding**,
   **Removing**, or **No Change**. Each added place has its own `BidAdjustment`, and ×
-  cancels that change on every campaign. With more than one campaign, each row says how
+  cancels that change on every campaign shown. With more than one campaign, each row says how
   many it reaches. Eight or more places of one type collapse to one row with **Review**.
 - **Add or Exclude a Location** opens the tools: search, `LocationPaste` (up to 500 lines
   at a time; lines Google doesn't recognise are skipped and counted, and a failed lookup
   keeps what it already found), and a distance around a place.
 - **Languages** appears only when a campaign can take a language or one is changing, so
   it's hidden on Search campaigns with no language change.
-- The campaign `DataTable` appears only with more than one campaign. It opens on the
-  three most different (`campaignsByDifference`: blocked, then cancelled, then the least
-  common change), with **Show All**. The CSV holds only the rows shown until then.
 - **Who Counts** holds the location setting.
 
 Cancelling a campaign's last change moves it out of the request and into the approval
-controls' retained state, so **Undo** restores it through a check's redraw. With every
+controls' retained state, so **Undo** restores it through a check's redraw. A selected
+campaign that is cancelled shows a line with Undo in place of the sections. With every
 campaign cancelled, the next location added starts them again from nothing
 (`clearedChange`). Reloading the page loses cancelled campaigns.
 
@@ -1397,8 +1406,9 @@ Keyword, Match Type, Ad Group, Bid, and Outcome.
 the table of the changes in them. Each row has the parent's name, where it sits,
 the caller's columns, and Cancel or Undo for all of its changes. A click
 selects the parent and the card filters the changes to it. From ten rows it
-gets search and a Needs Attention tab. Add Keywords and Update Keywords use it;
-plan 303 D moves Update Targeting and Update Status onto it.
+gets search and a Needs Attention tab. A caller can draw its own cells with
+`renderCell`. Add Keywords, Update Keywords, Update Targeting, and Update
+Status use it.
 
 ## Live QA record
 

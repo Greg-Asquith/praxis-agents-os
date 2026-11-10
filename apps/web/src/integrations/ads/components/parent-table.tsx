@@ -1,6 +1,6 @@
 // apps/web/src/integrations/ads/components/parent-table.tsx
 
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -43,6 +43,7 @@ export function ParentTable({
   onCancel,
   onSelect,
   onUndo,
+  renderCell,
   rowNoun,
   rows,
   selected,
@@ -55,6 +56,8 @@ export function ParentTable({
   // A click selects a parent, so the changes below show only its own; again shows them all.
   onSelect: (key: string | null) => void
   onUndo: (key: string) => void
+  // Draws the caller's own cells; null falls back to the table's plain text.
+  renderCell?: (column: DataColumn, row: ParentRow) => ReactNode | null
   rowNoun: readonly [singular: string, plural: string]
   rows: readonly ParentRow[]
   selected: string | null
@@ -93,7 +96,7 @@ export function ParentTable({
           const parent = byKey.get(String(row["key"]))
           if (!parent) return null
           if (column.key === "name") return <ParentCell row={parent} />
-          if (column.key !== "cancel") return null
+          if (column.key !== "cancel") return renderCell?.(column, parent) ?? null
           return (
             <Button
               disabled={disabled}

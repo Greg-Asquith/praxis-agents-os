@@ -10,7 +10,6 @@ import {
   DataTable,
   type DataColumn,
   type DataRow,
-  type DataTableGroup,
   type DataTableTab,
 } from "@/components/ui/data-table"
 import {
@@ -25,6 +24,7 @@ import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import {
   editedChanges,
   STATUS_KIND_TITLES,
@@ -45,8 +45,14 @@ const COLUMNS: DataColumn[] = [
   { key: "item", kind: "text", label: "Item", width: 300 },
   { key: "kind", kind: "text", label: "Kind", width: 110 },
   { key: "status", kind: "text", label: "Status", width: 230 },
-  { key: "campaign", kind: "text", label: "Campaign", hidden: true },
+  // The campaigns table above names them, so this column is for the chooser and the export.
+  { key: "campaign", kind: "text", label: "Campaign", width: 200, hidden: true },
   { key: "cancel", kind: "text", label: "Cancel", width: 90 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "items", kind: "number", label: "Items", width: 90 },
+  { key: "campaign_on", kind: "text", label: "Campaign Will Be", width: 150 },
 ]
 
 const STATUS_OPTIONS: readonly { value: RequestedStatus; label: string }[] = [
@@ -72,31 +78,27 @@ export function StatusChangeApproval({
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
   const tools = rows.length >= TOOLS_FROM
   const tabs = useMemo(() => statusTabs(byKey), [byKey])
-  const tableRows = useMemo<DataRow[]>(
-    () =>
-      rows.map((row) => ({
-        campaign: row.campaignName,
-        cancel: "",
-        item: row.item.label,
-        key: row.key,
-        kind: STATUS_KIND_TITLES[row.item.kind],
-        status: statusLabel(row.status),
-      })),
-    [rows]
-  )
   const accountIds = [
     ...new Set(rows.filter((row) => !row.cancelled).map((row) => row.item.customerId)),
   ]
-  const groupBy = useMemo<DataTableGroup>(
-    () => ({
-      key: (row) => {
-        const item = byKey.get(String(row["key"]))?.item
-        return item ? `${item.customerId}:${item.campaignId}` : ""
-      },
-      label: (key, groupRows) =>
-        groupLabel(byKey, groupRows[0], args.accounts, accountIds.length > 1, key),
-    }),
-    [accountIds.length, args.accounts, byKey]
+  const [campaign, setCampaign] = useState<string | null>(null)
+  const parents = useMemo(
+    () => campaignParents(rows, args.accounts, accountIds.length > 1),
+    [accountIds.length, args.accounts, rows]
+  )
+  const tableRows = useMemo<DataRow[]>(
+    () =>
+      rows
+        .filter((row) => campaign === null || campaignOf(row) === campaign)
+        .map((row) => ({
+          campaign: row.campaignName,
+          cancel: "",
+          item: row.item.label,
+          key: row.key,
+          kind: STATUS_KIND_TITLES[row.item.kind],
+          status: statusLabel(row.status),
+        })),
+    [campaign, rows]
   )
 
   const edit = (keys: Iterable<string>, patch: StatusPatch) => {
@@ -179,16 +181,39 @@ export function StatusChangeApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setCampaign(null)
               setTab("attention")
             }}
           />
         </>
       ) : null}
+      {parents.length > 1 ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={(key) => {
+            edit(
+              keysOf((row) => campaignOf(row) === key),
+              { cancelled: true }
+            )
+          }}
+          onSelect={setCampaign}
+          onUndo={(key) => {
+            edit(
+              rows.filter((row) => row.cancelled && campaignOf(row) === key).map((row) => row.key),
+              { cancelled: false }
+            )
+          }}
+          rowNoun={["campaign", "campaigns"]}
+          rows={parents}
+          selected={campaign}
+        />
+      ) : null}
       <DataTable
         activeTab={tab}
         columns={COLUMNS}
         exportFilename="google-ads-status-changes.csv"
-        groupBy={groupBy}
         onTabChange={setTab}
         pageSize={25}
         renderCell={(column, row) => {
@@ -297,24 +322,32 @@ function statusTabs(byKey: ReadonlyMap<string, StatusRow>): DataTableTab[] {
   ]
 }
 
-function groupLabel(
-  byKey: ReadonlyMap<string, StatusRow>,
-  first: DataRow | undefined,
+function campaignOf(row: StatusRow): string {
+  return `${row.item.customerId}:${row.item.campaignId}`
+}
+
+/** One row per campaign the items sit in, in the order its items first appear. */
+function campaignParents(
+  rows: readonly StatusRow[],
   accounts: StatusChangeArgs["accounts"],
-  showAccount: boolean,
-  key: string
-) {
-  const row = first ? byKey.get(String(first["key"])) : undefined
-  if (!row) return key
-  const account = showAccount ? accounts.get(row.item.customerId)?.label : undefined
-  const state = row.campaignOn === null ? null : `campaign is ${row.campaignOn ? "on" : "off"}`
-  return (
-    <span className="wrap-anywhere">
-      {row.campaignName}
-      {account ? ` · ${account}` : ""}
-      {state ? <span className="text-muted-foreground font-normal"> · {state}</span> : null}
-    </span>
-  )
+  showAccount: boolean
+): ParentRow[] {
+  const campaigns = new Map<string, StatusRow[]>()
+  for (const row of rows)
+    campaigns.set(campaignOf(row), [...(campaigns.get(campaignOf(row)) ?? []), row])
+  return [...campaigns].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const on = items.find((row) => row.campaignOn !== null)?.campaignOn ?? null
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.item.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? key,
+      problems: live.filter((row) => row.problem !== null).length,
+      values: { campaign_on: on === null ? "—" : on ? "On" : "Off", items: live.length },
+    }
+  })
 }
 
 function ItemCell({ row }: { row: StatusRow }) {

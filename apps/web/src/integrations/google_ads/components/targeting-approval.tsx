@@ -7,17 +7,14 @@ import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DataTable,
-  type DataColumn,
-  type DataRow,
-  type DataTableTab,
-} from "@/components/ui/data-table"
+import type { DataColumn } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import type { EntityChoice } from "@/features/tools/types"
 import { BidAdjustment } from "@/integrations/google_ads/components/bid-adjustment"
@@ -31,7 +28,9 @@ import {
   campaignsByDifference,
   campaignsOn,
   clearedChange,
+  editInScope,
   editRadius,
+  itemCount,
   keepRadius,
   languagesText,
   needsCheck,
@@ -41,6 +40,7 @@ import {
   radiusRemovals,
   radiusText,
   removeTarget,
+  scopedArgs,
   serializeChanges,
   setBidAdjustment,
   setLocationSetting,
@@ -65,34 +65,13 @@ import {
 const TOOL = "google_ads_update_targeting"
 // More places of one type than this collapse to one row with a Review control.
 const GROUP_FROM = 8
-// How many unchanged places, blocked campaigns, and campaigns the card lists before trimming.
+// How many unchanged places the card lists before trimming.
 const MAX_UNCHANGED = 5
-const MAX_BLOCKED = 3
-const MAX_CAMPAIGNS = 3
-// Below this many campaigns the table's search and tabs only add noise.
-const TOOLS_FROM = 10
 
-const COLUMNS: DataColumn[] = [
-  { key: "name", kind: "text", label: "Campaign", width: 220 },
-  { key: "changes", kind: "text", label: "What Changes", width: 160 },
-  { key: "languages", kind: "text", label: "Languages", width: 150 },
-  { key: "cancel", kind: "text", label: "Cancel", width: 180 },
-]
-
-const TABS: DataTableTab[] = [
-  { id: "all", label: "All", match: () => true },
-  {
-    id: "already",
-    label: "Already Set",
-    hideWhenEmpty: true,
-    match: (row) => row["state"] === "already",
-  },
-  {
-    id: "attention",
-    label: "Needs Attention",
-    hideWhenEmpty: true,
-    match: (row) => row["state"] === "attention",
-  },
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "changes", kind: "number", label: "Changes", width: 100 },
+  { key: "what", kind: "text", label: "What Changes", width: 180 },
+  { key: "languages", kind: "text", label: "Languages", width: 160 },
 ]
 
 const SETTING_OPTIONS: readonly { label: string; value: LocationSetting }[] = [
@@ -153,12 +132,19 @@ export function TargetingApproval({
   onFieldEdit: (key: string, value: EditedValue) => void
 }) {
   const [adding, setAdding] = useState(false)
+  const [chosen, setChosen] = useState<string | null>(null)
   const cancelled = useMemo(() => parseCancelled(controls.retained), [controls.retained])
   const rows = useMemo(() => campaignRows(args, checked, cancelled), [args, checked, cancelled])
   const counts = targetingCounts(rows)
-  const lines = useMemo(() => targetLines(args), [args])
   const many = rows.length > 1
-  const blocked = rows.filter((row) => row.problems.length > 0 && !row.cancelled)
+  // A click on a campaign shows and edits only its changes; none shows them across every campaign.
+  const open = rows.find((row) => row.key === chosen) ?? null
+  const scope = open?.key ?? null
+  const shown = useMemo(() => scopedArgs(args, scope), [args, scope])
+  const lines = useMemo(() => targetLines(shown), [shown])
+  const parents = useMemo(() => campaignsByDifference(rows).map(parentRow), [rows])
+  // With one campaign there's no table, so its problems show without a click.
+  const problemRow = open ?? (many ? null : rows[0])
 
   // A campaign left with nothing leaves the request, and stays beside it so Undo can restore it.
   const save = (next: readonly TargetingChange[]) => {
@@ -168,6 +154,9 @@ export function TargetingApproval({
     if (dropped.length > 0 || restored.length !== cancelled.length)
       controls.onRetain?.(serializeChanges([...restored, ...dropped]))
     onFieldEdit("changes", serializeChanges(next))
+  }
+  const edit = (change: (changes: readonly TargetingChange[]) => TargetingChange[]) => {
+    save(editInScope(args.changes, scope, change))
   }
   const cancelCampaign = (key: string) => {
     save(args.changes.filter((change) => change.key !== key))
@@ -179,109 +168,70 @@ export function TargetingApproval({
   // With every campaign cancelled, what the operator adds next starts them again from nothing.
   const addable = () => (args.changes.length > 0 ? args.changes : cancelled.map(clearedChange))
   const addTargets = (field: TargetField, choices: readonly EntityChoice[]) => {
-    let changes: readonly TargetingChange[] = addable()
-    for (const choice of choices) {
-      const target = targetOf(choice)
-      if (target) {
-        changes = addTarget(changes, field, target, (change) =>
-          field === "add_languages" ? acceptsLanguageAdds(args, change) : true
-        )
-      }
-    }
-    save(changes)
+    save(
+      editInScope(addable(), scope, (changes) => {
+        let next: TargetingChange[] = [...changes]
+        for (const choice of choices) {
+          const target = targetOf(choice)
+          if (target) {
+            next = addTarget(next, field, target, (change) =>
+              field === "add_languages" ? acceptsLanguageAdds(args, change) : true
+            )
+          }
+        }
+        return next
+      })
+    )
   }
   const removeMany = (field: TargetField, keys: readonly string[]) => {
-    let changes: readonly TargetingChange[] = args.changes
-    for (const key of keys) changes = removeTarget(changes, field, key)
-    save(changes)
+    edit((changes) => {
+      let next: TargetingChange[] = [...changes]
+      for (const key of keys) next = removeTarget(next, field, key)
+      return next
+    })
   }
 
   return (
     <div className="grid min-w-0 gap-3">
       <StatusNote args={args} />
-      {blocked.slice(0, MAX_BLOCKED).map((row) => (
-        <BlockedCampaign
-          key={row.key}
-          disabled={disabled}
-          onCancel={() => {
-            cancelCampaign(row.key)
-          }}
-          row={row}
-        />
-      ))}
-      {blocked.length > MAX_BLOCKED ? (
-        <p className="text-destructive text-sm">
-          {String(blocked.length - MAX_BLOCKED)} more need attention. They&apos;re first in the
-          campaign table.
-        </p>
-      ) : null}
-      <section aria-label="Where ads can show" className="overflow-hidden rounded-lg border">
-        <h4 className="bg-muted/40 border-b px-3 py-2 text-sm font-semibold">Where Ads Can Show</h4>
-        <div className="divide-y">
-          <LocationRows
-            args={args}
-            disabled={disabled}
-            lines={lines}
-            many={many}
-            onBid={(key, bid) => {
-              save(setBidAdjustment(args.changes, new Set([key]), bid))
-            }}
-            onCancel={removeMany}
-            onKeepRadius={(id) => {
-              save(keepRadius(args.changes, id))
-            }}
-            onRadius={(identity, next) => {
-              save(editRadius(args.changes, identity, next))
-            }}
-          />
-          {adding ? (
-            <AddPanel
-              disabled={disabled}
-              lines={lines}
-              onAdd={addTargets}
-              onDone={() => {
-                setAdding(false)
-              }}
-              onRadius={(target) => {
-                save(editRadius(addable(), null, target))
-              }}
-            />
-          ) : (
-            <div className="p-1.5">
-              <Button
-                disabled={disabled}
-                onClick={() => {
-                  setAdding(true)
-                }}
-                type="button"
-                variant="ghost"
-              >
-                <PlusIcon aria-hidden="true" />
-                Add or Exclude a Location
-              </Button>
-            </div>
-          )}
-        </div>
-      </section>
-      <LanguageSection
-        args={args}
-        disabled={disabled}
-        lines={lines}
-        many={many}
-        onAdd={(choice) => {
-          addTargets("add_languages", [choice])
-        }}
-        onCancel={removeMany}
-      />
       {many ? (
-        <CampaignTable disabled={disabled} onCancel={cancelCampaign} onUndo={undo} rows={rows} />
-      ) : counts.total === 0 && rows[0] ? (
+        <AttentionLine
+          count={counts.problems}
+          onShow={() => {
+            setChosen(rows.find((row) => row.problems.length > 0 && !row.cancelled)?.key ?? null)
+          }}
+        />
+      ) : null}
+      {many ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={cancelCampaign}
+          onSelect={setChosen}
+          onUndo={undo}
+          renderCell={(column, row) => {
+            const value = row.values[column.key]
+            return typeof value === "string" ? (
+              <span className="text-sm wrap-anywhere whitespace-normal">{value}</span>
+            ) : null
+          }}
+          rowNoun={["campaign", "campaigns"]}
+          rows={parents}
+          selected={scope}
+        />
+      ) : null}
+      {open?.cancelled || (!many && counts.total === 0 && rows[0]) ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
-          <p className="text-muted-foreground text-sm">Nothing is left to change.</p>
+          <p className="text-muted-foreground text-sm">
+            {open
+              ? `${open.name} is cancelled, so its targeting won't change.`
+              : "Nothing is left to change."}
+          </p>
           <Button
             disabled={disabled}
             onClick={() => {
-              undo(rows[0]?.key ?? "")
+              undo(open?.key ?? rows[0]?.key ?? "")
             }}
             size="sm"
             type="button"
@@ -290,34 +240,106 @@ export function TargetingApproval({
             Undo
           </Button>
         </div>
-      ) : null}
-      <SettingRows ariaLabel="More settings" defaultOpen={null}>
-        <SettingRow rowKey="location-setting" summary={settingSummary(args)} title="Who Counts">
-          <SegmentedChoice
-            ariaLabel="Who counts as being in these places"
-            disabled={disabled}
-            onChange={(value: LocationSetting) => {
-              save(setLocationSetting(args.changes, value))
-            }}
-            options={SETTING_OPTIONS}
-            value={shownLocationSetting(args)}
-          />
-          {args.changes.some((change) => change.setting !== null) ? (
-            <Button
-              className="w-fit"
-              disabled={disabled}
-              onClick={() => {
-                save(setLocationSetting(args.changes, null))
-              }}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel This Change
-            </Button>
+      ) : (
+        <>
+          {problemRow && problemRow.problems.length > 0 ? (
+            <CampaignProblems row={problemRow} />
           ) : null}
-        </SettingRow>
-      </SettingRows>
+          <section aria-label="Where ads can show" className="overflow-hidden rounded-lg border">
+            <h4 className="bg-muted/40 border-b px-3 py-2 text-sm font-semibold">
+              Where Ads Can Show
+            </h4>
+            <div className="divide-y">
+              <LocationRows
+                args={shown}
+                disabled={disabled}
+                lines={lines}
+                many={shown.changes.length > 1}
+                onBid={(key, bid) => {
+                  edit((changes) => setBidAdjustment(changes, new Set([key]), bid))
+                }}
+                onCancel={removeMany}
+                onKeepRadius={(id) => {
+                  edit((changes) => keepRadius(changes, id))
+                }}
+                onRadius={(identity, next) => {
+                  edit((changes) => editRadius(changes, identity, next))
+                }}
+              />
+              {adding ? (
+                <AddPanel
+                  disabled={disabled}
+                  lines={lines}
+                  onAdd={addTargets}
+                  onDone={() => {
+                    setAdding(false)
+                  }}
+                  onRadius={(target) => {
+                    save(
+                      editInScope(addable(), scope, (changes) => editRadius(changes, null, target))
+                    )
+                  }}
+                />
+              ) : (
+                <div className="p-1.5">
+                  <Button
+                    disabled={disabled}
+                    onClick={() => {
+                      setAdding(true)
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <PlusIcon aria-hidden="true" />
+                    Add or Exclude a Location
+                  </Button>
+                </div>
+              )}
+            </div>
+          </section>
+          <LanguageSection
+            args={shown}
+            disabled={disabled}
+            lines={lines}
+            many={shown.changes.length > 1}
+            onAdd={(choice) => {
+              addTargets("add_languages", [choice])
+            }}
+            onCancel={removeMany}
+          />
+          <SettingRows ariaLabel="More settings" defaultOpen={null}>
+            <SettingRow
+              rowKey="location-setting"
+              summary={settingSummary(shown)}
+              title="Who Counts"
+            >
+              <SegmentedChoice
+                ariaLabel="Who counts as being in these places"
+                disabled={disabled}
+                onChange={(value: LocationSetting) => {
+                  edit((changes) => setLocationSetting(changes, value))
+                }}
+                options={SETTING_OPTIONS}
+                value={shownLocationSetting(shown)}
+              />
+              {shown.changes.some((change) => change.setting !== null) ? (
+                <Button
+                  className="w-fit"
+                  disabled={disabled}
+                  onClick={() => {
+                    edit((changes) => setLocationSetting(changes, null))
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel This Change
+                </Button>
+              ) : null}
+            </SettingRow>
+          </SettingRows>
+        </>
+      )}
       {needsCheck(args, checked) && args.changes.length > 0 ? (
         <CheckChanges
           canCheck
@@ -334,6 +356,24 @@ export function TargetingApproval({
       ) : null}
     </div>
   )
+}
+
+function parentRow(row: CampaignRow): ParentRow {
+  return {
+    cancelled: row.cancelled,
+    key: row.key,
+    name: row.name,
+    problems: row.problems.length,
+    values: {
+      changes: row.cancelled ? 0 : itemCount(row.change),
+      languages: languagesText(row.change, row.check),
+      what: row.cancelled
+        ? "Left as it is"
+        : row.alreadySet
+          ? "Already set"
+          : whatChanges(row.change),
+    },
+  }
 }
 
 function settingSummary(args: UpdateTargetingArgs): string {
@@ -364,31 +404,19 @@ function StatusNote({ args }: { args: UpdateTargetingArgs }) {
   return <ChangeBanner detail={detail} />
 }
 
-function BlockedCampaign({
-  disabled,
-  onCancel,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  row: CampaignRow
-}) {
+/** Why Google turned down the shown campaign's changes. */
+function CampaignProblems({ row }: { row: CampaignRow }) {
   return (
     <div
-      className="border-destructive/30 bg-destructive/5 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+      className="border-destructive/30 bg-destructive/5 grid min-w-0 gap-0.5 rounded-lg border px-3 py-2 text-sm"
       role="alert"
     >
-      <div className="grid min-w-0 flex-1 gap-0.5 text-sm">
-        <span className="font-medium wrap-anywhere">{row.name} Needs Attention</span>
-        {row.problems.map((problem) => (
-          <span key={problem} className="text-destructive wrap-anywhere">
-            {problem}
-          </span>
-        ))}
-      </div>
-      <Button disabled={disabled} onClick={onCancel} size="sm" type="button" variant="outline">
-        Cancel This Change
-      </Button>
+      <span className="font-medium wrap-anywhere">{row.name} Needs Attention</span>
+      {row.problems.map((problem) => (
+        <span key={problem} className="text-destructive wrap-anywhere">
+          {problem}
+        </span>
+      ))}
     </div>
   )
 }
@@ -895,116 +923,6 @@ function LanguageSection({
         ) : null}
       </div>
     </section>
-  )
-}
-
-function CampaignTable({
-  disabled,
-  onCancel,
-  onUndo,
-  rows,
-}: {
-  disabled: boolean
-  onCancel: (key: string) => void
-  onUndo: (key: string) => void
-  rows: readonly CampaignRow[]
-}) {
-  const [all, setAll] = useState(false)
-  const ordered = useMemo(() => campaignsByDifference(rows), [rows])
-  const trimmed = !all && ordered.length > MAX_CAMPAIGNS
-  const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
-  const tableRows = useMemo<DataRow[]>(
-    () =>
-      (trimmed ? ordered.slice(0, MAX_CAMPAIGNS) : ordered).map((row) => ({
-        cancel: "",
-        changes: row.cancelled ? "Left as it is" : whatChanges(row.change),
-        key: row.key,
-        languages: languagesText(row.change, row.check),
-        name: row.name,
-        state: row.problems.length > 0 ? "attention" : row.alreadySet ? "already" : "live",
-      })),
-    [ordered, trimmed]
-  )
-  const tools = all && ordered.length >= TOOLS_FROM
-  return (
-    <section aria-label="Campaigns" className="grid min-w-0 gap-1.5">
-      <p className="text-sm font-semibold">
-        Campaigns
-        {trimmed ? (
-          <span className="text-muted-foreground font-normal">
-            {" "}
-            Showing the {String(MAX_CAMPAIGNS)} most different of {String(ordered.length)}
-          </span>
-        ) : null}
-      </p>
-      <DataTable
-        columns={COLUMNS}
-        exportFilename="google-ads-targeting-changes.csv"
-        pageSize={25}
-        renderCell={(column, row) => {
-          const campaign = byKey.get(String(row["key"]))
-          if (!campaign) return null
-          if (column.key === "name") return <CampaignCell row={campaign} />
-          if (column.key === "changes" || column.key === "languages")
-            return (
-              <span className="text-sm wrap-anywhere whitespace-normal">
-                {cellText(row[column.key])}
-              </span>
-            )
-          if (column.key === "cancel")
-            return (
-              <Button
-                disabled={disabled}
-                onClick={() => {
-                  if (campaign.cancelled) onUndo(campaign.key)
-                  else onCancel(campaign.key)
-                }}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {campaign.cancelled ? "Undo" : "Cancel This Change"}
-              </Button>
-            )
-          return null
-        }}
-        rowClassName={(row) =>
-          byKey.get(String(row["key"]))?.cancelled ? "opacity-60" : undefined
-        }
-        rowDetails={false}
-        rowNoun={["campaign", "campaigns"]}
-        rows={tableRows}
-        {...(tools ? { searchable: true, tabs: TABS } : {})}
-      />
-      {trimmed ? (
-        <Button
-          className="w-fit"
-          onClick={() => {
-            setAll(true)
-          }}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Show All {String(ordered.length)} Campaigns
-        </Button>
-      ) : null}
-    </section>
-  )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
-
-function CampaignCell({ row }: { row: CampaignRow }) {
-  return (
-    <div className="grid min-w-0 gap-0.5 text-sm whitespace-normal">
-      <span className="font-medium wrap-anywhere">{row.name}</span>
-      {!row.cancelled && row.problems.length > 0 ? (
-        <span className="text-destructive text-xs">Needs Attention</span>
-      ) : null}
-    </div>
   )
 }
 

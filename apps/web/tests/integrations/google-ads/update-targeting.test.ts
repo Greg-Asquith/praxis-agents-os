@@ -12,6 +12,7 @@ import {
   campaignRows,
   campaignsByDifference,
   clearedChange,
+  editInScope,
   needsCheck,
   parseBidAdjustment,
   parseUpdateTargetingArgs,
@@ -119,6 +120,27 @@ describe("targeting edits", () => {
     )
 
     expect(next.map((change) => change.targets.add_languages.length)).toEqual([0, 1])
+  })
+
+  it("edits only the clicked campaign and keeps the others in their place", () => {
+    const value = raw({
+      changes: ["10", "11", "12"].map((id) => ({
+        campaign: campaign(id),
+        add_locations: [{ key: "1006" }],
+      })),
+    })
+    const args = parsed(value)
+
+    const added = editInScope(args.changes, key("11"), (changes) =>
+      addTarget(changes, "add_locations", LEEDS)
+    )
+    expect(added.map((change) => change.targets.add_locations.length)).toEqual([1, 2, 1])
+
+    // Emptying the clicked campaign takes only it out of the request.
+    const removed = editInScope(args.changes, key("11"), (changes) =>
+      removeTarget(changes, "add_locations", "1006")
+    )
+    expect(removed.map((change) => change.key)).toEqual([key("10"), key("12")])
   })
 
   it("takes a campaign out of the request when its last change is cancelled", () => {

@@ -340,6 +340,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Google Ads Update Targeting and Update Status cards list their campaigns
+  first, each with its change count and Cancel for all of its changes. A
+  click on a campaign shows only its changes, and on Update Targeting an edit
+  or new location then reaches only that campaign.
 - Meta Ads tool cards are redesigned for readability. Approval cards group
   every setting in one-line rows that open one at a time, and the operator
   can edit almost every proposed setting before approving: campaign
