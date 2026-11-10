@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from pydantic_ai import ModelRetry
 
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from integrations.google_ads.entity_resolvers.targeting import search_location_options
 from integrations.google_ads.tools import (
     search_targeting as search_module,
@@ -30,9 +31,11 @@ _LOCATIONS = {"2826": "United Kingdom", "1006": "Manchester", "1007": "Leeds", "
 _LANGUAGES = {"1000": "English", "1039": "Welsh"}
 
 
-def _location(key: str, *, negative: bool = False, modifier: float | None = None) -> dict[str, Any]:
+def _location(
+    key: str, *, negative: bool = False, modifier: float | None = None, campaign: str = "10"
+) -> dict[str, Any]:
     row: dict[str, Any] = {
-        "resourceName": f"{_C_CRITERIA}10~{key}",
+        "resourceName": f"{_C_CRITERIA}{campaign}~{key}",
         "criterionId": key,
         "type": "LOCATION",
         "negative": negative,
@@ -63,11 +66,13 @@ class _Account:
         *,
         channel: str = "DISPLAY",
         rejected: dict[str, str] | None = None,
+        rejected_at_send: dict[str, str] | None = None,
         status: str = "ENABLED",
     ) -> None:
         self.criteria = criteria
         self.channel = channel
         self.rejected = rejected or {}
+        self.rejected_at_send = rejected_at_send or {}
         self.status = status
         self.setting = "PRESENCE_OR_INTEREST"
         self.mutates: list[dict[str, Any]] = []
@@ -94,26 +99,43 @@ class _Account:
                 {"languageConstant": {"id": key, "name": name}} for key, name in _LANGUAGES.items()
             ]
         if "FROM campaign_criterion" in query:
-            return [{"campaign": {"id": "10"}, "campaignCriterion": row} for row in self.criteria]
+            return [
+                {"campaign": {"id": _owner_id(row["resourceName"])}, "campaignCriterion": row}
+                for row in self.criteria
+            ]
+        ids = re.search(r"IN \(([^)]*)\)", query).group(1).split(", ")
         return [
             {
                 "campaign": {
-                    "id": "10",
-                    "name": "Trail",
+                    "id": campaign_id,
+                    "name": "Trail" if campaign_id == "10" else "Peak",
                     "status": self.status,
                     "advertisingChannelType": self.channel,
                     "geoTargetTypeSetting": {"positiveGeoTargetType": self.setting},
                 }
             }
+            for campaign_id in ids
         ]
 
     def _mutate(self, body: dict[str, Any]) -> dict[str, Any]:
+        rejected = self.rejected if body["validateOnly"] else self.rejected_at_send | self.rejected
+        problems = [
+            next((m for text, m in rejected.items() if text in str(operation)), None)
+            for operation in body["mutateOperations"]
+        ]
+        if not body["partialFailure"] and any(problems):
+            # Google rejects a whole request sent without partial failure and changes nothing.
+            raise IntegrationValidationError(
+                f"Google Ads rejected the request: {next(filter(None, problems))}",
+                provider_key="google_ads",
+                failure_disposition=IntegrationFailureDisposition.REJECTED,
+            )
         responses: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
-        for index, operation in enumerate(body["mutateOperations"]):
+        for index, (operation, problem) in enumerate(
+            zip(body["mutateOperations"], problems, strict=True)
+        ):
             ((key, value),) = operation.items()
-            label = str(value.get("create", value.get("remove", value.get("update"))))
-            problem = next((m for text, m in self.rejected.items() if text in label), None)
             if problem:
                 responses.append({})
                 errors.append(
@@ -149,9 +171,9 @@ class _Account:
                     row["bidModifier"] = update["bidModifier"]
             return update["resourceName"]
         self.next_id += 1
-        name = f"{_C_CRITERIA}10~{self.next_id}"
+        create = value["create"]
+        name = f"{_C_CRITERIA}{create['campaign'].rsplit('/', 1)[1]}~{self.next_id}"
         if apply:
-            create = value["create"]
             kind = (
                 "LOCATION"
                 if "location" in create
@@ -168,6 +190,10 @@ class _Account:
                 }
             )
         return name
+
+
+def _owner_id(resource_name: str) -> str:
+    return resource_name.rsplit("/", 1)[1].split("~")[0]
 
 
 def _campaign() -> dict[str, Any]:
@@ -249,11 +275,15 @@ async def test_one_approval_adds_cities_moves_a_region_to_excluded_and_removes_a
 
     result, audit = await _run(monkeypatch, account, args, display)
 
-    sent = account.mutates[-1]
-    assert sent["validateOnly"] is False and sent["partialFailure"] is True
-    assert sent["mutateOperations"] == [
+    # The region's move travels with the location adds; the language goes on its own.
+    places, languages = account.mutates[-2:]
+    assert places["validateOnly"] is False and places["partialFailure"] is False
+    assert languages["partialFailure"] is True
+    assert languages["mutateOperations"] == [
+        {"campaignCriterionOperation": {"remove": f"{_C_CRITERIA}10~1039"}}
+    ]
+    assert places["mutateOperations"] == [
         {"campaignCriterionOperation": {"remove": f"{_C_CRITERIA}10~2000"}},
-        {"campaignCriterionOperation": {"remove": f"{_C_CRITERIA}10~1039"}},
         {
             "campaignCriterionOperation": {
                 "create": {
@@ -352,6 +382,41 @@ async def test_a_radius_and_a_bid_change_send_exact_values_and_an_equal_bid_is_a
         if row["outcome"] == "updated" and row["action"] == "change_bid"
     )
     assert changed["items"][0]["previous_bid_adjustment"] == 10
+
+
+async def test_a_location_swap_google_rejects_at_the_send_leaves_the_campaign_unchanged(
+    monkeypatch,
+) -> None:
+    account = _Account(
+        [_location("2826"), _location("2826", campaign="20")],
+        rejected_at_send={"geoTargetConstants/1006": "This location isn't available."},
+    )
+    args = GoogleAdsUpdateTargetingRequest.model_validate(
+        {
+            "changes": [
+                {
+                    "campaign": _campaign(),
+                    "remove_locations": [{"key": "2826"}],
+                    "add_locations": [{"key": "1006"}],
+                },
+                {
+                    "campaign": {"customer_id": "111", "campaign_id": "20", "label": "Peak"},
+                    "add_locations": [{"key": "1007"}],
+                },
+            ]
+        }
+    ).model_dump(mode="json")
+    display = await _display(monkeypatch, account, args)
+    assert _check(display)["problem"] is None
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    held = {(_owner_id(row["resourceName"]), row["criterionId"]) for row in account.criteria}
+    assert ("10", "2826") in held
+    rows = {(row["campaign_id"], row["action"]): row for row in _rows(result)}
+    assert {rows["10", "remove"]["outcome"], rows["10", "add"]["outcome"]} == {"failed"}
+    assert "none were made" in rows["10", "remove"]["message"]
+    assert rows["20", "add"]["outcome"] == "updated"
 
 
 async def test_a_search_campaign_can_remove_a_language_but_not_add_one(monkeypatch) -> None:

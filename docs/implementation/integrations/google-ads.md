@@ -65,7 +65,11 @@ endpoint per resource type. Two seams build on it:
   `apply_edits` reads again and refuses any object whose live values differ
   from **Before** as `CHANGED_SINCE_APPROVAL`. It skips edits already at
   their values as `already_set` without sending them, sends the rest in one
-  partial-failure request, and reads each object back. The read-back settles
+  partial-failure request, and reads each object back. Edits that share an
+  `atomic_group` go in their own request with `partialFailure: false`, so
+  Google applies all of them or none. Google's rejection of a whole request
+  doesn't name the operation that caused it, so every edit in the group
+  fails with Google's message. The read-back settles
   an unclear reply and fails a change Google accepted but didn't keep. If
   the read-back fails or doesn't return the object, Google's reply stands and
   **After** is empty. A cancel during the read-back keeps Google's reply as the
@@ -377,7 +381,10 @@ audiences, and exclusions are also pending. The fields are as follows:
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
 between the included and excluded lists sends a removal and an add, in that order, in
-one request. A bid adjustment is a percent on the card and in the request, and the tool
+one request. When a campaign's change removes a location or radius, all its location,
+exclusion, and radius changes form one atomic group. If Google rejects an add at the send
+that passed the dry run, the campaign keeps its locations, while other campaigns and
+language changes still apply. A bid adjustment is a percent on the card and in the request, and the tool
 compiles it to Google's modifier.
 
 The tool refuses these before Google's dry run:

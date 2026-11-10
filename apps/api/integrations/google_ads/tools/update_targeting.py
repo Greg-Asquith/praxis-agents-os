@@ -211,7 +211,23 @@ def _plan(
     keys = [item.edit.key for item in planned]
     if len(set(keys)) != len(keys):
         raise ModelRetry("A radius is being both added and removed. Keep one of those changes.")
-    return planned
+    return _grouped_places(planned, campaign)
+
+
+def _grouped_places(planned: list[_Planned], campaign: str) -> list[_Planned]:
+    """Sends a campaign's place changes together when it loses a place, so a rejected add
+    can't leave the removals applied."""
+    places = {"locations", "excluded_locations", "radius"}
+    if not any(
+        item.action == "remove" and item.setting in {"locations", "radius"} for item in planned
+    ):
+        return planned
+    return [
+        replace(item, edit=replace(item.edit, atomic_group=campaign))
+        if isinstance(item.edit, CriterionChange) and item.setting in places
+        else item
+        for item in planned
+    ]
 
 
 def _campaign_name(change: GoogleAdsTargetingChange) -> str:

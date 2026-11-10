@@ -248,6 +248,80 @@ async def test_edit_records_a_partial_failure_per_object() -> None:
     ]
 
 
+async def test_an_atomic_group_is_sent_on_its_own_without_partial_failure() -> None:
+    uk = "customers/333/campaignCriteria/10~2826"
+    leeds = "customers/333/campaignCriteria/10~1007"
+    removal = CriterionChange(
+        "campaignCriterion",
+        "remove",
+        key="campaigns/10/location/2826",
+        owner=_CAMPAIGN,
+        atomic_group=_CAMPAIGN,
+    )
+    add = CriterionChange(
+        "campaignCriterion",
+        "add",
+        key="campaigns/10/location/1007",
+        owner=_CAMPAIGN,
+        criterion={
+            "campaign": _CAMPAIGN,
+            "location": {"geoTargetConstant": "geoTargetConstants/1007"},
+        },
+        atomic_group=_CAMPAIGN,
+    )
+    before = {_CAMPAIGN: {"status": "ENABLED"}, removal.key: {"resourceName": uk}}
+    read = _LiveState(
+        before,
+        before,
+        {_CAMPAIGN: {"status": "PAUSED"}, add.key: {"resourceName": leeds}},
+    )
+    client = _MutateClient(
+        {},
+        {"mutateOperationResponses": [{"campaignResult": {"resourceName": _CAMPAIGN}}]},
+        {
+            "mutateOperationResponses": [
+                {"campaignCriterionResult": {"resourceName": uk}},
+                {"campaignCriterionResult": {"resourceName": leeds}},
+            ]
+        },
+    )
+    edits = [FieldChange("campaign", _CAMPAIGN, {"status": "PAUSED"}), removal, add]
+    result = await _applied(client, read, await _prepared(client, read, edits))
+
+    assert [(body["partialFailure"], body["mutateOperations"]) for body in client.bodies[1:]] == [
+        (
+            True,
+            [
+                {
+                    "campaignOperation": {
+                        "update": {"resourceName": _CAMPAIGN, "status": "PAUSED"},
+                        "updateMask": "status",
+                    }
+                }
+            ],
+        ),
+        (
+            False,
+            [
+                {"campaignCriterionOperation": {"remove": uk}},
+                {
+                    "campaignCriterionOperation": {
+                        "create": {
+                            "campaign": _CAMPAIGN,
+                            "location": {"geoTargetConstant": "geoTargetConstants/1007"},
+                        }
+                    }
+                },
+            ],
+        ),
+    ]
+    assert [effect.outcome for parent in result.ledger.parents for effect in parent.effects] == [
+        "applied",
+        "applied",
+        "applied",
+    ]
+
+
 def _search_build() -> CampaignBuild:
     build = CampaignBuild("333")
     # Added out of order on purpose: the request must still send parents first.

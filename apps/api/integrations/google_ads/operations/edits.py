@@ -38,6 +38,7 @@ _STALE_MESSAGE = (
 _MISSING_MESSAGE = "This no longer exists in Google Ads."
 _NOT_CONFIRMED = "Google Ads accepted the change, but {settings} still shows a different value."
 _DRY_RUN_FAILED = "Google Ads rejected this change"
+_GROUP_REJECTED = "Google Ads rejected these changes together, so none were made."
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,8 @@ class FieldChange:
     refused: str | None = None
     # Read-only paths that must still hold their `before` values, but are never sent.
     compared: tuple[str, ...] = ()
+    # Edits sharing a group are sent in their own request and succeed or fail together.
+    atomic_group: str | None = None
 
     @property
     def key(self) -> str:
@@ -112,6 +115,7 @@ class CriterionChange:
     # The criterion's resource name when it exists, filled by `prepare_edits`.
     before: str | None = None
     refused: str | None = None
+    atomic_group: str | None = None
 
     def __post_init__(self) -> None:
         if (self.action == "add") != bool(self.criterion):
@@ -223,7 +227,10 @@ async def apply_edits(
     family: str,
     operation: str,
 ) -> EditResult:
-    """Applies approved edits for one account in one request, then reads each object back.
+    """Applies approved edits for one account, then reads each object back.
+
+    Ungrouped edits go in one partial-failure request. Each atomic group goes in its own
+    request, so Google applies all of the group or none of it.
 
     An object whose live values differ from the approved `before` values is refused as
     changed since approval. Edits already at their values are skipped as already set.
@@ -278,15 +285,40 @@ async def _send(
     sent: Sequence[Edit],
     operation: str,
 ) -> list[GoogleAdsMutationOutcome]:
-    if not sent:
-        return []
+    """Sends ungrouped edits in one request and each atomic group in its own, in edit order."""
+    requests: dict[str | None, list[int]] = {}
+    for index, edit in enumerate(sent):
+        requests.setdefault(edit.atomic_group, []).append(index)
+    outcomes: dict[int, GoogleAdsMutationOutcome] = {}
+    for group, indices in requests.items():
+        replies = await _send_request(
+            client,
+            customer_id=customer_id,
+            login_customer_id=login_customer_id,
+            sent=[sent[index] for index in indices],
+            atomic=group is not None,
+            operation=operation,
+        )
+        outcomes.update(zip(indices, replies, strict=True))
+    return [outcomes[index] for index in range(len(sent))]
+
+
+async def _send_request(
+    client: GoogleAdsClient,
+    *,
+    customer_id: str,
+    login_customer_id: str,
+    sent: Sequence[Edit],
+    atomic: bool,
+    operation: str,
+) -> list[GoogleAdsMutationOutcome]:
     try:
         response = await google_ads_mutate(
             client,
             customer_id=customer_id,
             login_customer_id=login_customer_id,
             operations=[edit.operation() for edit in sent],
-            partial_failure=True,
+            partial_failure=not atomic,
             validate_only=False,
             operation=operation,
         )
@@ -297,7 +329,11 @@ async def _send(
             IntegrationFailureDisposition.REJECTED,
         }
         code = exc.error_code or ("UNCLEAR_REPLY" if unclear else "REQUEST_REJECTED")
-        return [("unverified" if unclear else "failed", None, code, exc.user_message)] * len(sent)
+        # Google's whole-request rejection doesn't say which operation caused it.
+        message = (
+            f"{_GROUP_REJECTED} {exc.user_message}" if atomic and not unclear else exc.user_message
+        )
+        return [("unverified" if unclear else "failed", None, code, message)] * len(sent)
     return reconcile_mutation_outcomes(
         response.results,
         operation_count=len(sent),
