@@ -97,17 +97,3 @@ export function parseUpdateCampaignsResult(raw: unknown): UpdateCampaignsResult 
     rows: campaigns.flatMap((rows) => rows ?? []),
   }
 }
-
-export function campaignsOutcomeSummary(result: UpdateCampaignsResult): string {
-  const count = (outcome: CampaignOutcome) =>
-    result.rows.filter((row) => row.outcome === outcome).length
-  return [
-    [count("updated"), "changed"],
-    [count("already_set"), "already set"],
-    [count("failed"), "failed"],
-    [count("unverified"), "unconfirmed"],
-  ]
-    .filter(([total]) => total !== 0)
-    .map(([total, label]) => `${String(total)} ${String(label)}`)
-    .join(" · ")
-}

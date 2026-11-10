@@ -5,17 +5,16 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, field_validator, model_validator
 
-from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 from integrations.google_ads.operations.url_custom_parameters import (
     validate_url_custom_parameters,
 )
 from integrations.google_ads.references import GoogleAdsKeywordReference
 from integrations.google_ads.references.keyword import GoogleAdsUrlCustomParameter
+from integrations.google_ads.tools.utils.money import money_to_micros
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from .base import GoogleAdsStrictModel
@@ -32,31 +31,9 @@ def validate_keyword_word_count(value: str) -> str:
     return value
 
 
-def money_bid_to_micros(value: str, *, label: str = "Bid") -> int:
-    candidate = value.strip()
-    if re.fullmatch(r"\d+(?:\.\d+)?", candidate) is None:
-        raise ValueError(f"Enter the {label} as a positive decimal number.")
-    if "." in candidate and len(candidate.rsplit(".", maxsplit=1)[1]) > 6:
-        raise ValueError(f"The {label} can have at most six decimal places.")
-    try:
-        amount = Decimal(candidate)
-    except InvalidOperation as exc:
-        raise ValueError(f"Enter the {label} as a positive decimal number.") from exc
-    micros = amount * Decimal(1_000_000)
-    if amount <= 0:
-        raise ValueError(f"The {label} must be greater than zero.")
-    if int(micros) > GOOGLE_ADS_INT64_MAX:
-        raise ValueError(f"The {label} is too large for Google Ads.")
-    return int(micros)
-
-
 def _valid_cpc_bid(value: str) -> str:
-    money_bid_to_micros(value, label="CPC bid")
+    money_to_micros(value, label="CPC bid")
     return value.strip()
-
-
-def cpc_bid_to_micros(value: str) -> int:
-    return money_bid_to_micros(value, label="CPC bid")
 
 
 GoogleAdsCpcBid = Annotated[

@@ -13,6 +13,7 @@ from ...operations.campaign_bidding import Bidding, money
 from ...operations.campaign_settings import CampaignSetting
 from ...operations.url_custom_parameters import validate_url_custom_parameter_items
 from ...references import GoogleAdsBiddingStrategyReference, GoogleAdsCampaignReference
+from ..utils.money import money_to_micros
 from .base import GoogleAdsStrictModel
 from .campaigns import (
     GoogleAdsManualCpc,
@@ -23,7 +24,6 @@ from .campaigns import (
     GoogleAdsTargetCpa,
     GoogleAdsTargetImpressionShare,
 )
-from .positive_keywords import money_bid_to_micros
 
 MAX_CAMPAIGN_UPDATES = 50
 # Google's limit for campaign URL fields.
@@ -55,6 +55,18 @@ class GoogleAdsUrlOptions(GoogleAdsStrictModel):
         if value is not None:
             validate_url_custom_parameter_items([(item.key, item.value) for item in value])
         return value
+
+    @property
+    def requested(self) -> dict[Any, Any]:
+        """The URL settings that change, in card terms, with an empty value as null."""
+        values: dict[Any, Any] = {}
+        if self.final_url_suffix is not None:
+            values["final_url_suffix"] = self.final_url_suffix or None
+        if self.tracking_template is not None:
+            values["tracking_template"] = self.tracking_template or None
+        if self.custom_parameters is not None:
+            values["custom_parameters"] = [item.model_dump() for item in self.custom_parameters]
+        return values
 
 
 class GoogleAdsCampaignNetworks(GoogleAdsStrictModel):
@@ -104,7 +116,7 @@ def card_request(bidding: GoogleAdsCampaignBidding) -> Bidding:
     fields = bidding.model_dump(exclude_none=isinstance(bidding, GoogleAdsBiddingTargets))
     for key in ("target_cpa", "max_cpc"):
         if fields.get(key):
-            fields[key] = money(money_bid_to_micros(fields[key]))
+            fields[key] = money(money_to_micros(fields[key]))
     return fields
 
 
@@ -157,14 +169,8 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
             values["start_date"] = self.start_date.isoformat()
         if self.end_date is not None:
             values["end_date"] = None if self.end_date == "none" else self.end_date.isoformat()
-        url = self.url_options
-        if url is not None:
-            if url.final_url_suffix is not None:
-                values["final_url_suffix"] = url.final_url_suffix or None
-            if url.tracking_template is not None:
-                values["tracking_template"] = url.tracking_template or None
-            if url.custom_parameters is not None:
-                values["custom_parameters"] = [item.model_dump() for item in url.custom_parameters]
+        if self.url_options is not None:
+            values.update(self.url_options.requested)
         networks = self.networks
         if networks is not None:
             if networks.search_partners is not None:

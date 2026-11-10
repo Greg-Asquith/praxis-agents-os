@@ -5,7 +5,6 @@
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field
-from pydantic_ai import ModelRetry
 
 from integrations.google_ads.references import (
     GoogleAdsCampaignBudgetReference,
@@ -18,10 +17,7 @@ from .base import GoogleAdsStrictModel
 
 
 def _valid_money_amount(value: str) -> str:
-    try:
-        money_to_micros(value)
-    except ModelRetry as exc:
-        raise ValueError(str(exc)) from exc
+    money_to_micros(value, label="budget amount")
     return value
 
 

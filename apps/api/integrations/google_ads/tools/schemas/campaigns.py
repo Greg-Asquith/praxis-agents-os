@@ -22,7 +22,6 @@ from .ad_groups import (
 from .base import GoogleAdsStrictModel
 from .campaign_budgets import GoogleAdsMoneyAmount
 from .negative_keywords import NegativeKeywordEntry
-from .positive_keywords import money_bid_to_micros
 
 MAX_CAMPAIGN_LOCATIONS = 1_000
 MAX_CAMPAIGN_NEGATIVES = 1_000
@@ -32,14 +31,14 @@ type _Key = Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
 
 def _valid_bid(label: str):
     def check(value: str) -> str:
-        money_bid_to_micros(value, label=label)
+        money_to_micros(value, label=label)
         return value.strip()
 
     return AfterValidator(check)
 
 
 def _micros(value: str | None) -> int | None:
-    return money_bid_to_micros(value) if value else None
+    return money_to_micros(value) if value else None
 
 
 def _blank_is_none(value: object) -> object:

@@ -57,7 +57,6 @@ from services.integrations.operations import (
 )
 
 from .schemas import GoogleAdsCreatePositiveKeywordsOutput, GoogleAdsPositiveKeywordEntry
-from .schemas.positive_keywords import money_bid_to_micros
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     MAX_POSITIVE_KEYWORD_PUBLIC_RESULT_CHARS,
@@ -69,7 +68,7 @@ from .utils import (
     login_customer_id,
 )
 from .utils.accounts import account_facts, approval_accounts
-from .utils.money import micros_to_money
+from .utils.money import micros_to_money, money_to_micros
 from .utils.mutation_evidence import (
     audit_status,
     google_ads_account_target,
@@ -383,7 +382,7 @@ def _expanded_creates(
             match_type=keyword.match_type,
             status=keyword.status,
             bid_modifier=keyword.bid_modifier,
-            cpc_bid_micros=money_bid_to_micros(keyword.cpc_bid, label="CPC bid")
+            cpc_bid_micros=money_to_micros(keyword.cpc_bid, label="CPC bid")
             if keyword.cpc_bid
             else None,
             final_urls=tuple(keyword.final_urls or ()),

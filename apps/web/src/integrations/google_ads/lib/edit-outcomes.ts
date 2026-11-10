@@ -36,3 +36,17 @@ export const EDIT_OUTCOME_TABS: DataTableTab[] = [
   outcomeTab("failed"),
   outcomeTab("unverified", true),
 ]
+
+/** Counts each outcome, such as "3 changed · 1 failed", leaving out outcomes with none. */
+export function editOutcomeSummary(rows: readonly { outcome: EditOutcome }[]): string {
+  const count = (outcome: EditOutcome) => rows.filter((row) => row.outcome === outcome).length
+  return [
+    [count("updated"), "changed"],
+    [count("already_set"), "already set"],
+    [count("failed"), "failed"],
+    [count("unverified"), "unconfirmed"],
+  ]
+    .filter(([total]) => total !== 0)
+    .map(([total, label]) => `${String(total)} ${String(label)}`)
+    .join(" · ")
+}

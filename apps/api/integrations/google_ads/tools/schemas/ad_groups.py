@@ -9,14 +9,13 @@ from pydantic import AfterValidator, Field, field_validator, model_validator
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from ...references import GoogleAdsAdGroupReference, GoogleAdsCampaignReference
+from ..utils.money import money_to_micros
 from .ads import GoogleAdsResponsiveSearchAd
 from .base import GoogleAdsStrictModel
 from .negative_keywords import NegativeKeywordEntry
 from .positive_keywords import (
     GoogleAdsCpcBid,
     GoogleAdsFinalUrl,
-    cpc_bid_to_micros,
-    money_bid_to_micros,
     normalize_keyword_text,
     validate_keyword_word_count,
 )
@@ -32,7 +31,7 @@ MAX_RESULT_PROBLEMS = 50
 
 
 def _valid_target_cpa(value: str) -> str:
-    money_bid_to_micros(value, label="Target CPA")
+    money_to_micros(value, label="target CPA")
     return value.strip()
 
 
@@ -63,7 +62,7 @@ class GoogleAdsNewKeyword(GoogleAdsStrictModel):
 
     @property
     def cpc_bid_micros(self) -> int | None:
-        return cpc_bid_to_micros(self.cpc_bid) if self.cpc_bid else None
+        return money_to_micros(self.cpc_bid) if self.cpc_bid else None
 
 
 def distinct_keywords(
@@ -130,13 +129,13 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
 
     @property
     def cpc_bid_micros(self) -> int | None:
-        return cpc_bid_to_micros(self.cpc_bid) if self.cpc_bid else None
+        return money_to_micros(self.cpc_bid) if self.cpc_bid else None
 
     @property
     def target_cpa_micros(self) -> int | None:
         if not self.target_cpa:
             return None
-        return money_bid_to_micros(self.target_cpa, label="Target CPA")
+        return money_to_micros(self.target_cpa)
 
     @property
     def object_count(self) -> int:

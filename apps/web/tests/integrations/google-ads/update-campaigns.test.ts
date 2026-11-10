@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity } from "@/integrations/contract"
 import { parseBidding } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
+  addableCampaignSettings,
+  addedCampaignChanges,
   campaignCounts,
   campaignRows,
   campaignsApproveLabel,
@@ -96,6 +98,61 @@ describe("approval", () => {
 
     const removal = parsed(raw({ changes: [{ campaign: campaign("10"), end_date: "none" }] }))
     expect(campaignsApproveLabel(removal)).toBe("Remove End Date")
+  })
+})
+
+describe("adding a change", () => {
+  it("offers what the channel and campaign allow, from live values", () => {
+    const current = {
+      name: "Trail",
+      start_date: "2026-01-01",
+      end_date: null,
+      search_partners: true,
+      display_expansion: false,
+      bidding: { strategy: "PORTFOLIO", portfolio: "customers/1/biddingStrategies/5" },
+    }
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), name: "Trail Shoes" },
+          { campaign: campaign("11"), name: "Banners" },
+        ],
+        _checks: {
+          [key("10")]: check({ channel: "SEARCH", current, requested: { name: "Trail Shoes" } }),
+          [key("11")]: check({
+            channel: "DISPLAY",
+            current: { ...current, bidding: { strategy: "MANUAL_CPC" } },
+            requested: { name: "Banners" },
+          }),
+        },
+      })
+    )
+    const rows = campaignRows(args, args)
+    const offered = (id: string) =>
+      addableCampaignSettings(args, args, rows, key(id)).map((item) => item.setting)
+
+    // Started campaigns can't move their start; a portfolio can't be written back as is.
+    expect(offered("10")).toEqual([
+      "end_date",
+      "final_url_suffix",
+      "tracking_template",
+      "custom_parameters",
+      "search_partners",
+      "display_expansion",
+    ])
+    // Display campaigns change no networks here.
+    expect(offered("11")).toEqual([
+      "end_date",
+      "final_url_suffix",
+      "tracking_template",
+      "custom_parameters",
+      "bidding",
+    ])
+    expect(addedCampaignChanges(args, key("11"), "end_date", null)[1]).toEqual({
+      campaign: campaign("11"),
+      name: "Banners",
+      end_date: "none",
+    })
   })
 })
 

@@ -225,6 +225,47 @@ its outcome; a setting already at its value is `already_set`. Bidding values in
 the result are card terms; the result also carries the account `currency` and
 the `portfolios` named, so the card can write them out.
 
+### Ad group settings
+
+`google_ads_update_ad_groups` changes up to 50 live ad groups in one approval.
+Each entry names one ad group with a `google_ads_ad_group` reference and only
+the settings that change. The fields are as follows:
+
+| Field | What it does |
+| --- | --- |
+| `name` | Renames the ad group. Line breaks and repeated spaces become one space. |
+| `cpc_bid` | Sets the default click bid (`cpcBidMicros`). It can't be removed, because Google always keeps one. |
+| `target_cpa` | Overrides the campaign's target CPA (`targetCpaMicros`), or `"none"` to remove the override. |
+| `target_roas` | Overrides the campaign's target ROAS as a ratio (`targetRoas`), or `"none"` to remove the override. |
+| `url_options` | `final_url_suffix`, `tracking_template`, and `custom_parameters`, as for campaigns. |
+| `ad_rotation` | `OPTIMIZE` or `ROTATE_FOREVER` (`adRotationMode`). |
+
+`operations/ad_group_settings.py` reads each ad group by ID with its
+campaign's name, status, and bidding (`read_ad_group_settings`), and holds
+Google's and the card's form of each value, as campaign settings do. Every
+field is a scalar, so a mask names it directly, and a removed target is masked
+with no value. `ad_group_bids_used` in `operations/campaign_bidding.py` says
+which ad group bid fields the campaign's bidding uses: a CPC bid only under
+manual bidding with no portfolio; a target CPA under Target CPA, or Maximise
+Conversions with a campaign target CPA or a portfolio; a target ROAS under
+Target ROAS, or Maximise Conversion Value with a campaign target ROAS and no
+portfolio. Create Ad Groups and Create Campaign use the same rule.
+
+While preparing the approval, a bid or target the strategy doesn't use is a
+problem that names the campaign and its strategy, such as "Waterproof Range
+uses Maximise Conversions, so Google doesn't use an ad group CPC bid." A
+target under Maximise Conversions or Maximise Conversion Value with no
+campaign target asks for one on the campaign first. Removing a target is
+always allowed. The rest are dry run through the edit seam. `_checks`, keyed by
+ad group resource name, holds the ad group's and campaign's names, the
+campaign's `strategy_name` and `bids_used`, `current`, `requested`, `values`,
+`problem`, and `problems` by setting. An edit that changes a bid or target
+sets `FieldChange.compared` to the campaign's `biddingStrategyType` and
+`biddingStrategy` (read as `campaign.biddingStrategyType` and
+`campaign.biddingStrategy`), so a bid whose campaign changed strategy since
+approval is refused (`CHANGED_SINCE_APPROVAL`). Approval, refusal, and the
+result follow Update Campaigns; the result carries the account `currency`.
+
 ### Ad edits
 
 `google_ads_update_ads` edits up to 50 live responsive search ads in one
@@ -1021,7 +1062,13 @@ on the same strategy; search, setting tabs, Needs Attention, and row selection w
 These Changes** appear too. Cancelled settings move into the approval controls'
 retained state, so **Undo** restores them, and their campaign, through a
 check's redraw. Text fields save on blur through the shared kit's
-`CommittedInput`. The approve label names a sole change ("Remove End Date",
+`CommittedInput`. Under the rows, **Add a Change** (`components/add-change.tsx`,
+shared with Update Ad Groups) adds a setting the agent didn't propose
+(`addableCampaignSettings`, `addedCampaignChanges`), starting at its live
+value. Networks are offered only on channels that take them, a start date
+only before the campaign starts in the account time zone, and bidding only
+from a standard strategy, because a live portfolio has no reference to write
+back. An added setting needs **Check Changes**. The approve label names a sole change ("Remove End Date",
 "Turn Off Search Partners", "Switch to Maximise Conversions", "Change Target")
 and otherwise counts the changes that will run.
 
@@ -1029,6 +1076,40 @@ The result (`components/update-campaigns-outcome.tsx`) is the standard
 `DataTable` result card: Campaign, Setting, Before, After, and Outcome, with the
 edit seam's outcome tabs from `lib/edit-outcomes.ts`, which Update Status and
 Update Targeting share. After is blank when Google's reply couldn't be read back.
+
+### Update Ad Groups card
+
+`lib/update-ad-groups.ts` parses `changes` with `_accounts` and `_checks` and
+gives one row per ad group and setting (`adGroupRows`), with the same rules as
+Update Campaigns: a problem applies while the row matches what Google checked,
+an edit waits for **Check Changes**, and a row at its live value is Already
+Set. A removed target is written back as `"none"`, and URL settings go inside
+`url_options`.
+
+The card (`components/update-ad-groups-approval.tsx`) shows the banner with the
+count of changes. One ad group is a list under a line naming its campaign and
+the campaign's strategy. Every setting is one line: the live value, an
+arrow, and an inline editor. Bids and targets take an amount with the
+currency symbol, or a percentage for target ROAS, and an empty target follows
+the campaign. Ad rotation is an Optimise or Rotate Evenly choice. More than one ad group is a `DataTable`
+with Ad Group (and its problem), Campaign (and its strategy), Setting, Change,
+and Cancel columns. From ten rows, a `ChangeSummary` line per setting filters
+the table. The Default Max CPC and Target CPA lines take a percentage that
+changes every amount in the line from its live value, rounded to the
+currency's smallest unit (`scaledMoney`). The Ad Rotation line sets every ad
+group, and search, tabs, Needs Attention, and **Cancel These Changes** appear,
+as on Update Campaigns. Under the rows, **Add a Change** adds a setting the agent didn't propose
+(`addableSettings`, `addedAdGroupChanges`), starting at its live value, with
+an **Ad Group** choice when there are several. Bids and targets are offered
+only where the campaign's strategy uses them, and a name or CPC bid needs a
+live value to start from. An added setting needs **Check Changes**, like any
+edit. The approve label names a sole change ("Change Max
+CPC", "Remove Target ROAS") and otherwise counts the changes.
+
+The result (`components/update-ad-groups-outcome.tsx`) is the standard
+`DataTable` result card: Ad Group, Setting, Before, After, and Outcome, with
+the edit seam's outcome tabs and `editOutcomeSummary` from
+`lib/edit-outcomes.ts`.
 
 ### Update Ads card
 

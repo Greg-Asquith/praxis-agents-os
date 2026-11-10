@@ -10,6 +10,7 @@ from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
 from .build import CampaignBuild
+from .campaign_bidding import AdGroupBid, ad_group_bids_used
 from .responsive_search_ads import ad_group_ad_body
 from .utils import stream_rows
 
@@ -20,7 +21,6 @@ type AdGroupItemKind = Literal["ad_group", "keyword", "negative_keyword", "ad"]
 
 # Enough for the card to check names as they're edited; Google refuses any clash past this.
 _MAX_NAMES_READ = 2_000
-_MANUAL_BIDDING = {"MANUAL_CPC", "ENHANCED_CPC"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,25 +45,25 @@ class SearchCampaignFacts:
     ad_group_names: tuple[str, ...]
 
     @property
+    def bids_used(self) -> frozenset[AdGroupBid]:
+        return ad_group_bids_used(
+            self.strategy,
+            portfolio=self.portfolio,
+            has_target_cpa=self.has_target_cpa,
+            has_target_roas=self.has_target_roas,
+        )
+
+    @property
     def accepts_cpc_bid(self) -> bool:
-        """Google only uses ad group and keyword bids under manual bidding."""
-        return self.strategy in _MANUAL_BIDDING and not self.portfolio
+        return "cpc_bid" in self.bids_used
 
     @property
     def accepts_target_cpa(self) -> bool:
-        """A portfolio strategy's target isn't read here, so its override is left to Google."""
-        return self.strategy == "TARGET_CPA" or (
-            self.strategy == "MAXIMIZE_CONVERSIONS" and (self.portfolio or self.has_target_cpa)
-        )
+        return "target_cpa" in self.bids_used
 
     @property
     def accepts_target_roas(self) -> bool:
-        """Google refuses a target ROAS override under a portfolio strategy."""
-        if self.portfolio:
-            return False
-        return self.strategy == "TARGET_ROAS" or (
-            self.strategy == "MAXIMIZE_CONVERSION_VALUE" and self.has_target_roas
-        )
+        return "target_roas" in self.bids_used
 
 
 def add_search_ad_group(

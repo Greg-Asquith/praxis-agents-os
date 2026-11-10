@@ -8,15 +8,15 @@ import {
   EDIT_OUTCOME_BADGES,
   EDIT_OUTCOME_LABELS,
   EDIT_OUTCOME_TABS,
+  editOutcomeSummary,
 } from "@/integrations/google_ads/lib/edit-outcomes"
 import type { BiddingContext } from "@/integrations/google_ads/lib/campaign-bidding"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { SETTING_TITLES, valueText } from "@/integrations/google_ads/lib/update-campaigns"
-import {
-  campaignsOutcomeSummary,
-  type CampaignOutcome,
-  type CampaignOutcomeRow,
-  type UpdateCampaignsResult,
+import type {
+  CampaignOutcome,
+  CampaignOutcomeRow,
+  UpdateCampaignsResult,
 } from "@/integrations/google_ads/lib/update-campaigns-result"
 
 const COLUMNS: DataColumn[] = [
@@ -85,7 +85,7 @@ export function UpdateCampaignsOutcome({ result }: { result: UpdateCampaignsResu
       }}
       rowNoun={["change", "changes"]}
       rows={rows}
-      summary={<span>{campaignsOutcomeSummary(result)}</span>}
+      summary={<span>{editOutcomeSummary(result.rows)}</span>}
       tabs={EDIT_OUTCOME_TABS}
     />
   )

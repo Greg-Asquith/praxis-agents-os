@@ -5,7 +5,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from services.integrations.http import IntegrationRequestPolicy
 
@@ -133,7 +133,7 @@ def micros(value: str) -> str:
     return str(int(Decimal(value) * Decimal(1_000_000)))
 
 
-def _ratio(value: Any) -> float | None:
+def ratio(value: Any) -> float | None:
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -155,8 +155,8 @@ def _message(
             if isinstance(value, str) and value:
                 message[field] = value
         elif field == "targetRoas":
-            if (ratio := _ratio(value)) is not None:
-                message[field] = ratio
+            if (target := ratio(value)) is not None:
+                message[field] = target
         elif (amount := money(value)) is not None:
             message[field] = micros(amount)
     return message
@@ -192,7 +192,7 @@ def card_bidding(values: Mapping[str, Any]) -> Bidding:
     if strategy in {"MAXIMIZE_CONVERSIONS", "TARGET_CPA"}:
         return {"strategy": strategy, "target_cpa": money(message.get("targetCpaMicros"))}
     if strategy in {"MAXIMIZE_CONVERSION_VALUE", "TARGET_ROAS"}:
-        return {"strategy": strategy, "target_roas": _ratio(message.get("targetRoas"))}
+        return {"strategy": strategy, "target_roas": ratio(message.get("targetRoas"))}
     if strategy == "TARGET_IMPRESSION_SHARE":
         fraction = message.get("locationFractionMicros")
         return {
@@ -283,6 +283,35 @@ def needs_conversions(bidding: Bidding, portfolio_type: str | None = None) -> bo
     return strategy in _CONVERSION_STRATEGIES
 
 
+# An ad group bid field: its default CPC bid, or its target CPA or target ROAS override.
+type AdGroupBid = Literal["cpc_bid", "target_cpa", "target_roas"]
+_MANUAL_TYPES = frozenset({"MANUAL_CPC", "ENHANCED_CPC"})
+
+
+def ad_group_bids_used(
+    strategy_type: str, *, portfolio: bool, has_target_cpa: bool, has_target_roas: bool
+) -> frozenset[AdGroupBid]:
+    """Returns the ad group bid fields Google uses under a campaign's bidding.
+
+    Only manual bidding uses CPC bids. A portfolio's own targets aren't read, so a target CPA
+    override under a Maximise Conversions portfolio is left to Google, which refuses a target
+    ROAS override under any portfolio.
+    """
+    used: set[AdGroupBid] = set()
+    if strategy_type in _MANUAL_TYPES and not portfolio:
+        used.add("cpc_bid")
+    if strategy_type == "TARGET_CPA" or (
+        strategy_type == "MAXIMIZE_CONVERSIONS" and (portfolio or has_target_cpa)
+    ):
+        used.add("target_cpa")
+    if not portfolio and (
+        strategy_type == "TARGET_ROAS"
+        or (strategy_type == "MAXIMIZE_CONVERSION_VALUE" and has_target_roas)
+    ):
+        used.add("target_roas")
+    return frozenset(used)
+
+
 @dataclass(frozen=True, slots=True)
 class AdGroupBids:
     """A campaign's live ad groups with their own bids or targets."""
@@ -368,7 +397,7 @@ async def read_ad_group_bids(
         if not isinstance(campaign, Mapping) or not isinstance(ad_group, Mapping):
             continue
         key, name = str(campaign.get("id", "")), str(ad_group.get("name") or "Unnamed ad group")
-        if money(ad_group.get("targetCpaMicros")) or _ratio(ad_group.get("targetRoas")):
+        if money(ad_group.get("targetCpaMicros")) or ratio(ad_group.get("targetRoas")):
             targets.setdefault(key, []).append(name)
         if money(ad_group.get("cpcBidMicros")):
             cpc_bids.setdefault(key, []).append(name)
@@ -405,5 +434,5 @@ async def read_conversions(
     for row in stream_rows(payload, max_rows=len(set(campaign_ids))):
         campaign, metrics = row.get("campaign"), row.get("metrics")
         if isinstance(campaign, Mapping) and isinstance(metrics, Mapping):
-            conversions[str(campaign.get("id", ""))] = _ratio(metrics.get("conversions")) or 0.0
+            conversions[str(campaign.get("id", ""))] = ratio(metrics.get("conversions")) or 0.0
     return conversions

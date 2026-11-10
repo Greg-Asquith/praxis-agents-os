@@ -13,6 +13,7 @@ import {
   comparableBidding,
   parseBidding,
   resolvedBidding,
+  STANDARD_STRATEGIES,
   strategyLabel,
   TARGET_KEYS,
   TARGET_LABELS,
@@ -74,6 +75,7 @@ type CampaignCheck =
   | { unavailable: true }
   | {
       unavailable: false
+      channel: string | null
       current: Partial<Record<CampaignSetting, SettingValue>>
       name: string | null
       // Notes about a bidding change, such as recent conversions and ad groups' own bids.
@@ -222,6 +224,7 @@ function parseCheck(value: unknown): CampaignCheck {
       if (isRecord(item) && typeof item["name"] === "string") portfolios.set(name, item["name"])
   return {
     unavailable: false,
+    channel: text(value["channel"]),
     current: settingMap(value["current"]),
     name: text(value["name"]),
     notes: Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [],
@@ -409,6 +412,67 @@ export function editedChanges(
     // An entry must change something, so a campaign with every setting cancelled leaves the request.
     return Object.keys(requestedOf(entry)).length > 0 ? [entry] : []
   })
+}
+
+// The channels on which each network can change, as on the server.
+const NETWORK_CHANNELS: Partial<Record<CampaignSetting, readonly string[]>> = {
+  display_expansion: ["SEARCH"],
+  search_partners: ["SEARCH", "SHOPPING"],
+}
+
+/** Today's date in a time zone, as `YYYY-MM-DD`. */
+function today(timeZone: string | undefined): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date())
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
+}
+
+/** Settings the request doesn't change on a campaign yet, each starting at its live value.
+
+Networks are offered only on channels that take them, a start date only before the campaign
+starts, and bidding only from a standard strategy the card can write back.
+ */
+export function addableCampaignSettings(
+  args: UpdateCampaignsArgs,
+  checked: UpdateCampaignsArgs,
+  rows: readonly CampaignRow[],
+  key: string
+): { setting: CampaignSetting; value: SettingValue }[] {
+  const check = checked.checks.get(key)
+  const change = args.changes.find((item) => item.key === key)
+  if (!check || check.unavailable || !change) return []
+  const present = new Set(rows.filter((row) => row.key === key).map((row) => row.setting))
+  const started =
+    typeof check.current.start_date !== "string" ||
+    check.current.start_date <= today(args.accounts.get(change.customerId)?.timeZone)
+  return CAMPAIGN_SETTINGS.flatMap((setting) => {
+    const live = check.current[setting] ?? (setting === "custom_parameters" ? [] : null)
+    const channels = NETWORK_CHANNELS[setting]
+    if (
+      present.has(setting) ||
+      (channels && !channels.includes(check.channel ?? "")) ||
+      (setting === "start_date" && started) ||
+      (setting === "name" && live === null) ||
+      (setting === "bidding" &&
+        !(isBidding(live) && (STANDARD_STRATEGIES as readonly string[]).includes(live.strategy)))
+    )
+      return []
+    return [{ setting, value: live }]
+  })
+}
+
+/** The `changes` value with a setting added to one campaign already in the request. */
+export function addedCampaignChanges(
+  args: UpdateCampaignsArgs,
+  key: string,
+  setting: CampaignSetting,
+  value: SettingValue
+): Record<string, unknown>[] {
+  return args.changes.map((change) =>
+    change.key === key ? withSetting(change.entry, setting, value) : change.entry
+  )
 }
 
 /** Puts cancelled settings back, adding their campaign again when it had left the request. */

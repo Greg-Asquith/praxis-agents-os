@@ -138,7 +138,7 @@ def test_money_to_micros_is_exact(value: str, expected: int) -> None:
     ],
 )
 def test_money_to_micros_rejects_invalid_provider_values(value: str, message: str) -> None:
-    with pytest.raises(ModelRetry, match=message):
+    with pytest.raises(ValueError, match=message):
         money_to_micros(value)
 
 

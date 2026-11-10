@@ -18,6 +18,7 @@ import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { BiddingCell, BiddingChange } from "@/integrations/google_ads/components/bidding-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import {
@@ -28,6 +29,8 @@ import {
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
+  addableCampaignSettings,
+  addedCampaignChanges,
   CAMPAIGN_SETTINGS,
   campaignCounts,
   campaignRows,
@@ -327,6 +330,19 @@ export function UpdateCampaignsApproval({
             ))}
         </>
       )}
+      <AddChange
+        disabled={disabled}
+        noun="Campaign"
+        onAdd={(key, setting, value) => {
+          save(addedCampaignChanges(args, key, setting, value), cancelled)
+        }}
+        targets={args.changes.map((change) => ({
+          key: change.key,
+          name: rows.find((row) => row.key === change.key)?.campaignName ?? change.label,
+          options: addableCampaignSettings(args, checked, rows, change.key),
+        }))}
+        titles={SETTING_TITLES}
+      />
       {needsCheck(args, checked) && args.changes.length > 0 ? (
         <CheckChanges
           canCheck={canCheckCampaigns(args)}

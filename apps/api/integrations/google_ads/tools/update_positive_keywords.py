@@ -63,7 +63,6 @@ from services.integrations.operations import (
 )
 
 from .schemas import GoogleAdsPositiveKeywordPatch, GoogleAdsUpdatePositiveKeywordsOutput
-from .schemas.positive_keywords import money_bid_to_micros
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     MAX_POSITIVE_KEYWORD_UPDATE_PUBLIC_RESULT_CHARS,
@@ -75,7 +74,7 @@ from .utils import (
     login_customer_id,
 )
 from .utils.accounts import account_facts, approval_accounts
-from .utils.money import micros_to_money
+from .utils.money import micros_to_money, money_to_micros
 from .utils.mutation_evidence import (
     audit_status,
     google_ads_account_target,
@@ -322,7 +321,7 @@ def _changes(
 def _provider_value(field: str, value: Any) -> Any:
     if POSITIVE_KEYWORD_FIELD_BY_PATCH[field].value_family == "money":
         return (
-            money_bid_to_micros(value, label=field.replace("_", " ").upper())
+            money_to_micros(value, label=field.replace("_", " ").upper())
             if value is not None
             else None
         )
