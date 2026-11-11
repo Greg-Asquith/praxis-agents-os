@@ -12,6 +12,7 @@ import {
   removalBannerDetail,
   removalBlock,
   removalCounts,
+  removalParents,
   removalRows,
   type RemoveObjectsArgs,
 } from "@/integrations/google_ads/lib/remove-objects"
@@ -84,6 +85,37 @@ describe("approval", () => {
     // A label's campaigns stay; only the ad group's ads and keywords go with it.
     expect(removalBannerDetail(counts)).toBe(
       "2 items · also removes 6 ads, 92 keywords inside them"
+    )
+  })
+})
+
+describe("campaigns first", () => {
+  it("puts a removed campaign and its ad group under one campaign, and shared items outside", () => {
+    const value = raw()
+    const campaign = { kind: "campaign", campaign: { customer_id: CUSTOMER, campaign_id: "10" } }
+    const args = parsed({
+      ...value,
+      items: [...value.items, campaign],
+      _checks: {
+        ...value._checks,
+        [`customers/${CUSTOMER}/campaigns/10`]: {
+          unavailable: false,
+          name: "Trail Running Shoes",
+          status: "ENABLED",
+          campaign_id: "10",
+          campaign_name: "Trail Running Shoes",
+          dependants: { ad_groups: 2, ads: 9, keywords: 120, truncated: false },
+          problem: null,
+        },
+      },
+    })
+    const parents = removalParents(removalRows(args, args), args.accounts, false)
+
+    expect(parents.map((parent) => [parent.name, parent.values["items"], parent.problems])).toEqual(
+      [
+        ["Trail Running Shoes", 2, 0],
+        ["Not in a Campaign", 2, 1],
+      ]
     )
   })
 })

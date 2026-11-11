@@ -19,6 +19,7 @@ import { ChangeSummary } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { moneyInput } from "@/integrations/google_ads/lib/campaign-bidding"
 import { scaledMoney } from "@/integrations/google_ads/lib/update-ad-groups"
@@ -26,6 +27,7 @@ import {
   budgetCounts,
   budgetCurrency,
   budgetKindText,
+  budgetParents,
   budgetRows,
   budgetsBannerDetail,
   budgetsNeedCheck,
@@ -64,6 +66,11 @@ const COLUMNS: DataColumn[] = [
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
 ]
 
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "budget", kind: "text", label: "Budget", width: 220 },
+  { key: "problems", kind: "text", label: "Problems", width: 130 },
+]
+
 const DELIVERY_OPTIONS = DELIVERIES.map((value) => ({ value, label: DELIVERY_LABELS[value] }))
 
 type Ids = Iterable<string>
@@ -96,6 +103,9 @@ export function UpdateBudgetsApproval({
   const accountIds = [...new Set(live.map((row) => row.customerId))]
   const [firstAccount] = accountIds
   const currency = args.accounts.get(firstAccount ?? "")?.currencyCode ?? null
+  const [parent, setParent] = useState<string | null>(null)
+  const parents = budgetParents(rows, args.accounts, accountIds.length > 1)
+  const shown = parent === null ? rows : rows.filter((row) => row.id === parent)
 
   // A review redraws the card, so cancelled changes live beside the request for Undo.
   const save = (
@@ -235,10 +245,26 @@ export function UpdateBudgetsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setParent(null)
               setTab("attention")
             }}
           />
         </>
+      ) : null}
+      {parents.length > 1 ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={(key) => {
+            cancel([key])
+          }}
+          onSelect={setParent}
+          onUndo={undo}
+          rowNoun={["campaign or budget", "campaigns and budgets"]}
+          rows={parents}
+          selected={parent}
+        />
       ) : null}
       <DataTable
         activeTab={tab}
@@ -306,7 +332,7 @@ export function UpdateBudgetsApproval({
         }
         rowDetails={false}
         rowNoun={["budget", "budgets"]}
-        rows={rows.map((row) => tableRow(row, budgetCurrency(args, row)))}
+        rows={shown.map((row) => tableRow(row, budgetCurrency(args, row)))}
         {...(tools
           ? {
               searchable: true,

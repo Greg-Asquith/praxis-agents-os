@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/update-budgets.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import {
   parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
@@ -443,6 +444,45 @@ export function budgetKindText(row: BudgetRow): string {
   return row.budget.shared
     ? `Shared · ${approvalCountLine(row.budget.campaignCount, "campaign")}`
     : "Own"
+}
+
+// The campaigns a shared budget's parent row names; the count covers the rest.
+const FUNDS_NAMED = 3
+
+/** Who a shared budget funds, such as "Funds Boots, Socks, and 2 more". */
+function fundsText(budget: BudgetView): string | null {
+  const names = budget.campaigns.slice(0, FUNDS_NAMED).map((campaign) => campaign.name)
+  if (names.length === 0) return null
+  const more = budget.campaignCount - names.length
+  return more > 0
+    ? `Funds ${names.join(", ")}, and ${String(more)} more`
+    : `Funds ${names.join(", ")}`
+}
+
+/** One row per campaign, or per shared budget with the campaigns it funds under its name. */
+export function budgetParents(
+  rows: readonly BudgetRow[],
+  accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
+  showAccount: boolean
+): ParentRow[] {
+  return rows.map((row) => {
+    const funded = row.kind === "budget" && row.budget?.shared ? fundsText(row.budget) : null
+    const account = showAccount ? (accounts.get(row.customerId)?.label ?? null) : null
+    const problem = !row.cancelled && row.problem !== null
+    return {
+      cancelled: row.cancelled,
+      context: [funded, account].filter((part) => part !== null).join(" · ") || null,
+      key: row.id,
+      name: row.name,
+      problems: problem ? 1 : 0,
+      values: {
+        budget: row.sharedBudget
+          ? `${budgetKindText(row)} → ${row.sharedBudgetLabel ?? "Shared budget"}`
+          : budgetKindText(row),
+        problems: row.cancelled ? "Cancelled" : problem ? "1 to fix" : "None",
+      },
+    }
+  })
 }
 
 function soleRow(args: UpdateBudgetsArgs): BudgetRow | null {

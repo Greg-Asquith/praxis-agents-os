@@ -1307,7 +1307,11 @@ campaign count, or the move with **Choose Another** to pick a different
 shared budget), Daily Amount (the live amount, an arrow, and an inline
 amount, plus a Standard or Accelerated choice when delivery changes), Change,
 Spent This Month, Month at New Amount (spend so far plus the amount for each
-day left), Est. Monthly, and Cancel. From ten rows, `ChangeSummary` lines for
+day left), Est. Monthly, and Cancel. With more than one change, a
+`ParentTable` of campaigns comes first (`budgetParents`): one row per
+campaign, or per shared budget with the first three campaigns it funds under
+its name, with Budget and Problems. A click shows only that row's change.
+From ten rows, `ChangeSummary` lines for
 Raise, Lower, Shared, Move, and Needs Attention filter the table; the Raise
 line takes a percentage that changes every raised amount from its live value
 (`scaledMoney`). Selected rows can take one amount, a percentage, or
@@ -1330,8 +1334,15 @@ The card (`components/remove-objects-approval.tsx`) opens with
 `ChangeBanner` in its danger tone, "Removal can't be undone", with the item
 count and the ads, keywords, and ad groups that campaign and ad group
 removals take with them. The `DataTable` has Item (with its ad group for ads
-and keywords, and its problem), Kind, Campaign, Also Removes, and Cancel.
-From ten rows, `ChangeSummary` has one line per kind and Needs Attention
+and keywords, and its problem), Kind, Also Removes, and Cancel; Campaign is
+hidden and kept for the chooser and the export. When the items sit in more
+than one campaign, a `ParentTable` of campaigns comes first
+(`removalParents`) with Items, Also Removes, and Problems. A removed campaign
+is its own row, with its ad groups and keywords under it. Shared budgets,
+labels, bid strategies, and lists are under Not in a Campaign. The campaign
+comes from `_checks` (`campaign_id`), or from the reference when Google
+couldn't read the item. A click filters the items, and Cancel or Undo acts on
+all of a campaign's items. From ten rows, `ChangeSummary` has one line per kind and Needs Attention
 with **Cancel These N**, tabs filter by kind, and selected rows take
 **Cancel These Changes**. The approve label counts the items, such as
 "Remove 98 Items".
@@ -1424,8 +1435,8 @@ the table of the changes in them. Each row has the parent's name, where it sits,
 the caller's columns, and Cancel or Undo for all of its changes. A click
 selects the parent and the card filters the changes to it. From ten rows it
 gets search and a Needs Attention tab. A caller can draw its own cells with
-`renderCell`. Add Keywords, Update Keywords, Update Targeting, and Update
-Status use it.
+`renderCell`. Add Keywords, Update Keywords, Update Targeting, Update
+Status, the create and edit cards, Update Budgets, and Remove Items use it.
 
 ## Live QA record
 

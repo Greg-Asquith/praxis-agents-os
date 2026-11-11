@@ -340,6 +340,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Google Ads Update Budgets and Remove Items cards list their campaigns first.
+  A shared budget's row names the campaigns it funds, and shared budgets,
+  labels, and lists being removed sit under Not in a Campaign. A click on a
+  campaign shows only its changes, and Cancel acts on all of them.
 - Google Ads Update Targeting and Update Status cards list their campaigns
   first, each with its change count and Cancel for all of its changes. A
   click on a campaign shows only its changes, and on Update Targeting an edit

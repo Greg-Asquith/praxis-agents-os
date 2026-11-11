@@ -61,6 +61,8 @@ class RemovalTarget:
     name: str
     # `REMOVED` once Google has removed it.
     status: str
+    # The campaign it sits in, or is; None for objects outside campaigns.
+    campaign_id: str | None = None
     campaign_name: str | None = None
     ad_group_name: str | None = None
     # Counts by kind, such as `{"ads": 6, "keywords": 92}`; filled by `with_dependants`.
@@ -108,6 +110,7 @@ async def read_removal_targets(
             kind=item.kind,
             name=item.name,
             status=item.status,
+            campaign_id=item.campaign_id or None,
             campaign_name=item.campaign_name or None,
             ad_group_name=item.ad_group_name,
         )

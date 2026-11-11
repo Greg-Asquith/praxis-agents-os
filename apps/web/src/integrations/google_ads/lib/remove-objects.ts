@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/remove-objects.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import {
   parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
@@ -77,6 +78,8 @@ const DEPENDANT_NOUNS: Record<DependantKey, string> = {
 export type RemovalDependants = Record<DependantKey, number> & { truncated: boolean }
 
 type RemovalItem = {
+  // From the reference, which names it for campaigns and usually for what sits in one.
+  campaignId: string | null
   customerId: string
   // The entry as received, so cancelling one keeps every reference field of the rest.
   entry: Record<string, unknown>
@@ -90,6 +93,8 @@ type RemovalCheck =
   | {
       unavailable: false
       adGroupName: string | null
+      // The campaign the item sits in, or is; null outside campaigns.
+      campaignId: string | null
       campaignName: string | null
       dependants: RemovalDependants
       name: string
@@ -108,6 +113,7 @@ export type RemovalRow = {
   alreadyRemoved: boolean
   // What the removal takes with it, or for a label what it comes off; empty when nothing.
   alsoRemoves: string
+  campaignId: string | null
   campaignName: string | null
   cancelled: boolean
   dependants: RemovalDependants
@@ -179,6 +185,7 @@ function parseCheck(value: unknown): RemovalCheck {
   return {
     unavailable: false,
     adGroupName: nullableText(value["ad_group_name"]),
+    campaignId: googleAdsId(value["campaign_id"]),
     campaignName: nullableText(value["campaign_name"]),
     dependants: parseDependants(value["dependants"]),
     name,
@@ -195,7 +202,14 @@ function parseItem(value: unknown): RemovalItem | null {
   const customerId = googleAdsId(reference["customer_id"])
   const key = customerId === null ? null : removalResourceName(kind, customerId, reference)
   if (customerId === null || key === null) return null
-  return { customerId, entry: value, key, kind, label: nullableText(reference["label"]) ?? key }
+  return {
+    campaignId: googleAdsId(reference["campaign_id"]),
+    customerId,
+    entry: value,
+    key,
+    kind,
+    label: nullableText(reference["label"]) ?? key,
+  }
 }
 
 /** Reads `items` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
@@ -251,6 +265,7 @@ export function removalRows(proposed: RemoveObjectsArgs, current: RemoveObjectsA
     return {
       alreadyRemoved: !check.unavailable && check.status === "REMOVED",
       alsoRemoves: alsoRemovesText(item.kind, dependants),
+      campaignId: (check.unavailable ? null : check.campaignId) ?? item.campaignId,
       campaignName: check.unavailable ? null : check.campaignName,
       cancelled: !kept.has(item.key),
       dependants,
@@ -292,6 +307,63 @@ export function kindDetail(kind: RemovalKind, rows: readonly RemovalRow[]): stri
   const counts = removalCounts(rows.filter((row) => row.item.kind === kind)).dependants
   const text = dependantsText(counts)
   return text ? `takes ${text} with them` : undefined
+}
+
+// Shared budgets, labels, strategies, and lists sit outside every campaign.
+const SHARED_KINDS: ReadonlySet<RemovalKind> = new Set([
+  "budget",
+  "label",
+  "bidding_strategy",
+  "negative_keyword_list",
+])
+const OUTSIDE_CAMPAIGNS = "outside"
+// An item Google couldn't read, whose reference doesn't name its campaign.
+const UNKNOWN_CAMPAIGN = "unknown"
+
+/** The campaign row a removal sits under; a removed campaign is its own. */
+export function removalParentKey(row: RemovalRow): string {
+  const campaign = SHARED_KINDS.has(row.item.kind)
+    ? OUTSIDE_CAMPAIGNS
+    : (row.campaignId ?? UNKNOWN_CAMPAIGN)
+  return `${row.item.customerId}:${campaign}`
+}
+
+function parentName(key: string, items: readonly RemovalRow[]): string {
+  if (key.endsWith(`:${OUTSIDE_CAMPAIGNS}`)) return "Not in a Campaign"
+  if (key.endsWith(`:${UNKNOWN_CAMPAIGN}`)) return "Couldn't Check"
+  const removed = items.find((row) => row.item.kind === "campaign")
+  return removed?.name ?? items.find((row) => row.campaignName)?.campaignName ?? "Campaign"
+}
+
+/** One row per campaign the removals sit in, in the order its items first appear. */
+export function removalParents(
+  rows: readonly RemovalRow[],
+  accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
+  showAccount: boolean
+): ParentRow[] {
+  const parents = new Map<string, RemovalRow[]>()
+  for (const row of rows) {
+    const key = removalParentKey(row)
+    parents.set(key, [...(parents.get(key) ?? []), row])
+  }
+  return [...parents].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const problems = live.filter((row) => row.problem !== null).length
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.item.customerId)?.label ?? null) : null,
+      key,
+      name: parentName(key, items),
+      problems,
+      values: {
+        also: dependantsText(removalCounts(live).dependants) || "—",
+        items: live.length,
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+      },
+    }
+  })
 }
 
 /** The `items` value with the given rows cancelled or restored. */

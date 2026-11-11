@@ -14,6 +14,7 @@ import {
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import {
   editedItems,
   kindDetail,
@@ -21,6 +22,8 @@ import {
   REMOVAL_KINDS,
   removalBannerDetail,
   removalCounts,
+  removalParentKey,
+  removalParents,
   removalRows,
   type RemovalKind,
   type RemovalRow,
@@ -33,9 +36,16 @@ const TOOLS_FROM = 10
 const COLUMNS: DataColumn[] = [
   { key: "item", kind: "text", label: "Item", width: 300 },
   { key: "kind", kind: "text", label: "Kind", width: 120 },
-  { key: "campaign", kind: "text", label: "Campaign", width: 200 },
+  // The campaigns table above names them, so this column is for the chooser and the export.
+  { key: "campaign", kind: "text", label: "Campaign", width: 200, hidden: true },
   { key: "also", kind: "text", label: "Also Removes", width: 200 },
   { key: "cancel", kind: "text", label: "Cancel", width: 90 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "items", kind: "number", label: "Items", width: 90 },
+  { key: "also", kind: "text", label: "Also Removes", width: 200 },
+  { key: "problems", kind: "text", label: "Problems", width: 130 },
 ]
 
 export function RemoveObjectsApproval({
@@ -56,17 +66,25 @@ export function RemoveObjectsApproval({
   const byKey = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows])
   const tools = rows.length >= TOOLS_FROM
   const tabs = useMemo(() => removalTabs(byKey), [byKey])
+  const [campaign, setCampaign] = useState<string | null>(null)
+  const accountCount = new Set(rows.map((row) => row.item.customerId)).size
+  const parents = useMemo(
+    () => removalParents(rows, proposed.accounts, accountCount > 1),
+    [accountCount, proposed.accounts, rows]
+  )
   const tableRows = useMemo<DataRow[]>(
     () =>
-      rows.map((row) => ({
-        also: row.alsoRemoves || "—",
-        campaign: row.campaignName ?? "—",
-        cancel: "",
-        item: row.name,
-        key: row.key,
-        kind: REMOVAL_KIND_TITLES[row.item.kind].one,
-      })),
-    [rows]
+      rows
+        .filter((row) => campaign === null || removalParentKey(row) === campaign)
+        .map((row) => ({
+          also: row.alsoRemoves || "—",
+          campaign: row.campaignName ?? "—",
+          cancel: "",
+          item: row.name,
+          key: row.key,
+          kind: REMOVAL_KIND_TITLES[row.item.kind].one,
+        })),
+    [campaign, rows]
   )
 
   const edit = (keys: Iterable<string>, cancelled: boolean) => {
@@ -130,10 +148,34 @@ export function RemoveObjectsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setCampaign(null)
               setTab("attention")
             }}
           />
         </>
+      ) : null}
+      {parents.length > 1 ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={(key) => {
+            edit(
+              rows.filter((row) => removalParentKey(row) === key).map((row) => row.key),
+              true
+            )
+          }}
+          onSelect={setCampaign}
+          onUndo={(key) => {
+            edit(
+              rows.filter((row) => removalParentKey(row) === key).map((row) => row.key),
+              false
+            )
+          }}
+          rowNoun={["campaign", "campaigns"]}
+          rows={parents}
+          selected={campaign}
+        />
       ) : null}
       <DataTable
         activeTab={tab}
