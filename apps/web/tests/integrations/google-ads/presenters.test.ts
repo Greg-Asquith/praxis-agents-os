@@ -10,7 +10,6 @@ import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
-import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
@@ -154,86 +153,6 @@ describe("Google Ads tool presenters", () => {
     }
   })
 
-  it.each([
-    {
-      adjustments: [{ device: "MOBILE", bid_modifier: 0.05 }],
-      error: "Set each bid modifier to 0 or between 0.1 and 10 before approving.",
-    },
-    {
-      adjustments: [
-        { device: "MOBILE", bid_modifier: 0.7 },
-        { device: "MOBILE", bid_modifier: 0.8 },
-      ],
-      error: "Choose each device only once before approving.",
-    },
-  ])("blocks invalid edited device adjustments: $error", ({ adjustments, error }) => {
-    const controls = approvalControls()
-    controls.decision.edits = { adjustments }
-    const html = render(
-      googleAdsDeviceBidModifiersPresenter.render(
-        props(
-          {
-            id: "device-bids-invalid-approval",
-            kind: "approval",
-            name: "google_ads_update_device_bid_modifiers",
-            status: "awaiting_approval",
-            args: {
-              campaign_ids: [campaignReference("10", "Summer Sale")],
-              adjustments: [{ device: "DESKTOP", bid_modifier: 1.2 }],
-            },
-          },
-          controls,
-          toolUi(deviceBidModifierFields())
-        )
-      )
-    )
-
-    expect(html).toContain(error)
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
-    expect(html).not.toContain("Raise by 20% (1.2×)")
-  })
-
-  it.each([
-    ["previous_bid_modifier", "0.7"],
-    ["previous_bid_modifier", Number.NaN],
-    ["external_ref", 123],
-  ])("rejects malformed nullable device field %s", (key, value) => {
-    const html = render(
-      googleAdsDeviceBidModifiersPresenter.render(
-        props({
-          id: "invalid-device",
-          kind: "result",
-          name: "google_ads_update_device_bid_modifiers",
-          status: "completed",
-          result: {
-            results: [
-              entry({
-                campaigns: [
-                  {
-                    campaign_id: "10",
-                    campaign_name: "Brand",
-                    bidding_strategy_type: "MANUAL_CPC",
-                    target_cpa_configured: false,
-                    devices: [
-                      {
-                        device: "MOBILE",
-                        requested_bid_modifier: 0.7,
-                        outcome: "updated",
-                        external_ref: "customers/123/campaignCriteria/10~1",
-                        [key]: value,
-                      },
-                    ],
-                  },
-                ],
-              }),
-            ],
-          },
-        })
-      )
-    )
-    expect(html).toContain("couldn&#x27;t confirm the device bid adjustments outcome")
-  })
-
   it("groups label approval targets by type without dumping raw arguments", () => {
     const html = render(
       googleAdsLabelAssociationsPresenter.render(
@@ -362,24 +281,6 @@ function props(
   }
 }
 
-function field(
-  key: string,
-  label: string,
-  format: ToolUiField["format"],
-  editable = false
-): ToolUiField {
-  return {
-    key,
-    label,
-    format,
-    editable,
-    min_rows: 0,
-    secondary: false,
-    options: [],
-    placeholder: "",
-  }
-}
-
 function toolUi(argFields: ToolUiField[]): ToolUi {
   return {
     approval_prompt: "",
@@ -392,32 +293,6 @@ function toolUi(argFields: ToolUiField[]): ToolUi {
     result_fields: [],
     running_label: "",
   }
-}
-
-function deviceBidModifierFields(): ToolUiField[] {
-  return [
-    field("campaign_ids", "Campaigns", "entity_list", true),
-    {
-      ...field("adjustments", "Device Bid Adjustments", "records", true),
-      min_rows: 1,
-      columns: [
-        {
-          key: "device",
-          label: "Device",
-          options: ["DESKTOP", "MOBILE", "TABLET"],
-          placeholder: "",
-          required: true,
-        },
-        {
-          key: "bid_modifier",
-          label: "Bid Modifier",
-          options: [],
-          placeholder: "",
-          required: true,
-        },
-      ],
-    },
-  ]
 }
 
 function campaignReference(externalId: string, label: string) {

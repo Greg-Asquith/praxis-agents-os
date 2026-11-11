@@ -12,19 +12,34 @@ from services.integrations.http import IntegrationRequestPolicy
 from ..client import GoogleAdsClient, normalize_customer_id
 from .utils import stream_rows
 
-type CriterionKind = Literal["location", "excluded_location", "radius", "language"]
-type CriterionType = Literal["LOCATION", "PROXIMITY", "LANGUAGE"]
+type CriterionKind = Literal[
+    "location", "excluded_location", "radius", "language", "device", "schedule"
+]
+type CriterionType = Literal["LOCATION", "PROXIMITY", "LANGUAGE", "DEVICE", "AD_SCHEDULE"]
 
 # Google allows 10,000 locations a campaign, so this only stops an unbounded read.
 _MAX_CRITERIA = 50_000
 _SETTING_PATH = "geoTargetTypeSetting.positiveGeoTargetType"
 BID_MODIFIER_PATH = "bidModifier"
+# Google's quarter-hour minutes, by the minutes they stand for.
+SCHEDULE_MINUTES = {0: "ZERO", 15: "FIFTEEN", 30: "THIRTY", 45: "FORTY_FIVE"}
+_MINUTES = {name: minutes for minutes, name in SCHEDULE_MINUTES.items()}
+# Strategies that ignore device bid adjustments other than excluding the device.
+_IGNORE_DEVICE_BIDS = {"TARGET_ROAS", "MAXIMIZE_CONVERSION_VALUE"}
+# Smart Bidding sets bids for each auction, so it ignores ad schedule bid adjustments.
+_IGNORE_SCHEDULE_BIDS = {
+    "TARGET_CPA",
+    "TARGET_ROAS",
+    "MAXIMIZE_CONVERSIONS",
+    "MAXIMIZE_CONVERSION_VALUE",
+}
 
 
 @dataclass(frozen=True, slots=True)
 class LiveCriterion:
     kind: CriterionKind
-    # The location or language key, or a radius's identity from `radius_value`.
+    # The location or language key, the device type, or the identity from `radius_value` or
+    # `schedule_value`.
     value: str
     resource_name: str
     criterion_id: str
@@ -45,6 +60,18 @@ class LiveCampaignTargeting:
     location_setting: str | None
     # By `criterion_key`.
     criteria: Mapping[str, LiveCriterion]
+    bidding_strategy: str | None = None
+    # Maximize Conversions with a target CPA uses device bid adjustments.
+    target_cpa: bool = False
+
+    def ignores_device_bids(self) -> bool:
+        strategy = self.bidding_strategy
+        return strategy in _IGNORE_DEVICE_BIDS or (
+            strategy == "MAXIMIZE_CONVERSIONS" and not self.target_cpa
+        )
+
+    def ignores_schedule_bids(self) -> bool:
+        return self.bidding_strategy in _IGNORE_SCHEDULE_BIDS
 
     def values(self) -> dict[str, dict[str, Any]]:
         """Returns this campaign's live values by edit key, for the edit seam."""
@@ -64,6 +91,18 @@ def criterion_key(campaign: str, kind: CriterionKind, value: str) -> str:
 
 def radius_value(latitude_micro: int, longitude_micro: int, radius: float, units: str) -> str:
     return f"{latitude_micro},{longitude_micro},{radius:g},{units}"
+
+
+def schedule_value(day: str, start: str, end: str) -> str:
+    """Names one weekly window, such as `MONDAY,07:00,22:00`."""
+    return f"{day},{start},{end}"
+
+
+def _clock(hour: Any, minute: Any) -> str | None:
+    minutes = _MINUTES.get(str(minute or "ZERO"))
+    if minutes is None or not isinstance(hour, int | str) or not str(hour).isdigit():
+        return None
+    return f"{int(hour):02d}:{minutes:02d}"
 
 
 def _live_criterion(row: Mapping[str, Any]) -> LiveCriterion | None:
@@ -88,6 +127,20 @@ def _live_criterion(row: Mapping[str, Any]) -> LiveCriterion | None:
         language = row.get("language") or {}
         key = str(language.get("languageConstant", "")).rpartition("/")[2]
         return LiveCriterion(kind="language", value=key, **common) if key.isdigit() else None
+    if criterion_type == "DEVICE":
+        device = str((row.get("device") or {}).get("type", ""))
+        # A device's modifier of zero excludes it, so only a missing one means no adjustment.
+        raw = row.get("bidModifier")
+        common["bid_modifier"] = 1.0 if raw is None else round(float(raw), 2)
+        return LiveCriterion(kind="device", value=device, **common) if device else None
+    if criterion_type == "AD_SCHEDULE":
+        schedule = row.get("adSchedule") or {}
+        day = schedule.get("dayOfWeek")
+        start = _clock(schedule.get("startHour", 0), schedule.get("startMinute"))
+        end = _clock(schedule.get("endHour", 0), schedule.get("endMinute"))
+        if not isinstance(day, str) or start is None or end is None:
+            return None
+        return LiveCriterion(kind="schedule", value=schedule_value(day, start, end), **common)
     if criterion_type == "PROXIMITY":
         proximity = row.get("proximity") or {}
         point = proximity.get("geoPoint") or {}
@@ -136,7 +189,9 @@ async def read_campaign_targeting(
         json={
             "query": (
                 "SELECT campaign.id, campaign.name, campaign.status, "  # noqa: S608 -- digit-only ids
-                "campaign.advertising_channel_type, "
+                "campaign.advertising_channel_type, campaign.bidding_strategy_type, "
+                "campaign.maximize_conversions.target_cpa_micros, "
+                "bidding_strategy.maximize_conversions.target_cpa_micros, "
                 "campaign.geo_target_type_setting.positive_geo_target_type "
                 f"FROM campaign WHERE campaign.id IN ({id_filter})"
             )
@@ -156,7 +211,12 @@ async def read_campaign_targeting(
                 "campaign_criterion.language.language_constant, "
                 "campaign_criterion.proximity.geo_point.latitude_in_micro_degrees, "
                 "campaign_criterion.proximity.geo_point.longitude_in_micro_degrees, "
-                "campaign_criterion.proximity.radius, campaign_criterion.proximity.radius_units "
+                "campaign_criterion.proximity.radius, campaign_criterion.proximity.radius_units, "
+                "campaign_criterion.device.type, campaign_criterion.ad_schedule.day_of_week, "
+                "campaign_criterion.ad_schedule.start_hour, "
+                "campaign_criterion.ad_schedule.start_minute, "
+                "campaign_criterion.ad_schedule.end_hour, "
+                "campaign_criterion.ad_schedule.end_minute "
                 f"FROM campaign_criterion WHERE campaign.id IN ({id_filter}) "
                 f"AND campaign_criterion.type IN ({type_filter}) "
                 "AND campaign_criterion.status != 'REMOVED'"
@@ -166,7 +226,8 @@ async def read_campaign_targeting(
     rows = stream_rows(criteria, max_rows=_MAX_CRITERIA)
     if len(rows) >= _MAX_CRITERIA:
         raise IntegrationValidationError(
-            "These campaigns hold too many locations to check at once. Change fewer campaigns.",
+            "These campaigns hold too many targeting settings to check at once. Change fewer "
+            "campaigns.",
             provider_key="google_ads",
             failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
         )
@@ -190,5 +251,14 @@ async def read_campaign_targeting(
             channel=str(campaign.get("advertisingChannelType") or "UNKNOWN"),
             location_setting=setting.get("positiveGeoTargetType"),
             criteria=by_campaign.get(campaign_id, {}),
+            bidding_strategy=campaign.get("biddingStrategyType"),
+            target_cpa=_target_cpa(campaign) or _target_cpa(row.get("biddingStrategy")),
         )
     return live
+
+
+def _target_cpa(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    micros = (value.get("maximizeConversions") or {}).get("targetCpaMicros")
+    return str(micros or "").isdigit() and int(micros) > 0

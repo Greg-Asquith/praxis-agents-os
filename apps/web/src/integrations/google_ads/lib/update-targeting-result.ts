@@ -1,11 +1,17 @@
 // apps/web/src/integrations/google_ads/lib/update-targeting-result.ts
 
-import { bidText } from "@/integrations/google_ads/lib/update-targeting"
+import { bidText, deviceText } from "@/integrations/google_ads/lib/update-targeting"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
 export type TargetingOutcome = "updated" | "already_set" | "failed" | "unverified"
 export type TargetingSetting =
-  "locations" | "excluded_locations" | "radius" | "languages" | "location_setting"
+  | "locations"
+  | "excluded_locations"
+  | "radius"
+  | "languages"
+  | "location_setting"
+  | "devices"
+  | "ad_schedule"
 type TargetingAction = "add" | "remove" | "change_bid" | "set"
 
 type OutcomeItem = {
@@ -27,11 +33,21 @@ export type TargetingOutcomeRow = {
 
 export type UpdateTargetingResult = { accountId: string; rows: TargetingOutcomeRow[] }
 
-const SETTINGS = ["locations", "excluded_locations", "radius", "languages", "location_setting"]
+const SETTINGS = [
+  "locations",
+  "excluded_locations",
+  "radius",
+  "languages",
+  "location_setting",
+  "devices",
+  "ad_schedule",
+]
 const ACTIONS = ["add", "remove", "change_bid", "set"]
 const OUTCOMES = ["updated", "already_set", "failed", "unverified"]
 
 export const SETTING_TITLES: Record<TargetingSetting, string> = {
+  ad_schedule: "Ad Schedule",
+  devices: "Devices",
   excluded_locations: "Excluded",
   languages: "Languages",
   location_setting: "Who Counts",
@@ -104,8 +120,19 @@ function itemsText(row: TargetingOutcomeRow): string {
   return more > 0 ? `${names.join(", ")} and ${String(more)} more` : names.join(", ")
 }
 
+function devicesText(row: TargetingOutcomeRow, previous: boolean): string {
+  return row.items
+    .map((item) => {
+      const bidAdjustment = (previous ? item.previousBidAdjustment : item.bidAdjustment) ?? 0
+      return `${item.name} ${deviceText({ bidAdjustment, excluded: false })}`
+    })
+    .join(", ")
+}
+
 /** The row's Before and After, in the words the card uses. */
 export function rowChange(row: TargetingOutcomeRow): { after: string; before: string } {
+  if (row.setting === "devices")
+    return { after: devicesText(row, false), before: devicesText(row, true) }
   if (row.action === "set") {
     const name = row.items[0]?.name ?? ""
     return { after: LOCATION_SETTING_LABELS[name] ?? name, before: "—" }

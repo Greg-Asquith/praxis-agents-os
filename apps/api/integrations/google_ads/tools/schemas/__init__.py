@@ -2,10 +2,6 @@
 
 """Operation-specific Google Ads tool-result contracts."""
 
-from .device_bid_modifiers import (
-    GoogleAdsDeviceAdjustment,
-    GoogleAdsDeviceBidModifierOutput,
-)
 from .labels import (
     GoogleAdsApplyLabelsOutput,
     GoogleAdsCreateLabelsOutput,
@@ -32,8 +28,6 @@ __all__ = [
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsCpcBid",
     "GoogleAdsCreateLabelsOutput",
-    "GoogleAdsDeviceAdjustment",
-    "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",
     "GoogleAdsGetReportFieldOutput",
     "GoogleAdsJsonValue",

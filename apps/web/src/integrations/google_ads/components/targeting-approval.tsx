@@ -17,8 +17,14 @@ import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import type { EntityChoice } from "@/features/tools/types"
+import {
+  ScheduleGrid,
+  ScheduleWindows,
+} from "@/integrations/google_ads/components/ad-schedule-editor"
 import { BidAdjustment } from "@/integrations/google_ads/components/bid-adjustment"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
+import { DeviceAdjustments } from "@/integrations/google_ads/components/device-adjustments"
+import { ALL_WEEK, type ScheduleWindow } from "@/integrations/google_ads/lib/ad-schedule"
 import { LocationPaste } from "@/integrations/google_ads/components/location-paste"
 import { LOCATION_SETTING_LABELS } from "@/integrations/google_ads/lib/update-targeting-result"
 import {
@@ -27,12 +33,17 @@ import {
   campaignRows,
   campaignsByDifference,
   campaignsOn,
+  changesPlaces,
+  clearDevices,
   clearedChange,
+  deviceLines,
   editInScope,
   editRadius,
   itemCount,
   keepRadius,
   languagesText,
+  liveSchedule,
+  liveScheduleText,
   needsCheck,
   parseCancelled,
   radiusIdentity,
@@ -40,12 +51,17 @@ import {
   radiusRemovals,
   radiusText,
   removeTarget,
+  requestedSchedule,
+  schedulesValid,
   scopedArgs,
   serializeChanges,
   setBidAdjustment,
+  setDevice,
   setLocationSetting,
+  setSchedule,
   shownLocationSetting,
   targetingCounts,
+  targetingNotes,
   targetLines,
   unchangedLanguages,
   unchangedPlaces,
@@ -55,6 +71,7 @@ import {
   type LocationSetting,
   type RadiusTarget,
   type RadiusUnits,
+  type ScheduleRequest,
   type Target,
   type TargetField,
   type TargetingChange,
@@ -133,6 +150,8 @@ export function TargetingApproval({
 }) {
   const [adding, setAdding] = useState(false)
   const [chosen, setChosen] = useState<string | null>(null)
+  // Places stay behind More Settings when the request only changes devices or the schedule.
+  const [showPlaces, setShowPlaces] = useState(false)
   const cancelled = useMemo(() => parseCancelled(controls.retained), [controls.retained])
   const rows = useMemo(() => campaignRows(args, checked, cancelled), [args, checked, cancelled])
   const counts = targetingCounts(rows)
@@ -145,6 +164,12 @@ export function TargetingApproval({
   const parents = useMemo(() => campaignsByDifference(rows).map(parentRow), [rows])
   // With one campaign there's no table, so its problems show without a click.
   const problemRow = open ?? (many ? null : rows[0])
+  const schedule = requestedSchedule(shown)
+  const devicesOn = shown.changes.some((change) => change.devices.length > 0)
+  const placesOn =
+    showPlaces || shown.changes.some(changesPlaces) || (!devicesOn && schedule.kind === "none")
+  const notes = targetingNotes(shown)
+  const timeZone = args.accounts.get(shown.changes[0]?.key.split("/")[1] ?? "")?.timeZone
 
   // A campaign left with nothing leaves the request, and stays beside it so Undo can restore it.
   const save = (next: readonly TargetingChange[]) => {
@@ -204,7 +229,12 @@ export function TargetingApproval({
       ) : null}
       {many ? (
         <ParentTable
-          columns={PARENT_COLUMNS}
+          columns={
+            // Languages only matter when a campaign holds or changes one.
+            parents.some((row) => row.values["languages"] !== "—")
+              ? PARENT_COLUMNS
+              : PARENT_COLUMNS.filter((column) => column.key !== "languages")
+          }
           disabled={disabled}
           label="Campaigns"
           onCancel={cancelCampaign}
@@ -245,105 +275,213 @@ export function TargetingApproval({
           {problemRow && problemRow.problems.length > 0 ? (
             <CampaignProblems row={problemRow} />
           ) : null}
-          <section aria-label="Where ads can show" className="overflow-hidden rounded-lg border">
-            <h4 className="bg-muted/40 border-b px-3 py-2 text-sm font-semibold">
-              Where Ads Can Show
-            </h4>
-            <div className="divide-y">
-              <LocationRows
+          {notes.map((note) => (
+            <p
+              key={note}
+              className="bg-warning/10 text-warning-text flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
+            >
+              <InfoIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              {note}
+            </p>
+          ))}
+          {schedule.kind === "none" ? null : (
+            <section aria-label="Ad schedule" className="overflow-hidden rounded-lg border">
+              <SectionHeading
+                detail={timeZone ? `Times are in ${timeZone}` : null}
+                disabled={disabled}
+                onCancel={() => {
+                  edit((changes) => setSchedule(changes, null))
+                }}
+                title="Ad Schedule"
+              />
+              <ScheduleBody
+                disabled={disabled}
+                live={liveSchedule(shown)}
+                onChange={(next) => {
+                  edit((changes) => setSchedule(changes, next))
+                }}
+                request={schedule}
+              />
+            </section>
+          )}
+          {devicesOn ? (
+            <section aria-label="Devices" className="overflow-hidden rounded-lg border">
+              <SectionHeading
+                disabled={disabled}
+                onCancel={() => {
+                  edit(clearDevices)
+                }}
+                title="Devices"
+              />
+              <DeviceAdjustments
+                disabled={disabled}
+                lines={deviceLines(shown)}
+                onChange={(device, next) => {
+                  save(editInScope(addable(), scope, (changes) => setDevice(changes, device, next)))
+                }}
+              />
+            </section>
+          ) : null}
+          {placesOn ? (
+            <>
+              <section
+                aria-label="Where ads can show"
+                className="overflow-hidden rounded-lg border"
+              >
+                <h4 className="bg-muted/40 border-b px-3 py-2 text-sm font-semibold">
+                  Where Ads Can Show
+                </h4>
+                <div className="divide-y">
+                  <LocationRows
+                    args={shown}
+                    disabled={disabled}
+                    lines={lines}
+                    many={shown.changes.length > 1}
+                    onBid={(key, bid) => {
+                      edit((changes) => setBidAdjustment(changes, new Set([key]), bid))
+                    }}
+                    onCancel={removeMany}
+                    onKeepRadius={(id) => {
+                      edit((changes) => keepRadius(changes, id))
+                    }}
+                    onRadius={(identity, next) => {
+                      edit((changes) => editRadius(changes, identity, next))
+                    }}
+                  />
+                  {adding ? (
+                    <AddPanel
+                      disabled={disabled}
+                      lines={lines}
+                      onAdd={addTargets}
+                      onDone={() => {
+                        setAdding(false)
+                      }}
+                      onRadius={(target) => {
+                        save(
+                          editInScope(addable(), scope, (changes) =>
+                            editRadius(changes, null, target)
+                          )
+                        )
+                      }}
+                    />
+                  ) : (
+                    <div className="p-1.5">
+                      <Button
+                        disabled={disabled}
+                        onClick={() => {
+                          setAdding(true)
+                        }}
+                        type="button"
+                        variant="ghost"
+                      >
+                        <PlusIcon aria-hidden="true" />
+                        Add or Exclude a Location
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </section>
+              <LanguageSection
                 args={shown}
                 disabled={disabled}
                 lines={lines}
                 many={shown.changes.length > 1}
-                onBid={(key, bid) => {
-                  edit((changes) => setBidAdjustment(changes, new Set([key]), bid))
+                onAdd={(choice) => {
+                  addTargets("add_languages", [choice])
                 }}
                 onCancel={removeMany}
-                onKeepRadius={(id) => {
-                  edit((changes) => keepRadius(changes, id))
-                }}
-                onRadius={(identity, next) => {
-                  edit((changes) => editRadius(changes, identity, next))
-                }}
               />
-              {adding ? (
-                <AddPanel
-                  disabled={disabled}
-                  lines={lines}
-                  onAdd={addTargets}
-                  onDone={() => {
-                    setAdding(false)
-                  }}
-                  onRadius={(target) => {
-                    save(
-                      editInScope(addable(), scope, (changes) => editRadius(changes, null, target))
-                    )
-                  }}
-                />
-              ) : (
-                <div className="p-1.5">
-                  <Button
-                    disabled={disabled}
-                    onClick={() => {
-                      setAdding(true)
-                    }}
-                    type="button"
-                    variant="ghost"
-                  >
-                    <PlusIcon aria-hidden="true" />
-                    Add or Exclude a Location
-                  </Button>
-                </div>
-              )}
-            </div>
-          </section>
-          <LanguageSection
-            args={shown}
-            disabled={disabled}
-            lines={lines}
-            many={shown.changes.length > 1}
-            onAdd={(choice) => {
-              addTargets("add_languages", [choice])
-            }}
-            onCancel={removeMany}
-          />
+            </>
+          ) : null}
           <SettingRows ariaLabel="More settings" defaultOpen={null}>
-            <SettingRow
-              rowKey="location-setting"
-              summary={settingSummary(shown)}
-              title="Who Counts"
-            >
-              <SegmentedChoice
-                ariaLabel="Who counts as being in these places"
-                disabled={disabled}
-                onChange={(value: LocationSetting) => {
-                  edit((changes) => setLocationSetting(changes, value))
-                }}
-                options={SETTING_OPTIONS}
-                value={shownLocationSetting(shown)}
-              />
-              {shown.changes.some((change) => change.setting !== null) ? (
+            {placesOn ? null : (
+              <SettingRow rowKey="places" summary="No change" title="Locations">
                 <Button
                   className="w-fit"
                   disabled={disabled}
                   onClick={() => {
-                    edit((changes) => setLocationSetting(changes, null))
+                    setShowPlaces(true)
                   }}
                   size="sm"
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                 >
-                  Cancel This Change
+                  Change Locations or Languages
                 </Button>
-              ) : null}
-            </SettingRow>
+              </SettingRow>
+            )}
+            {schedule.kind === "none" ? (
+              <SettingRow rowKey="schedule" summary={liveScheduleText(shown)} title="Ad Schedule">
+                <Button
+                  className="w-fit"
+                  disabled={disabled}
+                  onClick={() => {
+                    const live = liveSchedule(shown)
+                    save(
+                      editInScope(addable(), scope, (changes) =>
+                        setSchedule(changes, startingWeek(live))
+                      )
+                    )
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Change the Schedule
+                </Button>
+              </SettingRow>
+            ) : null}
+            {devicesOn ? null : (
+              <SettingRow rowKey="devices" summary="No change" title="Devices">
+                <DeviceAdjustments
+                  disabled={disabled}
+                  lines={deviceLines(shown)}
+                  onChange={(device, next) => {
+                    save(
+                      editInScope(addable(), scope, (changes) => setDevice(changes, device, next))
+                    )
+                  }}
+                />
+              </SettingRow>
+            )}
+            {placesOn ? (
+              <SettingRow
+                rowKey="location-setting"
+                summary={settingSummary(shown)}
+                title="Who Counts"
+              >
+                <SegmentedChoice
+                  ariaLabel="Who counts as being in these places"
+                  disabled={disabled}
+                  onChange={(value: LocationSetting) => {
+                    edit((changes) => setLocationSetting(changes, value))
+                  }}
+                  options={SETTING_OPTIONS}
+                  value={shownLocationSetting(shown)}
+                />
+                {shown.changes.some((change) => change.setting !== null) ? (
+                  <Button
+                    className="w-fit"
+                    disabled={disabled}
+                    onClick={() => {
+                      edit((changes) => setLocationSetting(changes, null))
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    Cancel This Change
+                  </Button>
+                ) : null}
+              </SettingRow>
+            ) : null}
           </SettingRows>
         </>
       )}
       {needsCheck(args, checked) && args.changes.length > 0 ? (
         <CheckChanges
-          canCheck
           disabled={disabled}
+          canCheck={schedulesValid(args)}
           label={
             [...checked.checks.values()].some((check) => check.unavailable)
               ? "Check Again"
@@ -353,6 +491,114 @@ export function TargetingApproval({
           onCheck={controls.onReview}
           submitting={controls.submitting}
         />
+      ) : null}
+    </div>
+  )
+}
+
+function SectionHeading({
+  detail = null,
+  disabled,
+  onCancel,
+  title,
+}: {
+  detail?: string | null
+  disabled: boolean
+  onCancel: () => void
+  title: string
+}) {
+  return (
+    <div className="bg-muted/40 flex min-w-0 items-center gap-2 border-b py-1 pr-1.5 pl-3">
+      <h4 className="text-sm font-semibold">{title}</h4>
+      {detail ? <span className="text-muted-foreground text-xs">{detail}</span> : null}
+      <Button
+        className="ml-auto"
+        disabled={disabled}
+        onClick={onCancel}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        Cancel This Change
+      </Button>
+    </div>
+  )
+}
+
+/** Now as a line, and After as a grid with its windows, or why there's nothing to edit here. */
+/** The live week to edit from, or every hour of every day when ads run at any time. */
+function startingWeek(live: readonly ScheduleWindow[] | null): ScheduleWindow[] {
+  return [...(live && live.length > 0 ? live : ALL_WEEK)]
+}
+
+function ScheduleBody({
+  disabled,
+  live,
+  onChange,
+  request,
+}: {
+  disabled: boolean
+  // The week every shown campaign runs on now, or null when they differ.
+  live: ScheduleWindow[] | null
+  onChange: (next: ScheduleWindow[] | "clear") => void
+  request: ScheduleRequest
+}) {
+  const now = live ? (
+    <ScheduleGrid label="Now" windows={live} />
+  ) : (
+    <p className="text-sm">
+      <span className="font-medium">Now:</span>{" "}
+      <span className="text-muted-foreground">Differs by campaign</span>
+    </p>
+  )
+  return (
+    <div className="grid min-w-0 gap-3 p-3">
+      {request.kind === "varies" ? (
+        <>
+          {now}
+          <p className="text-sm">
+            Each campaign gets its own schedule. Choose a campaign above to see or change it.
+          </p>
+        </>
+      ) : request.kind === "clear" ? (
+        <>
+          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            {now}
+            <ScheduleGrid label="After" windows={[]} />
+          </div>
+          <Button
+            className="w-fit"
+            disabled={disabled}
+            onClick={() => {
+              onChange(startingWeek(live))
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Choose Times Instead
+          </Button>
+        </>
+      ) : request.kind === "set" ? (
+        <>
+          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            {now}
+            <ScheduleGrid label="After" windows={request.windows} />
+          </div>
+          <ScheduleWindows disabled={disabled} onChange={onChange} windows={request.windows} />
+          <Button
+            className="w-fit"
+            disabled={disabled}
+            onClick={() => {
+              onChange("clear")
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Show Ads at Any Time
+          </Button>
+        </>
       ) : null}
     </div>
   )
@@ -391,8 +637,8 @@ function StatusNote({ args }: { args: UpdateTargetingArgs }) {
       <p className="bg-muted text-foreground/80 flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm">
         <InfoIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         {total === 1
-          ? "This campaign is paused, so it won't show ads in these places until it's turned on."
-          : "These campaigns are paused, so they won't show ads in these places until they're turned on."}
+          ? "This campaign is paused, so these changes won't affect its ads until it's turned on."
+          : "These campaigns are paused, so these changes won't affect their ads until they're turned on."}
       </p>
     )
   const detail =

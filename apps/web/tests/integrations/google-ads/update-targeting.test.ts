@@ -7,18 +7,30 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
+  keptRows,
+  parseTime,
+  rowWindows,
+  scheduleProblems,
+  scheduleRows,
+  scheduleText,
+  type ScheduleWindow,
+} from "@/integrations/google_ads/lib/ad-schedule"
+import {
   addTarget,
   acceptsLanguageAdds,
   campaignRows,
   campaignsByDifference,
   clearedChange,
   editInScope,
+  itemCount,
   needsCheck,
   parseBidAdjustment,
   parseUpdateTargetingArgs,
   pasteBatches,
   removeTarget,
   serializeChanges,
+  setDevice,
+  setSchedule,
   targetingApproveLabel,
   targetingBlock,
   targetingPrompt,
@@ -343,6 +355,105 @@ describe("inputs", () => {
   })
 })
 
+const window = (
+  day: ScheduleWindow["day"],
+  start: string,
+  end: string,
+  bid: number | null = null
+) => ({
+  bidAdjustment: bid,
+  day,
+  end,
+  start,
+})
+
+describe("devices and ad schedule", () => {
+  it("sends devices and the whole week in the server's shape, and counts the week once", () => {
+    const args = parsed()
+    const devices = setDevice(
+      setDevice(args.changes, "MOBILE", { bidAdjustment: -30, excluded: false }),
+      "TABLET",
+      { bidAdjustment: 0, excluded: true }
+    )
+    const next = setSchedule(devices, [
+      window("MONDAY", "07:00", "22:00"),
+      window("TUESDAY", "07:00", "22:00", 10),
+    ])
+
+    const [entry] = serializeChanges(next)
+    expect(entry?.["devices"]).toEqual([
+      { device: "MOBILE", bid_adjustment: -30 },
+      { device: "TABLET", excluded: true },
+    ])
+    expect(entry?.["ad_schedule"]).toEqual([
+      { day: "MONDAY", start: "07:00", end: "22:00", bid_adjustment: null },
+      { day: "TUESDAY", start: "07:00", end: "22:00", bid_adjustment: 10 },
+    ])
+    expect(next[0] && itemCount(next[0])).toBe(4)
+    expect(serializeChanges(setSchedule(next, "clear"))[0]).toMatchObject({
+      ad_schedule: null,
+      clear_ad_schedule: true,
+    })
+  })
+
+  it("reads quarter hours, and flags windows that overlap but not ones that touch", () => {
+    expect(["7", "7:30", "0745", "24:00", "7:10", "24:15"].map(parseTime)).toEqual([
+      "07:00",
+      "07:30",
+      "07:45",
+      "24:00",
+      null,
+      null,
+    ])
+    const rows = scheduleRows([
+      ...["MONDAY", "TUESDAY"].map((day) => window(day as "MONDAY", "07:00", "12:00")),
+      window("MONDAY", "12:00", "14:00", 10),
+      window("TUESDAY", "11:45", "14:00", 10),
+    ])
+    expect(rows.map((row) => row.days.length)).toEqual([2, 1, 1])
+    expect(scheduleProblems(rows)).toEqual([
+      "Overlaps another window on Tue.",
+      null,
+      "Overlaps another window on Tue.",
+    ])
+  })
+
+  it("keeps a new window as its own row even when its times match another's", () => {
+    const weekdays = scheduleRows([
+      window("MONDAY", "09:00", "17:00"),
+      window("TUESDAY", "09:00", "17:00"),
+    ])
+    const added = [
+      ...weekdays,
+      { ...window("SATURDAY", "09:00", "17:00"), days: ["SATURDAY" as const] },
+    ]
+
+    expect(keptRows(added, rowWindows(added))).toHaveLength(2)
+    // A change from outside the editor regroups the windows.
+    expect(keptRows(added, [window("MONDAY", "09:00", "17:00")])).toBeNull()
+  })
+
+  it("words the week in a line, grouping days that share their windows", () => {
+    const weekdays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] as const
+    expect(
+      scheduleText([
+        ...weekdays.map((day) => window(day, "07:00", "22:00")),
+        window("SATURDAY", "09:00", "17:00", -20),
+      ])
+    ).toBe("Mon–Fri 07:00–22:00; Sat 09:00–17:00 (-20%)")
+    expect(scheduleText([])).toBe("Any time, every day")
+  })
+
+  it("blocks approval while windows overlap", () => {
+    const args = parsed()
+    const changes = setSchedule(args.changes, [
+      window("MONDAY", "07:00", "12:00"),
+      window("MONDAY", "11:00", "14:00"),
+    ])
+    expect(targetingBlock({ ...args, changes }, args)).toContain("no windows overlap")
+  })
+})
+
 describe("presenters", () => {
   const html = (node: ReactNode) =>
     renderToStaticMarkup(
@@ -388,6 +499,32 @@ describe("presenters", () => {
       )
     )
     expect(approval).toContain("Add Manchester")
+
+    const timed = {
+      ...raw(),
+      changes: [
+        {
+          campaign: campaign("10"),
+          devices: [{ device: "MOBILE", bid_adjustment: -30 }],
+          ad_schedule: [{ day: "MONDAY", start: "07:00", end: "22:00" }],
+        },
+      ],
+    }
+    const schedule = html(
+      googleAdsUpdateTargetingPresenter.render(
+        props(
+          {
+            id: "targeting-3",
+            kind: "approval",
+            name: "google_ads_update_targeting",
+            status: "awaiting_approval",
+            args: timed,
+          },
+          true
+        )
+      )
+    )
+    expect(schedule).toContain('role="img"')
 
     const result = html(
       googleAdsUpdateTargetingPresenter.render(

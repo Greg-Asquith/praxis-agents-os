@@ -4,7 +4,6 @@
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from decimal import Decimal
 from typing import Any
 
 from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
@@ -46,11 +45,6 @@ def stream_rows(payload: Any, *, max_rows: int | None = None) -> list[dict[str, 
                 if max_rows is not None and len(rows) >= max_rows:
                     return rows
     return rows
-
-
-def rounded_bid_modifier(value: float) -> Decimal:
-    """Normalize a device bid modifier to the approval and audit precision."""
-    return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
 def nonnegative_int(value: Any) -> int | None:

@@ -5,6 +5,14 @@ import {
   parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
+import {
+  parseWindows,
+  sameWindows,
+  scheduleText,
+  scheduleValid,
+  windowEntry,
+  type ScheduleWindow,
+} from "@/integrations/google_ads/lib/ad-schedule"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
@@ -13,6 +21,16 @@ export type TargetField =
   "add_locations" | "exclude_locations" | "remove_locations" | "add_languages" | "remove_languages"
 export type LocationSetting = "PRESENCE_OR_INTEREST" | "PRESENCE"
 export type RadiusUnits = "MILES" | "KILOMETERS"
+export type Device = "MOBILE" | "DESKTOP" | "TABLET"
+
+const DEVICES: readonly Device[] = ["MOBILE", "DESKTOP", "TABLET"]
+export const DEVICE_NAMES: Record<Device, string> = {
+  DESKTOP: "Computers",
+  MOBILE: "Mobile Phones",
+  TABLET: "Tablets",
+}
+// Google reads an excluded device's modifier of 0 as -100%.
+export const EXCLUDED = -100
 
 const MIN_BID_ADJUSTMENT = -90
 const MAX_BID_ADJUSTMENT = 900
@@ -42,14 +60,22 @@ export type RadiusTarget = {
   units: RadiusUnits
 }
 
+// 0 clears the adjustment; excluded stops ads showing on the device.
+export type DeviceTarget = { bidAdjustment: number; device: Device; excluded: boolean }
+
 export type TargetingChange = {
   campaignId: string
+  // Removes every window, so ads can show at any time.
+  clearSchedule: boolean
+  devices: DeviceTarget[]
   // The change as received, so an edit keeps every field.
   entry: Record<string, unknown>
   key: string
   label: string
   radius: RadiusTarget[]
   removeRadius: string[]
+  // The whole week after the change, or null when the schedule doesn't change.
+  schedule: ScheduleWindow[] | null
   setting: LocationSetting | null
   targets: Record<TargetField, Target[]>
 }
@@ -64,14 +90,19 @@ export type TargetingCheck =
       unavailable: false
       alreadySet: number
       channel: string | null
+      // Live adjustments by device, as percents; EXCLUDED means excluded.
+      devices: Map<Device, number>
       itemProblems: ItemProblem[]
       languages: { key: string; name: string }[]
       locationSetting: LocationSetting | null
       locationTotal: number
       locations: ShownLocation[]
       name: string
+      // A warning that doesn't block approval, such as bidding that ignores adjustments.
+      note: string | null
       problem: string | null
       radius: LiveRadius[]
+      schedule: ScheduleWindow[]
       status: string | null
     }
 
@@ -161,6 +192,25 @@ function parseRadius(value: unknown): RadiusTarget[] {
   })
 }
 
+function isDevice(value: unknown): value is Device {
+  return value === "MOBILE" || value === "DESKTOP" || value === "TABLET"
+}
+
+function parseDevices(value: unknown): DeviceTarget[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isRecord(item) || !isDevice(item["device"])) return []
+    const excluded = item["excluded"] === true
+    return [
+      {
+        bidAdjustment: excluded ? 0 : (wholeNumber(item["bid_adjustment"]) ?? 0),
+        device: item["device"],
+        excluded,
+      },
+    ]
+  })
+}
+
 function parseChange(value: unknown): TargetingChange | null {
   if (!isRecord(value) || !isRecord(value["campaign"])) return null
   const customerId = googleAdsId(value["campaign"]["customer_id"])
@@ -169,6 +219,8 @@ function parseChange(value: unknown): TargetingChange | null {
   const key = `customers/${customerId}/campaigns/${campaignId}`
   return {
     campaignId,
+    clearSchedule: value["clear_ad_schedule"] === true,
+    devices: parseDevices(value["devices"]),
     entry: value,
     key,
     label: text(value["campaign"]["label"]) ?? `Campaign ${campaignId}`,
@@ -176,6 +228,7 @@ function parseChange(value: unknown): TargetingChange | null {
     removeRadius: Array.isArray(value["remove_radius"])
       ? value["remove_radius"].flatMap((id) => googleAdsId(id) ?? [])
       : [],
+    schedule: Array.isArray(value["ad_schedule"]) ? parseWindows(value["ad_schedule"]) : null,
     setting: parseSetting(value["location_setting"]),
     targets: {
       add_languages: parseTargets(value["add_languages"]),
@@ -197,6 +250,13 @@ function parseCheck(value: unknown): TargetingCheck {
     unavailable: false,
     alreadySet: Array.isArray(value["already_set"]) ? value["already_set"].length : 0,
     channel: text(value["channel"]),
+    devices: new Map(
+      (Array.isArray(value["devices"]) ? value["devices"] : []).flatMap((item) => {
+        if (!isRecord(item) || !isDevice(item["device"])) return []
+        const bid = wholeNumber(item["bid_adjustment"])
+        return bid === null ? [] : [[item["device"], bid] as const]
+      })
+    ),
     itemProblems: problems.flatMap((item) => {
       if (!isRecord(item)) return []
       const [field, key, message] = [text(item["field"]), text(item["key"]), text(item["message"])]
@@ -224,6 +284,8 @@ function parseCheck(value: unknown): TargetingCheck {
         : []
     }),
     name: text(value["name"]) ?? "Campaign",
+    note: text(value["note"]),
+    schedule: parseWindows(value["ad_schedule"]),
     status: text(value["status"]),
     problem: text(value["problem"]),
     radius: radius.flatMap((item) => {
@@ -320,7 +382,10 @@ export function itemCount(change: TargetingChange): number {
     TARGET_FIELDS.reduce((total, field) => total + change.targets[field].length, 0) +
     change.radius.length +
     change.removeRadius.length +
-    (change.setting === null ? 0 : 1)
+    (change.setting === null ? 0 : 1) +
+    change.devices.length +
+    // The schedule is one change however many windows it has.
+    (change.schedule !== null || change.clearSchedule ? 1 : 0)
   )
 }
 
@@ -334,7 +399,11 @@ function itemProblemText(change: TargetingChange, item: ItemProblem): string {
   const target = (TARGET_FIELDS as readonly string[]).includes(item.field)
     ? change.targets[item.field as TargetField].find((entry) => entry.key === item.key)
     : undefined
-  return target?.name ? `${target.name}: ${item.message}` : item.message
+  const name =
+    target?.name ??
+    (item.field === "devices" && isDevice(item.key) ? DEVICE_NAMES[item.key] : null) ??
+    (item.field === "ad_schedule" ? "Ad schedule" : null)
+  return name ? `${name}: ${item.message}` : item.message
 }
 
 export function targetingCounts(rows: readonly CampaignRow[]) {
@@ -678,8 +747,22 @@ export function whatChanges(change: TargetingChange): string {
     excluded > 0 ? `excludes ${String(excluded)}` : null,
     removed > 0 ? `removes ${String(removed)}` : null,
   ].filter((part) => part !== null)
-  const text = parts.join(", ")
+  const text = [...parts, ...whenAndDevices(change)].join(", ")
   return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "No location change"
+}
+
+function whenAndDevices(change: TargetingChange): string[] {
+  return [
+    change.clearSchedule ? "runs at any time" : change.schedule ? "new schedule" : null,
+    ...change.devices.map(
+      (target) => `${DEVICE_NAMES[target.device].toLowerCase()} ${deviceText(target)}`
+    ),
+  ].filter((part) => part !== null)
+}
+
+export function deviceText(target: Pick<DeviceTarget, "bidAdjustment" | "excluded">): string {
+  if (target.excluded || target.bidAdjustment === EXCLUDED) return "excluded"
+  return bidText(target.bidAdjustment) ?? "no adjustment"
 }
 
 /** Blocked and cancelled campaigns first, then the ones whose change is least like the others. */
@@ -716,6 +799,10 @@ export function needsCheck(args: UpdateTargetingArgs, checked: UpdateTargetingAr
   )
 }
 
+export function schedulesValid(args: UpdateTargetingArgs): boolean {
+  return args.changes.every((change) => change.schedule === null || scheduleValid(change.schedule))
+}
+
 /** Why the request can't be approved yet, or null. */
 export function targetingBlock(
   args: UpdateTargetingArgs | null,
@@ -724,6 +811,8 @@ export function targetingBlock(
   if (args === null) return null
   const counts = targetingCounts(campaignRows(args, checked))
   if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
+  if (!schedulesValid(args))
+    return "Fix the ad schedule's times so no windows overlap, then check again."
   if (needsCheck(args, checked))
     return "Click Check Changes so Google can check your edits, then approve."
   if (counts.problems > 0)
@@ -738,6 +827,7 @@ const LONGEST_NAME_IN_BUTTON = 24
 function soleField(args: UpdateTargetingArgs): { field: TargetField; names: string[] } | null {
   if (args.changes.some((c) => c.radius.length + c.removeRadius.length > 0 || c.setting))
     return null
+  if (args.changes.some((c) => whenAndDevices(c).length > 0)) return null
   const lines = targetLines(args)
   const [first] = lines
   if (!first || lines.some((line) => line.field !== first.field)) return null
@@ -785,7 +875,27 @@ export function targetingPrompt(args: UpdateTargetingArgs): string {
       ? `Add ${nameList(sole.names)} to ${campaign} in ${where}.`
       : `Exclude ${nameList(sole.names)} from ${campaign} in ${where}.`
   }
-  return `Change locations and languages for ${approvalCountLine(args.changes.length, "campaign")} in ${where}.`
+  return `Change ${changedKinds(args)} for ${approvalCountLine(args.changes.length, "campaign")} in ${where}.`
+}
+
+/** Places, the schedule, and device bids, named as the request changes them. */
+function changedKinds(args: UpdateTargetingArgs): string {
+  const kinds = [
+    args.changes.some(changesPlaces) ? "locations and languages" : null,
+    args.changes.some((c) => c.schedule !== null || c.clearSchedule) ? "the ad schedule" : null,
+    args.changes.some((c) => c.devices.length > 0) ? "device bids" : null,
+  ].filter((kind) => kind !== null)
+  const last = kinds.pop() ?? "locations and languages"
+  return kinds.length > 0 ? `${kinds.join(", ")}, and ${last}` : last
+}
+
+/** Whether a change touches locations, languages, radius targets, or who counts. */
+export function changesPlaces(change: TargetingChange): boolean {
+  return (
+    TARGET_FIELDS.some((field) => change.targets[field].length > 0) ||
+    change.radius.length + change.removeRadius.length > 0 ||
+    change.setting !== null
+  )
 }
 
 /** A cancelled campaign with nothing on it, ready for a change the operator adds next. */
@@ -799,6 +909,137 @@ export function clearedChange(change: TargetingChange): TargetingChange {
     remove_languages: [],
     remove_locations: [],
     remove_radius: [],
+    devices: [],
+    ad_schedule: null,
+    clear_ad_schedule: false,
+  })
+}
+
+function deviceEntry(target: DeviceTarget): Record<string, unknown> {
+  return target.excluded
+    ? { device: target.device, excluded: true }
+    : { device: target.device, bid_adjustment: target.bidAdjustment }
+}
+
+/** Sets one device on every campaign, or with null leaves it as it is. */
+export function setDevice(
+  changes: readonly TargetingChange[],
+  device: Device,
+  next: Omit<DeviceTarget, "device"> | null
+): TargetingChange[] {
+  return changes
+    .map((change) => {
+      const kept = change.devices.filter((target) => target.device !== device)
+      const devices = next ? [...kept, { ...next, device }] : kept
+      devices.sort((left, right) => DEVICES.indexOf(left.device) - DEVICES.indexOf(right.device))
+      return withEntry(change, { devices: devices.map(deviceEntry) })
+    })
+    .filter((change) => !isEmpty(change))
+}
+
+export function clearDevices(changes: readonly TargetingChange[]): TargetingChange[] {
+  return changes.map((change) => withEntry(change, { devices: [] })).filter((c) => !isEmpty(c))
+}
+
+/** Gives every campaign this week, "clear" to run at any time, or null to leave it as it is. */
+export function setSchedule(
+  changes: readonly TargetingChange[],
+  next: readonly ScheduleWindow[] | "clear" | null
+): TargetingChange[] {
+  return changes
+    .map((change) =>
+      withEntry(change, {
+        ad_schedule: Array.isArray(next) ? next.map(windowEntry) : null,
+        clear_ad_schedule: next === "clear",
+      })
+    )
+    .filter((change) => !isEmpty(change))
+}
+
+export type ScheduleRequest =
+  | { kind: "none" }
+  | { kind: "clear" }
+  | { kind: "set"; windows: ScheduleWindow[] }
+  // Campaigns ask for different weeks, so one can only be read with its campaign chosen.
+  | { kind: "varies" }
+
+function scheduleRequest(change: TargetingChange): ScheduleRequest {
+  if (change.clearSchedule) return { kind: "clear" }
+  return change.schedule ? { kind: "set", windows: change.schedule } : { kind: "none" }
+}
+
+export function requestedSchedule(args: UpdateTargetingArgs): ScheduleRequest {
+  const [first, ...rest] = args.changes.map(scheduleRequest)
+  if (!first) return { kind: "none" }
+  const same = rest.every(
+    (other) =>
+      other.kind === first.kind &&
+      (other.kind !== "set" || first.kind !== "set" || sameWindows(other.windows, first.windows))
+  )
+  return same ? first : { kind: "varies" }
+}
+
+/** The week every shown campaign runs on now, or null when they differ or one couldn't be read. */
+export function liveSchedule(args: UpdateTargetingArgs): ScheduleWindow[] | null {
+  let shared: ScheduleWindow[] | null = null
+  for (const change of args.changes) {
+    const check = args.checks.get(change.key)
+    if (!check || check.unavailable) return null
+    if (shared === null) shared = check.schedule
+    else if (!sameWindows(shared, check.schedule)) return null
+  }
+  return shared
+}
+
+export function liveScheduleText(args: UpdateTargetingArgs): string {
+  const live = liveSchedule(args)
+  return live ? scheduleText(live) : "Differs by campaign"
+}
+
+export type DeviceLine = {
+  device: Device
+  // The live adjustment every shown campaign shares, or null when they differ.
+  now: number | null
+  // What every shown campaign asks for; null leaves it, "varies" when campaigns differ.
+  requested: DeviceTarget | null | "varies"
+}
+
+export function deviceLines(args: UpdateTargetingArgs): DeviceLine[] {
+  return DEVICES.map((device) => {
+    const nows = new Set(
+      args.changes.map((change) => {
+        const check = args.checks.get(change.key)
+        return check && !check.unavailable ? (check.devices.get(device) ?? 0) : null
+      })
+    )
+    const asks = new Set(
+      args.changes.map((change) => {
+        const target = change.devices.find((item) => item.device === device)
+        return target ? JSON.stringify(target) : null
+      })
+    )
+    const [now] = nows
+    const [ask] = asks
+    return {
+      device,
+      now: nows.size === 1 && now !== undefined ? now : null,
+      requested: asks.size > 1 ? "varies" : ask ? (JSON.parse(ask) as DeviceTarget) : null,
+    }
+  })
+}
+
+/** Warnings from Google's check for the shown campaigns, naming each campaign when there are several. */
+export function targetingNotes(args: UpdateTargetingArgs): string[] {
+  const notes = new Map<string, string[]>()
+  for (const change of args.changes) {
+    const check = args.checks.get(change.key)
+    if (check && !check.unavailable && check.note)
+      notes.set(check.note, [...(notes.get(check.note) ?? []), check.name])
+  }
+  if (args.changes.length === 1) return [...notes.keys()]
+  return [...notes].map(([note, names]) => {
+    const shown = names.length > 3 ? `${String(names.length)} campaigns` : names.join(", ")
+    return `${shown}: ${note}`
   })
 }
 

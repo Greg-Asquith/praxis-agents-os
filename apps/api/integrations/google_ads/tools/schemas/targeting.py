@@ -2,6 +2,7 @@
 
 """Arguments and result contracts for finding and changing Google Ads targeting."""
 
+from itertools import pairwise
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
@@ -22,11 +23,26 @@ type GoogleAdsTargetingKind = Literal["location", "language"]
 type GoogleAdsLocationSetting = Literal["PRESENCE_OR_INTEREST", "PRESENCE"]
 type GoogleAdsRadiusUnits = Literal["MILES", "KILOMETERS"]
 type GoogleAdsTargetingSetting = Literal[
-    "locations", "excluded_locations", "radius", "languages", "location_setting"
+    "locations",
+    "excluded_locations",
+    "radius",
+    "languages",
+    "location_setting",
+    "devices",
+    "ad_schedule",
+]
+type GoogleAdsDevice = Literal["MOBILE", "DESKTOP", "TABLET"]
+type GoogleAdsDay = Literal[
+    "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
 ]
 # Percent, as the card shows it. Google accepts modifiers from 0.1 to 10.0.
 type GoogleAdsBidAdjustment = Annotated[int, Field(ge=-90, le=900)]
 type _Key = Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
+# Quarter hours in the account's time zone; a window can end at 24:00.
+type _Start = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):(00|15|30|45)$")]
+type _End = Annotated[str, Field(pattern=r"^(([01][0-9]|2[0-3]):(00|15|30|45)|24:00)$")]
+# Google allows six windows a day.
+MAX_WINDOWS_PER_DAY = 6
 
 
 class GoogleAdsTargetingOption(GoogleAdsStrictModel):
@@ -76,6 +92,52 @@ class GoogleAdsRadiusTarget(GoogleAdsStrictModel):
     bid_adjustment: GoogleAdsBidAdjustment | None = None
 
 
+class GoogleAdsDeviceTarget(GoogleAdsStrictModel):
+    device: GoogleAdsDevice
+    # 0 clears the adjustment. Leave null when excluding the device.
+    bid_adjustment: GoogleAdsBidAdjustment | None = None
+    excluded: bool = False
+
+    @model_validator(mode="after")
+    def _adjust_or_exclude(self) -> Self:
+        if self.excluded == (self.bid_adjustment is not None):
+            raise ValueError("Give each device a bid_adjustment, or set excluded, not both.")
+        return self
+
+
+class GoogleAdsScheduleWindow(GoogleAdsStrictModel):
+    day: GoogleAdsDay
+    start: _Start
+    end: _End
+    bid_adjustment: GoogleAdsBidAdjustment | None = None
+
+    @model_validator(mode="after")
+    def _starts_before_it_ends(self) -> Self:
+        # Zero-padded times compare in clock order.
+        if self.start >= self.end:
+            raise ValueError("Each ad schedule window must start before it ends.")
+        return self
+
+
+def _check_windows(windows: list[GoogleAdsScheduleWindow]) -> None:
+    by_day: dict[str, list[GoogleAdsScheduleWindow]] = {}
+    for window in windows:
+        by_day.setdefault(window.day, []).append(window)
+    for day, items in by_day.items():
+        if len(items) > MAX_WINDOWS_PER_DAY:
+            raise ValueError(
+                f"Google Ads allows {MAX_WINDOWS_PER_DAY} ad schedule windows a day; "
+                f"{day.title()} has {len(items)}."
+            )
+        items.sort(key=lambda item: item.start)
+        for before, after in pairwise(items):
+            if after.start < before.end:
+                raise ValueError(
+                    f"Ad schedule windows on {day.title()} overlap. Each time can be in one "
+                    "window only."
+                )
+
+
 class GoogleAdsTargetingChange(GoogleAdsStrictModel):
     """What changes on one campaign, as additions and removals."""
 
@@ -88,6 +150,13 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
     location_setting: GoogleAdsLocationSetting | None = None
     add_languages: list[GoogleAdsTarget] = Field(default_factory=list)
     remove_languages: list[GoogleAdsTarget] = Field(default_factory=list)
+    devices: list[GoogleAdsDeviceTarget] = Field(default_factory=list, max_length=3)
+    # The campaign's whole weekly schedule after the change, not only what changes.
+    ad_schedule: list[GoogleAdsScheduleWindow] | None = Field(
+        default=None, min_length=1, max_length=7 * MAX_WINDOWS_PER_DAY
+    )
+    # Removes every window, so ads can show at any time.
+    clear_ad_schedule: bool = False
 
     @property
     def item_count(self) -> int:
@@ -100,6 +169,9 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
             + len(self.add_languages)
             + len(self.remove_languages)
             + int(self.location_setting is not None)
+            + len(self.devices)
+            + len(self.ad_schedule or ())
+            + int(self.clear_ad_schedule)
         )
 
     @model_validator(mode="after")
@@ -120,6 +192,12 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
         for items in (locations, languages, radii, self.remove_radius):
             if len(set(items)) != len(items):
                 raise ValueError("List each location, radius, and language once per campaign.")
+        devices = [item.device for item in self.devices]
+        if len(set(devices)) != len(devices):
+            raise ValueError("List each device once per campaign.")
+        if self.ad_schedule is not None and self.clear_ad_schedule:
+            raise ValueError("Set ad_schedule or clear_ad_schedule, not both.")
+        _check_windows(self.ad_schedule or [])
         return self
 
 

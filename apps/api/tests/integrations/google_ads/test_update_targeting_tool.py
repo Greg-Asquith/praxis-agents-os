@@ -1,6 +1,6 @@
 # apps/api/tests/integrations/google_ads/test_update_targeting_tool.py
 
-"""Changing Google Ads locations and languages: checks before approval, one request, read-back."""
+"""Changing Google Ads targeting: checks before approval, grouped requests, and read-back."""
 
 import re
 from dataclasses import replace
@@ -57,6 +57,34 @@ def _language(key: str) -> dict[str, Any]:
     }
 
 
+def _device(device: str, criterion_id: str, modifier: float | None = None) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "resourceName": f"{_C_CRITERIA}10~{criterion_id}",
+        "criterionId": criterion_id,
+        "type": "DEVICE",
+        "device": {"type": device},
+    }
+    return row if modifier is None else {**row, "bidModifier": modifier}
+
+
+def _window(
+    criterion_id: str, day: str, start: int, end: int, modifier: float | None = None
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "resourceName": f"{_C_CRITERIA}10~{criterion_id}",
+        "criterionId": criterion_id,
+        "type": "AD_SCHEDULE",
+        "adSchedule": {
+            "dayOfWeek": day,
+            "startHour": start,
+            "startMinute": "ZERO",
+            "endHour": end,
+            "endMinute": "ZERO",
+        },
+    }
+    return row if modifier is None else {**row, "bidModifier": modifier}
+
+
 class _Account:
     """One Google Ads account: answers targeting reads and applies `googleAds:mutate` requests."""
 
@@ -68,12 +96,14 @@ class _Account:
         rejected: dict[str, str] | None = None,
         rejected_at_send: dict[str, str] | None = None,
         status: str = "ENABLED",
+        strategy: str = "MANUAL_CPC",
     ) -> None:
         self.criteria = criteria
         self.channel = channel
         self.rejected = rejected or {}
         self.rejected_at_send = rejected_at_send or {}
         self.status = status
+        self.strategy = strategy
         self.setting = "PRESENCE_OR_INTEREST"
         self.mutates: list[dict[str, Any]] = []
         self.next_id = 500
@@ -111,6 +141,7 @@ class _Account:
                     "name": "Trail" if campaign_id == "10" else "Peak",
                     "status": self.status,
                     "advertisingChannelType": self.channel,
+                    "biddingStrategyType": self.strategy,
                     "geoTargetTypeSetting": {"positiveGeoTargetType": self.setting},
                 }
             }
@@ -174,13 +205,13 @@ class _Account:
         create = value["create"]
         name = f"{_C_CRITERIA}{create['campaign'].rsplit('/', 1)[1]}~{self.next_id}"
         if apply:
-            kind = (
-                "LOCATION"
-                if "location" in create
-                else "PROXIMITY"
-                if "proximity" in create
-                else "LANGUAGE"
-            )
+            kinds = {
+                "location": "LOCATION",
+                "proximity": "PROXIMITY",
+                "device": "DEVICE",
+                "adSchedule": "AD_SCHEDULE",
+            }
+            kind = next((kinds[key] for key in create if key in kinds), "LANGUAGE")
             self.criteria.append(
                 {
                     "resourceName": name,
@@ -641,3 +672,126 @@ async def test_a_pasted_list_finds_only_the_best_match_per_line(monkeypatch) -> 
     assert client.bodies[0]["locationNames"]["names"] == ["Manchester", "Leeds"]
     # One name lists every match, so the operator can choose between places with the same name.
     assert [choice.value["key"] for choice in single.choices] == ["1006", "1014", "1007"]
+
+
+async def test_devices_and_a_weekday_schedule_go_in_one_approval_with_the_schedule_sent_whole(
+    monkeypatch,
+) -> None:
+    account = _Account(
+        [
+            _location("2826"),
+            _device("TABLET", "30002", modifier=1.2),
+            _window("601", "MONDAY", 7, 22),
+            _window("602", "TUESDAY", 7, 22),
+            _window("603", "SATURDAY", 9, 17),
+        ]
+    )
+    weekday = [
+        {"day": "MONDAY", "start": "07:00", "end": "22:00"},
+        {"day": "TUESDAY", "start": "07:00", "end": "22:00", "bid_adjustment": 10},
+        {"day": "WEDNESDAY", "start": "08:00", "end": "20:00"},
+    ]
+    args = _args(
+        devices=[
+            {"device": "MOBILE", "bid_adjustment": -30},
+            {"device": "TABLET", "excluded": True},
+            {"device": "DESKTOP", "bid_adjustment": 0},
+        ],
+        ad_schedule=weekday,
+    )
+
+    display = await _display(monkeypatch, account, args)
+    check = _check(display)
+    assert check["problem"] is None and check["item_problems"] == []
+    assert check["note"] is None
+    # Desktop has no criterion and no adjustment is asked for, so it's already set.
+    assert check["already_set"] == [{"field": "devices", "key": "DESKTOP"}]
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    # Removals come first, so the schedule's request goes before the shared one.
+    schedule, devices = account.mutates[-2:]
+    assert devices["partialFailure"] is True
+    assert devices["mutateOperations"] == [
+        {
+            "campaignCriterionOperation": {
+                "create": {
+                    "campaign": _CAMPAIGN,
+                    "device": {"type": "MOBILE"},
+                    "bidModifier": 0.7,
+                }
+            }
+        },
+        {
+            "campaignCriterionOperation": {
+                "update": {"resourceName": f"{_C_CRITERIA}10~30002", "bidModifier": 0.0},
+                "updateMask": "bidModifier",
+            }
+        },
+    ]
+    # Monday is kept, Tuesday's adjustment changes in place, and Saturday makes way for Wednesday.
+    assert schedule["partialFailure"] is False
+    assert schedule["mutateOperations"] == [
+        {"campaignCriterionOperation": {"remove": f"{_C_CRITERIA}10~603"}},
+        {
+            "campaignCriterionOperation": {
+                "update": {"resourceName": f"{_C_CRITERIA}10~602", "bidModifier": 1.1},
+                "updateMask": "bidModifier",
+            }
+        },
+        {
+            "campaignCriterionOperation": {
+                "create": {
+                    "campaign": _CAMPAIGN,
+                    "adSchedule": {
+                        "dayOfWeek": "WEDNESDAY",
+                        "startHour": 8,
+                        "startMinute": "ZERO",
+                        "endHour": 20,
+                        "endMinute": "ZERO",
+                    },
+                }
+            }
+        },
+    ]
+    outcomes = {(row["setting"], row["action"], row["outcome"]) for row in _rows(result)}
+    # The read-back sees the excluded tablet's zero modifier, so its change is confirmed.
+    assert ("devices", "set", "updated") in outcomes
+    assert ("devices", "set", "already_set") in outcomes
+    assert {("ad_schedule", action, "updated") for action in ("remove", "change_bid", "add")} <= (
+        outcomes
+    )
+    assert ("ad_schedule", "add", "already_set") in outcomes
+    tablet = next(
+        row for row in _rows(result) if row["setting"] == "devices" and row["outcome"] == "updated"
+    )
+    assert {item["name"]: item["bid_adjustment"] for item in tablet["items"]} == {
+        "Mobile Phones": -30,
+        "Tablets": -100,
+    }
+
+
+async def test_a_bidding_strategy_that_ignores_adjustments_is_noted_but_not_blocked(
+    monkeypatch,
+) -> None:
+    account = _Account([_location("2826")], strategy="TARGET_ROAS")
+    args = _args(
+        devices=[{"device": "MOBILE", "bid_adjustment": -30}],
+        ad_schedule=[{"day": "MONDAY", "start": "00:00", "end": "24:00", "bid_adjustment": 10}],
+    )
+
+    check = _check(await _display(monkeypatch, account, args))
+
+    assert check["problem"] is None
+    assert "device and time bid adjustments" in check["note"]
+    assert check["ad_schedule"] == []
+
+
+def test_overlapping_schedule_windows_are_refused() -> None:
+    with pytest.raises(ValueError, match="overlap"):
+        _args(
+            ad_schedule=[
+                {"day": "MONDAY", "start": "07:00", "end": "12:15"},
+                {"day": "MONDAY", "start": "12:00", "end": "22:00"},
+            ]
+        )

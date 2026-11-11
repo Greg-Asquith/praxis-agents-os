@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/update_targeting.py
 
-"""Approval-only tool that changes which locations and languages Google Ads campaigns target."""
+"""Approval-only tool that changes where, when, and on which devices Google Ads campaigns show."""
 
 import asyncio
 from collections import defaultdict
@@ -40,6 +40,7 @@ from services.integrations.operations import (
 from ..client import GoogleAdsClient
 from ..operations.criteria import (
     BID_MODIFIER_PATH,
+    SCHEDULE_MINUTES,
     CriterionKind,
     CriterionType,
     LiveCampaignTargeting,
@@ -47,6 +48,7 @@ from ..operations.criteria import (
     criterion_key,
     radius_value,
     read_campaign_targeting,
+    schedule_value,
 )
 from ..operations.edits import (
     CriterionChange,
@@ -59,6 +61,7 @@ from ..operations.edits import (
 from ..operations.search_targeting import read_languages, read_locations
 from .schemas.targeting import (
     MAX_TARGETING_CHANGES,
+    GoogleAdsScheduleWindow,
     GoogleAdsTargetingChange,
     GoogleAdsUpdateTargetingOutput,
     GoogleAdsUpdateTargetingRequest,
@@ -77,12 +80,13 @@ from .utils.routing import login_customer_id
 
 _OPERATION = "update_targeting"
 _IDENTITY = ("object",)
-_TYPES: tuple[CriterionType, ...] = ("LOCATION", "PROXIMITY", "LANGUAGE")
+_TYPES: tuple[CriterionType, ...] = ("LOCATION", "PROXIMITY", "LANGUAGE", "DEVICE", "AD_SCHEDULE")
 _SETTING_PATH = "geoTargetTypeSetting.positiveGeoTargetType"
 # One audit event holds 2,500 records, and moving a place between lists takes two.
 _MAX_EDITS = 2_500
 # How many of a campaign's current locations the card lists by name.
 _MAX_SHOWN = 100
+_DEVICE_NAMES = {"MOBILE": "Mobile Phones", "DESKTOP": "Computers", "TABLET": "Tablets"}
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
 
 _MISSING = "This campaign no longer exists in Google Ads."
@@ -95,6 +99,8 @@ _NO_LOCATION = (
 _SEARCH_LANGUAGES = "Search campaigns can't target languages. Google matches each ad's language."
 _UNKNOWN_LOCATION = "Google Ads doesn't recognise this location."
 _UNKNOWN_LANGUAGE = "Google Ads doesn't recognise this language."
+_IGNORED_BIDS = "This campaign's bidding strategy sets its own bids, so it ignores {what}."
+_EXCLUDING_WORKS = " Excluding a device still works."
 _TOO_MANY = (
     f"This would make more than {_MAX_EDITS:,} changes in one request. Change fewer campaigns."
 )
@@ -116,6 +122,7 @@ class _Planned:
 
 
 def _percent(modifier: float) -> int:
+    # An excluded device has a modifier of 0, which reads as -100%.
     return round((modifier - 1) * 100)
 
 
@@ -184,6 +191,8 @@ def _plan(
         *_location_plan(change, campaign, criteria, names["locations"]),
         *_radius_plan(change, campaign, criteria),
         *_language_plan(change, campaign, criteria, names["languages"]),
+        *_device_plan(change, campaign, criteria),
+        *_schedule_plan(change, campaign, criteria),
     ]
     if change.location_setting is not None:
         edit = FieldChange(
@@ -398,6 +407,154 @@ def _language_plan(
             )
         )
     return planned
+
+
+def _device_plan(
+    change: GoogleAdsTargetingChange, campaign: str, criteria: Mapping[str, LiveCriterion]
+) -> list[_Planned]:
+    """Sets each device's adjustment; a modifier of 0 excludes the device."""
+    planned: list[_Planned] = []
+    for target in change.devices:
+        modifier = 0.0 if target.excluded else _modifier(target.bid_adjustment or 0)
+        key = criterion_key(campaign, "device", target.device)
+        live = criteria.get(key)
+        edit: Edit
+        if live is not None:
+            edit = FieldChange(
+                resource="campaignCriterion",
+                resource_name=live.resource_name,
+                requested={BID_MODIFIER_PATH: modifier},
+                before={BID_MODIFIER_PATH: live.bid_modifier},
+            )
+        elif modifier == 1.0:
+            # No criterion means no adjustment, so there's nothing to send.
+            edit = CriterionChange(
+                resource="campaignCriterion", action="remove", key=key, owner=campaign
+            )
+        else:
+            body = {"device": {"type": target.device}, BID_MODIFIER_PATH: modifier}
+            edit = _criterion_change(campaign, "add", "device", target.device, criteria, body)
+        planned.append(
+            _Planned(
+                edit=edit,
+                field="devices",
+                item=target.device,
+                setting="devices",
+                action="set",
+                name=_DEVICE_NAMES[target.device],
+                bid_adjustment=_percent(modifier),
+                previous_bid_adjustment=_percent(live.bid_modifier if live else 1.0),
+            )
+        )
+    return planned
+
+
+def _schedule_plan(
+    change: GoogleAdsTargetingChange, campaign: str, criteria: Mapping[str, LiveCriterion]
+) -> list[_Planned]:
+    """Diffs the requested week against the live one, and sends the result as one unit.
+
+    A window's times can't be updated, so an unchanged window is kept, a new adjustment on
+    the same times is an update, and every other change is a removal and an add.
+    """
+    if change.ad_schedule is None and not change.clear_ad_schedule:
+        return []
+    live = {c.value: c for c in criteria.values() if c.kind == "schedule"}
+    wanted = {
+        schedule_value(window.day, window.start, window.end): window
+        for window in change.ad_schedule or ()
+    }
+    group = f"{campaign}#ad_schedule"
+    planned = [
+        _Planned(
+            edit=replace(
+                _criterion_change(campaign, "remove", "schedule", value, criteria),
+                atomic_group=group,
+            ),
+            field="ad_schedule",
+            item=value,
+            setting="ad_schedule",
+            action="remove",
+            name=_window_name(value),
+            bid_adjustment=_percent(criterion.bid_modifier),
+        )
+        for value, criterion in live.items()
+        if value not in wanted
+    ]
+    for value, window in wanted.items():
+        modifier = _modifier(window.bid_adjustment or 0)
+        current = live.get(value)
+        edit: Edit
+        if current is not None:
+            edit = FieldChange(
+                resource="campaignCriterion",
+                resource_name=current.resource_name,
+                requested={BID_MODIFIER_PATH: modifier},
+                before={BID_MODIFIER_PATH: current.bid_modifier},
+                atomic_group=group,
+            )
+            action = "add" if current.bid_modifier == modifier else "change_bid"
+        else:
+            body: dict[str, Any] = {"adSchedule": _schedule_body(window)}
+            if modifier != 1.0:
+                body[BID_MODIFIER_PATH] = modifier
+            edit = replace(
+                _criterion_change(campaign, "add", "schedule", value, criteria, body),
+                atomic_group=group,
+            )
+            action = "add"
+        planned.append(
+            _Planned(
+                edit=edit,
+                field="ad_schedule",
+                item=value,
+                setting="ad_schedule",
+                action=action,
+                name=_window_name(value),
+                bid_adjustment=window.bid_adjustment,
+                previous_bid_adjustment=_percent(current.bid_modifier) if current else None,
+            )
+        )
+    return planned
+
+
+def _schedule_body(window: GoogleAdsScheduleWindow) -> dict[str, Any]:
+    start_hour, start_minute = (int(part) for part in window.start.split(":"))
+    end_hour, end_minute = (int(part) for part in window.end.split(":"))
+    return {
+        "dayOfWeek": window.day,
+        "startHour": start_hour,
+        "startMinute": SCHEDULE_MINUTES[start_minute],
+        "endHour": end_hour,
+        "endMinute": SCHEDULE_MINUTES[end_minute],
+    }
+
+
+def _window_name(value: str) -> str:
+    day, start, end = value.split(",")
+    return f"{day.title()[:3]} {start}\u2013{end}"
+
+
+def _bidding_note(
+    change: GoogleAdsTargetingChange, live: LiveCampaignTargeting | None
+) -> str | None:
+    """Warns when the campaign's bidding ignores the adjustments the request sets."""
+    if live is None:
+        return None
+    devices = live.ignores_device_bids() and any(item.bid_adjustment for item in change.devices)
+    times = live.ignores_schedule_bids() and any(
+        window.bid_adjustment for window in change.ad_schedule or ()
+    )
+    if not (devices or times):
+        return None
+    what = (
+        "device and time bid adjustments"
+        if devices and times
+        else "device bid adjustments"
+        if devices
+        else "time bid adjustments"
+    )
+    return _IGNORED_BIDS.format(what=what) + (_EXCLUDING_WORKS if devices else "")
 
 
 def _campaign_problem(
@@ -811,6 +968,7 @@ def _check(
     )
     item_problems: dict[tuple[str, str], str] = {}
     already: list[dict[str, str]] = []
+    schedule = [results[item.edit.key] for item in planned if item.field == "ad_schedule"]
     for item in planned:
         edit = results[item.edit.key]
         if edit.refused and edit.refused != problem:
@@ -818,8 +976,11 @@ def _check(
             if item.edit.refused is None:
                 message = f"Google says: {message}"
             item_problems.setdefault((item.field, item.item), message)
-        if edit.refused is None and edit.unchanged:
+        # The schedule is one change, already set only when none of its windows change.
+        if edit.refused is None and edit.unchanged and item.field != "ad_schedule":
             already.append({"field": item.field, "key": item.item})
+    if schedule and all(edit.refused is None and edit.unchanged for edit in schedule):
+        already.append({"field": "ad_schedule", "key": "ad_schedule"})
     criteria = live.criteria if live else {}
     touched = {key: asdict(criteria[key]) for item in planned if (key := item.edit.key) in criteria}
     by_resource = {criterion.resource_name: key for key, criterion in criteria.items()}
@@ -862,6 +1023,23 @@ def _check(
             for c in criteria.values()
             if c.kind == "language"
         ],
+        "devices": [
+            {"device": c.value, "bid_adjustment": _percent(c.bid_modifier)}
+            for c in criteria.values()
+            if c.kind == "device"
+        ],
+        "ad_schedule": [
+            {
+                "day": day,
+                "start": start,
+                "end": end,
+                "bid_adjustment": _percent(c.bid_modifier),
+            }
+            for c in criteria.values()
+            if c.kind == "schedule"
+            for day, start, end in [c.value.split(",")]
+        ],
+        "note": _bidding_note(change, live),
         "item_problems": [
             {"field": field, "key": key, "message": message}
             for (field, key), message in item_problems.items()
@@ -876,8 +1054,8 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_update_targeting",
     function=google_ads_update_targeting,
     description=(
-        "Change which locations and languages existing Google Ads campaigns target, up to 20 "
-        "campaigns per call, in one approval. Each entry names one campaign and only what "
+        "Change where, when, and on which devices existing Google Ads campaigns show ads, up "
+        "to 20 campaigns per call, in one approval. Each entry names one campaign and only what "
         "changes, as additions and removals. add_locations, exclude_locations, and "
         "remove_locations take location keys from google_ads_search_targeting; add_locations "
         "can set bid_adjustment as a percent from -90 to 900, and naming a location already "
@@ -889,8 +1067,18 @@ DEFINITION = RuntimeToolDefinition(
         "location). add_languages and remove_languages take language keys. Search campaigns "
         "can't add languages because Google matches each ad's language; a language left on one "
         "from before can be removed. A change that would leave a campaign with no location is "
-        "refused, because its ads could then show anywhere. Each result reports what Google "
-        "Ads shows after the change. Audiences, devices, and schedules aren't supported here."
+        "refused, because its ads could then show anywhere. devices sets MOBILE, DESKTOP, or "
+        "TABLET to a bid_adjustment percent (0 clears it) or excluded true. ad_schedule is the "
+        "campaign's whole weekly schedule after the change: windows of day (MONDAY to SUNDAY), "
+        "start and end as HH:MM in quarter hours in the account's time zone (end may be "
+        "24:00), and an optional bid_adjustment; at most 6 windows a day, none overlapping. "
+        "Windows left out are removed, and clear_ad_schedule true removes every window so ads "
+        "show at any time. Target ROAS, Maximize Conversion Value, and Maximize Conversions "
+        "without a target CPA ignore device adjustments other than excluding; Smart Bidding "
+        "ignores time adjustments. Check campaign.bidding_strategy_type with "
+        "google_ads_run_report first and only propose adjustments that bidding uses. Each "
+        "result reports what Google Ads shows after the change. Audiences aren't supported "
+        "here."
     ),
     provider="google_ads",
     label="Update Google Ads Targeting",

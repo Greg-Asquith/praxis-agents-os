@@ -29,7 +29,7 @@ costs. Billing and spending limits are pending.
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, search terms, positive-keyword creation and
 bid, URL, and match type changes,
-Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location and language targeting, device bid adjustments, budget
+Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location, language, device, and ad schedule targeting, budget
 changes, and permanent removal of any supported kind. Label creation, apply,
 and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
@@ -551,8 +551,8 @@ count, never the search text. Audience search is pending.
 
 `google_ads_update_targeting` changes up to 20 campaigns per call in one approval.
 Each entry names one campaign and only what changes. Ad group entries are pending,
-because no setting in this tool applies to an ad group yet. Devices, schedules,
-audiences, and exclusions are also pending. The fields are as follows:
+because no setting in this tool applies to an ad group yet. Audiences and exclusions
+are also pending. The fields are as follows:
 
 | Field | What it does |
 | --- | --- |
@@ -563,6 +563,9 @@ audiences, and exclusions are also pending. The fields are as follows:
 | `remove_radius` | Removes a radius by criterion ID. |
 | `location_setting` | Sets who counts as in a location: `PRESENCE_OR_INTEREST` or `PRESENCE`. |
 | `add_languages`, `remove_languages` | Adds or removes a language. |
+| `devices` | Sets `MOBILE`, `DESKTOP`, or `TABLET` to a `bid_adjustment` percent (0 clears it) or `excluded`. |
+| `ad_schedule` | The campaign's whole week after the change: windows of `day`, `start`, and `end` (HH:MM in quarter hours, in the account's time zone; `end` may be `24:00`), each with an optional bid adjustment. At most 6 a day, none overlapping. |
+| `clear_ad_schedule` | Removes every window, so ads can show at any time. |
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
 between the included and excluded lists sends a removal and an add, in that order, in
@@ -571,6 +574,21 @@ exclusion, and radius changes form one atomic group. If Google rejects an add at
 that passed the dry run, the campaign keeps its locations, while other campaigns and
 language changes still apply. A bid adjustment is a percent on the card and in the request, and the tool
 compiles it to Google's modifier.
+
+A device is a criterion with a fixed ID per device. A device with a criterion gets a
+`bidModifier` update; one without gets a create, unless the request asks for no
+adjustment, which needs nothing sent. A modifier of 0 excludes the device, so the read
+treats a missing modifier as no adjustment and 0 as excluded (-100% in results).
+
+An ad schedule window's times can't change, so the tool diffs the requested week against
+the live one: a window with the same day and times is kept, or updated when only its
+adjustment changes; every other live window is removed and every new one created. A
+campaign's schedule edits form one atomic group, so the week changes whole or not at all.
+The check counts the schedule as one change, already set only when no window changes.
+Smart Bidding ignores time adjustments, and Target ROAS, Maximize Conversion Value, and
+Maximize Conversions without a target CPA ignore device adjustments other than
+excluding. The check adds a `note` saying so; it doesn't block approval.
+`google_ads_update_device_bid_modifiers` was removed; this tool replaces it.
 
 The tool refuses these before Google's dry run:
 
@@ -585,7 +603,7 @@ The tool refuses these before Google's dry run:
 
 Radius targets take coordinates, not an address. Google computes a point from an
 address, so the read-back can't be matched to the request until that's confirmed
-against a live account.
+against a live account (pending, after check 33 in plan 338).
 
 `operations/criteria.py` reads each campaign's criteria by type
 (`read_campaign_targeting`) and returns them by edit key. An included and an excluded
@@ -892,7 +910,7 @@ keyword creation.
 ### Outcome evidence
 
 Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
-separate modules. Device bid modifiers, recommendations, and positive-keyword creation
+separate modules. Recommendations and positive-keyword creation
 share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
 outcome labels, stat order and tones, conditional detail and error columns,
 and sample notices. Tool columns and result validation stay with each tool.
@@ -1097,7 +1115,23 @@ The card (`components/targeting-approval.tsx`) shows each change once:
   keeps what it already found), and a distance around a place.
 - **Languages** appears only when a campaign can take a language or one is changing, so
   it's hidden on Search campaigns with no language change.
-- **Who Counts** holds the location setting.
+- **Ad Schedule** shows Now and After side by side as week grids in the account's time
+  zone (`ScheduleGrid`), each with its week in words, darker where bids go up. A
+  request that clears the schedule shows After as every hour, with **Choose Times
+  Instead**, which starts the editor from the live week. `ScheduleWindows` lists one row per set
+  of days sharing times and an adjustment (a row the operator adds stays its own row,
+  through `keptRows`, even when its times match another), with day toggles, From and To (quarter hours),
+  and a `BidAdjustment`. Overlapping windows, more than 6 a day, and a window that ends
+  before it starts are marked on the row and block Check Changes and approval. **Show Ads
+  at Any Time** clears the schedule. When campaigns ask for different weeks, the section
+  asks the operator to choose a campaign first.
+- **Devices** lists mobile phones, computers, and tablets, each with its adjustment now,
+  a `BidAdjustment`, and **Exclude**.
+- Sections the request doesn't change sit in **More Settings**: Devices, Ad Schedule
+  (**Change the Schedule** starts from the live week, or every hour when none is set),
+  and, for a request that only changes devices or the schedule, Locations. **Who Counts**
+  holds the location setting when locations show. A bidding `note` from the check shows
+  as a warning, naming its campaigns when there are several.
 
 Cancelling a campaign's last change moves it out of the request and into the approval
 controls' retained state, so **Undo** restores it through a check's redraw. A selected
