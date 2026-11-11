@@ -24,6 +24,12 @@ STRATEGY_NAMES = {
 }
 
 
+def strategy_name(strategy_type: str, *, portfolio: bool) -> str:
+    """Names a campaign's bidding for a card problem, such as "a Target CPA portfolio strategy"."""
+    name = STRATEGY_NAMES.get(strategy_type, "its own bidding")
+    return f"a {name} portfolio strategy" if portfolio else name
+
+
 def ad_group_problems(ad_group: "GoogleAdsNewAdGroup", facts: SearchCampaignFacts) -> list[str]:
     """Why Google would refuse or ignore this ad group's name or bids."""
     strategy = STRATEGY_NAMES.get(facts.strategy, "its own bidding")

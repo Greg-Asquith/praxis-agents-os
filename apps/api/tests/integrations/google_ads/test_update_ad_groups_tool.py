@@ -12,6 +12,7 @@ from uuid import uuid4
 from integrations.google_ads.references import GoogleAdsAdGroupReference
 from integrations.google_ads.tools import update_ad_groups as tool_module
 from integrations.google_ads.tools.schemas.ad_group_updates import GoogleAdsUpdateAdGroupsOutput
+from integrations.google_ads.tools.utils import edit_runs
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
@@ -119,7 +120,7 @@ async def _display(monkeypatch, account: _Account, changes: list[Any]) -> dict[s
 
 
 async def _run(monkeypatch, account: _Account, changes: list[Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -202,13 +203,8 @@ async def test_bids_the_campaign_strategy_does_not_use_are_refused_before_any_re
     data, _audit = await _run(monkeypatch, account, changes, display)
 
     checks = display["_checks"]
-    assert checks[_name("1")]["problems"] == {
-        "cpc_bid": "Conversions Campaign uses Maximise Conversions, so Google doesn't use an "
-        "ad group CPC bid."
-    }
-    assert checks[_name("2")]["problems"]["target_roas"].startswith(
-        "Value Campaign has no target ROAS"
-    )
+    assert set(checks[_name("1")]["problems"]) == {"cpc_bid"}
+    assert set(checks[_name("2")]["problems"]) == {"target_roas"}
     assert account.mutates == []
     assert {group.settings[0].outcome for group in data.ad_groups} == {"failed"}
 

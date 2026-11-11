@@ -2,12 +2,13 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
+  parseCheckedEntries,
 } from "@/integrations/google_ads/lib/accounts"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 export type RemovalKind =
@@ -155,10 +156,6 @@ function removalResourceName(
     : null
 }
 
-function nullableText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
 function isRemovalKind(value: unknown): value is RemovalKind {
   return typeof value === "string" && Object.hasOwn(KIND_IDS, value)
 }
@@ -180,17 +177,17 @@ export function parseDependants(value: unknown): RemovalDependants {
 
 function parseCheck(value: unknown): RemovalCheck {
   if (!isRecord(value) || value["unavailable"] !== false) return { unavailable: true }
-  const name = nullableText(value["name"])
+  const name = textOrNull(value["name"])
   if (name === null) return { unavailable: true }
   return {
     unavailable: false,
-    adGroupName: nullableText(value["ad_group_name"]),
+    adGroupName: textOrNull(value["ad_group_name"]),
     campaignId: googleAdsId(value["campaign_id"]),
-    campaignName: nullableText(value["campaign_name"]),
+    campaignName: textOrNull(value["campaign_name"]),
     dependants: parseDependants(value["dependants"]),
     name,
-    problem: nullableText(value["problem"]),
-    status: nullableText(value["status"]),
+    problem: textOrNull(value["problem"]),
+    status: textOrNull(value["status"]),
   }
 }
 
@@ -208,27 +205,14 @@ function parseItem(value: unknown): RemovalItem | null {
     entry: value,
     key,
     kind,
-    label: nullableText(reference["label"]) ?? key,
+    label: textOrNull(reference["label"]) ?? key,
   }
 }
 
 /** Reads `items` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseRemoveObjectsArgs(value: unknown): RemoveObjectsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["items"])) return null
-  const items: RemovalItem[] = []
-  const keys = new Set<string>()
-  for (const entry of value["items"]) {
-    const item = parseItem(entry)
-    if (item === null || keys.has(item.key)) return null
-    keys.add(item.key)
-    items.push(item)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-    items,
-  }
+  const parsed = parseCheckedEntries(value, "items", parseItem, parseCheck)
+  return parsed && { accounts: parsed.accounts, checks: parsed.checks, items: parsed.entries }
 }
 
 /** Counts such as "92 keywords, 6 ads", with "+" on counts that stopped at Google's read limit. */
@@ -341,26 +325,17 @@ export function removalParents(
   accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
   showAccount: boolean
 ): ParentRow[] {
-  const parents = new Map<string, RemovalRow[]>()
-  for (const row of rows) {
-    const key = removalParentKey(row)
-    parents.set(key, [...(parents.get(key) ?? []), row])
-  }
-  return [...parents].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
+  return groupedByParent(rows, removalParentKey).map(({ items, key, live }) => {
     const first = items[0]
-    const problems = live.filter((row) => row.problem !== null).length
     return {
       cancelled: live.length === 0,
       context: showAccount && first ? (accounts.get(first.item.customerId)?.label ?? null) : null,
       key,
       name: parentName(key, items),
-      problems,
+      problems: live.filter((row) => row.problem !== null).length,
       values: {
         also: dependantsText(removalCounts(live).dependants) || "—",
         items: live.length,
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
       },
     }
   })

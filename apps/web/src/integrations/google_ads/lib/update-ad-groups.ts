@@ -1,14 +1,36 @@
 // apps/web/src/integrations/google_ads/lib/update-ad-groups.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
+  accountsText,
+  parseCheckedEntries,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
 import { canonicalMoney, roasPercent } from "@/integrations/google_ads/lib/campaign-bidding"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
-import { parametersText, type UrlParameter } from "@/integrations/google_ads/lib/update-campaigns"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+  unavailableProblem,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import {
+  editedSettingChanges,
+  isUrlOption,
+  parametersText,
+  parseSettingMap,
+  parseUrlParameters,
+  requestedUrlOptions,
+  restoredSettingChanges,
+  settingsNeedCheck,
+  soleRow,
+  withoutKey,
+  withUrlOption,
+  type UrlParameter,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -60,11 +82,6 @@ export const ROTATION_LABELS: Record<(typeof ROTATIONS)[number], string> = {
   ROTATE_FOREVER: "Rotate Evenly",
 }
 
-const URL_SETTINGS = new Set<AdGroupSetting>([
-  "final_url_suffix",
-  "tracking_template",
-  "custom_parameters",
-])
 const MONEY_SETTINGS = new Set<AdGroupSetting>(["cpc_bid", "target_cpa"])
 
 type AdGroupChange = {
@@ -134,12 +151,7 @@ export type AdGroupCounts = {
   total: number
 }
 
-const UNAVAILABLE_PROBLEM =
-  "Google Ads couldn't check this ad group. Ask the agent to prepare the change again."
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
+const UNAVAILABLE_PROBLEM = unavailableProblem("ad group")
 
 function money(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? canonicalMoney(value) : null
@@ -149,20 +161,10 @@ function ratio(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null
 }
 
-function parameters(value: unknown): UrlParameter[] | null {
-  if (!Array.isArray(value)) return null
-  const items: UrlParameter[] = []
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string")
-      return null
-    items.push({ key: item["key"], value: item["value"] })
-  }
-  return items
-}
-
 /** Reads one setting's value in card terms; undefined when it isn't one. */
 export function adGroupValue(setting: AdGroupSetting, value: unknown): AdGroupValue | undefined {
-  if (setting === "custom_parameters") return value === null ? [] : (parameters(value) ?? undefined)
+  if (setting === "custom_parameters")
+    return value === null ? [] : (parseUrlParameters(value) ?? undefined)
   if (value === null) return null
   if (MONEY_SETTINGS.has(setting)) return money(value) ?? undefined
   if (setting === "target_roas") return ratio(value) ?? undefined
@@ -171,24 +173,12 @@ export function adGroupValue(setting: AdGroupSetting, value: unknown): AdGroupVa
   return typeof value === "string" ? value : undefined
 }
 
-function settingMap(value: unknown): Partial<Record<AdGroupSetting, AdGroupValue>> {
-  const values: Partial<Record<AdGroupSetting, AdGroupValue>> = {}
-  if (!isRecord(value)) return values
-  for (const setting of AD_GROUP_SETTINGS) {
-    if (!Object.hasOwn(value, setting)) continue
-    const parsed = adGroupValue(setting, value[setting])
-    if (parsed !== undefined) values[setting] = parsed
-  }
-  return values
-}
-
 /** The settings an entry changes, read the way the server reads them. */
 function requestedOf(
   entry: Record<string, unknown>
 ): Partial<Record<AdGroupSetting, AdGroupValue>> {
   const values: Partial<Record<AdGroupSetting, AdGroupValue>> = {}
-  if (typeof entry["name"] === "string")
-    values.name = entry["name"].split(/\s+/).filter(Boolean).join(" ")
+  if (typeof entry["name"] === "string") values.name = collapseSpaces(entry["name"])
   const bid = money(entry["cpc_bid"])
   if (bid) values.cpc_bid = bid
   // "none" removes a target override.
@@ -196,13 +186,7 @@ function requestedOf(
   else if (money(entry["target_cpa"])) values.target_cpa = money(entry["target_cpa"])
   if (entry["target_roas"] === "none") values.target_roas = null
   else if (ratio(entry["target_roas"]) !== null) values.target_roas = ratio(entry["target_roas"])
-  const url = isRecord(entry["url_options"]) ? entry["url_options"] : {}
-  for (const setting of ["final_url_suffix", "tracking_template"] as const) {
-    const value = url[setting]
-    if (typeof value === "string") values[setting] = value.trim() || null
-  }
-  const custom = parameters(url["custom_parameters"])
-  if (custom) values.custom_parameters = custom
+  Object.assign(values, requestedUrlOptions(entry))
   const rotation = adGroupValue("ad_rotation", entry["ad_rotation"])
   if (typeof rotation === "string") values.ad_rotation = rotation
   return values
@@ -219,7 +203,7 @@ function parseChange(value: unknown): AdGroupChange | null {
     customerId,
     entry: value,
     key: `customers/${customerId}/adGroups/${adGroupId}`,
-    label: text(reference["label"]) ?? `Ad group ${adGroupId}`,
+    label: textOrNull(reference["label"]) ?? `Ad group ${adGroupId}`,
     requested: requestedOf(value),
   }
 }
@@ -229,40 +213,27 @@ function parseCheck(value: unknown): AdGroupCheck {
   const problems: Partial<Record<AdGroupSetting, string>> = {}
   const rawProblems = isRecord(value["problems"]) ? value["problems"] : {}
   for (const setting of AD_GROUP_SETTINGS) {
-    const problem = text(rawProblems[setting])
+    const problem = textOrNull(rawProblems[setting])
     if (problem) problems[setting] = problem
   }
   const bids = Array.isArray(value["bids_used"]) ? value["bids_used"] : []
   return {
     unavailable: false,
     bidsUsed: BID_SETTINGS.filter((setting) => bids.includes(setting)),
-    campaignName: text(value["campaign_name"]),
-    current: settingMap(value["current"]),
-    name: text(value["name"]),
-    problem: text(value["problem"]),
+    campaignName: textOrNull(value["campaign_name"]),
+    current: parseSettingMap(AD_GROUP_SETTINGS, adGroupValue, value["current"]),
+    name: textOrNull(value["name"]),
+    problem: textOrNull(value["problem"]),
     problems,
-    requested: settingMap(value["requested"]),
-    strategyName: text(value["strategy_name"]),
+    requested: parseSettingMap(AD_GROUP_SETTINGS, adGroupValue, value["requested"]),
+    strategyName: textOrNull(value["strategy_name"]),
   }
 }
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseUpdateAdGroupsArgs(value: unknown): UpdateAdGroupsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const changes: AdGroupChange[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const change = parseChange(entry)
-    if (change === null || keys.has(change.key)) return null
-    keys.add(change.key)
-    changes.push(change)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    changes,
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseChange, parseCheck)
+  return parsed && { accounts: parsed.accounts, changes: parsed.entries, checks: parsed.checks }
 }
 
 function sameAdGroupValue(a: AdGroupValue | undefined, b: AdGroupValue | undefined) {
@@ -338,7 +309,7 @@ export function adGroupRows(
         null,
         item.key,
         googleAdsId(item.adGroup["customer_id"]) ?? "",
-        text(item.adGroup["label"]) ?? item.key,
+        textOrNull(item.adGroup["label"]) ?? item.key,
         item.setting,
         item.value,
         checked.checks.get(item.key)
@@ -359,28 +330,19 @@ export function adGroupCounts(rows: readonly AdGroupRow[]): AdGroupCounts {
   }
 }
 
-function without(record: Record<string, unknown>, key: string): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key))
-}
-
 /** Writes a setting into a raw entry in the tool's argument shape; undefined leaves it out. */
 function withSetting(
   entry: Record<string, unknown>,
   setting: AdGroupSetting,
   value: AdGroupValue | undefined
 ): Record<string, unknown> {
-  if (URL_SETTINGS.has(setting)) {
-    const current = isRecord(entry["url_options"]) ? entry["url_options"] : {}
-    const item = value === null && setting !== "custom_parameters" ? "" : value
-    const group = item === undefined ? without(current, setting) : { ...current, [setting]: item }
-    return Object.keys(group).length > 0
-      ? { ...entry, url_options: group }
-      : without(entry, "url_options")
-  }
-  if (value === undefined) return without(entry, setting)
+  if (isUrlOption(setting)) return withUrlOption(entry, setting, value)
+  if (value === undefined) return withoutKey(entry, setting)
   // Removing a target override is "none"; a CPC bid can only be set.
   return { ...entry, [setting]: value ?? "none" }
 }
+
+const CARD = { requestedOf, settings: AD_GROUP_SETTINGS, withSetting }
 
 /** The `changes` value with one setting set on the given rows, or cancelled when undefined. */
 export function editedAdGroupChanges(
@@ -388,15 +350,7 @@ export function editedAdGroupChanges(
   ids: ReadonlySet<string>,
   value: (row: { key: string; setting: AdGroupSetting }) => AdGroupValue | undefined
 ): Record<string, unknown>[] {
-  return args.changes.flatMap((change) => {
-    let entry = change.entry
-    for (const setting of AD_GROUP_SETTINGS) {
-      if (change.requested[setting] === undefined || !ids.has(`${change.key}|${setting}`)) continue
-      entry = withSetting(entry, setting, value({ key: change.key, setting }))
-    }
-    // An entry must change something, so an ad group with every setting cancelled leaves.
-    return Object.keys(requestedOf(entry)).length > 0 ? [entry] : []
-  })
+  return editedSettingChanges(CARD, args.changes, ids, value)
 }
 
 /** Settings the request doesn't change on an ad group yet, each starting at its live value.
@@ -440,12 +394,7 @@ export function restoredAdGroupChanges(
   args: UpdateAdGroupsArgs,
   items: readonly CancelledAdGroupSetting[]
 ): Record<string, unknown>[] {
-  const entries = new Map(args.changes.map((change) => [change.key, change.entry]))
-  for (const item of items) {
-    const entry = entries.get(item.key) ?? { ad_group: item.adGroup }
-    entries.set(item.key, withSetting(entry, item.setting, item.value))
-  }
-  return [...entries.values()]
+  return restoredSettingChanges(CARD, args.changes, items, (item) => ({ ad_group: item.adGroup }))
 }
 
 export function parseCancelledAdGroupSettings(value: unknown): CancelledAdGroupSetting[] {
@@ -460,30 +409,8 @@ export function parseCancelledAdGroupSettings(value: unknown): CancelledAdGroupS
   })
 }
 
-/** Raises or lowers a money value by a percentage, in the currency's smallest unit. */
-export function scaledMoney(value: string, percent: number, currency: string | null): string {
-  const digits = currency
-    ? new Intl.NumberFormat("en", { currency, style: "currency" }).resolvedOptions()
-        .maximumFractionDigits
-    : 2
-  const scaled = Number(value) * (1 + percent / 100)
-  return canonicalMoney(Math.max(scaled, 10 ** -(digits ?? 2)).toFixed(digits ?? 2))
-}
-
-function signature(args: UpdateAdGroupsArgs): string {
-  return JSON.stringify(
-    args.changes.map((change) => [
-      change.key,
-      AD_GROUP_SETTINGS.map((setting) => change.requested[setting] ?? "-"),
-    ])
-  )
-}
-
 export function adGroupsNeedCheck(args: UpdateAdGroupsArgs, checked: UpdateAdGroupsArgs) {
-  return (
-    [...checked.checks.values()].some((check) => check.unavailable) ||
-    signature(args) !== signature(checked)
-  )
+  return settingsNeedCheck(AD_GROUP_SETTINGS, args, checked)
 }
 
 /** Why the request can't be approved yet, or null. */
@@ -492,14 +419,11 @@ export function adGroupsBlock(
   checked: UpdateAdGroupsArgs
 ): string | null {
   if (args === null) return null
-  const counts = adGroupCounts(adGroupRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (adGroupsNeedCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These ad groups already have these settings."
-  return null
+  return changesBlock(
+    adGroupCounts(adGroupRows(args, checked)),
+    adGroupsNeedCheck(args, checked),
+    "These ad groups already have these settings."
+  )
 }
 
 /** A setting's value in the words the card uses. */
@@ -522,15 +446,10 @@ export function adGroupCurrency(args: UpdateAdGroupsArgs, row: AdGroupRow): stri
   return args.accounts.get(row.customerId)?.currencyCode ?? null
 }
 
-function soleRow(args: UpdateAdGroupsArgs): AdGroupRow | null {
-  const rows = adGroupRows(args, args)
-  return rows.length === 1 ? (rows[0] ?? null) : null
-}
-
 export function adGroupsPrompt(args: UpdateAdGroupsArgs): string {
   const rows = adGroupRows(args, args)
   if (rows.length === 0) return "Nothing is left to change."
-  const sole = soleRow(args)
+  const sole = soleRow(rows)
   // The banner names the account, so a sole change's prompt names only the ad group.
   if (sole) {
     if (sole.setting === "name" && typeof sole.value === "string")
@@ -541,12 +460,10 @@ export function adGroupsPrompt(args: UpdateAdGroupsArgs): string {
     return `Change the ${name} of ${sole.adGroupName}.`
   }
   const counts = adGroupCounts(rows)
-  const ids = new Set(args.changes.map((change) => change.customerId))
-  const [id] = ids
-  const where =
-    ids.size === 1
-      ? (args.accounts.get(id ?? "")?.label ?? "Google Ads")
-      : `${String(ids.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.changes.map((change) => change.customerId)
+  )
   const target =
     counts.adGroups === 1
       ? (rows[0]?.adGroupName ?? "1 ad group")
@@ -556,7 +473,8 @@ export function adGroupsPrompt(args: UpdateAdGroupsArgs): string {
 
 /** Names the change when there is only one; otherwise counts what's sent. */
 export function adGroupsApproveLabel(args: UpdateAdGroupsArgs): string {
-  const sole = soleRow(args)
+  const rows = adGroupRows(args, args)
+  const sole = soleRow(rows)
   if (sole && !sole.unchanged) {
     if (sole.setting === "name") return "Rename Ad Group"
     if (sole.value === null && (sole.setting === "target_cpa" || sole.setting === "target_roas"))
@@ -565,10 +483,7 @@ export function adGroupsApproveLabel(args: UpdateAdGroupsArgs): string {
       ? "Change Max CPC"
       : `Change ${AD_GROUP_SETTING_TITLES[sole.setting]}`
   }
-  const { apply } = adGroupCounts(adGroupRows(args, args))
-  return apply === 0
-    ? "Apply Changes"
-    : `Apply ${String(apply)} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(adGroupCounts(rows).apply)
 }
 
 export function adGroupsBannerDetail(
@@ -590,4 +505,32 @@ export function adGroupsBannerDetail(
 
 export function adGroupsDetails(args: UpdateAdGroupsArgs | null): FanOutDetail[] {
   return args ? [{ label: "Ad Groups", value: String(args.changes.length) }] : []
+}
+
+/** The campaign an ad group row is in; Google keeps campaign names unique within an account. */
+export function adGroupCampaign(row: AdGroupRow): string {
+  return `${row.customerId}:${row.campaignName ?? ""}`
+}
+
+/** One row per campaign, with the strategy that decides which ad group bids Google uses. */
+export function campaignParents(
+  rows: readonly AdGroupRow[],
+  accounts: UpdateAdGroupsArgs["accounts"],
+  showAccount: boolean
+): ParentRow[] {
+  return groupedByParent(rows, adGroupCampaign).map(({ items, key, live }) => {
+    const first = items[0]
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? "Unknown Campaign",
+      problems: live.filter((row) => row.problem !== null).length,
+      values: {
+        ad_groups: new Set(live.map((row) => row.key)).size,
+        changes: live.length,
+        strategy: first?.strategyName ?? "—",
+      },
+    }
+  })
 }

@@ -20,13 +20,16 @@ from .positive_keywords import GoogleAdsFinalUrl
 
 MAX_AD_UPDATES = 50
 
-type _RemovedText = Annotated[str, Field(min_length=1, max_length=90)]
+# Live text with an insertion such as `{KeyWord:Shoes}` is longer than the length Google counts.
+_MAX_LIVE_TEXT = 512
+
+type _LiveText = Annotated[str, Field(min_length=1, max_length=_MAX_LIVE_TEXT)]
 
 
 class GoogleAdsAssetPin(GoogleAdsStrictModel):
     """Pins the headline or description with this text, or unpins it when `pin` is null."""
 
-    text: str = Field(min_length=1, max_length=90)
+    text: _LiveText
     pin: GoogleAdsHeadlinePin | GoogleAdsDescriptionPin | None
 
     @field_validator("text", mode="before")
@@ -40,9 +43,9 @@ class GoogleAdsAdUpdate(GoogleAdsStrictModel):
 
     ad: GoogleAdsAdReference
     add_headlines: list[GoogleAdsHeadline] | None = Field(default=None, max_length=15)
-    remove_headlines: list[_RemovedText] | None = Field(default=None, max_length=15)
+    remove_headlines: list[_LiveText] | None = Field(default=None, max_length=15)
     add_descriptions: list[GoogleAdsDescription] | None = Field(default=None, max_length=4)
-    remove_descriptions: list[_RemovedText] | None = Field(default=None, max_length=4)
+    remove_descriptions: list[_LiveText] | None = Field(default=None, max_length=4)
     pins: list[GoogleAdsAssetPin] | None = Field(default=None, max_length=19)
     # An empty path clears it.
     path1: str | None = Field(default=None, max_length=15)
@@ -97,13 +100,14 @@ class GoogleAdsUpdateAdsRequest(GoogleAdsStrictModel):
 
 
 class GoogleAdsTextAssetValue(GoogleAdsStrictModel):
-    text: str = Field(max_length=90)
+    text: str = Field(max_length=_MAX_LIVE_TEXT)
     pin: str | None = Field(default=None, max_length=32)
 
 
 class GoogleAdsAdCopyValue(GoogleAdsStrictModel):
-    headlines: list[GoogleAdsTextAssetValue] = Field(max_length=15)
-    descriptions: list[GoogleAdsTextAssetValue] = Field(max_length=4)
+    # A refused edit can ask for more than an ad holds, so the caps are the live copy plus the adds.
+    headlines: list[GoogleAdsTextAssetValue] = Field(max_length=30)
+    descriptions: list[GoogleAdsTextAssetValue] = Field(max_length=8)
     path1: str | None = Field(default=None, max_length=15)
     path2: str | None = Field(default=None, max_length=15)
     final_url: str | None = Field(default=None, max_length=2048)

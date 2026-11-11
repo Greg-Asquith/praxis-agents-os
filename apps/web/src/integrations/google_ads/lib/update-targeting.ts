@@ -2,8 +2,9 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import {
-  parseApprovalAccounts,
+  accountsText,
   type GoogleAdsApprovalAccount,
+  parseApprovalAccounts,
 } from "@/integrations/google_ads/lib/accounts"
 import {
   parseWindows,
@@ -14,7 +15,7 @@ import {
   type ScheduleWindow,
 } from "@/integrations/google_ads/lib/ad-schedule"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 export type TargetField =
@@ -137,10 +138,6 @@ export type TargetLine = {
 const UNAVAILABLE =
   "Google Ads couldn't check this campaign. Check again, or ask the agent to prepare the change again."
 
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
 function wholeNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null
 }
@@ -160,8 +157,8 @@ function parseTargets(value: unknown): Target[] {
           {
             bidAdjustment: wholeNumber(item["bid_adjustment"]),
             key,
-            name: text(item["name"]),
-            targetType: text(item["target_type"]),
+            name: textOrNull(item["name"]),
+            targetType: textOrNull(item["target_type"]),
           },
         ]
   })
@@ -182,7 +179,7 @@ function parseRadius(value: unknown): RadiusTarget[] {
     return [
       {
         bidAdjustment: wholeNumber(item["bid_adjustment"]),
-        label: text(item["label"]),
+        label: textOrNull(item["label"]),
         latitude,
         longitude,
         radius,
@@ -223,7 +220,7 @@ function parseChange(value: unknown): TargetingChange | null {
     devices: parseDevices(value["devices"]),
     entry: value,
     key,
-    label: text(value["campaign"]["label"]) ?? `Campaign ${campaignId}`,
+    label: textOrNull(value["campaign"]["label"]) ?? `Campaign ${campaignId}`,
     radius: parseRadius(value["add_radius"]),
     removeRadius: Array.isArray(value["remove_radius"])
       ? value["remove_radius"].flatMap((id) => googleAdsId(id) ?? [])
@@ -249,7 +246,7 @@ function parseCheck(value: unknown): TargetingCheck {
   return {
     unavailable: false,
     alreadySet: Array.isArray(value["already_set"]) ? value["already_set"].length : 0,
-    channel: text(value["channel"]),
+    channel: textOrNull(value["channel"]),
     devices: new Map(
       (Array.isArray(value["devices"]) ? value["devices"] : []).flatMap((item) => {
         if (!isRecord(item) || !isDevice(item["device"])) return []
@@ -259,19 +256,23 @@ function parseCheck(value: unknown): TargetingCheck {
     ),
     itemProblems: problems.flatMap((item) => {
       if (!isRecord(item)) return []
-      const [field, key, message] = [text(item["field"]), text(item["key"]), text(item["message"])]
+      const [field, key, message] = [
+        textOrNull(item["field"]),
+        textOrNull(item["key"]),
+        textOrNull(item["message"]),
+      ]
       return field && key && message ? [{ field, key, message }] : []
     }),
     languages: languages.flatMap((item) => {
       if (!isRecord(item)) return []
-      const [key, name] = [text(item["key"]), text(item["name"])]
+      const [key, name] = [textOrNull(item["key"]), textOrNull(item["name"])]
       return key && name ? [{ key, name }] : []
     }),
     locationSetting: parseSetting(value["location_setting"]),
     locationTotal: wholeNumber(value["location_total"]) ?? locations.length,
     locations: locations.flatMap((item) => {
       if (!isRecord(item)) return []
-      const [key, name] = [text(item["key"]), text(item["name"])]
+      const [key, name] = [textOrNull(item["key"]), textOrNull(item["name"])]
       return key && name
         ? [
             {
@@ -283,11 +284,11 @@ function parseCheck(value: unknown): TargetingCheck {
           ]
         : []
     }),
-    name: text(value["name"]) ?? "Campaign",
-    note: text(value["note"]),
+    name: textOrNull(value["name"]) ?? "Campaign",
+    note: textOrNull(value["note"]),
     schedule: parseWindows(value["ad_schedule"]),
-    status: text(value["status"]),
-    problem: text(value["problem"]),
+    status: textOrNull(value["status"]),
+    problem: textOrNull(value["problem"]),
     radius: radius.flatMap((item) => {
       if (!isRecord(item)) return []
       const criterionId = googleAdsId(item["criterion_id"])
@@ -861,12 +862,10 @@ export function targetingApproveLabel(args: UpdateTargetingArgs): string {
 export function targetingPrompt(args: UpdateTargetingArgs): string {
   const [first] = args.changes
   if (!first) return "Nothing is left to change."
-  const customerIds = new Set(args.changes.map((change) => change.key.split("/")[1] ?? ""))
-  const [customerId] = customerIds
-  const where =
-    customerIds.size === 1
-      ? (args.accounts.get(customerId ?? "")?.label ?? "Google Ads")
-      : `${String(customerIds.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.changes.map((change) => change.key.split("/")[1] ?? "")
+  )
   const sole = args.changes.length === 1 ? soleField(args) : null
   if (sole?.field === "add_locations" || sole?.field === "exclude_locations") {
     const check = args.checks.get(first.key)

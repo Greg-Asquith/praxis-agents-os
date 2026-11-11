@@ -4,7 +4,7 @@
 
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import AfterValidator, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
@@ -12,19 +12,14 @@ from ...operations.ad_group_settings import AdGroupSetting
 from ...operations.campaign_bidding import money
 from ...references import GoogleAdsAdGroupReference
 from ..utils.money import money_to_micros
-from .base import GoogleAdsStrictModel
+from .base import GoogleAdsStrictModel, money_validator
 from .campaign_updates import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 from .campaigns import GoogleAdsTargetCpa
 
 MAX_AD_GROUP_UPDATES = 50
 
 
-def _valid_cpc_bid(value: str) -> str:
-    money_to_micros(value, label="CPC bid")
-    return value.strip()
-
-
-type _CpcBid = Annotated[str, Field(max_length=32), AfterValidator(_valid_cpc_bid)]
+type _CpcBid = Annotated[str, Field(max_length=32), money_validator("CPC bid")]
 
 
 class GoogleAdsAdGroupUpdate(GoogleAdsStrictModel):

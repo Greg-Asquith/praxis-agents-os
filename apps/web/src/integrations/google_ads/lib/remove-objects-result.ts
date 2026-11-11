@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/remove-objects-result.ts
 
+import { countsText } from "@/integrations/google_ads/lib/edit-outcomes"
 import {
   alsoRemovesText,
   parseDependants,
@@ -83,13 +84,10 @@ export function parseRemoveObjectsResult(value: unknown): RemoveObjectsResult | 
 export function removalResultSummary(result: RemoveObjectsResult): string {
   const count = (outcome: RemovalOutcome) =>
     result.objects.filter((object) => object.outcome === outcome).length
-  return [
+  return countsText([
     [count("removed"), "removed"],
     [count("already_removed"), "already removed"],
     [count("failed"), "failed"],
     [count("unverified"), "unconfirmed"],
-  ]
-    .filter(([total]) => total !== 0)
-    .map(([total, label]) => `${String(total)} ${String(label)}`)
-    .join(" · ")
+  ])
 }

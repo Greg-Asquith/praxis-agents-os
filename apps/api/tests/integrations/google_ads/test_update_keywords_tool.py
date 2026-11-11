@@ -15,6 +15,7 @@ from pydantic_ai import ModelRetry
 from integrations.google_ads.references import GoogleAdsKeywordReference
 from integrations.google_ads.tools import update_keywords as tool_module
 from integrations.google_ads.tools.schemas.keyword_updates import GoogleAdsUpdateKeywordsOutput
+from integrations.google_ads.tools.utils import edit_runs
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
@@ -138,7 +139,7 @@ async def _display(monkeypatch, account: _Account, changes: list[Any]) -> dict[s
 
 
 async def _run(monkeypatch, account: _Account, changes: list[Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -263,15 +264,30 @@ async def test_an_ignored_bid_and_an_existing_match_type_are_refused_before_any_
     shown, told, _audit = await _run(monkeypatch, account, changes, display)
 
     checks = display["_checks"]
-    assert checks[_name("40")]["problems"] == {
-        "match_type": "“trail shoes” is already a phrase match keyword in Shoes."
-    }
-    assert checks[_name("41")]["problems"] == {
-        "cpc_bid": "Waterproof uses Maximise Conversions, so Google doesn't use a keyword max CPC."
-    }
+    assert set(checks[_name("40")]["problems"]) == {"match_type"}
+    assert set(checks[_name("41")]["problems"]) == {"cpc_bid"}
     assert account.mutates == []
     assert [keyword.outcome for keyword in shown.keywords] == ["failed", "failed"]
     assert told["counts"]["failed"] == 2 and len(told["keywords"]) == 2
+
+
+async def test_two_keywords_changed_to_the_same_match_type_keep_only_the_first(
+    monkeypatch,
+) -> None:
+    account = _Account(
+        _keyword("40", "trail shoes", "BROAD", _MANUAL),
+        _keyword("41", "trail shoes", "EXACT", _MANUAL),
+    )
+    changes = _changes(
+        {"keyword": "40", "match_type": "PHRASE"}, {"keyword": "41", "match_type": "PHRASE"}
+    )
+
+    display = await _display(monkeypatch, account, changes)
+    shown, _told, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert set(display["_checks"][_name("41")]["problems"]) == {"match_type"}
+    assert [keyword.outcome for keyword in shown.keywords] == ["updated", "failed"]
+    assert account.rows[_name("41")]["adGroupCriterion"]["status"] == "ENABLED"
 
 
 async def test_a_keyword_in_an_account_outside_the_context_is_refused(monkeypatch) -> None:

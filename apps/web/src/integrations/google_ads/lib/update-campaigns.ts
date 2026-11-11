@@ -1,8 +1,12 @@
 // apps/web/src/integrations/google_ads/lib/update-campaigns.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
+  accountsText,
+  parseCheckedEntries,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
 import {
@@ -21,8 +25,28 @@ import {
   type Bidding,
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+  unavailableProblem,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import {
+  editedSettingChanges,
+  isUrlOption,
+  parametersText,
+  parseSettingMap,
+  parseUrlParameters,
+  requestedUrlOptions,
+  restoredSettingChanges,
+  settingsNeedCheck,
+  soleRow,
+  withGroupedSetting,
+  withoutKey,
+  withUrlOption,
+  type UrlParameter,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { isRecord } from "@/lib/guards"
 
 export const CAMPAIGN_SETTINGS = [
@@ -38,7 +62,6 @@ export const CAMPAIGN_SETTINGS = [
 ] as const
 
 export type CampaignSetting = (typeof CAMPAIGN_SETTINGS)[number]
-export type UrlParameter = { key: string; value: string }
 // Card terms, as the server sends them: dates as YYYY-MM-DD, and null for none.
 export type SettingValue = string | boolean | UrlParameter[] | Bidding | null
 
@@ -54,11 +77,6 @@ export const SETTING_TITLES: Record<CampaignSetting, string> = {
   tracking_template: "Tracking Template",
 }
 
-const URL_SETTINGS = new Set<CampaignSetting>([
-  "final_url_suffix",
-  "tracking_template",
-  "custom_parameters",
-])
 const NETWORK_SETTINGS = new Set<CampaignSetting>(["search_partners", "display_expansion"])
 
 type CampaignChange = {
@@ -129,41 +147,14 @@ export type CampaignCounts = {
   total: number
 }
 
-const UNAVAILABLE_PROBLEM =
-  "Google Ads couldn't check this campaign. Ask the agent to prepare the change again."
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
-function parseParameters(value: unknown): UrlParameter[] | null {
-  if (!Array.isArray(value)) return null
-  const items: UrlParameter[] = []
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string")
-      return null
-    items.push({ key: item["key"], value: item["value"] })
-  }
-  return items
-}
+const UNAVAILABLE_PROBLEM = unavailableProblem("campaign")
 
 function settingValue(setting: CampaignSetting, value: unknown): SettingValue | undefined {
   if (setting === "bidding") return parseBidding(value) ?? undefined
   if (value === null) return setting === "custom_parameters" ? [] : null
   if (NETWORK_SETTINGS.has(setting)) return typeof value === "boolean" ? value : undefined
-  if (setting === "custom_parameters") return parseParameters(value) ?? undefined
+  if (setting === "custom_parameters") return parseUrlParameters(value) ?? undefined
   return typeof value === "string" ? value : undefined
-}
-
-function settingMap(value: unknown): Partial<Record<CampaignSetting, SettingValue>> {
-  const values: Partial<Record<CampaignSetting, SettingValue>> = {}
-  if (!isRecord(value)) return values
-  for (const setting of CAMPAIGN_SETTINGS) {
-    if (!Object.hasOwn(value, setting)) continue
-    const parsed = settingValue(setting, value[setting])
-    if (parsed !== undefined) values[setting] = parsed
-  }
-  return values
 }
 
 /** The settings an entry changes, read the way the server reads them. */
@@ -171,18 +162,11 @@ function requestedOf(
   entry: Record<string, unknown>
 ): Partial<Record<CampaignSetting, SettingValue>> {
   const values: Partial<Record<CampaignSetting, SettingValue>> = {}
-  if (typeof entry["name"] === "string")
-    values.name = entry["name"].split(/\s+/).filter(Boolean).join(" ")
+  if (typeof entry["name"] === "string") values.name = collapseSpaces(entry["name"])
   if (typeof entry["start_date"] === "string") values.start_date = entry["start_date"]
   if (typeof entry["end_date"] === "string")
     values.end_date = entry["end_date"] === "none" ? null : entry["end_date"]
-  const url = isRecord(entry["url_options"]) ? entry["url_options"] : {}
-  for (const setting of ["final_url_suffix", "tracking_template"] as const) {
-    const value = url[setting]
-    if (typeof value === "string") values[setting] = value.trim() || null
-  }
-  const parameters = parseParameters(url["custom_parameters"])
-  if (parameters) values.custom_parameters = parameters
+  Object.assign(values, requestedUrlOptions(entry))
   const networks = isRecord(entry["networks"]) ? entry["networks"] : {}
   for (const setting of ["search_partners", "display_expansion"] as const) {
     const value = networks[setting]
@@ -204,7 +188,7 @@ function parseChange(value: unknown): CampaignChange | null {
     customerId,
     entry: value,
     key: `customers/${customerId}/campaigns/${campaignId}`,
-    label: text(reference["label"]) ?? `Campaign ${campaignId}`,
+    label: textOrNull(reference["label"]) ?? `Campaign ${campaignId}`,
     requested: requestedOf(value),
   }
 }
@@ -214,7 +198,7 @@ function parseCheck(value: unknown): CampaignCheck {
   const problems: Partial<Record<CampaignSetting, string>> = {}
   const rawProblems = isRecord(value["problems"]) ? value["problems"] : {}
   for (const setting of CAMPAIGN_SETTINGS) {
-    const problem = text(rawProblems[setting])
+    const problem = textOrNull(rawProblems[setting])
     if (problem) problems[setting] = problem
   }
   const notes = isRecord(value["notes"]) ? value["notes"]["bidding"] : null
@@ -224,34 +208,21 @@ function parseCheck(value: unknown): CampaignCheck {
       if (isRecord(item) && typeof item["name"] === "string") portfolios.set(name, item["name"])
   return {
     unavailable: false,
-    channel: text(value["channel"]),
-    current: settingMap(value["current"]),
-    name: text(value["name"]),
+    channel: textOrNull(value["channel"]),
+    current: parseSettingMap(CAMPAIGN_SETTINGS, settingValue, value["current"]),
+    name: textOrNull(value["name"]),
     notes: Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [],
     portfolios,
-    problem: text(value["problem"]),
+    problem: textOrNull(value["problem"]),
     problems,
-    requested: settingMap(value["requested"]),
+    requested: parseSettingMap(CAMPAIGN_SETTINGS, settingValue, value["requested"]),
   }
 }
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseUpdateCampaignsArgs(value: unknown): UpdateCampaignsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const changes: CampaignChange[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const change = parseChange(entry)
-    if (change === null || keys.has(change.key)) return null
-    keys.add(change.key)
-    changes.push(change)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    changes,
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseChange, parseCheck)
+  return parsed && { accounts: parsed.accounts, changes: parsed.entries, checks: parsed.checks }
 }
 
 function comparable(value: SettingValue | undefined): unknown {
@@ -346,7 +317,7 @@ export function campaignRows(
   for (const item of cancelled) {
     if (live.has(`${item.key}|${item.setting}`)) continue
     const customerId = googleAdsId(item.campaign["customer_id"]) ?? ""
-    const label = text(item.campaign["label"]) ?? item.key
+    const label = textOrNull(item.campaign["label"]) ?? item.key
     rows.push(
       rowOf(
         null,
@@ -379,17 +350,9 @@ function withSetting(
   setting: CampaignSetting,
   value: SettingValue | undefined
 ): Record<string, unknown> {
-  const without = (record: Record<string, unknown>, key: string) =>
-    Object.fromEntries(Object.entries(record).filter(([name]) => name !== key))
-  const nested = (field: string, item: unknown) => {
-    const current = isRecord(entry[field]) ? entry[field] : {}
-    const group = item === undefined ? without(current, setting) : { ...current, [setting]: item }
-    return Object.keys(group).length > 0 ? { ...entry, [field]: group } : without(entry, field)
-  }
-  if (URL_SETTINGS.has(setting))
-    return nested("url_options", value === null && setting !== "custom_parameters" ? "" : value)
-  if (NETWORK_SETTINGS.has(setting)) return nested("networks", value)
-  if (value === undefined) return without(entry, setting)
+  if (isUrlOption(setting)) return withUrlOption(entry, setting, value)
+  if (NETWORK_SETTINGS.has(setting)) return withGroupedSetting(entry, "networks", setting, value)
+  if (value === undefined) return withoutKey(entry, setting)
   if (isBidding(value)) {
     const argument = biddingArgument(value)
     return argument ? { ...entry, bidding: argument } : entry
@@ -397,21 +360,15 @@ function withSetting(
   return { ...entry, [setting]: setting === "end_date" && value === null ? "none" : value }
 }
 
+const CARD = { requestedOf, settings: CAMPAIGN_SETTINGS, withSetting }
+
 /** The `changes` value with one setting set on the given rows, or cancelled when undefined. */
 export function editedChanges(
   args: UpdateCampaignsArgs,
   ids: ReadonlySet<string>,
   value: (row: { key: string; setting: CampaignSetting }) => SettingValue | undefined
 ): Record<string, unknown>[] {
-  return args.changes.flatMap((change) => {
-    let entry = change.entry
-    for (const setting of CAMPAIGN_SETTINGS) {
-      if (change.requested[setting] === undefined || !ids.has(`${change.key}|${setting}`)) continue
-      entry = withSetting(entry, setting, value({ key: change.key, setting }))
-    }
-    // An entry must change something, so a campaign with every setting cancelled leaves the request.
-    return Object.keys(requestedOf(entry)).length > 0 ? [entry] : []
-  })
+  return editedSettingChanges(CARD, args.changes, ids, value)
 }
 
 // The channels on which each network can change, as on the server.
@@ -480,12 +437,7 @@ export function restoredChanges(
   args: UpdateCampaignsArgs,
   items: readonly CancelledSetting[]
 ): Record<string, unknown>[] {
-  const entries = new Map(args.changes.map((change) => [change.key, change.entry]))
-  for (const item of items) {
-    const entry = entries.get(item.key) ?? { campaign: item.campaign }
-    entries.set(item.key, withSetting(entry, item.setting, item.value))
-  }
-  return [...entries.values()]
+  return restoredSettingChanges(CARD, args.changes, items, (item) => ({ campaign: item.campaign }))
 }
 
 export function parseCancelled(value: unknown): CancelledSetting[] {
@@ -509,15 +461,6 @@ export function parseCancelled(value: unknown): CancelledSetting[] {
   })
 }
 
-function signature(args: UpdateCampaignsArgs): string {
-  return JSON.stringify(
-    args.changes.map((change) => [
-      change.key,
-      CAMPAIGN_SETTINGS.map((setting) => change.requested[setting] ?? "-"),
-    ])
-  )
-}
-
 /** Whether Google can check the request: every bidding change is complete. */
 export function canCheckCampaigns(args: UpdateCampaignsArgs): boolean {
   return args.changes.every((change) => {
@@ -527,10 +470,7 @@ export function canCheckCampaigns(args: UpdateCampaignsArgs): boolean {
 }
 
 export function needsCheck(args: UpdateCampaignsArgs, checked: UpdateCampaignsArgs): boolean {
-  return (
-    [...checked.checks.values()].some((check) => check.unavailable) ||
-    signature(args) !== signature(checked)
-  )
+  return settingsNeedCheck(CAMPAIGN_SETTINGS, args, checked)
 }
 
 /** Why the request can't be approved yet, or null. */
@@ -539,14 +479,11 @@ export function campaignsBlock(
   checked: UpdateCampaignsArgs
 ): string | null {
   if (args === null) return null
-  const counts = campaignCounts(campaignRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (needsCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These campaigns already have these settings."
-  return null
+  return changesBlock(
+    campaignCounts(campaignRows(args, checked)),
+    needsCheck(args, checked),
+    "These campaigns already have these settings."
+  )
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
@@ -559,26 +496,6 @@ const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
 function dateText(value: string): string {
   const date = new Date(`${value}T00:00:00Z`)
   return Number.isNaN(date.getTime()) ? value : DATE_FORMAT.format(date)
-}
-
-export function parametersText(parameters: readonly UrlParameter[]): string {
-  return parameters.map((item) => `${item.key}=${item.value}`).join(", ")
-}
-
-/** Reads `key=value, key=value`; null when a pair has no key. */
-export function parseParametersText(value: string): UrlParameter[] | null {
-  const pairs = value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-  const items: UrlParameter[] = []
-  for (const pair of pairs) {
-    const split = pair.indexOf("=")
-    const key = (split === -1 ? pair : pair.slice(0, split)).trim()
-    if (!key) return null
-    items.push({ key, value: split === -1 ? "" : pair.slice(split + 1).trim() })
-  }
-  return items
 }
 
 const NO_CONTEXT: BiddingContext = { currency: null, portfolios: new Map() }
@@ -606,24 +523,14 @@ export function valueText(
   return setting === "start_date" || setting === "end_date" ? dateText(value) : value
 }
 
-function accountName(args: UpdateCampaignsArgs): string {
-  const ids = new Set(args.changes.map((change) => change.customerId))
-  const [id] = ids
-  return ids.size === 1
-    ? (args.accounts.get(id ?? "")?.label ?? "Google Ads")
-    : `${String(ids.size)} accounts`
-}
-
-function soleRow(args: UpdateCampaignsArgs): CampaignRow | null {
-  const rows = campaignRows(args, args)
-  return rows.length === 1 ? (rows[0] ?? null) : null
-}
-
 export function campaignsPrompt(args: UpdateCampaignsArgs): string {
   const rows = campaignRows(args, args)
   if (rows.length === 0) return "Nothing is left to change."
-  const where = accountName(args)
-  const sole = soleRow(args)
+  const where = accountsText(
+    args.accounts,
+    args.changes.map((change) => change.customerId)
+  )
+  const sole = soleRow(rows)
   // The banner names the account, so a sole change's prompt names only the campaign.
   if (sole) {
     if (sole.setting === "name")
@@ -641,7 +548,8 @@ export function campaignsPrompt(args: UpdateCampaignsArgs): string {
 
 /** Names the change when there is only one; otherwise counts what's sent. */
 export function campaignsApproveLabel(args: UpdateCampaignsArgs): string {
-  const sole = soleRow(args)
+  const rows = campaignRows(args, args)
+  const sole = soleRow(rows)
   if (sole && !sole.unchanged) {
     if (sole.setting === "name") return "Rename Campaign"
     if (sole.setting === "end_date") return sole.value === null ? "Remove End Date" : "Set End Date"
@@ -650,10 +558,7 @@ export function campaignsApproveLabel(args: UpdateCampaignsArgs): string {
     if (isBidding(sole.value)) return biddingApproveLabel(sole)
     return `Change ${SETTING_TITLES[sole.setting]}`
   }
-  const { apply } = campaignCounts(campaignRows(args, args))
-  return apply === 0
-    ? "Apply Changes"
-    : `Apply ${String(apply)} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(campaignCounts(rows).apply)
 }
 
 // Each target as a sentence names it.
@@ -715,4 +620,23 @@ export function campaignsBannerDetail(
 
 export function campaignsDetails(args: UpdateCampaignsArgs | null): FanOutDetail[] {
   return args ? [{ label: "Campaigns", value: String(args.changes.length) }] : []
+}
+
+/** One row per campaign, in the order its settings first appear. */
+export function campaignParents(
+  rows: readonly CampaignRow[],
+  accounts: UpdateCampaignsArgs["accounts"],
+  showAccount: boolean
+): ParentRow[] {
+  return groupedByParent(rows, (row) => row.key).map(({ items, key, live }) => {
+    const first = items[0]
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? key,
+      problems: live.filter((row) => row.problem !== null).length,
+      values: { changes: live.length },
+    }
+  })
 }

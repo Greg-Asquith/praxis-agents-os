@@ -13,6 +13,7 @@ import {
   scheduleProblems,
   scheduleRows,
   scheduleText,
+  scheduleValid,
   type ScheduleWindow,
 } from "@/integrations/google_ads/lib/ad-schedule"
 import {
@@ -451,6 +452,14 @@ describe("devices and ad schedule", () => {
       window("MONDAY", "11:00", "14:00"),
     ])
     expect(targetingBlock({ ...args, changes }, args)).toContain("no windows overlap")
+  })
+
+  it("refuses the same window twice on one day, and shows it as two rows", () => {
+    const twice = [window("MONDAY", "09:00", "17:00"), window("MONDAY", "09:00", "17:00")]
+
+    expect(scheduleValid(twice)).toBe(false)
+    expect(scheduleProblems(scheduleRows(twice)).every((problem) => problem !== null)).toBe(true)
+    expect(scheduleValid([window("MONDAY", "09:00", "17:00")])).toBe(true)
   })
 })
 

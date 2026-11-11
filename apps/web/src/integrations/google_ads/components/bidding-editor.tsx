@@ -37,6 +37,7 @@ import {
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
 import { PAGE_LOCATIONS } from "@/integrations/google_ads/lib/create-campaign"
+import { parseGoogleAdsMoney } from "@/integrations/google_ads/lib/field-values"
 import {
   isBidding,
   valueText,
@@ -534,8 +535,7 @@ function MoneyField({
             onCommit={(next) => {
               const trimmed = next.trim()
               if (!trimmed) onCommit(null)
-              else if (/^\d+(\.\d{1,6})?$/.test(trimmed) && Number(trimmed) > 0)
-                onCommit(canonicalMoney(trimmed))
+              else if (parseGoogleAdsMoney(trimmed)) onCommit(canonicalMoney(trimmed))
             }}
             placeholder="None"
             value={value === null ? "" : moneyInput(value)}

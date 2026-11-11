@@ -3,12 +3,19 @@
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import {
-  parseApprovalAccounts,
+  accountsText,
+  parseCheckedEntries,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
 import { canonicalMoney } from "@/integrations/google_ads/lib/campaign-bidding"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+  unavailableProblem,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import { soleRow } from "@/integrations/google_ads/lib/setting-changes"
 import { formatCurrency, formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -118,12 +125,7 @@ export type BudgetCounts = {
   total: number
 }
 
-const UNAVAILABLE_PROBLEM =
-  "Google Ads couldn't check this budget. Ask the agent to prepare the change again."
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
+const UNAVAILABLE_PROBLEM = unavailableProblem("budget")
 
 function money(value: unknown): string | null {
   return typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim())
@@ -159,25 +161,25 @@ function parseChange(value: unknown): BudgetChange | null {
     entry: value,
     key: `customers/${customerId}/${campaign ? "campaigns" : "campaignBudgets"}/${id}`,
     kind: campaign ? "campaign" : "budget",
-    label: text(reference["label"]) ?? id,
+    label: textOrNull(reference["label"]) ?? id,
     sharedBudget: budgetResource(shared),
-    sharedBudgetLabel: isRecord(shared) ? text(shared["label"]) : null,
+    sharedBudgetLabel: isRecord(shared) ? textOrNull(shared["label"]) : null,
   }
 }
 
 function parseView(value: unknown): BudgetView | null {
-  if (!isRecord(value) || !text(value["resource_name"])) return null
+  if (!isRecord(value) || !textOrNull(value["resource_name"])) return null
   const campaigns = Array.isArray(value["campaigns"]) ? value["campaigns"] : []
   return {
     amount: money(value["amount"]),
     campaignCount: typeof value["campaign_count"] === "number" ? value["campaign_count"] : 0,
     campaigns: campaigns.flatMap((item) =>
-      isRecord(item) && text(item["name"])
+      isRecord(item) && textOrNull(item["name"])
         ? [{ name: String(item["name"]), spend: money(item["spend"]) ?? "0" }]
         : []
     ),
-    delivery: text(value["delivery"]),
-    name: text(value["name"]) ?? "Budget",
+    delivery: textOrNull(value["delivery"]),
+    name: textOrNull(value["name"]) ?? "Budget",
     resourceName: String(value["resource_name"]),
     shared: value["shared"] === true,
     spendThisMonth: money(value["spend_this_month"]) ?? "0",
@@ -194,17 +196,17 @@ function parseCheck(value: unknown): BudgetCheck {
     budget: parseView(value["budget"]),
     current: {
       amount: money(current["amount"]),
-      delivery: text(current["delivery"]),
-      sharedBudget: text(current["shared_budget"]),
+      delivery: textOrNull(current["delivery"]),
+      sharedBudget: textOrNull(current["shared_budget"]),
     },
     daysLeft: typeof days === "number" && Number.isInteger(days) && days > 0 ? days : null,
     destination: parseView(value["destination"]),
-    name: text(value["name"]),
-    problem: text(value["problem"]),
+    name: textOrNull(value["name"]),
+    problem: textOrNull(value["problem"]),
     removesBudget: value["removes_budget"] === true,
     requested: Object.fromEntries(
       (["amount", "delivery", "shared_budget"] as const).flatMap((setting) => {
-        const item = text(requested[setting])
+        const item = textOrNull(requested[setting])
         return item ? [[setting, setting === "amount" ? canonicalMoney(item) : item]] : []
       })
     ),
@@ -214,21 +216,8 @@ function parseCheck(value: unknown): BudgetCheck {
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseUpdateBudgetsArgs(value: unknown): UpdateBudgetsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const changes: BudgetChange[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const change = parseChange(entry)
-    if (change === null || keys.has(change.key)) return null
-    keys.add(change.key)
-    changes.push(change)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    changes,
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseChange, parseCheck)
+  return parsed && { accounts: parsed.accounts, changes: parsed.entries, checks: parsed.checks }
 }
 
 /** The settings a change sets, in the server's card terms. */
@@ -306,9 +295,13 @@ export function budgetCounts(rows: readonly BudgetRow[]): BudgetCounts {
   const delta = (row: BudgetRow) => dailyDelta(row) ?? 0
   return {
     apply: live.filter((row) => !row.unchanged).length,
+    // A budget names the campaigns it funds, so a campaign row is counted by name too.
     campaigns: new Set(
       live.flatMap((row) =>
-        row.kind === "campaign" ? [row.key] : (row.budget?.campaigns.map((item) => item.name) ?? [])
+        (row.kind === "campaign"
+          ? [row.name]
+          : (row.budget?.campaigns.map((item) => item.name) ?? [])
+        ).map((name) => `${row.customerId}/${name}`)
       )
     ).size,
     decreases: live.filter((row) => delta(row) < 0).length,
@@ -333,15 +326,6 @@ export function monthAtAmount(row: BudgetRow, amount: string | null): number | n
   return Number(row.spend) + Number(amount) * row.daysLeft
 }
 
-function withEntry(
-  entry: Record<string, unknown>,
-  key: string,
-  value: unknown
-): Record<string, unknown> {
-  if (value !== undefined) return { ...entry, [key]: value }
-  return Object.fromEntries(Object.entries(entry).filter(([name]) => name !== key))
-}
-
 /** The `changes` value with each chosen change's entry replaced. */
 export function editedBudgetChanges(
   args: UpdateBudgetsArgs,
@@ -352,18 +336,19 @@ export function editedBudgetChanges(
 }
 
 export function withAmount(change: BudgetChange, amount: string): Record<string, unknown> {
-  return withEntry(change.entry, "amount", amount)
+  // A move onto a shared budget can't also set an amount.
+  return change.sharedBudget === null ? { ...change.entry, amount } : change.entry
 }
 
 export function withDelivery(change: BudgetChange, value: Delivery): Record<string, unknown> {
-  return withEntry(change.entry, "delivery", value)
+  return { ...change.entry, delivery: value }
 }
 
 export function withSharedBudget(
   change: BudgetChange,
   reference: Record<string, unknown>
 ): Record<string, unknown> {
-  return withEntry(change.entry, "use_shared_budget", reference)
+  return { ...change.entry, use_shared_budget: reference }
 }
 
 /** The `changes` value without the chosen changes, and those changes to keep for Undo. */
@@ -405,14 +390,11 @@ export function budgetsBlock(
   checked: UpdateBudgetsArgs
 ): string | null {
   if (args === null) return null
-  const counts = budgetCounts(budgetRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (budgetsNeedCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These budgets already have these settings."
-  return null
+  return changesBlock(
+    budgetCounts(budgetRows(args, checked)),
+    budgetsNeedCheck(args, checked),
+    "These budgets already have these settings."
+  )
 }
 
 export function budgetCurrency(args: UpdateBudgetsArgs, row: BudgetRow): string | null {
@@ -479,21 +461,15 @@ export function budgetParents(
         budget: row.sharedBudget
           ? `${budgetKindText(row)} → ${row.sharedBudgetLabel ?? "Shared budget"}`
           : budgetKindText(row),
-        problems: row.cancelled ? "Cancelled" : problem ? "1 to fix" : "None",
       },
     }
   })
 }
 
-function soleRow(args: UpdateBudgetsArgs): BudgetRow | null {
-  const rows = budgetRows(args, args)
-  return rows.length === 1 ? (rows[0] ?? null) : null
-}
-
 export function budgetsPrompt(args: UpdateBudgetsArgs): string {
   const rows = budgetRows(args, args)
   if (rows.length === 0) return "Nothing is left to change."
-  const sole = soleRow(args)
+  const sole = soleRow(rows)
   if (sole) {
     const currency = budgetCurrency(args, sole)
     if (sole.sharedBudget)
@@ -502,23 +478,19 @@ export function budgetsPrompt(args: UpdateBudgetsArgs): string {
       return `Set the daily budget of ${sole.name} to ${moneyText(sole.amount, currency)}.`
     return `Change how ${sole.name} spends its budget.`
   }
-  const ids = new Set(args.changes.map((change) => change.customerId))
-  const [id] = ids
-  const where =
-    ids.size === 1
-      ? (args.accounts.get(id ?? "")?.label ?? "Google Ads")
-      : `${String(ids.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.changes.map((change) => change.customerId)
+  )
   return `Change ${approvalCountLine(rows.length, "budget")} in ${where}.`
 }
 
 /** Names the change when there is only one; otherwise counts what's sent. */
 export function budgetsApproveLabel(args: UpdateBudgetsArgs): string {
-  const sole = soleRow(args)
+  const rows = budgetRows(args, args)
+  const sole = soleRow(rows)
   if (sole && !sole.unchanged) return sole.sharedBudget ? "Move Campaign" : "Change Budget"
-  const { apply } = budgetCounts(budgetRows(args, args))
-  return apply === 0
-    ? "Apply Changes"
-    : `Apply ${String(apply)} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(budgetCounts(rows).apply)
 }
 
 export function budgetsBannerDetail(

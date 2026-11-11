@@ -2,13 +2,19 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
-import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { collapseSpaces, type KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
+  accountsText,
   type GoogleAdsApprovalAccount,
+  parseApprovalAccounts,
 } from "@/integrations/google_ads/lib/accounts"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
 import { isRecord } from "@/lib/guards"
 
@@ -100,27 +106,19 @@ const UNAVAILABLE =
   "Google Ads couldn't check this. Check again, or ask the agent to prepare the change again."
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
 function count(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null
-}
-
-function collapse(value: string): string {
-  return value.trim().split(/\s+/).join(" ")
 }
 
 function parseReference(value: unknown, idKey: string, noun: string): Reference | null {
   if (!isRecord(value)) return null
   const id = googleAdsId(value[idKey])
-  return id === null ? null : { id, label: text(value["label"]) ?? `${noun} ${id}`, value }
+  return id === null ? null : { id, label: textOrNull(value["label"]) ?? `${noun} ${id}`, value }
 }
 
 function parseDecision(value: unknown): SearchTermDecision | null {
   if (!isRecord(value)) return null
-  const term = text(value["search_term"])
+  const term = textOrNull(value["search_term"])
   const { action, level, match_type: matchType } = value
   const adGroup = parseReference(value["ad_group"], "ad_group_id", "Ad group")
   const raw = isRecord(value["ad_group"]) ? value["ad_group"] : {}
@@ -136,12 +134,12 @@ function parseDecision(value: unknown): SearchTermDecision | null {
     (level != null && level !== "ad_group" && level !== "campaign" && level !== "list")
   )
     return null
-  const collapsed = collapse(term)
+  const collapsed = collapseSpaces(term)
   return {
     action,
     adGroup,
     campaignId,
-    campaignLabel: text(raw["scope_label"]),
+    campaignLabel: textOrNull(raw["scope_label"]),
     customerId,
     key: `customers/${customerId}/adGroups/${adGroup.id}/${action}/${collapsed.toLowerCase()}`,
     keywordAdGroup: parseReference(value["keyword_ad_group"], "ad_group_id", "Ad group"),
@@ -155,17 +153,17 @@ function parseDecision(value: unknown): SearchTermDecision | null {
 
 function parseCheck(value: unknown): DecisionCheck {
   if (!isRecord(value) || value["unavailable"] !== false) return { unavailable: true }
-  const cost = text(value["cost"])
+  const cost = textOrNull(value["cost"])
   return {
-    adGroupName: text(value["ad_group_name"]),
-    campaignName: text(value["campaign_name"]),
+    adGroupName: textOrNull(value["ad_group_name"]),
+    campaignName: textOrNull(value["campaign_name"]),
     clicks: count(value["clicks"]),
     conversions: count(value["conversions"]),
     cost: cost === null ? null : Number(cost),
-    problem: text(value["problem"]),
-    termStatus: text(value["term_status"]),
+    problem: textOrNull(value["problem"]),
+    termStatus: textOrNull(value["term_status"]),
     state: value["state"] === "already_set" ? "already_set" : "change",
-    targetName: text(value["target_name"]),
+    targetName: textOrNull(value["target_name"]),
     unavailable: false,
   }
 }
@@ -173,8 +171,8 @@ function parseCheck(value: unknown): DecisionCheck {
 /** Reads the request with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseSearchTermsArgs(value: unknown): OptimiseSearchTermsArgs | null {
   if (!isRecord(value) || !Array.isArray(value["decisions"])) return null
-  const startDate = text(value["start_date"])
-  const endDate = text(value["end_date"])
+  const startDate = textOrNull(value["start_date"])
+  const endDate = textOrNull(value["end_date"])
   if (!startDate || !endDate || !DATE_PATTERN.test(startDate) || !DATE_PATTERN.test(endDate))
     return null
   const decisions: SearchTermDecision[] = []
@@ -269,7 +267,7 @@ export function searchedTarget(
   const detail =
     kind === "list"
       ? LIST_DETAIL
-      : [text(reference["scope_label"]), "Ad Group"].filter(Boolean).join(" · ")
+      : [textOrNull(reference["scope_label"]), "Ad Group"].filter(Boolean).join(" · ")
   return { detail, label, reference, value: `${kind}:${id}` }
 }
 
@@ -540,27 +538,22 @@ export function searchTermParents(
   accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
   showAccount: boolean
 ): ParentRow[] {
-  const groups = new Map<string, SearchTermRow[]>()
-  for (const row of rows) groups.set(row.adGroupKey, [...(groups.get(row.adGroupKey) ?? []), row])
+  const groups = groupedByParent(rows, (row) => row.adGroupKey)
   const spend = (items: readonly SearchTermRow[]) =>
     items.reduce((total, row) => total + (row.cost ?? 0), 0)
   // Sorted on every term's cost, so cancelling an ad group doesn't move its row.
-  const sorted = [...groups].sort(([, a], [, b]) => spend(b) - spend(a))
-  return sorted.map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
+  const sorted = groups.sort((a, b) => spend(b.items) - spend(a.items))
+  return sorted.map(({ items, key, live }) => {
     const first = items[0]
-    const problems = live.filter((row) => row.problem !== null).length
     return {
       cancelled: live.length === 0,
       context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
       key,
       name: first?.adGroupName ?? key,
-      problems,
+      problems: live.filter((row) => row.problem !== null).length,
       values: {
         campaign: first?.campaignName ?? "",
         cost: spend(live),
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
         terms: live.length,
       },
     }
@@ -587,20 +580,15 @@ export function searchTermsBlock(
   checked: OptimiseSearchTermsArgs
 ): string | null {
   if (args === null) return null
-  const counts = searchTermCounts(searchTermRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (needsCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These search terms are already in place."
-  return null
+  return changesBlock(
+    searchTermCounts(searchTermRows(args, checked)),
+    needsCheck(args, checked),
+    "These search terms are already in place."
+  )
 }
 
 export function searchTermsApproveLabel(args: OptimiseSearchTermsArgs): string {
-  const { apply } = searchTermCounts(searchTermRows(args, args))
-  if (apply === 0) return "Apply Changes"
-  return `Apply ${apply.toLocaleString("en-GB")} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(searchTermCounts(searchTermRows(args, args)).apply)
 }
 
 function day(value: string): string {
@@ -627,12 +615,10 @@ export function accountCurrency(args: OptimiseSearchTermsArgs): string | null {
 
 export function searchTermsPrompt(args: OptimiseSearchTermsArgs): string {
   if (args.decisions.length === 0) return "Nothing is left to change."
-  const customerIds = new Set(args.decisions.map((decision) => decision.customerId))
-  const [customerId] = customerIds
-  const where =
-    customerIds.size === 1
-      ? (args.accounts.get(customerId ?? "")?.label ?? "Google Ads")
-      : `${String(customerIds.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.decisions.map((decision) => decision.customerId)
+  )
   return `Act on ${approvalCountLine(args.decisions.length, "search term")} from ${dateRangeText(args)} in ${where}.`
 }
 

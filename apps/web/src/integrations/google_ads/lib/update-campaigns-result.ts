@@ -1,15 +1,14 @@
 // apps/web/src/integrations/google_ads/lib/update-campaigns-result.ts
 
 import { parseBidding, type BiddingContext } from "@/integrations/google_ads/lib/campaign-bidding"
+import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
+import type { UrlParameter } from "@/integrations/google_ads/lib/setting-changes"
 import {
   CAMPAIGN_SETTINGS,
   type CampaignSetting,
   type SettingValue,
-  type UrlParameter,
 } from "@/integrations/google_ads/lib/update-campaigns"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
-
-export type CampaignOutcome = "updated" | "already_set" | "failed" | "unverified"
 
 export type CampaignOutcomeRow = {
   after: SettingValue
@@ -17,7 +16,7 @@ export type CampaignOutcomeRow = {
   campaignName: string
   errorCode: string | null
   message: string | null
-  outcome: CampaignOutcome
+  outcome: EditOutcome
   readBack: boolean
   setting: CampaignSetting
 }
@@ -28,8 +27,6 @@ export type UpdateCampaignsResult = {
   context: BiddingContext
   rows: CampaignOutcomeRow[]
 }
-
-const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
 
 function value(raw: unknown): SettingValue | undefined {
   if (raw === null || typeof raw === "string" || typeof raw === "boolean") return raw
@@ -57,8 +54,7 @@ function parseCampaign(raw: unknown): CampaignOutcomeRow[] | null {
     if (
       typeof setting !== "string" ||
       !(CAMPAIGN_SETTINGS as readonly string[]).includes(setting) ||
-      typeof outcome !== "string" ||
-      !OUTCOMES.includes(outcome) ||
+      !isEditOutcome(outcome) ||
       before === undefined ||
       after === undefined
     )
@@ -69,7 +65,7 @@ function parseCampaign(raw: unknown): CampaignOutcomeRow[] | null {
       campaignName: raw["name"],
       errorCode: text("error_code"),
       message: text("message"),
-      outcome: outcome as CampaignOutcome,
+      outcome,
       readBack: raw["read_back"] === true,
       setting: setting as CampaignSetting,
     })

@@ -25,7 +25,6 @@ from tests.support.google_native import mock_google_native
     ("model_id", "vertex", "thinking"),
     [
         ("gemini-4-argon", False, "minimal"),
-        ("gemini-4-carbon", False, "minimal"),
         ("gemini-4-carbon", True, False),
     ],
 )

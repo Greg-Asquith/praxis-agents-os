@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/update-keywords-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState, type ReactNode } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -14,39 +13,46 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
-import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
+import { PercentInput } from "@/integrations/ads/components/percent-input"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
-import { canonicalMoney, moneyInput } from "@/integrations/google_ads/lib/campaign-bidding"
-import { MATCH_TYPE_LABELS, MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
-import { scaledMoney } from "@/integrations/google_ads/lib/update-ad-groups"
-import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/update-campaigns"
 import {
-  KEYWORD_SETTING_TITLES,
-  KEYWORD_SETTINGS,
+  canonicalMoney,
+  moneyInput,
+  scaledMoney,
+} from "@/integrations/google_ads/lib/campaign-bidding"
+import { parseGoogleAdsMoney } from "@/integrations/google_ads/lib/field-values"
+import { MATCH_TYPE_LABELS, MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
+import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/setting-changes"
+import {
   addableSettings,
   addedKeywordChanges,
+  adGroupParents,
+  type CancelledKeywordSetting,
   editedKeywordChanges,
-  keywordCounts,
+  KEYWORD_SETTING_TITLES,
+  KEYWORD_SETTINGS,
   keywordAdGroup,
+  keywordCounts,
   keywordCurrency,
+  type KeywordRow,
   keywordRows,
   keywordsBannerDetail,
+  type KeywordSetting,
   keywordsNeedCheck,
+  type KeywordValue,
   keywordValueText,
   parseCancelledKeywordSettings,
   parseUrls,
   replacesKeyword,
   restoredKeywordChanges,
-  type CancelledKeywordSetting,
-  type KeywordRow,
-  type KeywordSetting,
-  type KeywordValue,
   type UpdateKeywordsArgs,
 } from "@/integrations/google_ads/lib/update-keywords"
 import { currencySymbol } from "@/lib/format"
@@ -70,25 +76,6 @@ const PARENT_COLUMNS: DataColumn[] = [
 ]
 
 /** One row per ad group the changes are in, in the order its keywords first appear. */
-function adGroupParents(rows: readonly KeywordRow[]): ParentRow[] {
-  const groups = new Map<string, KeywordRow[]>()
-  for (const row of rows) {
-    const key = keywordAdGroup(row)
-    groups.set(key, [...(groups.get(key) ?? []), row])
-  }
-  return [...groups].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
-    const first = items.find((row) => row.adGroupName) ?? items[0]
-    return {
-      cancelled: live.length === 0,
-      context: first?.campaignName ?? null,
-      key,
-      name: first?.adGroupName ?? `Ad group ${key.split("/").pop() ?? ""}`,
-      problems: live.filter((row) => row.problem !== null).length,
-      values: { changes: live.length, keywords: new Set(live.map((row) => row.key)).size },
-    }
-  })
-}
 
 const MATCH_OPTIONS = MATCH_TYPES.map((value) => ({ value, label: MATCH_TYPE_LABELS[value] }))
 
@@ -169,6 +156,7 @@ export function UpdateKeywordsApproval({
     rows.filter((row) => !row.cancelled && match(row))
   const cancelCell = (row: KeywordRow) => (
     <CancelCell
+      cancelled={row.cancelled}
       disabled={disabled}
       onCancel={() => {
         cancel([row.id])
@@ -176,7 +164,6 @@ export function UpdateKeywordsApproval({
       onUndo={() => {
         undo(row.id)
       }}
-      row={row}
     />
   )
   const edit =
@@ -188,6 +175,11 @@ export function UpdateKeywordsApproval({
   const [adGroup, setAdGroup] = useState<string | null>(null)
   const parents = useMemo(() => adGroupParents(rows), [rows])
   const shown = adGroup === null ? rows : rows.filter((row) => keywordAdGroup(row) === adGroup)
+  // A tab's rows can sit in another ad group, so choosing one shows every ad group.
+  const showTab = (id: string) => {
+    setAdGroup(null)
+    setTab(id)
+  }
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -225,7 +217,7 @@ export function UpdateKeywordsApproval({
                   id: setting,
                   label: KEYWORD_SETTING_TITLES[setting],
                   onSelect: () => {
-                    setTab(setting)
+                    showTab(setting)
                   },
                   selected: tab === setting,
                 }
@@ -248,7 +240,7 @@ export function UpdateKeywordsApproval({
                 id: "attention",
                 label: "Needs Attention",
                 onSelect: () => {
-                  setTab("attention")
+                  showTab("attention")
                 },
                 selected: tab === "attention",
                 tone: "danger",
@@ -258,7 +250,7 @@ export function UpdateKeywordsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
-              setTab("attention")
+              showTab("attention")
             }}
           />
         </>
@@ -632,10 +624,9 @@ function SettingEditor({
           disabled={disabled}
           onCommit={(next) => {
             const trimmed = next.trim()
-            const number = Number(trimmed)
             // An empty bid makes the keyword use its ad group's bid.
             if (!trimmed) onChange(null)
-            else if (Number.isFinite(number) && number > 0) onChange(canonicalMoney(trimmed))
+            else if (parseGoogleAdsMoney(trimmed)) onChange(canonicalMoney(trimmed))
           }}
           placeholder="Ad group's bid"
           value={typeof value === "string" ? moneyInput(value) : ""}
@@ -695,13 +686,10 @@ function EveryAction({
   // Each new bid is the live one changed by the same percentage.
   const byKey = new Map(rows.map((row) => [row.key, row]))
   return (
-    <CommittedInput
-      ariaLabel="Change every max CPC in this line by a percentage"
-      className="h-7 w-28 text-sm tabular-nums"
+    <PercentInput
       disabled={disabled}
-      onCommit={(next) => {
-        const percent = Number(next.trim().replace(/%$/, ""))
-        if (!next.trim() || !Number.isFinite(percent) || percent <= -100) return
+      label="Change every max CPC in this line by a percentage"
+      onCommit={(percent) => {
         setValues(ids, ({ key }) => {
           const row = byKey.get(key)
           const was = typeof row?.was === "string" ? row.was : null
@@ -710,38 +698,6 @@ function EveryAction({
             : (row?.value ?? null)
         })
       }}
-      placeholder="Change by %"
-      value=""
     />
-  )
-}
-
-function CancelCell({
-  disabled,
-  onCancel,
-  onUndo,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  onUndo: () => void
-  row: KeywordRow
-}) {
-  return row.cancelled ? (
-    <Button disabled={disabled} onClick={onUndo} size="sm" type="button" variant="ghost">
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={onCancel}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

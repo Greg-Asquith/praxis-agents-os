@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import {
   EDIT_OUTCOME_BADGES,
   EDIT_OUTCOME_LABELS,
@@ -105,8 +106,4 @@ export function UpdateKeywordsOutcome({ result }: { result: UpdateKeywordsResult
       tabs={EDIT_OUTCOME_TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

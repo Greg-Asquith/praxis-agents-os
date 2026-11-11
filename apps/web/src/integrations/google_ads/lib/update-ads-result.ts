@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/update-ads-result.ts
 
-import type { TextAsset } from "@/integrations/google_ads/lib/create-ads"
-import type { EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
+import { parseTextAssets } from "@/integrations/google_ads/lib/create-ads"
+import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import type { LiveCopy } from "@/integrations/google_ads/lib/update-ads"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
@@ -22,27 +22,15 @@ export type AdOutcomeRow = {
 
 export type UpdateAdsResult = { accountId: string; rows: AdOutcomeRow[] }
 
-const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
-
 function nullableText(value: unknown): string | null {
   return typeof value === "string" && value ? value : null
-}
-
-function assets(value: unknown): TextAsset[] | null {
-  if (!Array.isArray(value)) return null
-  const items: TextAsset[] = []
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["text"] !== "string") return null
-    items.push({ pin: nullableText(item["pin"]), text: item["text"] })
-  }
-  return items
 }
 
 function copy(value: unknown): LiveCopy | null | undefined {
   if (value === null || value === undefined) return null
   if (!isRecord(value)) return undefined
-  const headlines = assets(value["headlines"])
-  const descriptions = assets(value["descriptions"])
+  const headlines = parseTextAssets(value["headlines"])
+  const descriptions = parseTextAssets(value["descriptions"])
   if (headlines === null || descriptions === null) return undefined
   return {
     descriptions,
@@ -60,8 +48,7 @@ function parseAd(raw: unknown): AdOutcomeRow | null {
   const after = copy(raw["after"])
   const requested = copy(raw["requested"])
   if (
-    typeof outcome !== "string" ||
-    !OUTCOMES.includes(outcome) ||
+    !isEditOutcome(outcome) ||
     before === undefined ||
     after === undefined ||
     requested === undefined
@@ -76,7 +63,7 @@ function parseAd(raw: unknown): AdOutcomeRow | null {
     errorCode: nullableText(raw["error_code"]),
     message: nullableText(raw["message"]),
     name: raw["name"],
-    outcome: outcome as EditOutcome,
+    outcome,
     requested,
     reviewStatus: nullableText(raw["review_status"]),
   }
@@ -118,18 +105,4 @@ export function changeLines(
   if (gone.length === 0 && added.length === 0)
     return { after: "Pins changed", before: "Pins changed" }
   return { after: added.join(" · ") || "—", before: gone.join(" · ") || "—" }
-}
-
-export function adsOutcomeSummary(result: UpdateAdsResult): string {
-  const count = (match: (row: AdOutcomeRow) => boolean) => result.rows.filter(match).length
-  return [
-    [count((row) => row.outcome === "updated"), "changed"],
-    [count(inReview), "in review"],
-    [count((row) => row.outcome === "already_set"), "already set"],
-    [count((row) => row.outcome === "failed"), "failed"],
-    [count((row) => row.outcome === "unverified"), "unconfirmed"],
-  ]
-    .filter(([total]) => total !== 0)
-    .map(([total, label]) => `${String(total)} ${String(label)}`)
-    .join(" · ")
 }

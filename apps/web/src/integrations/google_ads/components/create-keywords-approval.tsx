@@ -28,10 +28,13 @@ import { MatchTypeCell } from "@/integrations/google_ads/components/new-ad-group
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import type { DraftKeyword } from "@/integrations/google_ads/lib/create-ad-groups"
 import {
+  distinctKeywords,
   keywordAdGroupRows,
   keywordCounts,
   keywordProblem,
+  keywordsEdited,
   keywordsNeedCheck,
+  keywordTextAllowed,
   parseCreateKeywordsArgs,
   serializeEntries,
   type CreateKeywordsArgs,
@@ -83,6 +86,7 @@ export function CreateKeywordsApproval({
     [args, checked, parked]
   )
   const counts = keywordCounts(args, checked)
+  const edited = keywordsEdited(args, checked)
   const [chosen, setChosen] = useState<string | null>(null)
   const [finding, setFinding] = useState(false)
   const tools = counts.keywords >= TOOLS_FROM
@@ -117,7 +121,9 @@ export function CreateKeywordsApproval({
       parked.filter((item) => item.key !== key)
     )
   }
-  const editKeywords = (key: string, keywords: DraftKeyword[]) => {
+  const editKeywords = (key: string, next: DraftKeyword[]) => {
+    // An added keyword or a new match type can repeat one the ad group already has.
+    const keywords = distinctKeywords(next)
     if (parked.some((item) => item.key === key)) {
       if (keywords.length > 0) restore(key, keywords)
       return
@@ -139,11 +145,9 @@ export function CreateKeywordsApproval({
     )
   }
   const addKeywords = (group: Group, pasted: readonly PastedKeyword[]) => {
-    const known = new Set(group.entry.keywords.map(sameKeyword))
-    const fresh = pasted.filter((keyword) => !known.has(sameKeyword(keyword)))
     editKeywords(group.entry.key, [
       ...group.entry.keywords,
-      ...fresh.map((keyword) => ({ ...keyword, cpcBid: "", finalUrl: "" })),
+      ...pasted.map((keyword) => ({ ...keyword, cpcBid: "", finalUrl: "" })),
     ])
   }
   const addAdGroups = (picked: readonly ChosenAdGroup[]) => {
@@ -157,7 +161,9 @@ export function CreateKeywordsApproval({
   const cancelProblems = () => {
     const kept = args.entries.map((entry) => ({
       ...entry,
-      keywords: entry.keywords.filter((keyword) => !keywordProblem(checked, entry, keyword)),
+      keywords: entry.keywords.filter(
+        (keyword) => !keywordProblem(checked, entry, keyword, edited)
+      ),
     }))
     save(
       kept.filter((entry) => entry.keywords.length > 0),
@@ -356,7 +362,9 @@ export function CreateKeywordsApproval({
             if (!keyword) return null
             if (column.key === "keyword") {
               const problem =
-                group.state === "live" ? keywordProblem(checked, group.entry, keyword) : null
+                group.state === "live"
+                  ? keywordProblem(checked, group.entry, keyword, edited)
+                  : null
               return (
                 <span className="grid min-w-0 gap-0.5 whitespace-normal">
                   <span className="text-sm wrap-anywhere">{keyword.text}</span>
@@ -466,14 +474,7 @@ function parentRow(group: Group): ParentRow {
     values: {
       bid: group.bid,
       keywords: group.entry.keywords.length,
-      problems:
-        group.state === "cancelled"
-          ? "Cancelled"
-          : group.state === "new"
-            ? "No keywords yet"
-            : group.problems > 0
-              ? `${String(group.problems)} to fix`
-              : "None",
+      ...(group.state === "new" ? { problems: "No keywords yet" } : {}),
     },
   }
 }
@@ -492,9 +493,9 @@ function NewKeyword({
   const read = (value: string) =>
     value.split(/\r?\n/).flatMap((line) => {
       const notated = /^\[.+\]$|^".+"$/.test(line.trim())
-      return parseKeywordLines(line).map((keyword) =>
-        notated ? keyword : { ...keyword, matchType }
-      )
+      return parseKeywordLines(line)
+        .filter((keyword) => keywordTextAllowed(keyword.text))
+        .map((keyword) => (notated ? keyword : { ...keyword, matchType }))
     })
   const submit = () => {
     const keywords = read(text)
@@ -546,10 +547,6 @@ function NewKeyword({
       </Button>
     </div>
   )
-}
-
-function sameKeyword(keyword: PastedKeyword): string {
-  return `${keyword.matchType}/${keyword.text.toLowerCase()}`
 }
 
 function parkedEntries(value: unknown): KeywordEntry[] {

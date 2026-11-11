@@ -4,14 +4,14 @@
 
 from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from ...references import GoogleAdsAdGroupReference, GoogleAdsCampaignReference
 from ..utils.money import money_to_micros
 from .ads import GoogleAdsResponsiveSearchAd
-from .base import GoogleAdsStrictModel
+from .base import GoogleAdsStrictModel, money_validator
 from .negative_keywords import NegativeKeywordEntry
 from .positive_keywords import (
     GoogleAdsCpcBid,
@@ -28,11 +28,6 @@ MAX_ADS_PER_AD_GROUP = 3
 MAX_OBJECTS = 2_500
 # Rows in a result that lists what Google refused; an atomic refusal usually gives one reason.
 MAX_RESULT_PROBLEMS = 50
-
-
-def _valid_target_cpa(value: str) -> str:
-    money_to_micros(value, label="target CPA")
-    return value.strip()
 
 
 def _blank_is_none(value: object) -> object:
@@ -81,14 +76,12 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
         default=None,
         description="Default click bid. Only when the campaign uses Manual CPC bidding.",
     )
-    target_cpa: Annotated[str, Field(max_length=32), AfterValidator(_valid_target_cpa)] | None = (
-        Field(
-            default=None,
-            description=(
-                "Overrides the campaign's target CPA, in the account currency. Only when the "
-                "campaign uses Target CPA, or Maximise Conversions with a target CPA."
-            ),
-        )
+    target_cpa: Annotated[str, Field(max_length=32), money_validator("target CPA")] | None = Field(
+        default=None,
+        description=(
+            "Overrides the campaign's target CPA, in the account currency. Only when the "
+            "campaign uses Target CPA, or Maximise Conversions with a target CPA."
+        ),
     )
     target_roas: float | None = Field(
         default=None,

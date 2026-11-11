@@ -32,7 +32,7 @@ type ReadState = Callable[[Sequence["Edit"]], Awaitable[Mapping[str, SettingValu
 
 STALE_CODE = "CHANGED_SINCE_APPROVAL"
 ALREADY_SET = "already_set"
-_STALE_MESSAGE = (
+STALE_MESSAGE = (
     "This changed in Google Ads after the request was approved. Ask again to see it now."
 )
 _MISSING_MESSAGE = "This no longer exists in Google Ads."
@@ -294,7 +294,7 @@ async def apply_edits(
     _require_unique(edits)
     live = await read(edits)
     refusals = {
-        edit.key: edit.refused or _STALE_MESSAGE
+        edit.key: edit.refused or STALE_MESSAGE
         for edit in edits
         if edit.refused is not None or edit.live(live.get(edit.key)) != edit.before
     }
@@ -462,7 +462,8 @@ def _ledger(
     outcomes: list[GoogleAdsMutationOutcome] = []
     for index, edit in enumerate(edits):
         if edit.key in refusals:
-            code = "REFUSED" if edit.refused is not None else STALE_CODE
+            # A group refused for one stale edit is stale throughout; any other refusal isn't.
+            code = STALE_CODE if refusals[edit.key] == STALE_MESSAGE else "REFUSED"
             submitted.append((index, parent_fields[index]))
             outcomes.append(("failed", None, code, refusals[edit.key]))
         elif edit.key in sent_outcome:

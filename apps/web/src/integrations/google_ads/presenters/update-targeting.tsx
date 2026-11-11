@@ -52,7 +52,7 @@ export const googleAdsUpdateTargetingPresenter = createIntegrationWritePresenter
       settledPartial: (result) => result.rows.some((row) => row.outcome === "failed"),
       settledUnverified: (result) => result.rows.some((row) => row.outcome === "unverified"),
       settledFailure: (result) =>
-        result.rows.every((row) => row.outcome === "failed")
+        result.rows.length > 0 && result.rows.every((row) => row.outcome === "failed")
           ? "Google Ads didn't make any of these changes."
           : null,
       renderFailure: (args, description, result) =>

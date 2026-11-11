@@ -63,7 +63,7 @@ export const googleAdsUpdateStatusPresenter = createIntegrationWritePresenter({
         settledUnverified: (result) =>
           result.objects.some((object) => object.outcome === "unverified"),
         settledFailure: (result) =>
-          result.objects.every((object) => object.outcome === "failed")
+          result.objects.length > 0 && result.objects.every((object) => object.outcome === "failed")
             ? "Google Ads didn't make any of these changes."
             : null,
         renderFailure: (args, description, result) =>

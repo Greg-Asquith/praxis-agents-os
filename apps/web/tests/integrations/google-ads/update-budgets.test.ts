@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
+  budgetCounts,
   budgetRows,
   budgetsBlock,
   editedBudgetChanges,
@@ -106,6 +107,40 @@ describe("approval", () => {
 
     expect(monthAtAmount(row, row.amount)).toBe(900)
     expect(totalDailyDelta([row])).toBe(15)
+  })
+})
+
+describe("edits", () => {
+  it("leaves a move onto a shared budget without an amount, which Google Ads refuses", () => {
+    const move = {
+      campaign: campaign("10"),
+      use_shared_budget: { customer_id: CUSTOMER, budget_id: "2" },
+    }
+    const args = parsed(raw({ changes: [move, { campaign: campaign("11"), amount: "45" }] }))
+
+    expect(
+      editedBudgetChanges(args, new Set([campaignKey("10"), campaignKey("11")]), (change) =>
+        withAmount(change, "60")
+      )
+    ).toEqual([move, { campaign: campaign("11"), amount: "60" }])
+  })
+
+  it("counts a campaign once when its shared budget is in the request too", () => {
+    const shared = view("2", { shared: true })
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), amount: "60" },
+          { budget: { customer_id: CUSTOMER, budget_id: "2", label: "Budget 2" }, amount: "80" },
+        ],
+        _checks: {
+          [campaignKey("10")]: check({ budget: shared }),
+          [budgetKey("2")]: check({ kind: "budget", name: "Budget 2", budget: shared }),
+        },
+      })
+    )
+
+    expect(budgetCounts(budgetRows(args, args)).campaigns).toBe(1)
   })
 })
 

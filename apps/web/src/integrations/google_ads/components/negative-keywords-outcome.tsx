@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import {
   MATCH_TYPE_LABELS,
   TARGET_KIND_LABELS,
@@ -119,8 +120,4 @@ function OutcomeTable({ rows, targetLabel }: { rows: readonly Row[]; targetLabel
       tabs={NEGATIVE_OUTCOME_TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

@@ -9,7 +9,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, Field
 
-from integrations.google_ads.tools.utils.money import money_to_micros
+from .base import money_validator
 
 
 def normalize_keyword_text(value: object) -> object:
@@ -23,11 +23,6 @@ def validate_keyword_word_count(value: str) -> str:
     return value
 
 
-def _valid_cpc_bid(value: str) -> str:
-    money_to_micros(value, label="CPC bid")
-    return value.strip()
-
-
 GoogleAdsCpcBid = Annotated[
     str,
     Field(
@@ -38,7 +33,7 @@ GoogleAdsCpcBid = Annotated[
             "six decimal places. Omit it to use the ad group's bid."
         ),
     ),
-    AfterValidator(_valid_cpc_bid),
+    money_validator("CPC bid"),
 ]
 
 

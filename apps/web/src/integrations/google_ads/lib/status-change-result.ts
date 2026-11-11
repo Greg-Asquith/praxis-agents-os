@@ -1,14 +1,17 @@
 // apps/web/src/integrations/google_ads/lib/status-change-result.ts
 
 import {
+  countsText,
+  type EditOutcome,
+  isEditOutcome,
+} from "@/integrations/google_ads/lib/edit-outcomes"
+import {
   STATUS_KIND_TITLES,
   type LiveStatus,
   type RequestedStatus,
   type StatusKind,
 } from "@/integrations/google_ads/lib/status-change"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
-
-export type StatusOutcome = "updated" | "already_set" | "failed" | "unverified"
 
 export type StatusObjectResult = {
   after: LiveStatus | null
@@ -18,14 +21,12 @@ export type StatusObjectResult = {
   kind: StatusKind
   message: string | null
   name: string
-  outcome: StatusOutcome
+  outcome: EditOutcome
   requested: RequestedStatus
   resourceName: string
 }
 
 export type StatusChangeResult = { accountId: string; objects: StatusObjectResult[] }
-
-const OUTCOMES = new Set<string>(["updated", "already_set", "failed", "unverified"])
 
 function liveStatus(value: unknown): LiveStatus | null {
   return value === "ENABLED" || value === "PAUSED" || value === "REMOVED" ? value : null
@@ -37,8 +38,7 @@ function parseObject(value: unknown): StatusObjectResult | null {
   if (
     typeof kind !== "string" ||
     !Object.hasOwn(STATUS_KIND_TITLES, kind) ||
-    typeof outcome !== "string" ||
-    !OUTCOMES.has(outcome) ||
+    !isEditOutcome(outcome) ||
     (requested !== "ENABLED" && requested !== "PAUSED") ||
     !isNonEmptyString(value["resource_name"])
   )
@@ -52,7 +52,7 @@ function parseObject(value: unknown): StatusObjectResult | null {
     kind: kind as StatusKind,
     message: text("message"),
     name: isNonEmptyString(value["name"]) ? value["name"] : value["resource_name"],
-    outcome: outcome as StatusOutcome,
+    outcome,
     requested,
     resourceName: value["resource_name"],
   }
@@ -87,15 +87,15 @@ export function outcomeLabel(object: StatusObjectResult): string {
 }
 
 export function resultSummary(result: StatusChangeResult): string {
-  const count = (outcome: StatusOutcome) =>
+  const count = (outcome: EditOutcome) =>
     result.objects.filter((object) => object.outcome === outcome).length
-  return [
-    [count("updated"), "changed"],
-    [count("already_set"), "already set"],
-    [count("failed"), "failed"],
-    [count("unverified"), "unconfirmed"],
-  ]
-    .filter(([n]) => n !== 0)
-    .map(([n, label]) => `${String(n)} ${String(label)}`)
-    .join(", ")
+  return countsText(
+    [
+      [count("updated"), "changed"],
+      [count("already_set"), "already set"],
+      [count("failed"), "failed"],
+      [count("unverified"), "unconfirmed"],
+    ],
+    ", "
+  )
 }

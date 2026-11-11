@@ -2,7 +2,6 @@
 
 """Approval-only tool that turns Google Ads campaigns, ad groups, ads, keywords, or asset groups on or off."""
 
-import asyncio
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
@@ -23,7 +22,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -33,13 +31,9 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
-from ..operations.edits import Edit, EditResult, FieldChange, apply_edits, prepare_edits
+from ..operations.edits import Edit, EditResult, FieldChange, prepare_edits
 from ..operations.read_status import LiveStatus, read_statuses
 from .schemas.status import (
     MAX_STATUS_CHANGES,
@@ -49,18 +43,15 @@ from .schemas.status import (
 )
 from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_status"
-_IDENTITY = ("object",)
 _MISSING = "This no longer exists in Google Ads."
 _REMOVED = "Removed items can't be turned on or off."
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
@@ -94,54 +85,25 @@ async def google_ads_update_status(
 
     async def operation(entry: ResolvedContextEntry, selected: Sequence[Any]) -> Any:
         account_changes = [by_key[_key(reference)] for reference in selected]
-        client: GoogleAdsClient | None = None
-        edits: list[Edit] = []
-        pending: PendingIntegrationOperationDetail | None = None
+        edits = [
+            _approved_edit(change, shown.get(change.resource_name)) for change in account_changes
+        ]
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, edits, pending
-            client = await google_ads_client(ctx, entry)
-            edits = [
-                _approved_edit(change, shown.get(change.resource_name))
-                for change in account_changes
-            ]
-            pending = _pending_detail(entry, account_changes, edits, shown)
-            return pending
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
+            return edits, _pending_detail(entry, account_changes, edits, shown)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads status change preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=edits,
-                    read=_status_reader(client, entry, account_changes),
-                    family="status",
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, account_changes, edits, shown, result)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(entry, account_changes, edits, shown, applied)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_status",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="status",
+            plan=plan,
+            read=lambda client: _status_reader(client, entry, account_changes),
+            result=result,
         )
 
     results = await run_context_targets(

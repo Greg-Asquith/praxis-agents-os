@@ -8,8 +8,6 @@ import type { ToolActivity } from "@/integrations/contract"
 import {
   editedItems,
   parseRemoveObjectsArgs,
-  removalApproveLabel,
-  removalBannerDetail,
   removalBlock,
   removalCounts,
   removalParents,
@@ -74,18 +72,16 @@ function parsed(value: unknown = raw()): RemoveObjectsArgs {
 describe("approval", () => {
   it("blocks on a budget still in use until it is cancelled, and counts what goes with the rest", () => {
     const proposed = parsed()
-    expect(removalBlock(proposed)).toBe("Cancel 1 change that can't go ahead to continue.")
+    expect(removalBlock(proposed)).not.toBeNull()
 
     const rows = removalRows(proposed, proposed)
     const edited = parsed(raw({ items: editedItems(rows, new Set([USED_BUDGET]), true) }))
     const counts = removalCounts(removalRows(proposed, edited))
 
     expect(removalBlock(edited)).toBeNull()
-    expect(removalApproveLabel(counts)).toBe("Remove 2 Items")
+    expect(counts.remove).toBe(2)
     // A label's campaigns stay; only the ad group's ads and keywords go with it.
-    expect(removalBannerDetail(counts)).toBe(
-      "2 items · also removes 6 ads, 92 keywords inside them"
-    )
+    expect(counts.dependants).toMatchObject({ ads: 6, campaigns: 0, keywords: 92 })
   })
 })
 

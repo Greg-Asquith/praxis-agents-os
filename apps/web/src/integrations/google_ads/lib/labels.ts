@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/labels.ts
 
+import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import { isOneOf, isRecord } from "@/lib/guards"
 
@@ -25,7 +26,7 @@ function parseLabelDraft(value: unknown): GoogleAdsLabelDraft | null {
   const backgroundColor = optionalText(value["background_color"])
   if (description === undefined || backgroundColor === undefined) return null
   return {
-    name: value["name"].split(/\s+/).filter(Boolean).join(" "),
+    name: collapseSpaces(value["name"]),
     description,
     backgroundColor,
   }

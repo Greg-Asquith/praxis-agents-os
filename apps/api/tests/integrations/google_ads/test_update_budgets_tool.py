@@ -18,6 +18,7 @@ from integrations.google_ads.references import (
 )
 from integrations.google_ads.tools import update_budgets as tool_module
 from integrations.google_ads.tools.schemas.budget_updates import GoogleAdsUpdateBudgetsOutput
+from integrations.google_ads.tools.utils import edit_runs
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
@@ -162,7 +163,7 @@ async def _display(monkeypatch, account: _Account, changes: list[Any]) -> dict[s
 
 
 async def _run(monkeypatch, account: _Account, changes: list[Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -269,12 +270,24 @@ async def test_a_campaign_cannot_change_a_budget_another_change_already_sets(mon
     display = await _display(monkeypatch, account, changes)
     data, _audit = await _run(monkeypatch, account, changes, display)
 
-    assert display["_checks"][_campaign_name("20")]["problem"].startswith(
-        "Another change in this request already changes Footwear Shared."
-    )
+    assert display["_checks"][_campaign_name("20")]["problem"] is not None
     assert display["_checks"][_budget_name("2")]["problem"] is None
     assert [row.settings[0].outcome for row in data.budgets] == ["failed", "updated"]
     assert account.budgets[_budget_name("2")]["amountMicros"] == "150000000"
+
+
+async def test_a_budget_a_campaign_joined_since_approval_is_refused(monkeypatch) -> None:
+    account = _account()
+    changes = _changes({"campaign": _campaign("20"), "amount": "90"})
+    display = await _display(monkeypatch, account, changes)
+    # The approver saw the amount fund Hiking Boots and Gaiters only.
+    account.campaign("40", "Trekking Poles", "2")
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert [row.settings[0].outcome for row in data.budgets] == ["failed"]
+    assert data.budgets[0].error_code == "CHANGED_SINCE_APPROVAL"
+    assert account.budgets[_budget_name("2")]["amountMicros"] == "120000000"
 
 
 async def test_card_spend_is_the_month_cost_read_for_every_campaign_on_the_budget(

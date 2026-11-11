@@ -2,7 +2,6 @@
 
 """Approval-only tool that changes where, when, and on which devices Google Ads campaigns show."""
 
-import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -23,7 +22,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -32,10 +30,6 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
 from ..operations.criteria import (
@@ -51,11 +45,11 @@ from ..operations.criteria import (
     schedule_value,
 )
 from ..operations.edits import (
+    STALE_MESSAGE,
     CriterionChange,
     Edit,
     EditResult,
     FieldChange,
-    apply_edits,
     prepare_edits,
 )
 from ..operations.search_targeting import read_languages, read_locations
@@ -68,18 +62,15 @@ from .schemas.targeting import (
 )
 from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_targeting"
-_IDENTITY = ("object",)
 _TYPES: tuple[CriterionType, ...] = ("LOCATION", "PROXIMITY", "LANGUAGE", "DEVICE", "AD_SCHEDULE")
 _SETTING_PATH = "geoTargetTypeSetting.positiveGeoTargetType"
 # One audit event holds 2,500 records, and moving a place between lists takes two.
@@ -515,6 +506,23 @@ def _schedule_plan(
                 previous_bid_adjustment=_percent(current.bid_modifier) if current else None,
             )
         )
+    if not planned:
+        # No windows to clear, so one change that sends nothing records the schedule as set.
+        planned.append(
+            _Planned(
+                edit=CriterionChange(
+                    resource="campaignCriterion",
+                    action="remove",
+                    key=criterion_key(campaign, "schedule", "none"),
+                    owner=campaign,
+                ),
+                field="ad_schedule",
+                item="ad_schedule",
+                setting="ad_schedule",
+                action="remove",
+                name="Ad schedule",
+            )
+        )
     return planned
 
 
@@ -696,14 +704,10 @@ async def google_ads_update_targeting(
         account_changes = [
             by_key[reference.customer_id, reference.campaign_id] for reference in selected
         ]
-        client: GoogleAdsClient | None = None
         planned: dict[str, list[_Planned]] = {}
         names_by_campaign: dict[str, str] = {}
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, pending
-            client = await google_ads_client(ctx, entry)
+        async def plan(client: GoogleAdsClient) -> EditPlan:
             # Accounts change between the check and the send, so read them again as approved.
             live = await read_campaign_targeting(
                 client,
@@ -719,44 +723,21 @@ async def google_ads_update_targeting(
                 names_by_campaign[campaign_id] = (
                     targeting.name if targeting else change.campaign.label
                 )
-            pending = _pending_detail(entry, planned)
-            return pending
+            edits = [item.edit for campaign in planned.values() for item in campaign]
+            return edits, _pending_detail(entry, planned)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not planned:
-                raise RuntimeError("Google Ads targeting preparation did not complete")
-            items = [item for campaign in planned.values() for item in campaign]
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=[item.edit for item in items],
-                    read=_reader(client, entry, list(planned)),
-                    family="targeting",
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, planned, names_by_campaign, result)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(entry, planned, names_by_campaign, applied)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_targeting",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="targeting",
+            plan=plan,
+            read=lambda client: _reader(client, entry, list(planned)),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -790,9 +771,22 @@ def _approved_plan(
     planned = _plan(change, criteria, check.get("location_setting"), names)
     # Google's answers aren't asked for again, so a problem they caused still stands.
     shown_problem = check.get("problem")
-    return _with_refusals(
+    refused = _with_refusals(
         planned, live, names, shown_problem if isinstance(shown_problem, str) else None
     )[0]
+    # The schedule is approved as the whole week, so a window added since makes it stale.
+    if _windows(criteria) == _windows(live.criteria if live else {}):
+        return refused
+    return [
+        replace(item, edit=replace(item.edit, refused=item.edit.refused or STALE_MESSAGE))
+        if item.field == "ad_schedule"
+        else item
+        for item in refused
+    ]
+
+
+def _windows(criteria: Mapping[str, LiveCriterion]) -> set[str]:
+    return {criterion.value for criterion in criteria.values() if criterion.kind == "schedule"}
 
 
 def _pending_detail(
@@ -1071,7 +1065,8 @@ DEFINITION = RuntimeToolDefinition(
         "TABLET to a bid_adjustment percent (0 clears it) or excluded true. ad_schedule is the "
         "campaign's whole weekly schedule after the change: windows of day (MONDAY to SUNDAY), "
         "start and end as HH:MM in quarter hours in the account's time zone (end may be "
-        "24:00), and an optional bid_adjustment; at most 6 windows a day, none overlapping. "
+        "24:00), and an optional bid_adjustment, without which the window has no adjustment; at "
+        "most 6 windows a day, none overlapping. "
         "Windows left out are removed, and clear_ad_schedule true removes every window so ads "
         "show at any time. Target ROAS, Maximize Conversion Value, and Maximize Conversions "
         "without a target CPA ignore device adjustments other than excluding; Smart Bidding "

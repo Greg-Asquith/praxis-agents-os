@@ -9,7 +9,9 @@ import type { ToolActivity } from "@/integrations/contract"
 import {
   createKeywordsApproveLabel,
   createKeywordsBlock,
+  distinctKeywords,
   keywordAdGroupRows,
+  keywordsNeedCheck,
   parseCreateKeywordsArgs,
   serializeEntries,
   type CreateKeywordsArgs,
@@ -104,6 +106,40 @@ describe("approval", () => {
     expect(createKeywordsBlock(edited, checked)).toBe(
       "Click Check Changes so Google can check your edits, then approve."
     )
+  })
+
+  it("finds a keyword's check as the server names it, and holds one with no check", () => {
+    const value = raw()
+    const spaced = parsed({
+      ...value,
+      entries: [
+        {
+          ad_group: adGroup("20", "Men's Trail"),
+          keywords: [{ text: "Mens  Trail Shoes", match_type: "EXACT" }],
+        },
+      ],
+    })
+    expect(keywordAdGroupRows(spaced, spaced)[0]?.problems).toBe(1)
+
+    const unchecked = parsed({ ...value, _checks: {} })
+    expect(keywordAdGroupRows(unchecked, unchecked).map((row) => row.problems)).toEqual([2, 1])
+    expect(keywordsNeedCheck(unchecked, unchecked)).toBe(true)
+  })
+
+  it("keeps one of each keyword and match type, as an ad group takes each pair once", () => {
+    const draft = (text: string, matchType: "EXACT" | "PHRASE") => ({
+      cpcBid: "",
+      finalUrl: "",
+      matchType,
+      text,
+    })
+    expect(
+      distinctKeywords([
+        draft("trail shoes", "EXACT"),
+        draft("Trail  Shoes", "EXACT"),
+        draft("trail shoes", "PHRASE"),
+      ])
+    ).toEqual([draft("trail shoes", "EXACT"), draft("trail shoes", "PHRASE")])
   })
 
   it("sends each ad group's own keywords with the agent's reference unchanged", () => {
@@ -211,6 +247,6 @@ describe("presenters", () => {
         })
       )
     )
-    expect(result).toContain("1 added · added paused")
+    expect(result).toContain("trail shoes for men")
   })
 })

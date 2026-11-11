@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import { canonicalMoney } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
   ADDITION_BADGES,
@@ -90,8 +91,4 @@ export function CreateKeywordsOutcome({ result }: { result: CreateKeywordsResult
       tabs={ADDITION_TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

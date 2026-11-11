@@ -9,7 +9,9 @@ import type { ToolActivity } from "@/integrations/contract"
 import {
   addableSettings,
   editedKeywordChanges,
+  keywordCounts,
   keywordRows,
+  keywordsNeedCheck,
   keywordsApproveLabel,
   keywordsBlock,
   parseUpdateKeywordsArgs,
@@ -113,6 +115,32 @@ describe("approval", () => {
       "https://example.com/b",
     ])
     expect(parseUrls("example.com")).toBeNull()
+    expect(parseUrls(Array.from({ length: 11 }, () => "https://example.com").join(" "))).toBeNull()
+  })
+
+  it("asks for a new check when a removed bid is cancelled, and counts ad groups by their own key", () => {
+    const other = { ...keyword("41"), ad_group_id: "21" }
+    const otherKey = `customers/${CUSTOMER}/adGroupCriteria/21~41`
+    const changes = [
+      { keyword: keyword("40"), match_type: "PHRASE", cpc_bid: "none" },
+      { keyword: other, match_type: "PHRASE" },
+    ]
+    const checks = {
+      [key("40")]: check({ requested: { match_type: "PHRASE", cpc_bid: null }, problems: {} }),
+      [otherKey]: check({ requested: { match_type: "PHRASE" }, problems: {} }),
+    }
+    const checked = parsed(raw({ changes, _checks: checks }))
+    const next = parsed(
+      raw({
+        changes: editedKeywordChanges(checked, new Set([`${key("40")}|cpc_bid`]), () => undefined),
+        _checks: checks,
+      })
+    )
+
+    expect(keywordsNeedCheck(checked, checked)).toBe(false)
+    expect(keywordsNeedCheck(next, checked)).toBe(true)
+    // Both ad groups are named "Trail Shoes".
+    expect(keywordCounts(keywordRows(checked, checked)).adGroups).toBe(2)
   })
 
   it("offers a max CPC only where the campaign's strategy uses keyword bids", () => {
@@ -179,7 +207,7 @@ describe("presenters", () => {
         )
       )
     )
-    expect(approval).toContain("Pauses the broad keyword and adds a phrase one.")
+    expect(approval).toContain("trail shoes")
 
     const result = html(
       googleAdsUpdateKeywordsPresenter.render(
@@ -228,6 +256,6 @@ describe("presenters", () => {
         })
       )
     )
-    expect(result).toContain("Old keyword paused, new keyword added")
+    expect(result).toContain("trail shoes")
   })
 })

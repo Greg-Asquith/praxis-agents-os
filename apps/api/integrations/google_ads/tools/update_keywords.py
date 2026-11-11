@@ -2,7 +2,6 @@
 
 """Approval-only tool that changes the bids, URLs, and match types of Google Ads keywords."""
 
-import asyncio
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
@@ -23,7 +22,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -32,10 +30,6 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
 from ..operations.edits import (
@@ -43,7 +37,6 @@ from ..operations.edits import (
     Edit,
     EditResult,
     FieldChange,
-    apply_edits,
     prepare_edits,
 )
 from ..operations.keyword_settings import (
@@ -65,32 +58,27 @@ from .schemas.keyword_updates import (
     GoogleAdsUpdateKeywordsRequest,
 )
 from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
-from .utils.ad_group_builds import STRATEGY_NAMES
+from .utils.ad_group_builds import strategy_name
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
+from .utils.keyword_problems import keyword_bid_not_used, keyword_exists
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_keywords"
-_IDENTITY = ("object",)
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
 # Every keyword with its settings before, requested, and after, for the most a call can carry.
 _MAX_PUBLIC_RESULT_CHARS = 4_000_000
 _MAX_MODEL_OUTCOMES = 50
-_MATCH_NAMES = {"EXACT": "an exact match", "PHRASE": "a phrase match", "BROAD": "a broad match"}
 
 _MISSING = "This keyword no longer exists in Google Ads."
 _REMOVED = "This keyword has been removed, so its settings can't change."
 _AD_GROUP_REMOVED = "This keyword's ad group has been removed, so its settings can't change."
 _CAMPAIGN_REMOVED = "This keyword's campaign has been removed, so its settings can't change."
-_BID_NOT_USED = "{campaign} uses {strategy}, so Google doesn't use a keyword max CPC."
-_REPLACEMENT_EXISTS = "“{text}” is already {match} keyword in {ad_group}."
 
 
 def _plain_edit(change: GoogleAdsKeywordUpdate) -> FieldChange:
@@ -161,11 +149,6 @@ def _edits(change: GoogleAdsKeywordUpdate, check: Mapping[str, Any]) -> list[Edi
     return [replace(pause, before=pause.live(values) or {}), add]
 
 
-def _strategy_name(live: LiveKeyword) -> str:
-    name = STRATEGY_NAMES.get(live.strategy_type, "its own bidding")
-    return f"a {name} portfolio strategy" if live.portfolio else name
-
-
 def _keyword_problem(live: LiveKeyword | None) -> str | None:
     if live is None:
         return _MISSING
@@ -183,17 +166,15 @@ def _setting_problems(
     problems: dict[KeywordSetting, str] = {}
     bid = change.requested.get("cpc_bid")
     if bid is not None and bid != live.settings()["cpc_bid"] and "cpc_bid" not in live.bids_used:
-        problems["cpc_bid"] = _BID_NOT_USED.format(
-            campaign=live.campaign_name, strategy=_strategy_name(live)
+        problems["cpc_bid"] = keyword_bid_not_used(
+            live.campaign_name, strategy_name(live.strategy_type, portfolio=live.portfolio)
         )
     match_type = change.requested.get("match_type")
     if (
         _replaces(change, live.values)
         and keyword_key(live.ad_group, live.text, match_type) in existing
     ):
-        problems["match_type"] = _REPLACEMENT_EXISTS.format(
-            text=live.text, match=_MATCH_NAMES[match_type], ad_group=live.ad_group_name
-        )
+        problems["match_type"] = keyword_exists(live.text, match_type, live.ad_group_name)
     return problems
 
 
@@ -221,55 +202,27 @@ async def google_ads_update_keywords(
             ]
             for reference in selected
         ]
-        client: GoogleAdsClient | None = None
-        planned: dict[str, list[Edit]] = {}
-        pending: PendingIntegrationOperationDetail | None = None
+        planned = {
+            change.resource_name: _approved_edits(change, shown.get(change.resource_name))
+            for change in account_changes
+        }
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, planned, pending
-            client = await google_ads_client(ctx, entry)
-            planned = {
-                change.resource_name: _approved_edits(change, shown.get(change.resource_name))
-                for change in account_changes
-            }
-            pending = _pending_detail(entry, account_changes, planned, shown)
-            return pending
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
             edits = [edit for items in planned.values() for edit in items]
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads keyword update preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=edits,
-                    read=_reader(client, entry, account_changes, shown),
-                    family="keyword_settings",
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, account_changes, planned, shown, result)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+            return edits, _pending_detail(entry, account_changes, planned, shown)
 
-        return await run_audited_integration_operation(
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(entry, account_changes, planned, shown, applied)
+
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_keywords",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="keyword_settings",
+            plan=plan,
+            read=lambda client: _reader(client, entry, account_changes, shown),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -550,13 +503,21 @@ async def _account_checks(
                 if (item := live.get(change.resource_name)) and _replaces(change, item.values)
             }
         )
-        existing = await read_ad_group_keywords(
-            client, customer_id=entry.external_id, login_customer_id=login, ad_group_ids=replacing
+        existing = dict(
+            await read_ad_group_keywords(
+                client,
+                customer_id=entry.external_id,
+                login_customer_id=login,
+                ad_group_ids=replacing,
+            )
         )
-        checks = {
-            change.resource_name: _check(change, live.get(change.resource_name), existing)
-            for change in changes
-        }
+        checks: dict[str, dict[str, Any]] = {}
+        for change in changes:
+            item = live.get(change.resource_name)
+            check = checks[change.resource_name] = _check(change, item, existing)
+            # A later change that would add the same keyword is refused as already there.
+            if item and _replaces(change, item.values) and not check["problems"]:
+                existing[_replacement_key(change, check)] = change.resource_name
         rejected = await _dry_run(client, entry, changes, checks)
     except (IntegrationError, LookupError):
         return {change.resource_name: {"unavailable": True} for change in changes}
@@ -626,7 +587,7 @@ def _check(
         "ad_group_name": live.ad_group_name,
         "campaign_name": live.campaign_name,
         # The campaign's strategy, and whether it uses keyword bids, so the card can explain.
-        "strategy_name": _strategy_name(live),
+        "strategy_name": strategy_name(live.strategy_type, portfolio=live.portfolio),
         "bids_used": sorted(live.bids_used),
         "current": live.settings(),
         "requested": change.requested,

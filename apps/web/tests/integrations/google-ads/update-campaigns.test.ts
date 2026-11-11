@@ -15,6 +15,7 @@ import {
   campaignsApproveLabel,
   campaignsBlock,
   editedChanges,
+  needsCheck,
   parseCancelled,
   parseUpdateCampaignsArgs,
   restoredChanges,
@@ -76,6 +77,13 @@ describe("approval", () => {
     expect(campaignsBlock(next, checked)).toBe(
       "Click Check Changes so Google can check your edits, then approve."
     )
+  })
+
+  it("waits for a new check when a removed end date is cancelled", () => {
+    const checked = parsed()
+    const ids = new Set([`${key("10")}|end_date`])
+
+    expect(needsCheck(edited(editedChanges(checked, ids, () => undefined)), checked)).toBe(true)
   })
 
   it("takes a campaign out when every setting is cancelled, and Undo brings it back", () => {

@@ -2,8 +2,9 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import {
-  matchTypeCounts,
+  collapseSpaces,
   type KeywordMatchType,
+  matchTypeCounts,
   type PastedKeyword,
 } from "@/integrations/ads/lib/keyword-notation"
 import {
@@ -19,7 +20,11 @@ import {
   serializeCopy,
   type AdCopy,
 } from "@/integrations/google_ads/lib/create-ads"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  googleAdsId,
+  isGoogleAdsUrl,
+  parseGoogleAdsMoney,
+} from "@/integrations/google_ads/lib/field-values"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -31,8 +36,6 @@ const MAX_NEGATIVES = 500
 export const MAX_ADS = 3
 const MAX_AD_GROUPS = 20
 const MAX_OBJECTS = 2_500
-const MONEY_PATTERN = /^\d+(?:\.\d{1,6})?$/
-const URL_PATTERN = /^https?:\/\/\S+$/i
 const UNAVAILABLE =
   "Google Ads couldn't check these ad groups. Check again, or decline and ask the agent to prepare them again."
 
@@ -242,7 +245,7 @@ export function parseCreateAdGroupsArgs(value: unknown): CreateAdGroupsArgs | nu
 }
 
 function foldName(name: string): string {
-  return name.trim().split(/\s+/).join(" ").toLowerCase()
+  return collapseSpaces(name).toLowerCase()
 }
 
 /** The campaign's checks, unless the operator has since chosen a different campaign. */
@@ -307,7 +310,7 @@ function bidProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
 }
 
 export function validMoney(value: string): boolean {
-  return MONEY_PATTERN.test(value) && Number(value) > 0
+  return parseGoogleAdsMoney(value) !== undefined
 }
 
 export function validRoas(value: string): boolean {
@@ -344,7 +347,7 @@ export function listProblems(
 
 function keywordUrlProblems(group: DraftAdGroup): string[] {
   const bad = group.keywords.find(
-    (keyword) => keyword.finalUrl.trim() && !URL_PATTERN.test(keyword.finalUrl.trim())
+    (keyword) => keyword.finalUrl.trim() && !isGoogleAdsUrl(keyword.finalUrl.trim())
   )
   const badBid = group.keywords.find(
     (keyword) => keyword.cpcBid.trim() && !validMoney(keyword.cpcBid.trim())

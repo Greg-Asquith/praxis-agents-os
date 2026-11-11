@@ -132,14 +132,7 @@ export function CreateAdGroupsApproval({
               key: args.campaign.key,
               name: campaignCheck(args)?.name ?? args.campaign.label,
               problems: campaignCancelled ? 0 : problems,
-              values: {
-                adGroups: campaignCancelled ? cancelled.length : counts.adGroups,
-                problems: campaignCancelled
-                  ? "Cancelled"
-                  : problems > 0
-                    ? `${String(problems)} to fix`
-                    : "None",
-              },
+              values: { adGroups: campaignCancelled ? cancelled.length : counts.adGroups },
             },
           ]}
           selected={args.campaign.key}

@@ -35,6 +35,8 @@ export function DeviceAdjustments({
     <div className="divide-y">
       {lines.map((line) => {
         const name = DEVICE_NAMES[line.device]
+        // One edit here would replace what each campaign asks for with a single value.
+        const varies = line.requested === "varies"
         const asked = line.requested === "varies" ? null : line.requested
         const excluded = asked ? asked.excluded : line.now === EXCLUDED
         const bid = asked ? asked.bidAdjustment : line.now
@@ -46,7 +48,9 @@ export function DeviceAdjustments({
             <div className="grid min-w-32 flex-1 text-sm">
               <span className="font-medium">{name}</span>
               <span className="text-muted-foreground text-xs">
-                {line.requested === "varies" ? "Changes differ by campaign" : nowText(line)}
+                {varies
+                  ? "Changes differ by campaign. Choose a campaign above to change it."
+                  : nowText(line)}
               </span>
             </div>
             {line.requested === null ? (
@@ -59,7 +63,7 @@ export function DeviceAdjustments({
               </Badge>
             )}
             <BidAdjustment
-              disabled={disabled || excluded}
+              disabled={disabled || excluded || varies}
               label={`Bid adjustment for ${name}`}
               onChange={(bidAdjustment) => {
                 onChange(line.device, { bidAdjustment: bidAdjustment ?? 0, excluded: false })
@@ -68,7 +72,7 @@ export function DeviceAdjustments({
             />
             <Button
               aria-pressed={excluded}
-              disabled={disabled}
+              disabled={disabled || varies}
               onClick={() => {
                 onChange(line.device, { bidAdjustment: 0, excluded: !excluded })
               }}

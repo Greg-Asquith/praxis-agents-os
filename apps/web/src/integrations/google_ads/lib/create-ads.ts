@@ -6,7 +6,7 @@ import {
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { googleAdsId, isGoogleAdsUrl } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 export const HEADLINE_LIMITS = { min: 3, max: 15, length: 30 } as const
@@ -75,7 +75,6 @@ type AdProblem = { adGroup: string | null; message: string }
 
 const UNAVAILABLE =
   "Google Ads couldn't check these ads. Check again, or decline and ask the agent to prepare them again."
-const URL_PATTERN = /^https?:\/\/\S+$/i
 
 /** Counts characters as Google does for Latin text, one per code point. */
 export function characterCount(text: string): number {
@@ -86,12 +85,16 @@ function text(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
-function parseAssets(value: unknown): TextAsset[] | null {
+export function parseTextAssets(value: unknown): TextAsset[] | null {
   if (!Array.isArray(value)) return null
   const assets: TextAsset[] = []
   for (const item of value) {
     if (!isRecord(item) || typeof item["text"] !== "string") return null
-    assets.push({ pin: typeof item["pin"] === "string" ? item["pin"] : null, text: item["text"] })
+    // An empty pin is no pin.
+    assets.push({
+      pin: (typeof item["pin"] === "string" && item["pin"]) || null,
+      text: item["text"],
+    })
   }
   return assets
 }
@@ -111,8 +114,8 @@ export function parseAdGroup(value: unknown): AdGroupTarget | null {
 
 export function parseCopy(value: unknown): AdCopy | null {
   if (!isRecord(value)) return null
-  const headlines = parseAssets(value["headlines"])
-  const descriptions = parseAssets(value["descriptions"])
+  const headlines = parseTextAssets(value["headlines"])
+  const descriptions = parseTextAssets(value["descriptions"])
   if (headlines === null || descriptions === null) return null
   return {
     descriptions,
@@ -234,9 +237,9 @@ function assetProblems(
 
 function linkProblems(ad: AdCopy): string[] {
   const problems: string[] = []
-  if (!URL_PATTERN.test(ad.finalUrl.trim()))
+  if (!isGoogleAdsUrl(ad.finalUrl.trim()))
     problems.push("Enter a final URL starting with http:// or https://.")
-  if (ad.mobileFinalUrl.trim() && !URL_PATTERN.test(ad.mobileFinalUrl.trim()))
+  if (ad.mobileFinalUrl.trim() && !isGoogleAdsUrl(ad.mobileFinalUrl.trim()))
     problems.push("Enter a mobile URL starting with http:// or https://, or clear it.")
   for (const [label, path] of [
     ["Path 1", ad.path1],

@@ -5,7 +5,7 @@
 from datetime import date
 from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
@@ -19,7 +19,7 @@ from .ad_groups import (
     GoogleAdsNewAdGroup,
     distinct_keywords,
 )
-from .base import GoogleAdsStrictModel
+from .base import GoogleAdsStrictModel, money_validator
 from .campaign_budgets import GoogleAdsMoneyAmount
 from .negative_keywords import NegativeKeywordEntry
 
@@ -27,14 +27,6 @@ MAX_CAMPAIGN_LOCATIONS = 1_000
 MAX_CAMPAIGN_NEGATIVES = 1_000
 
 type _Key = Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
-
-
-def _valid_bid(label: str):
-    def check(value: str) -> str:
-        money_to_micros(value, label=label)
-        return value.strip()
-
-    return AfterValidator(check)
 
 
 def _micros(value: str | None) -> int | None:
@@ -45,8 +37,8 @@ def _blank_is_none(value: object) -> object:
     return None if isinstance(value, str) and not value.strip() else value
 
 
-type GoogleAdsMaxCpc = Annotated[str, Field(max_length=32), _valid_bid("maximum click bid")]
-type GoogleAdsTargetCpa = Annotated[str, Field(max_length=32), _valid_bid("target CPA")]
+type GoogleAdsMaxCpc = Annotated[str, Field(max_length=32), money_validator("maximum click bid")]
+type GoogleAdsTargetCpa = Annotated[str, Field(max_length=32), money_validator("target CPA")]
 
 
 class GoogleAdsNewDailyBudget(GoogleAdsStrictModel):

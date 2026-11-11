@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/update-campaigns-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState, type ReactNode } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -14,11 +13,12 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
-import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { BiddingCell, BiddingChange } from "@/integrations/google_ads/components/bidding-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
@@ -29,31 +29,31 @@ import {
   type Bidding,
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
+import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/setting-changes"
 import {
   addableCampaignSettings,
   addedCampaignChanges,
   CAMPAIGN_SETTINGS,
   campaignCounts,
+  campaignParents,
+  type CampaignRow,
   campaignRows,
   campaignsBannerDetail,
   campaignsBannerTitle,
+  type CampaignSetting,
+  type CancelledSetting,
   canCheckCampaigns,
   editedChanges,
   isBidding,
   needsCheck,
-  parametersText,
   parseCancelled,
-  parseParametersText,
   restoredChanges,
   rowContext,
   sameValue,
   SETTING_TITLES,
-  valueText,
-  type CampaignRow,
-  type CampaignSetting,
-  type CancelledSetting,
   type SettingValue,
   type UpdateCampaignsArgs,
+  valueText,
 } from "@/integrations/google_ads/lib/update-campaigns"
 
 // Below this many changes the summary and the table tools only add noise.
@@ -100,11 +100,15 @@ export function UpdateCampaignsApproval({
   const many = new Set(rows.map((row) => row.key)).size > 1
   const tools = rows.length >= TOOLS_FROM
   const accountIds = [...new Set(rows.filter((row) => !row.cancelled).map((row) => row.customerId))]
-  const [campaign, setCampaign] = useState<string | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
   const parents = useMemo(
     () => campaignParents(rows, args.accounts, accountIds.length > 1),
     [accountIds.length, args.accounts, rows]
   )
+  // A cancelled campaign draws no selection, so it stops filtering the changes below.
+  const campaign = parents.some((parent) => parent.key === picked && !parent.cancelled)
+    ? picked
+    : null
   const shown = campaign === null ? rows : rows.filter((row) => row.key === campaign)
 
   // A review redraws the card, so cancelled settings live beside the request for Undo.
@@ -154,6 +158,7 @@ export function UpdateCampaignsApproval({
   const cells = (row: CampaignRow) => ({
     cancel: (
       <CancelCell
+        cancelled={row.cancelled}
         disabled={disabled}
         onCancel={() => {
           cancel([row.id])
@@ -161,7 +166,6 @@ export function UpdateCampaignsApproval({
         onUndo={() => {
           undo((item) => `${item.key}|${item.setting}` === row.id)
         }}
-        row={row}
       />
     ),
     change: (
@@ -243,7 +247,7 @@ export function UpdateCampaignsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
-              setCampaign(null)
+              setPicked(null)
               setTab("attention")
             }}
           />
@@ -257,7 +261,7 @@ export function UpdateCampaignsApproval({
           onCancel={(key) => {
             cancel(idsOf((row) => row.key === key))
           }}
-          onSelect={setCampaign}
+          onSelect={setPicked}
           onUndo={(key) => {
             undo((item) => item.key === key)
           }}
@@ -420,33 +424,6 @@ function Problem({ row }: { row: CampaignRow }) {
   return !row.cancelled && row.problem ? (
     <span className="text-destructive text-xs wrap-anywhere whitespace-normal">{row.problem}</span>
   ) : null
-}
-
-/** One row per campaign, in the order its settings first appear. */
-function campaignParents(
-  rows: readonly CampaignRow[],
-  accounts: UpdateCampaignsArgs["accounts"],
-  showAccount: boolean
-): ParentRow[] {
-  const campaigns = new Map<string, CampaignRow[]>()
-  for (const row of rows) campaigns.set(row.key, [...(campaigns.get(row.key) ?? []), row])
-  return [...campaigns].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
-    const first = items[0]
-    const problems = live.filter((row) => row.problem !== null).length
-    return {
-      cancelled: live.length === 0,
-      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
-      key,
-      name: first?.campaignName ?? key,
-      problems,
-      values: {
-        changes: live.length,
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
-      },
-    }
-  })
 }
 
 function SettingCell({ row }: { row: CampaignRow }) {
@@ -658,35 +635,5 @@ function EveryTarget({
       placeholder={roas ? "ROAS %" : "Amount"}
       value={shared == null ? "" : typeof shared === "number" ? roasPercent(shared) : shared}
     />
-  )
-}
-
-function CancelCell({
-  disabled,
-  onCancel,
-  onUndo,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  onUndo: () => void
-  row: CampaignRow
-}) {
-  return row.cancelled ? (
-    <Button disabled={disabled} onClick={onUndo} size="sm" type="button" variant="ghost">
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={onCancel}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

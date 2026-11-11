@@ -1,12 +1,18 @@
 // apps/web/src/integrations/google_ads/lib/status-change.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
+  parseCheckedEntries,
 } from "@/integrations/google_ads/lib/accounts"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  unavailableProblem,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 export type StatusKind = "campaign" | "ad_group" | "ad" | "keyword" | "asset_group"
@@ -95,8 +101,7 @@ export type StatusCounts = {
 
 export type StatusPatch = { cancelled: boolean } | { status: RequestedStatus }
 
-const UNAVAILABLE_PROBLEM =
-  "Google Ads couldn't check this item. Ask the agent to prepare the change again."
+const UNAVAILABLE_PROBLEM = unavailableProblem("item")
 
 export function statusResourceName(
   kind: StatusKind,
@@ -114,23 +119,19 @@ function liveStatus(value: unknown): LiveStatus | null {
   return value === "ENABLED" || value === "PAUSED" || value === "REMOVED" ? value : null
 }
 
-function nullableText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
 function parseCheck(value: unknown): StatusCheck {
   if (!isRecord(value) || value["unavailable"] !== false) return { unavailable: true }
   const requested = value["requested"]
-  const campaignName = nullableText(value["campaign_name"])
+  const campaignName = textOrNull(value["campaign_name"])
   if ((requested !== "ENABLED" && requested !== "PAUSED") || campaignName === null)
     return { unavailable: true }
   return {
     unavailable: false,
-    adGroupName: nullableText(value["ad_group_name"]),
+    adGroupName: textOrNull(value["ad_group_name"]),
     adGroupStatus: liveStatus(value["ad_group_status"]),
     campaignName,
     campaignStatus: liveStatus(value["campaign_status"]),
-    problem: nullableText(value["problem"]),
+    problem: textOrNull(value["problem"]),
     requested,
     status: liveStatus(value["status"]),
   }
@@ -155,29 +156,16 @@ function parseItem(value: unknown): StatusItem | null {
     entry: value,
     key,
     kind: statusKind,
-    label: nullableText(reference["label"]) ?? key,
-    scopeLabel: nullableText(reference["scope_label"]),
+    label: textOrNull(reference["label"]) ?? key,
+    scopeLabel: textOrNull(reference["scope_label"]),
     status,
   }
 }
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseStatusChangeArgs(value: unknown): StatusChangeArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const items: StatusItem[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const item = parseItem(entry)
-    if (item === null || keys.has(item.key)) return null
-    keys.add(item.key)
-    items.push(item)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-    items,
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseItem, parseCheck)
+  return parsed && { accounts: parsed.accounts, checks: parsed.checks, items: parsed.entries }
 }
 
 function groupKey(customerId: string, id: string): string {
@@ -324,9 +312,7 @@ export function statusPrompt(counts: StatusCounts, accountNames: readonly string
 }
 
 export function statusApproveLabel(counts: StatusCounts): string {
-  return counts.apply === 0
-    ? "Apply Changes"
-    : `Apply ${String(counts.apply)} ${counts.apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(counts.apply)
 }
 
 export function statusAccountNames(
@@ -365,4 +351,28 @@ export function statusDetails(args: StatusChangeArgs | null): FanOutDetail[] {
     ...(counts.turnOff > 0 ? [{ label: "Turn Off", value: String(counts.turnOff) }] : []),
     ...(counts.turnOn > 0 ? [{ label: "Turn On", value: String(counts.turnOn) }] : []),
   ]
+}
+
+export function statusCampaign(row: StatusRow): string {
+  return `${row.item.customerId}:${row.item.campaignId}`
+}
+
+/** One row per campaign the items sit in, in the order its items first appear. */
+export function campaignParents(
+  rows: readonly StatusRow[],
+  accounts: StatusChangeArgs["accounts"],
+  showAccount: boolean
+): ParentRow[] {
+  return groupedByParent(rows, statusCampaign).map(({ items, key, live }) => {
+    const first = items[0]
+    const on = items.find((row) => row.campaignOn !== null)?.campaignOn ?? null
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.item.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? key,
+      problems: live.filter((row) => row.problem !== null).length,
+      values: { campaign_on: on === null ? "—" : on ? "On" : "Off", items: live.length },
+    }
+  })
 }

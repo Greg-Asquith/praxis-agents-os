@@ -2,7 +2,6 @@
 
 """Approval-only tool that edits the headlines, descriptions, paths, and final URLs of responsive search ads."""
 
-import asyncio
 import contextlib
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -24,7 +23,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -33,13 +31,9 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
-from ..operations.edits import Edit, EditResult, FieldChange, apply_edits, prepare_edits
+from ..operations.edits import Edit, EditResult, FieldChange, prepare_edits
 from ..operations.responsive_search_ad_edits import (
     DESCRIPTIONS_PATH,
     FINAL_URLS_PATH,
@@ -62,18 +56,15 @@ from .schemas.ad_updates import (
 )
 from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_ads"
-_IDENTITY = ("object",)
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
 
 _MISSING = "This ad no longer exists in Google Ads."
@@ -137,55 +128,27 @@ async def google_ads_update_ads(
 
     async def operation(entry: ResolvedContextEntry, selected: Sequence[Any]) -> Any:
         account_changes = [by_key[reference.customer_id, reference.ad_id] for reference in selected]
-        client: GoogleAdsClient | None = None
-        edits: list[Edit] = []
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, edits, pending
-            client = await google_ads_client(ctx, entry)
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
             edits = [
                 _approved_edit(change, shown.get(change.ad.resource_name))
                 for change in account_changes
             ]
-            pending = _pending_detail(entry, account_changes, shown)
-            return pending
+            return edits, _pending_detail(entry, account_changes, shown)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads ad update preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=edits,
-                    read=_reader(client, entry, account_changes),
-                    family="ads",
-                    operation=_OPERATION,
-                )
-                reviews = await _reviews(client, entry, account_changes, result)
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, account_changes, shown, result, reviews)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            reviews = await _reviews(client, entry, account_changes, applied)
+            return _result(entry, account_changes, shown, applied, reviews)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_ads",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="ads",
+            plan=plan,
+            read=lambda client: _reader(client, entry, account_changes),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -206,14 +169,16 @@ def _approved_edit(change: GoogleAdsAdUpdate, check: Any) -> FieldChange:
         not isinstance(check, Mapping)
         or check.get("unavailable") is not False
         or check.get("requested") != change.requested
-        or not isinstance(check.get("current"), Mapping)
     ):
         return replace(_edit(change, _NO_COPY), refused=NOT_SHOWN)
-    edit = _edit(change, check["current"])
+    current = check.get("current")
     problems = check.get("problems")
     problem = check.get("problem") or next(
         iter(problems if isinstance(problems, list) else ()), None
     )
+    if not isinstance(current, Mapping):
+        return replace(_edit(change, _NO_COPY), refused=str(problem or NOT_SHOWN))
+    edit = _edit(change, current)
     if problem:
         return replace(edit, refused=str(problem))
     values = check.get("values")

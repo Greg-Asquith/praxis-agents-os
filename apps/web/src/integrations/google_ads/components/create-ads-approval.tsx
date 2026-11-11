@@ -414,14 +414,7 @@ function parentRow(parent: AdGroupParent): ParentRow {
     problems: parent.state === "live" ? parent.problems : 0,
     values: {
       ads: parent.state === "cancelled" ? parent.cancelled : parent.ads.length,
-      problems:
-        parent.state === "cancelled"
-          ? "Cancelled"
-          : parent.state === "new"
-            ? "No ads yet"
-            : parent.problems > 0
-              ? `${String(parent.problems)} to fix`
-              : "None",
+      ...(parent.state === "new" ? { problems: "No ads yet" } : {}),
     },
   }
 }
@@ -617,6 +610,7 @@ function AdEditor({
   const { ad } = row
   const many = position.total > 1
   const elsewhere = ad.adGroups.filter((group) => group.key !== groupKey)
+  const problems = problemsIn(row, groupKey)
   return (
     <section
       aria-label={many ? `Ad ${String(position.at + 1)}` : "Ad"}
@@ -666,9 +660,9 @@ function AdEditor({
           Edits change it in every one.
         </p>
       ) : null}
-      {row.problems.length > 0 ? (
+      {problems.length > 0 ? (
         <ul className="text-destructive grid gap-0.5 text-sm" role="alert">
-          {row.problems.map((problem) => (
+          {problems.map((problem) => (
             <li key={problem} className="wrap-anywhere">
               {problem}
             </li>

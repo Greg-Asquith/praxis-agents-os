@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/status-change-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
@@ -21,21 +20,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
-import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import {
+  campaignParents,
   editedChanges,
+  type RequestedStatus,
   STATUS_KIND_TITLES,
   statusBannerDetail,
+  statusCampaign,
+  type StatusChangeArgs,
   statusCounts,
   statusLabel,
-  statusRows,
-  type RequestedStatus,
-  type StatusChangeArgs,
   type StatusPatch,
   type StatusRow,
+  statusRows,
 } from "@/integrations/google_ads/lib/status-change"
 
 // Below this many items the summary and the table tools only add noise.
@@ -89,7 +91,7 @@ export function StatusChangeApproval({
   const tableRows = useMemo<DataRow[]>(
     () =>
       rows
-        .filter((row) => campaign === null || campaignOf(row) === campaign)
+        .filter((row) => campaign === null || statusCampaign(row) === campaign)
         .map((row) => ({
           campaign: row.campaignName,
           cancel: "",
@@ -194,14 +196,16 @@ export function StatusChangeApproval({
           label="Campaigns"
           onCancel={(key) => {
             edit(
-              keysOf((row) => campaignOf(row) === key),
+              keysOf((row) => statusCampaign(row) === key),
               { cancelled: true }
             )
           }}
           onSelect={setCampaign}
           onUndo={(key) => {
             edit(
-              rows.filter((row) => row.cancelled && campaignOf(row) === key).map((row) => row.key),
+              rows
+                .filter((row) => row.cancelled && statusCampaign(row) === key)
+                .map((row) => row.key),
               { cancelled: false }
             )
           }}
@@ -233,11 +237,14 @@ export function StatusChangeApproval({
           if (column.key === "cancel")
             return (
               <CancelCell
+                cancelled={statusRow.cancelled}
                 disabled={disabled}
-                onToggle={(cancelled) => {
-                  edit([statusRow.key], { cancelled })
+                onCancel={() => {
+                  edit([statusRow.key], { cancelled: true })
                 }}
-                row={statusRow}
+                onUndo={() => {
+                  edit([statusRow.key], { cancelled: false })
+                }}
               />
             )
           return null
@@ -322,34 +329,6 @@ function statusTabs(byKey: ReadonlyMap<string, StatusRow>): DataTableTab[] {
   ]
 }
 
-function campaignOf(row: StatusRow): string {
-  return `${row.item.customerId}:${row.item.campaignId}`
-}
-
-/** One row per campaign the items sit in, in the order its items first appear. */
-function campaignParents(
-  rows: readonly StatusRow[],
-  accounts: StatusChangeArgs["accounts"],
-  showAccount: boolean
-): ParentRow[] {
-  const campaigns = new Map<string, StatusRow[]>()
-  for (const row of rows)
-    campaigns.set(campaignOf(row), [...(campaigns.get(campaignOf(row)) ?? []), row])
-  return [...campaigns].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
-    const first = items[0]
-    const on = items.find((row) => row.campaignOn !== null)?.campaignOn ?? null
-    return {
-      cancelled: live.length === 0,
-      context: showAccount && first ? (accounts.get(first.item.customerId)?.label ?? null) : null,
-      key,
-      name: first?.campaignName ?? key,
-      problems: live.filter((row) => row.problem !== null).length,
-      values: { campaign_on: on === null ? "—" : on ? "On" : "Off", items: live.length },
-    }
-  })
-}
-
 function ItemCell({ row }: { row: StatusRow }) {
   const showsGroup = row.item.kind === "ad" || row.item.kind === "keyword"
   return (
@@ -411,43 +390,5 @@ function StatusCell({
         <Badge variant="secondary">{row.status === "ENABLED" ? "Already On" : "Already Off"}</Badge>
       ) : null}
     </div>
-  )
-}
-
-function CancelCell({
-  disabled,
-  onToggle,
-  row,
-}: {
-  disabled: boolean
-  onToggle: (cancelled: boolean) => void
-  row: StatusRow
-}) {
-  return row.cancelled ? (
-    <Button
-      disabled={disabled}
-      onClick={() => {
-        onToggle(false)
-      }}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={() => {
-        onToggle(true)
-      }}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

@@ -4,17 +4,18 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import {
   EDIT_OUTCOME_BADGES,
   EDIT_OUTCOME_LABELS,
   EDIT_OUTCOME_TABS,
+  type EditOutcome,
+  editOutcomeSummary,
 } from "@/integrations/google_ads/lib/edit-outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   rowChange,
   SETTING_TITLES,
-  targetingOutcomeSummary,
-  type TargetingOutcome,
   type UpdateTargetingResult,
 } from "@/integrations/google_ads/lib/update-targeting-result"
 
@@ -60,7 +61,7 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
       renderCell={(column, row) => {
         if (column.key === "outcome")
           return (
-            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as TargetingOutcome]}>
+            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as EditOutcome]}>
               {cellText(row["outcome"])}
             </Badge>
           )
@@ -76,7 +77,7 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
       }}
       rowNoun={["row", "rows"]}
       rows={rows}
-      summary={<span>{targetingOutcomeSummary(result)}</span>}
+      summary={<span>{editOutcomeSummary(result.rows, { weight: (row) => row.count })}</span>}
       tabs={EDIT_OUTCOME_TABS}
     />
   )
@@ -89,8 +90,4 @@ function FailedCampaign({ details, name }: { details: string; name: string }) {
       <span className="text-destructive text-xs wrap-anywhere">{details}</span>
     </span>
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

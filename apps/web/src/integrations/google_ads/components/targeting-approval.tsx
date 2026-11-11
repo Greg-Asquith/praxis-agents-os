@@ -169,7 +169,12 @@ export function TargetingApproval({
   const placesOn =
     showPlaces || shown.changes.some(changesPlaces) || (!devicesOn && schedule.kind === "none")
   const notes = targetingNotes(shown)
-  const timeZone = args.accounts.get(shown.changes[0]?.key.split("/")[1] ?? "")?.timeZone
+  // Campaigns in different time zones have no single zone the times can be read in.
+  const timeZones = new Set(
+    shown.changes.map((change) => args.accounts.get(change.key.split("/")[1] ?? "")?.timeZone)
+  )
+  const [timeZone] = timeZones.size === 1 ? timeZones : []
+  const live = liveSchedule(shown)
 
   // A campaign left with nothing leaves the request, and stays beside it so Undo can restore it.
   const save = (next: readonly TargetingChange[]) => {
@@ -296,7 +301,7 @@ export function TargetingApproval({
               />
               <ScheduleBody
                 disabled={disabled}
-                live={liveSchedule(shown)}
+                live={live}
                 onChange={(next) => {
                   edit((changes) => setSchedule(changes, next))
                 }}
@@ -412,23 +417,27 @@ export function TargetingApproval({
             )}
             {schedule.kind === "none" ? (
               <SettingRow rowKey="schedule" summary={liveScheduleText(shown)} title="Ad Schedule">
-                <Button
-                  className="w-fit"
-                  disabled={disabled}
-                  onClick={() => {
-                    const live = liveSchedule(shown)
-                    save(
-                      editInScope(addable(), scope, (changes) =>
-                        setSchedule(changes, startingWeek(live))
+                {live === null && shown.changes.length > 1 ? (
+                  // A shared starting week would replace each campaign's own schedule.
+                  <p className="text-sm">Choose a campaign above to change its schedule.</p>
+                ) : (
+                  <Button
+                    className="w-fit"
+                    disabled={disabled}
+                    onClick={() => {
+                      save(
+                        editInScope(addable(), scope, (changes) =>
+                          setSchedule(changes, startingWeek(live))
+                        )
                       )
-                    )
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Change the Schedule
-                </Button>
+                    }}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Change the Schedule
+                  </Button>
+                )}
               </SettingRow>
             ) : null}
             {devicesOn ? null : (
@@ -525,12 +534,12 @@ function SectionHeading({
   )
 }
 
-/** Now as a line, and After as a grid with its windows, or why there's nothing to edit here. */
 /** The live week to edit from, or every hour of every day when ads run at any time. */
 function startingWeek(live: readonly ScheduleWindow[] | null): ScheduleWindow[] {
   return [...(live && live.length > 0 ? live : ALL_WEEK)]
 }
 
+/** Now as a line, and After as a grid with its windows, or why there's nothing to edit here. */
 function ScheduleBody({
   disabled,
   live,

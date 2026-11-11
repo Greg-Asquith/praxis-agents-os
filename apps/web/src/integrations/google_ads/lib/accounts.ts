@@ -42,6 +42,49 @@ export function parseApprovalAccounts(value: unknown): Map<string, GoogleAdsAppr
   return accounts
 }
 
+/** Reads a request's entries with the trusted `_accounts` and `_checks` beside them.
+
+Null when the request is malformed or names an entry twice.
+ */
+export function parseCheckedEntries<T extends { key: string }, C>(
+  value: unknown,
+  field: string,
+  parseEntry: (entry: unknown) => T | null,
+  parseCheck: (check: unknown) => C
+): {
+  accounts: Map<string, GoogleAdsApprovalAccount>
+  checks: Map<string, C>
+  entries: T[]
+} | null {
+  if (!isRecord(value) || !Array.isArray(value[field])) return null
+  const entries: T[] = []
+  const keys = new Set<string>()
+  for (const item of value[field]) {
+    const entry = parseEntry(item)
+    if (entry === null || keys.has(entry.key)) return null
+    keys.add(entry.key)
+    entries.push(entry)
+  }
+  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
+  return {
+    accounts: parseApprovalAccounts(value["_accounts"]),
+    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
+    entries,
+  }
+}
+
+/** The account a request changes by name, or how many accounts when there are several. */
+export function accountsText(
+  accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
+  customerIds: Iterable<string>
+): string {
+  const ids = new Set(customerIds)
+  const [id] = ids
+  return ids.size === 1
+    ? (accounts.get(id ?? "")?.label ?? "Google Ads")
+    : `${String(ids.size)} accounts`
+}
+
 export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountOverview | null {
   if (!isRecord(value)) return null
   const customerId = googleAdsId(value["customer_id"])

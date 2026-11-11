@@ -32,6 +32,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   or changes only a target. The card shows recent conversions and ad groups
   with their own bids, counts campaigns that restart learning, and refuses
   targets the strategy doesn't take.
+- Google Ads ad group settings with approval: `google_ads_update_ad_groups`
+  renames up to 50 ad groups and changes their CPC bid, target CPA, target
+  ROAS, URL options, and ad rotation in one approval. The card refuses a bid
+  or target the campaign's bidding doesn't use, and a change whose campaign
+  changed its bidding since the card was shown.
 - Google Ads ad edits with approval: `google_ads_update_ads` replaces, adds,
   removes, and pins headlines and descriptions, and changes display paths and
   final URLs, on up to 50 responsive search ads in one approval. The card
@@ -52,8 +57,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Google Ads budgets in one approval: `google_ads_update_budgets` changes up
   to 100 daily budgets, by campaign or shared budget, and moves campaigns onto
   shared budgets. The card shows each budget's spend this month from Google,
-  lists every campaign a shared budget funds, and sends decreases before
-  increases.
+  lists every campaign a shared budget funds, sends decreases before
+  increases, and refuses a change when a campaign joined or left the budget
+  after the card was shown.
 - Google Ads removal in one approval: `google_ads_remove_objects` permanently
   removes up to 500 campaigns, ad groups, ads, keywords, asset groups, unused
   budgets and bid strategies, labels, and negative keyword lists. The card
@@ -85,7 +91,8 @@ minor release. Patch releases contain backward-compatible fixes only.
   excludes locations, distances around a point, and languages across up to 20
   campaigns in one approval, with bid adjustments. It refuses to leave a campaign
   with no location. Search campaigns can't add languages, because Google doesn't
-  support it.
+  support it. It also sets device bid adjustments and exclusions and a
+  campaign's whole weekly ad schedule, which changes whole or not at all.
 - `cut_video_clips` can zoom in on every other jump cut that removing pauses
   makes, which hides the jump, and push in slowly across a segment, up to
   150%. Zooms stay inside the framed picture and follow the face when framing
@@ -413,11 +420,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 - `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
 - `google_ads_create_keywords`'s `ad_groups` and `keywords` arguments, which added
   every keyword to every ad group, with per-keyword status, bid adjustments,
-  and URL options. Each ad group now has its own `keywords`, and one `status`
+  and URL options. Each ad group has its own `keywords`, and one `status`
   covers the request.
 - `google_ads_update_campaign_budget_amounts`,
   `google_ads_assign_campaign_budgets`, and `google_ads_create_campaign_budget`,
   replaced by `google_ads_update_budgets`.
+- `google_ads_update_device_bid_modifiers`, replaced by the `devices` setting
+  of `google_ads_update_targeting`.
 - `google_ads_remove_keywords`, `google_ads_remove_campaign_budgets`, and
   `google_ads_delete_labels`, replaced by `google_ads_remove_objects`.
 - Keyword status and bid adjustments in `google_ads_update_keywords`. Keywords

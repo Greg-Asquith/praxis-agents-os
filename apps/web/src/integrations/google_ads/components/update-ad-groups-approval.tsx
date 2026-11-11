@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/update-ad-groups-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState, type ReactNode } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -14,42 +13,46 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
-import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
+import { PercentInput } from "@/integrations/ads/components/percent-input"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import {
   canonicalMoney,
   moneyInput,
   roasPercent,
+  scaledMoney,
 } from "@/integrations/google_ads/lib/campaign-bidding"
+import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/setting-changes"
 import {
   AD_GROUP_SETTING_TITLES,
   AD_GROUP_SETTINGS,
   addableSettings,
   addedAdGroupChanges,
+  adGroupCampaign,
   adGroupCounts,
   adGroupCurrency,
+  type AdGroupRow,
   adGroupRows,
   adGroupsBannerDetail,
+  type AdGroupSetting,
   adGroupsNeedCheck,
+  type AdGroupValue,
   adGroupValueText,
+  campaignParents,
+  type CancelledAdGroupSetting,
   editedAdGroupChanges,
   parseCancelledAdGroupSettings,
   restoredAdGroupChanges,
   ROTATION_LABELS,
   ROTATIONS,
-  scaledMoney,
-  type AdGroupRow,
-  type AdGroupSetting,
-  type AdGroupValue,
-  type CancelledAdGroupSetting,
   type UpdateAdGroupsArgs,
 } from "@/integrations/google_ads/lib/update-ad-groups"
-import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/update-campaigns"
 import { currencySymbol } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -102,14 +105,18 @@ export function UpdateAdGroupsApproval({
   const many = new Set(rows.map((row) => row.key)).size > 1
   const tools = rows.length >= TOOLS_FROM
   const accountIds = [...new Set(rows.filter((row) => !row.cancelled).map((row) => row.customerId))]
-  const [campaign, setCampaign] = useState<string | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
   const parents = useMemo(
     () => campaignParents(rows, args.accounts, accountIds.length > 1),
     [accountIds.length, args.accounts, rows]
   )
-  const shown = campaign === null ? rows : rows.filter((row) => campaignOf(row) === campaign)
+  // A cancelled campaign draws no selection, so it stops filtering the changes below.
+  const campaign = parents.some((parent) => parent.key === picked && !parent.cancelled)
+    ? picked
+    : null
+  const shown = campaign === null ? rows : rows.filter((row) => adGroupCampaign(row) === campaign)
   // Cancelled settings by the campaign their ad group is in.
-  const campaignOfAdGroup = new Map(rows.map((row) => [row.key, campaignOf(row)]))
+  const campaignOfAdGroup = new Map(rows.map((row) => [row.key, adGroupCampaign(row)]))
 
   // A review redraws the card, so cancelled settings live beside the request for Undo.
   const save = (
@@ -157,6 +164,7 @@ export function UpdateAdGroupsApproval({
     rows.filter((row) => !row.cancelled && match(row))
   const cancelCell = (row: AdGroupRow) => (
     <CancelCell
+      cancelled={row.cancelled}
       disabled={disabled}
       onCancel={() => {
         cancel([row.id])
@@ -164,7 +172,6 @@ export function UpdateAdGroupsApproval({
       onUndo={() => {
         undo((item) => `${item.key}|${item.setting}` === row.id)
       }}
-      row={row}
     />
   )
   const edit =
@@ -236,7 +243,7 @@ export function UpdateAdGroupsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
-              setCampaign(null)
+              setPicked(null)
               setTab("attention")
             }}
           />
@@ -248,9 +255,9 @@ export function UpdateAdGroupsApproval({
           disabled={disabled}
           label="Campaigns"
           onCancel={(key) => {
-            cancel(liveOf((row) => campaignOf(row) === key).map((row) => row.id))
+            cancel(liveOf((row) => adGroupCampaign(row) === key).map((row) => row.id))
           }}
-          onSelect={setCampaign}
+          onSelect={setPicked}
           onUndo={(key) => {
             undo((item) => campaignOfAdGroup.get(item.key) === key)
           }}
@@ -452,41 +459,6 @@ function NameCell({ row }: { row: AdGroupRow }) {
   )
 }
 
-// Google keeps campaign names unique within an account.
-function campaignOf(row: AdGroupRow): string {
-  return `${row.customerId}:${row.campaignName ?? ""}`
-}
-
-/** One row per campaign, with the strategy that decides which ad group bids Google uses. */
-function campaignParents(
-  rows: readonly AdGroupRow[],
-  accounts: UpdateAdGroupsArgs["accounts"],
-  showAccount: boolean
-): ParentRow[] {
-  const campaigns = new Map<string, AdGroupRow[]>()
-  for (const row of rows)
-    campaigns.set(campaignOf(row), [...(campaigns.get(campaignOf(row)) ?? []), row])
-  return [...campaigns].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
-    const first = items[0]
-    const problems = live.filter((row) => row.problem !== null).length
-    return {
-      cancelled: live.length === 0,
-      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
-      key,
-      name: first?.campaignName ?? "Unknown Campaign",
-      problems,
-      values: {
-        ad_groups: new Set(live.map((row) => row.key)).size,
-        changes: live.length,
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
-        strategy: first?.strategyName ?? "—",
-      },
-    }
-  })
-}
-
 /** The live value, then the new one as an inline edit. */
 function ChangeCell({
   currency,
@@ -662,13 +634,10 @@ function EveryAction({
   // Each new amount is the live one changed by the same percentage.
   const byKey = new Map(rows.map((row) => [row.key, row]))
   return (
-    <CommittedInput
-      ariaLabel={`Change every ${AD_GROUP_SETTING_TITLES[setting].toLowerCase()} in this line by a percentage`}
-      className="h-7 w-28 text-sm tabular-nums"
+    <PercentInput
       disabled={disabled}
-      onCommit={(next) => {
-        const percent = Number(next.trim().replace(/%$/, ""))
-        if (!next.trim() || !Number.isFinite(percent) || percent <= -100) return
+      label={`Change every ${AD_GROUP_SETTING_TITLES[setting].toLowerCase()} in this line by a percentage`}
+      onCommit={(percent) => {
         setValues(ids, ({ key }) => {
           const row = byKey.get(key)
           const was = typeof row?.was === "string" ? row.was : null
@@ -677,38 +646,6 @@ function EveryAction({
             : (row?.value ?? null)
         })
       }}
-      placeholder="Change by %"
-      value=""
     />
-  )
-}
-
-function CancelCell({
-  disabled,
-  onCancel,
-  onUndo,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  onUndo: () => void
-  row: AdGroupRow
-}) {
-  return row.cancelled ? (
-    <Button disabled={disabled} onClick={onUndo} size="sm" type="button" variant="ghost">
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={onCancel}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

@@ -1,9 +1,9 @@
 // apps/web/src/integrations/google_ads/lib/update-targeting-result.ts
 
+import { type EditOutcome, isEditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import { bidText, deviceText } from "@/integrations/google_ads/lib/update-targeting"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
-export type TargetingOutcome = "updated" | "already_set" | "failed" | "unverified"
 export type TargetingSetting =
   | "locations"
   | "excluded_locations"
@@ -27,7 +27,7 @@ export type TargetingOutcomeRow = {
   errorCode: string | null
   items: OutcomeItem[]
   message: string | null
-  outcome: TargetingOutcome
+  outcome: EditOutcome
   setting: TargetingSetting
 }
 
@@ -43,7 +43,6 @@ const SETTINGS = [
   "ad_schedule",
 ]
 const ACTIONS = ["add", "remove", "change_bid", "set"]
-const OUTCOMES = ["updated", "already_set", "failed", "unverified"]
 
 export const SETTING_TITLES: Record<TargetingSetting, string> = {
   ad_schedule: "Ad Schedule",
@@ -78,8 +77,7 @@ function parseRow(value: unknown): TargetingOutcomeRow | null {
     !ACTIONS.includes(action) ||
     typeof setting !== "string" ||
     !SETTINGS.includes(setting) ||
-    typeof outcome !== "string" ||
-    !OUTCOMES.includes(outcome) ||
+    !isEditOutcome(outcome) ||
     typeof count !== "number" ||
     !Array.isArray(items)
   )
@@ -94,7 +92,7 @@ function parseRow(value: unknown): TargetingOutcomeRow | null {
     errorCode: text("error_code"),
     items: parsed.filter((item) => item !== null),
     message: text("message"),
-    outcome: outcome as TargetingOutcome,
+    outcome,
     setting: setting as TargetingSetting,
   }
 }
@@ -146,18 +144,4 @@ export function rowChange(row: TargetingOutcomeRow): { after: string; before: st
     }
   }
   return { after: `+ ${itemsText(row)}`, before: "—" }
-}
-
-export function targetingOutcomeSummary(result: UpdateTargetingResult): string {
-  const count = (outcome: TargetingOutcome) =>
-    result.rows.filter((row) => row.outcome === outcome).reduce((sum, row) => sum + row.count, 0)
-  return [
-    [count("updated"), "changed"],
-    [count("already_set"), "already set"],
-    [count("failed"), "failed"],
-    [count("unverified"), "unconfirmed"],
-  ]
-    .filter(([total]) => total !== 0)
-    .map(([total, label]) => `${String(total)} ${String(label)}`)
-    .join(" · ")
 }

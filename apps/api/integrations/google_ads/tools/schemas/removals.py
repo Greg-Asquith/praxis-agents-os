@@ -21,7 +21,7 @@ from ...references import (
 )
 from .base import GoogleAdsStrictModel
 
-# Keyword removal took 500 a call before it moved here, so this takes no fewer.
+# Keyword clean-ups run to hundreds of removals in one call.
 MAX_REMOVALS = 500
 
 type GoogleAdsRemovalKind = Literal[

@@ -2,7 +2,6 @@
 
 """Approval-only tool that changes the names, bids, targets, URL options, and ad rotation of Google Ads ad groups."""
 
-import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
@@ -23,7 +22,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -32,10 +30,6 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
 from ..operations.ad_group_settings import (
@@ -47,7 +41,7 @@ from ..operations.ad_group_settings import (
     card_settings,
     read_ad_group_settings,
 )
-from ..operations.edits import Edit, EditResult, FieldChange, apply_edits, prepare_edits
+from ..operations.edits import Edit, EditResult, FieldChange, prepare_edits
 from .schemas.ad_group_updates import (
     MAX_AD_GROUP_UPDATES,
     GoogleAdsAdGroupUpdate,
@@ -55,20 +49,17 @@ from .schemas.ad_group_updates import (
     GoogleAdsUpdateAdGroupsRequest,
 )
 from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
-from .utils.ad_group_builds import STRATEGY_NAMES
+from .utils.ad_group_builds import strategy_name
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_ad_groups"
-_IDENTITY = ("object",)
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
 _BIDS: tuple[AdGroupSetting, ...] = ("cpc_bid", "target_cpa", "target_roas")
 _BID_NAMES = {"cpc_bid": "CPC bid", "target_cpa": "target CPA", "target_roas": "target ROAS"}
@@ -96,13 +87,10 @@ def _bid_problem(setting: AdGroupSetting, live: LiveAdGroupSettings) -> str | No
     if live.strategy_type == strategy and not live.portfolio:
         return _NO_CAMPAIGN_TARGET.format(campaign=live.campaign_name, target=target)
     return _NOT_USED.format(
-        campaign=live.campaign_name, strategy=_strategy_name(live), bid=_BID_NAMES[setting]
+        campaign=live.campaign_name,
+        strategy=strategy_name(live.strategy_type, portfolio=live.portfolio),
+        bid=_BID_NAMES[setting],
     )
-
-
-def _strategy_name(live: LiveAdGroupSettings) -> str:
-    name = STRATEGY_NAMES.get(live.strategy_type, "its own bidding")
-    return f"a {name} portfolio strategy" if live.portfolio else name
 
 
 def _edit(change: GoogleAdsAdGroupUpdate) -> FieldChange:
@@ -162,54 +150,26 @@ async def google_ads_update_ad_groups(
         account_changes = [
             by_key[reference.customer_id, reference.ad_group_id] for reference in selected
         ]
-        client: GoogleAdsClient | None = None
-        edits: list[Edit] = []
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, edits, pending
-            client = await google_ads_client(ctx, entry)
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
             edits = [
                 _approved_edit(change, shown.get(change.resource_name))
                 for change in account_changes
             ]
-            pending = _pending_detail(entry, account_changes, shown)
-            return pending
+            return edits, _pending_detail(entry, account_changes, shown)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads ad group update preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=edits,
-                    read=_reader(client, entry, account_changes),
-                    family="ad_group_settings",
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, account_changes, shown, result)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(entry, account_changes, shown, applied)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_ad_groups",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="ad_group_settings",
+            plan=plan,
+            read=lambda client: _reader(client, entry, account_changes),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -327,7 +287,10 @@ def _result(
                     "before": before,
                     "requested": requested,
                     "after": before if skipped else after_settings.get(setting),
-                    "outcome": "already_set" if before == requested else outcome,
+                    # With no check there is no live value to match, so null never reads as set.
+                    "outcome": (
+                        "already_set" if setting in current and before == requested else outcome
+                    ),
                 }
             )
         ad_groups.append(
@@ -444,7 +407,9 @@ def _check(
         "campaign_name": live.campaign_name if live else None,
         "status": live.status if live else None,
         # The campaign's strategy, and the bid fields it uses, so the card can explain the rest.
-        "strategy_name": _strategy_name(live) if live else None,
+        "strategy_name": strategy_name(live.strategy_type, portfolio=live.portfolio)
+        if live
+        else None,
         "bids_used": sorted(live.bids_used) if live else [],
         "current": live.settings() if live else {},
         "requested": change.requested,

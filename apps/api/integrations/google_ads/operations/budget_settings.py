@@ -15,6 +15,8 @@ from .utils import nonnegative_int, stream_rows
 # Each budget setting's field path in Google's JSON names, as the edit seam compares and masks it.
 AMOUNT_PATH = "amountMicros"
 DELIVERY_PATH = "deliveryMethod"
+# How many campaigns use a budget. Read only: an amount is approved for the campaigns shown.
+REFERENCE_COUNT_PATH = "referenceCount"
 # A campaign's budget, which moving it onto a shared budget changes.
 CAMPAIGN_BUDGET_PATH = "campaignBudget"
 # Campaigns read per request when listing the campaigns a budget funds.
@@ -145,16 +147,18 @@ async def read_budgets(
         if not isinstance(budget, Mapping) or not isinstance(budget.get("resourceName"), str):
             continue
         amount = nonnegative_int(budget.get(AMOUNT_PATH))
+        reference_count = nonnegative_int(budget.get(REFERENCE_COUNT_PATH)) or 0
         live[budget["resourceName"]] = LiveBudget(
             resource_name=budget["resourceName"],
             name=str(budget.get("name") or "Budget"),
             status=str(budget.get("status") or ""),
             period=str(budget.get("period") or ""),
             shared=budget.get("explicitlyShared") is True,
-            reference_count=nonnegative_int(budget.get("referenceCount")) or 0,
+            reference_count=reference_count,
             values={
                 AMOUNT_PATH: str(amount) if amount is not None else None,
                 DELIVERY_PATH: budget.get(DELIVERY_PATH),
+                REFERENCE_COUNT_PATH: reference_count,
                 "resourceName": budget["resourceName"],
                 "status": budget.get("status"),
             },

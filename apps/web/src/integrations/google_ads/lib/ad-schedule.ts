@@ -103,14 +103,20 @@ export function sameWindows(
 
 /** Groups windows by their times and adjustment, in the order each first appears. */
 export function scheduleRows(windows: readonly ScheduleWindow[]): ScheduleRow[] {
-  const rows = new Map<string, ScheduleRow>()
+  const rows: ScheduleRow[] = []
   for (const window of sorted(windows)) {
-    const id = `${window.start}|${window.end}|${String(window.bidAdjustment)}`
-    const row = rows.get(id)
+    // A window repeated on one day gets its own row, so the repeat shows as an overlap.
+    const row = rows.find(
+      (item) =>
+        item.start === window.start &&
+        item.end === window.end &&
+        item.bidAdjustment === window.bidAdjustment &&
+        !item.days.includes(window.day)
+    )
     if (row) row.days.push(window.day)
-    else rows.set(id, { ...window, days: [window.day] })
+    else rows.push({ ...window, days: [window.day] })
   }
-  return [...rows.values()]
+  return rows
 }
 
 export function rowWindows(rows: readonly ScheduleRow[]): ScheduleWindow[] {
@@ -170,7 +176,8 @@ export function scheduleProblems(rows: readonly ScheduleRow[]): (string | null)[
 }
 
 export function scheduleValid(windows: readonly ScheduleWindow[]): boolean {
-  const rows = scheduleRows(windows)
+  // One row per window, so two windows with the same times on one day still count as overlapping.
+  const rows = windows.map((window) => ({ ...window, days: [window.day] }))
   return rows.length > 0 && scheduleProblems(rows).every((problem) => problem === null)
 }
 

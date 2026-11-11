@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/update-keywords-result.ts
 
-import type { EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
+import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import {
   KEYWORD_SETTINGS,
   keywordValue,
@@ -29,8 +29,6 @@ export type UpdateKeywordsResult = {
   rows: KeywordOutcomeRow[]
 }
 
-const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
-
 function parseKeyword(raw: unknown): KeywordOutcomeRow[] | null {
   if (!isRecord(raw) || !isNonEmptyString(raw["text"]) || !Array.isArray(raw["settings"]))
     return null
@@ -40,7 +38,7 @@ function parseKeyword(raw: unknown): KeywordOutcomeRow[] | null {
     if (!isRecord(item)) return null
     const setting = KEYWORD_SETTINGS.find((name) => name === item["setting"])
     const outcome = item["outcome"]
-    if (!setting || typeof outcome !== "string" || !OUTCOMES.includes(outcome)) return null
+    if (!setting || !isEditOutcome(outcome)) return null
     const before = keywordValue(setting, item["before"])
     const after = keywordValue(setting, item["after"])
     if (before === undefined) return null
@@ -51,7 +49,7 @@ function parseKeyword(raw: unknown): KeywordOutcomeRow[] | null {
       before,
       errorCode: text("error_code"),
       message: text("message"),
-      outcome: outcome as EditOutcome,
+      outcome,
       readBack: raw["read_back"] === true,
       replacement: text("replacement"),
       setting,

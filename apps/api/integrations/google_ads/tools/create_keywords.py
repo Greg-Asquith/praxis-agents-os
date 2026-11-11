@@ -2,7 +2,6 @@
 
 """Approval-only tool that adds keywords to Google Ads ad groups, each with its own list."""
 
-import asyncio
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Annotated, Any, Literal
@@ -22,7 +21,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -31,13 +29,9 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
-from ..operations.edits import CriterionChange, Edit, apply_edits, prepare_edits
+from ..operations.edits import CriterionChange, Edit, EditResult, prepare_edits
 from ..operations.keyword_additions import LiveAdGroup, read_keyword_ad_groups
 from ..operations.mutation_outcomes import GoogleAdsMutationLedger
 from ..operations.read_search_terms import read_ad_group_keywords
@@ -49,27 +43,24 @@ from .schemas.keyword_additions import (
     GoogleAdsKeywordAddition,
 )
 from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
-from .utils.ad_group_builds import STRATEGY_NAMES
+from .utils.ad_group_builds import strategy_name
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
+from .utils.keyword_problems import keyword_bid_not_used, keyword_exists
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "create_keywords"
 _FAMILY = "keyword_additions"
-_IDENTITY = ("object",)
 # Every keyword with its ad group and campaign names, for the most a call can carry.
 _MAX_PUBLIC_RESULT_CHARS = 1_000_000
 _MAX_MODEL_OUTCOMES = 50
 # Google takes keyword criteria in standard Search and Display ad groups.
 _KEYWORD_AD_GROUPS = frozenset({"SEARCH_STANDARD", "DISPLAY_STANDARD"})
-_MATCH_NAMES = {"EXACT": "an exact match", "PHRASE": "a phrase match", "BROAD": "a broad match"}
 
 _MISSING = "This ad group no longer exists in Google Ads."
 _REMOVED = "This ad group has been removed, so keywords can't be added to it."
@@ -77,8 +68,6 @@ _CAMPAIGN_REMOVED = "This ad group's campaign has been removed, so keywords can'
 _NOT_KEYWORDS = (
     "This ad group isn't a standard Search or Display ad group, so it can't take keywords."
 )
-_EXISTS = "“{text}” is already {match} keyword in {ad_group}."
-_BID_NOT_USED = "{campaign} uses {strategy}, so Google doesn't use a keyword max CPC."
 
 type _Status = Literal["ENABLED", "PAUSED"]
 
@@ -109,11 +98,6 @@ def _edit(
     )
 
 
-def _strategy_name(ad_group: LiveAdGroup) -> str:
-    name = STRATEGY_NAMES.get(ad_group.strategy_type, "its own bidding")
-    return f"a {name} portfolio strategy" if ad_group.portfolio else name
-
-
 def _ad_group_problem(ad_group: LiveAdGroup | None) -> str | None:
     if ad_group is None:
         return _MISSING
@@ -131,12 +115,11 @@ def _keyword_problem(
     existing: Mapping[str, str],
 ) -> str | None:
     if entry.key(keyword) in existing:
-        return _EXISTS.format(
-            text=keyword.text, match=_MATCH_NAMES[keyword.match_type], ad_group=ad_group.name
-        )
+        return keyword_exists(keyword.text, keyword.match_type, ad_group.name)
     if keyword.cpc_bid and not ad_group.uses_cpc_bid:
-        return _BID_NOT_USED.format(
-            campaign=ad_group.campaign_name, strategy=_strategy_name(ad_group)
+        return keyword_bid_not_used(
+            ad_group.campaign_name,
+            strategy_name(ad_group.strategy_type, portfolio=ad_group.portfolio),
         )
     return None
 
@@ -170,55 +153,27 @@ async def google_ads_create_keywords(
 
     async def operation(context: ResolvedContextEntry, _selected: Sequence[Any]) -> Any:
         account = by_account[context.external_id]
-        client: GoogleAdsClient | None = None
-        edits: list[CriterionChange] = []
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, edits, pending
-            client = await google_ads_client(ctx, context)
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
             edits = [
                 _approved_edit(entry, keyword, request.status, shown.get(entry.card_key(keyword)))
                 for entry in account
                 for keyword in entry.keywords
             ]
-            pending = _pending_detail(context, account)
-            return pending
+            return edits, _pending_detail(context, account)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads keyword addition preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=context.external_id,
-                    login_customer_id=login_customer_id(context),
-                    edits=edits,
-                    read=_reader(client, context, account),
-                    family=_FAMILY,
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(context, account, request.status, names, result.ledger)
-            outcome_status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=outcome_status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if outcome_status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(context, account, request.status, names, applied.ledger)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             context,
             tool_name="google_ads_create_keywords",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family=_FAMILY,
+            plan=plan,
+            read=lambda client: _reader(client, context, account),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -471,7 +426,7 @@ def _ad_group_view(entry: GoogleAdsKeywordAddition, ad_group: LiveAdGroup | None
         "campaign_name": ad_group.campaign_name,
         "status": ad_group.status,
         "campaign_status": ad_group.campaign_status,
-        "strategy_name": _strategy_name(ad_group),
+        "strategy_name": strategy_name(ad_group.strategy_type, portfolio=ad_group.portfolio),
         "uses_cpc_bid": ad_group.uses_cpc_bid,
         "default_bid": ad_group.default_bid,
         "problem": _ad_group_problem(ad_group),

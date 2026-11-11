@@ -11,6 +11,7 @@ from uuid import uuid4
 from integrations.google_ads.references import GoogleAdsAdReference
 from integrations.google_ads.tools import update_ads as tool_module
 from integrations.google_ads.tools.schemas.ad_updates import GoogleAdsUpdateAdsOutput
+from integrations.google_ads.tools.utils import edit_runs
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
@@ -109,7 +110,7 @@ async def _display(monkeypatch, account: _Account, changes: list[Any]) -> dict[s
 
 
 async def _run(monkeypatch, account: _Account, changes: list[Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -169,20 +170,20 @@ async def test_a_headline_swap_keeps_its_place_and_sends_only_what_changed(monke
     assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
 
 
-async def test_an_edit_leaving_too_few_headlines_is_refused_before_google_sees_it(
+async def test_an_edit_leaving_too_many_headlines_is_refused_before_google_sees_it(
     monkeypatch,
 ) -> None:
-    account = _Account(_ad({"text": "One"}, {"text": "Two"}, {"text": "Three"}))
-    changes = _changes(remove_headlines=["Three"])
+    account = _Account(_ad(*({"text": f"Headline {number}"} for number in range(15))))
+    changes = _changes(add_headlines=[{"text": "One More"}])
 
     display = await _display(monkeypatch, account, changes)
     data, _audit = await _run(monkeypatch, account, changes, display)
 
-    assert display["_checks"][_AD_GROUP_AD]["problems"] == [
-        "An ad needs 3 to 15 headlines. This edit leaves 2."
-    ]
+    assert display["_checks"][_AD_GROUP_AD]["problems"]
     assert account.mutates == []
     assert data.ads[0].outcome == "failed"
+    # The result still says what was asked for, past what an ad can hold.
+    assert len(data.ads[0].requested.headlines) == 16
 
 
 async def test_an_edit_the_approval_check_did_not_cover_is_refused(monkeypatch) -> None:

@@ -42,8 +42,9 @@ export function BidAdjustment({
           inputMode="text"
           onBlur={() => {
             setDraft(null)
-            if (text.trim() === "") onChange(null)
-            else if (!invalid) onChange(parseBidAdjustment(text))
+            if (invalid) return
+            const next = text.trim() === "" ? null : parseBidAdjustment(text)
+            if (next !== value) onChange(next)
           }}
           onChange={(event) => {
             setDraft(event.currentTarget.value)

@@ -23,6 +23,7 @@ from integrations.google_ads.tools.schemas.targeting import (
     GoogleAdsUpdateTargetingOutput,
     GoogleAdsUpdateTargetingRequest,
 )
+from integrations.google_ads.tools.utils import edit_runs
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
 
@@ -257,7 +258,7 @@ async def _display(monkeypatch, account: _Account, args: dict[str, Any]) -> dict
 
 
 async def _run(monkeypatch, account: _Account, args: dict[str, Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -769,6 +770,31 @@ async def test_devices_and_a_weekday_schedule_go_in_one_approval_with_the_schedu
         "Mobile Phones": -30,
         "Tablets": -100,
     }
+
+
+async def test_clearing_a_schedule_a_campaign_doesnt_have_is_already_set(monkeypatch) -> None:
+    account = _Account([_location("2826")])
+    args = _args(clear_ad_schedule=True)
+
+    display = await _display(monkeypatch, account, args)
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    assert _check(display)["already_set"] == [{"field": "ad_schedule", "key": "ad_schedule"}]
+    assert account.mutates == []
+    assert [row["outcome"] for row in _rows(result)] == ["already_set"]
+
+
+async def test_a_window_added_since_approval_refuses_the_whole_schedule(monkeypatch) -> None:
+    account = _Account([_location("2826"), _window("601", "MONDAY", 7, 22)])
+    args = _args(ad_schedule=[{"day": "MONDAY", "start": "09:00", "end": "17:00"}])
+    display = await _display(monkeypatch, account, args)
+    account.criteria.append(_window("602", "SUNDAY", 9, 17))
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    assert {row["outcome"] for row in _rows(result)} == {"failed"}
+    assert {row["error_code"] for row in _rows(result)} == {"CHANGED_SINCE_APPROVAL"}
+    assert [body["validateOnly"] for body in account.mutates] == [True]
 
 
 async def test_a_bidding_strategy_that_ignores_adjustments_is_noted_but_not_blocked(

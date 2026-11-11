@@ -3,9 +3,7 @@
 """Exact account-currency conversion for Google Ads money fields."""
 
 import re
-from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
 
 from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 
@@ -35,24 +33,3 @@ def money_to_micros(value: str, *, label: str = "amount") -> int:
 
 def micros_to_money(value: int) -> str:
     return format(Decimal(value) / _MICROS_PER_UNIT, "f")
-
-
-def campaign_budget_display_reference(
-    value: Mapping[str, Any], *, currency_code: str
-) -> dict[str, Any]:
-    """Add trusted currency data and serialize optional micros exactly for display."""
-    reference = {**value, "currency_code": currency_code}
-    for field in ("amount_micros", "total_amount_micros"):
-        micros = reference.get(field)
-        if micros is None:
-            continue
-        if isinstance(micros, str) and micros.isdigit():
-            integer_micros = int(micros)
-        elif isinstance(micros, int) and not isinstance(micros, bool):
-            integer_micros = micros
-        else:
-            raise TypeError("Google Ads campaign budget micros are invalid")
-        if integer_micros < 0 or integer_micros > GOOGLE_ADS_INT64_MAX:
-            raise TypeError("Google Ads campaign budget micros are invalid")
-        reference[field] = str(integer_micros)
-    return reference

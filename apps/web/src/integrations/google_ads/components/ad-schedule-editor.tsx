@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/components/ad-schedule-editor.tsx
 
 import { PlusIcon, XIcon } from "lucide-react"
-import { useState } from "react"
+import { useId, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -124,6 +124,9 @@ export function ScheduleWindows({
   const rows = keptRows(held, windows) ?? editorRows(windows)
   if (rows !== held) setHeld(rows)
   const problems = scheduleProblems(rows)
+  const baseId = useId()
+  // Typed times that were refused, by row and end, so the row can say why its time went back.
+  const [refused, setRefused] = useState<Record<string, string>>({})
   const save = (next: readonly EditorRow[]) => {
     setHeld(next)
     onChange(rowWindows(next))
@@ -140,65 +143,105 @@ export function ScheduleWindows({
   return (
     <div className="grid min-w-0 gap-2">
       <div className="divide-y rounded-lg border">
-        {rows.map((row, index) => (
-          <div key={row.id} className="grid min-w-0 gap-1 py-1.5 pr-1.5 pl-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <DayPicker
-                days={row.days}
-                disabled={disabled}
-                onChange={(days) => {
-                  edit(index, { days })
-                }}
-              />
-              <TimeInput
-                disabled={disabled}
-                label="From"
-                onChange={(start) => {
-                  edit(index, { start })
-                }}
-                value={row.start}
-              />
-              <span aria-hidden="true" className="text-muted-foreground text-sm">
-                to
-              </span>
-              <TimeInput
-                disabled={disabled}
-                label="To"
-                onChange={(end) => {
-                  edit(index, { end })
-                }}
-                value={row.end}
-              />
-              <BidAdjustment
-                disabled={disabled}
-                label={`Bid adjustment from ${row.start} to ${row.end}`}
-                onChange={(bidAdjustment) => {
-                  edit(index, { bidAdjustment: bidAdjustment === 0 ? null : bidAdjustment })
-                }}
-                value={row.bidAdjustment}
-              />
-              <Button
-                aria-label={`Remove the window from ${row.start} to ${row.end}`}
-                className="ml-auto size-11 shrink-0"
-                disabled={disabled || rows.length === 1}
-                onClick={() => {
-                  save(rows.filter((_row, position) => position !== index))
-                }}
-                size="icon"
-                title="Remove This Window"
-                type="button"
-                variant="ghost"
-              >
-                <XIcon aria-hidden="true" />
-              </Button>
+        {rows.map((row, index) => {
+          const position = String(index + 1)
+          const problemId = problems[index] ? `${baseId}-${String(row.id)}-problem` : null
+          const time = (end: "start" | "end") => {
+            const key = `${String(row.id)}-${end}`
+            const text = refused[key]
+            return {
+              describedBy: [text ? `${baseId}-${key}` : null, problemId].filter(Boolean).join(" "),
+              key,
+              onRefuse: (typed: string | null) => {
+                setRefused(({ [key]: _old, ...rest }) =>
+                  typed === null ? rest : { ...rest, [key]: typed }
+                )
+              },
+              text,
+            }
+          }
+          const from = time("start")
+          const to = time("end")
+          return (
+            <div key={row.id} className="grid min-w-0 gap-1 py-1.5 pr-1.5 pl-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <DayPicker
+                  days={row.days}
+                  describedBy={problemId}
+                  disabled={disabled}
+                  label={`Days for window ${position}`}
+                  onChange={(days) => {
+                    edit(index, { days })
+                  }}
+                />
+                <TimeInput
+                  describedBy={from.describedBy}
+                  disabled={disabled}
+                  label={`Start time for window ${position}`}
+                  onChange={(start) => {
+                    edit(index, { start })
+                  }}
+                  onRefuse={from.onRefuse}
+                  value={row.start}
+                />
+                <span aria-hidden="true" className="text-muted-foreground text-sm">
+                  to
+                </span>
+                <TimeInput
+                  describedBy={to.describedBy}
+                  disabled={disabled}
+                  label={`End time for window ${position}`}
+                  onChange={(end) => {
+                    edit(index, { end })
+                  }}
+                  onRefuse={to.onRefuse}
+                  value={row.end}
+                />
+                <BidAdjustment
+                  disabled={disabled}
+                  label={`Bid adjustment from ${row.start} to ${row.end}`}
+                  onChange={(bidAdjustment) => {
+                    edit(index, { bidAdjustment: bidAdjustment === 0 ? null : bidAdjustment })
+                  }}
+                  value={row.bidAdjustment}
+                />
+                <Button
+                  aria-label={`Remove the window from ${row.start} to ${row.end}`}
+                  className="ml-auto size-11 shrink-0"
+                  disabled={disabled || rows.length === 1}
+                  onClick={() => {
+                    save(rows.filter((_row, position) => position !== index))
+                  }}
+                  size="icon"
+                  title="Remove This Window"
+                  type="button"
+                  variant="ghost"
+                >
+                  <XIcon aria-hidden="true" />
+                </Button>
+              </div>
+              {[from, to].map((end) =>
+                end.text ? (
+                  <p
+                    key={end.key}
+                    className="text-destructive text-sm"
+                    id={`${baseId}-${end.key}`}
+                    role="alert"
+                  >
+                    {`"${end.text}" isn't a quarter hour, so this time is still ${
+                      end === from ? row.start : row.end
+                    }. Use a time such as 07:15.`}
+                  </p>
+                ) : null
+              )}
+              {problemId ? (
+                <p className="text-destructive text-sm" id={problemId} role="alert">
+                  {problems[index]}
+                </p>
+              ) : null}
             </div>
-            {problems[index] ? (
-              <p className="text-destructive text-sm" role="alert">
-                {problems[index]}
-              </p>
-            ) : null}
-          </div>
-        ))}
+          )
+        })}
       </div>
       <Button
         className="w-fit"
@@ -219,16 +262,21 @@ export function ScheduleWindows({
 
 function DayPicker({
   days,
+  describedBy,
   disabled,
+  label,
   onChange,
 }: {
   days: readonly Day[]
+  describedBy: string | null
   disabled: boolean
+  label: string
   onChange: (days: Day[]) => void
 }) {
   return (
     <ToggleGroup
-      aria-label="Days"
+      aria-describedby={describedBy ?? undefined}
+      aria-label={label}
       className="bg-background rounded-lg border p-0.5"
       disabled={disabled}
       multiple
@@ -254,16 +302,21 @@ function DayPicker({
   )
 }
 
-/** A time typed as 7, 7:30, or 07:30, kept as typed until it's a valid quarter hour. */
+/** A time typed as 7, 7:30, or 07:30; anything but a quarter hour goes back to the last time. */
 function TimeInput({
+  describedBy,
   disabled,
   label,
   onChange,
+  onRefuse,
   value,
 }: {
+  describedBy: string
   disabled: boolean
   label: string
   onChange: (value: string) => void
+  // The typed text that was refused, or null once the operator types again.
+  onRefuse: (typed: string | null) => void
   value: string
 }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -271,17 +324,20 @@ function TimeInput({
   const parsed = parseTime(text)
   return (
     <Input
+      aria-describedby={describedBy || undefined}
       aria-invalid={parsed === null}
       aria-label={label}
       className={cn("w-18 text-center tabular-nums", parsed === null && "border-destructive")}
       disabled={disabled}
       onBlur={() => {
-        if (parsed === null) return
+        // The request still holds the last valid time, so the input shows it again.
         setDraft(null)
-        if (parsed !== value) onChange(parsed)
+        if (parsed === null) onRefuse(text)
+        else if (parsed !== value) onChange(parsed)
       }}
       onChange={(event) => {
         setDraft(event.currentTarget.value)
+        onRefuse(null)
       }}
       placeholder="00:00"
       title="Quarter hours, such as 07:15"

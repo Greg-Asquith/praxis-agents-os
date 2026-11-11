@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import {
   adGroupOf,
   adRows,
+  assetsInOrder,
   editsFor,
   mergedCopy,
   parseUpdateAdsArgs,
@@ -124,6 +125,29 @@ describe("merge", () => {
       path1: "",
     })
     expect(mergedCopy(copy, edits).after).toEqual(wanted)
+  })
+
+  it("keeps an edited headline where it was typed after a removal with no replacement", () => {
+    const copy = live()
+    const [first, second, third] = copy.headlines
+    if (!first || !second || !third) throw new Error("Expected three headlines")
+    const four = { ...copy, headlines: [...copy.headlines, { text: "Free Returns", pin: null }] }
+    const shown = mergedCopy(four, { remove_headlines: [first.text] }).after
+    const wanted = shown.headlines.map((item, at) =>
+      at === 2 ? { ...item, text: "Free Returns Always" } : item
+    )
+    const edits = parsed({
+      changes: [withEdits({ ad: ad("30") }, editsFor(four, { ...shown, headlines: wanted }))],
+    }).changes[0]?.edits
+
+    const merged = mergedCopy(four, edits ?? {}).after.headlines
+    expect(merged[0]?.text).toBe("Free Returns Always")
+    expect(
+      assetsInOrder(
+        merged,
+        wanted.map((item) => item.text)
+      )
+    ).toEqual(wanted)
   })
 })
 

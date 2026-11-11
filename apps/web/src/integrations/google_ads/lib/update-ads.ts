@@ -1,19 +1,23 @@
 // apps/web/src/integrations/google_ads/lib/update-ads.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
+  accountsText,
   type GoogleAdsApprovalAccount,
+  parseCheckedEntries,
 } from "@/integrations/google_ads/lib/accounts"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine, unavailableProblem } from "@/integrations/google_ads/lib/copy"
 import {
+  type AdCopy,
   characterCount,
   DESCRIPTION_LIMITS,
   HEADLINE_LIMITS,
-  type AdCopy,
+  parseTextAssets,
   type TextAsset,
 } from "@/integrations/google_ads/lib/create-ads"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { googleAdsId, isGoogleAdsUrl, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 /** An ad's copy and links as the server sends them: no path is null, and one final URL. */
@@ -85,8 +89,7 @@ export type AdRow = {
 
 export type AdCounts = { ads: number; apply: number; campaigns: number; problems: number }
 
-const UNAVAILABLE = "Google Ads couldn't check this ad. Ask the agent to prepare the change again."
-const URL_PATTERN = /^https?:\/\/\S+$/i
+const UNAVAILABLE = unavailableProblem("ad")
 const PATH_LENGTH = 15
 const EDIT_KEYS = [
   "add_headlines",
@@ -99,35 +102,21 @@ const EDIT_KEYS = [
   "final_url",
 ] as const
 
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
-function parseAssets(value: unknown): TextAsset[] | null {
-  if (!Array.isArray(value)) return null
-  const assets: TextAsset[] = []
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["text"] !== "string") return null
-    assets.push({ pin: typeof item["pin"] === "string" ? item["pin"] : null, text: item["text"] })
-  }
-  return assets
-}
-
 function parseTexts(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : null
 }
 
 function parseCopy(value: unknown): LiveCopy | null {
   if (!isRecord(value)) return null
-  const headlines = parseAssets(value["headlines"])
-  const descriptions = parseAssets(value["descriptions"])
+  const headlines = parseTextAssets(value["headlines"])
+  const descriptions = parseTextAssets(value["descriptions"])
   if (headlines === null || descriptions === null) return null
   return {
     descriptions,
-    finalUrl: text(value["final_url"]),
+    finalUrl: textOrNull(value["final_url"]),
     headlines,
-    path1: text(value["path1"]),
-    path2: text(value["path2"]),
+    path1: textOrNull(value["path1"]),
+    path2: textOrNull(value["path2"]),
   }
 }
 
@@ -136,7 +125,7 @@ function editsOf(entry: Record<string, unknown>): AdEdits {
   const edits: AdEdits = {}
   const trimmed = (items: TextAsset[]) => items.map((item) => ({ ...item, text: item.text.trim() }))
   for (const key of ["add_headlines", "add_descriptions", "pins"] as const) {
-    const assets = parseAssets(entry[key])
+    const assets = parseTextAssets(entry[key])
     if (assets?.length) edits[key] = trimmed(assets)
   }
   for (const key of ["remove_headlines", "remove_descriptions"] as const) {
@@ -164,7 +153,7 @@ function parseChange(value: unknown): AdChange | null {
     edits: editsOf(value),
     entry: value,
     key: `customers/${customerId}/adGroupAds/${adGroupId}~${adId}`,
-    label: text(reference["label"]) ?? `Ad ${adId}`,
+    label: textOrNull(reference["label"]) ?? `Ad ${adId}`,
   }
 }
 
@@ -172,11 +161,11 @@ function parseCheck(value: unknown): AdCheck {
   if (!isRecord(value) || value["unavailable"] !== false) return { unavailable: true }
   return {
     unavailable: false,
-    adGroupName: text(value["ad_group_name"]),
-    campaignName: text(value["campaign_name"]),
+    adGroupName: textOrNull(value["ad_group_name"]),
+    campaignName: textOrNull(value["campaign_name"]),
     current: parseCopy(value["current"]),
-    name: text(value["name"]),
-    problem: text(value["problem"]),
+    name: textOrNull(value["name"]),
+    problem: textOrNull(value["problem"]),
     problems: parseTexts(value["problems"]) ?? [],
     requested: isRecord(value["requested"]) ? editsOf(value["requested"]) : {},
   }
@@ -184,21 +173,8 @@ function parseCheck(value: unknown): AdCheck {
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseUpdateAdsArgs(value: unknown): UpdateAdsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const changes: AdChange[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const change = parseChange(entry)
-    if (change === null || keys.has(change.key)) return null
-    keys.add(change.key)
-    changes.push(change)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    changes,
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseChange, parseCheck)
+  return parsed && { accounts: parsed.accounts, checks: parsed.checks, changes: parsed.entries }
 }
 
 /** The same edits in a fixed order, so two can be compared whatever order their keys came in. */
@@ -321,7 +297,7 @@ function copyProblems(copy: LiveCopy, edits: AdEdits): string[] {
     if (count > PATH_LENGTH)
       problems.push(`${label} is ${String(count)} characters. The limit is ${String(PATH_LENGTH)}.`)
   }
-  if (edits.final_url !== undefined && !URL_PATTERN.test(edits.final_url))
+  if (edits.final_url !== undefined && !isGoogleAdsUrl(edits.final_url))
     problems.push("Enter a final URL starting with http:// or https://.")
   return problems
 }
@@ -416,6 +392,15 @@ export function editsFor(current: LiveCopy, wanted: LiveCopy): AdEdits {
   return edits
 }
 
+/** The merged assets in the order the editor last had them, which the merge doesn't keep. */
+export function assetsInOrder(assets: readonly TextAsset[], order: readonly string[]): TextAsset[] {
+  const place = (asset: TextAsset) => {
+    const at = order.indexOf(asset.text)
+    return at === -1 ? order.length : at
+  }
+  return [...assets].sort((a, b) => place(a) - place(b))
+}
+
 /** The edits every ad shares, when there are several ads and they all have the same ones. */
 export function sharedEdits(args: UpdateAdsArgs): AdEdits | null {
   const [first, ...rest] = args.changes
@@ -506,14 +491,6 @@ export function previewCopy(copy: LiveCopy): AdCopy {
   }
 }
 
-function accountName(args: UpdateAdsArgs): string {
-  const ids = new Set(args.changes.map((change) => change.customerId))
-  const [id] = ids
-  return ids.size === 1
-    ? (args.accounts.get(id ?? "")?.label ?? "Google Ads")
-    : `${String(ids.size)} accounts`
-}
-
 /** A one-headline swap, which reads better named than counted. */
 function swap(edits: AdEdits): { from: string; to: string } | null {
   const keys = EDIT_KEYS.filter((key) => edits[key] !== undefined)
@@ -537,7 +514,10 @@ export function updateAdsPrompt(args: UpdateAdsArgs): string {
       ? `Change the copy of ${sole.name} in ${sole.adGroupName}.`
       : `Change the copy of ${sole.name}.`
   const { campaigns } = adCounts(rows)
-  const where = `${approvalCountLine(rows.length, "responsive search ad")} in ${approvalCountLine(campaigns, "campaign")} in ${accountName(args)}`
+  const where = `${approvalCountLine(rows.length, "responsive search ad")} in ${approvalCountLine(campaigns, "campaign")} in ${accountsText(
+    args.accounts,
+    args.changes.map((change) => change.customerId)
+  )}`
   const shared = sharedEdits(args)
   return shared && swap(shared) ? `Swap one headline in ${where}.` : `Change ${where}.`
 }
@@ -582,4 +562,19 @@ export function editsLine(edits: AdEdits): string {
   ].filter((part) => part !== null)
   const line = parts.join(", ")
   return line ? line.charAt(0).toUpperCase() + line.slice(1) : "No change"
+}
+
+/** One row per ad group, in the order its ads first appear. */
+export function adGroupParents(rows: readonly AdRow[]): ParentRow[] {
+  return groupedByParent(rows, (row) => adGroupOf(row.change)).map(({ items, key, live }) => {
+    const named = items.find((row) => row.adGroupName)
+    return {
+      cancelled: live.length === 0,
+      context: named?.campaignName ?? null,
+      key,
+      name: named ? named.adGroupName : `Ad group ${items[0]?.change.adGroupId ?? ""}`,
+      problems: live.filter((row) => row.problems.length > 0).length,
+      values: { ads: live.length },
+    }
+  })
 }

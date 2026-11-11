@@ -2,13 +2,23 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
-import type { KeywordMatchType, PastedKeyword } from "@/integrations/ads/lib/keyword-notation"
 import {
-  parseApprovalAccounts,
+  collapseSpaces,
+  type KeywordMatchType,
+  type PastedKeyword,
+} from "@/integrations/ads/lib/keyword-notation"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
+import {
+  accountsText,
   type GoogleAdsApprovalAccount,
+  parseApprovalAccounts,
 } from "@/integrations/google_ads/lib/accounts"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+} from "@/integrations/google_ads/lib/copy"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 export type NegativeTargetKind = "campaign" | "ad_group" | "list" | "new_list"
@@ -100,14 +110,6 @@ export type NegativeCounts = {
 const UNAVAILABLE =
   "Google Ads couldn't check this. Check again, or ask the agent to prepare the change again."
 
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
-
-function collapse(value: string): string {
-  return value.trim().split(/\s+/).join(" ")
-}
-
 function parseKeywords(value: unknown): PastedKeyword[] | null {
   if (value === undefined) return []
   if (!Array.isArray(value)) return null
@@ -115,9 +117,9 @@ function parseKeywords(value: unknown): PastedKeyword[] | null {
   for (const item of value) {
     if (!isRecord(item)) return null
     const matchType = item["match_type"]
-    const keyword = text(item["text"])
+    const keyword = textOrNull(item["text"])
     if (keyword === null || !MATCH_TYPES.includes(matchType as KeywordMatchType)) return null
-    keywords.push({ matchType: matchType as KeywordMatchType, text: collapse(keyword) })
+    keywords.push({ matchType: matchType as KeywordMatchType, text: collapseSpaces(keyword) })
   }
   return keywords
 }
@@ -134,7 +136,7 @@ function parseCampaigns(value: unknown): CampaignRef[] | null {
     campaigns.push({
       campaignId,
       key: `customers/${customerId}/campaigns/${campaignId}`,
-      label: text(item["label"]) ?? `Campaign ${campaignId}`,
+      label: textOrNull(item["label"]) ?? `Campaign ${campaignId}`,
       value: item,
     })
   }
@@ -154,13 +156,13 @@ function parseTarget(
   apply: readonly CampaignRef[]
 ): { customerId: string; key: string; label: string } | null {
   if (kind === "new_list") {
-    const name = text(value["new_list"])
+    const name = textOrNull(value["new_list"])
     const customerId = apply[0]?.key.split("/")[1]
     if (name === null || !customerId) return null
     return {
       customerId,
-      key: `customers/${customerId}/newSharedSets/${collapse(name).toLowerCase()}`,
-      label: collapse(name),
+      key: `customers/${customerId}/newSharedSets/${collapseSpaces(name).toLowerCase()}`,
+      label: collapseSpaces(name),
     }
   }
   const { collection, field, id } = TARGET_FIELDS[kind]
@@ -172,7 +174,7 @@ function parseTarget(
   return {
     customerId,
     key: `customers/${customerId}/${collection}/${targetId}`,
-    label: text(reference["label"]) ?? `${TARGET_KIND_LABELS[kind]} ${targetId}`,
+    label: textOrNull(reference["label"]) ?? `${TARGET_KIND_LABELS[kind]} ${targetId}`,
   }
 }
 
@@ -193,7 +195,7 @@ function parseEntry(value: unknown): NegativeEntry | null {
 function parseCheckRow(value: unknown): CheckRow | null {
   if (!isRecord(value)) return null
   const { action, item, state } = value
-  const key = text(value["key"])
+  const key = textOrNull(value["key"])
   if (
     key === null ||
     (action !== "add" && action !== "remove") ||
@@ -201,7 +203,7 @@ function parseCheckRow(value: unknown): CheckRow | null {
     (state !== "change" && state !== "already_set" && state !== "not_found")
   )
     return null
-  return { action, item, key, problem: text(value["problem"]), state }
+  return { action, item, key, problem: textOrNull(value["problem"]), state }
 }
 
 function parseCheck(value: unknown): TargetCheck {
@@ -209,8 +211,8 @@ function parseCheck(value: unknown): TargetCheck {
   const rows = Array.isArray(value["rows"]) ? value["rows"] : []
   return {
     unavailable: false,
-    name: text(value["name"]) ?? "",
-    problem: text(value["problem"]),
+    name: textOrNull(value["name"]) ?? "",
+    problem: textOrNull(value["problem"]),
     rows: rows.flatMap((row) => parseCheckRow(row) ?? []),
   }
 }
@@ -240,7 +242,7 @@ function rowKey(
   campaign?: string
 ) {
   return item === "keyword"
-    ? `${matchType ?? ""}:${collapse(name).toLowerCase()}`
+    ? `${matchType ?? ""}:${collapseSpaces(name).toLowerCase()}`
     : (campaign ?? "")
 }
 
@@ -525,12 +527,8 @@ export function negativeParents(
   accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
   showAccount: boolean
 ): ParentRow[] {
-  const targets = new Map<string, NegativeRow[]>()
-  for (const row of rows) targets.set(row.targetKey, [...(targets.get(row.targetKey) ?? []), row])
-  return [...targets].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
+  return groupedByParent(rows, (row) => row.targetKey).map(({ items, key, live }) => {
     const first = items[0]
-    const problems = live.filter((row) => row.problem !== null).length
     const keywords = (action: RowAction) =>
       live.filter((row) => row.item === "keyword" && row.action === action).length
     const account = showAccount ? (accounts.get(key.split("/")[1] ?? "")?.label ?? null) : null
@@ -539,12 +537,10 @@ export function negativeParents(
       context: [linksText(live), account].filter((part) => part !== null).join(" · ") || null,
       key,
       name: first?.targetName ?? key,
-      problems,
+      problems: live.filter((row) => row.problem !== null).length,
       values: {
         add: keywords("add"),
         kind: first ? TARGET_KIND_LABELS[first.targetKind] : "",
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
         remove: keywords("remove"),
       },
     }
@@ -626,20 +622,15 @@ export function negativeBlock(
   checked: UpdateNegativeKeywordsArgs
 ): string | null {
   if (args === null) return null
-  const counts = negativeCounts(negativeRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (needsCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These negative keywords are already in place."
-  return null
+  return changesBlock(
+    negativeCounts(negativeRows(args, checked)),
+    needsCheck(args, checked),
+    "These negative keywords are already in place."
+  )
 }
 
 export function negativeApproveLabel(args: UpdateNegativeKeywordsArgs): string {
-  const { apply } = negativeCounts(negativeRows(args, args))
-  if (apply === 0) return "Apply Changes"
-  return `Apply ${apply.toLocaleString("en-GB")} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(negativeCounts(negativeRows(args, args)).apply)
 }
 
 // In the order the card names them.
@@ -673,12 +664,10 @@ function searches(count: number): string {
 
 export function negativePrompt(args: UpdateNegativeKeywordsArgs): string {
   if (args.entries.length === 0) return "Nothing is left to change."
-  const customerIds = new Set(args.entries.map((entry) => entry.customerId))
-  const [customerId] = customerIds
-  const where =
-    customerIds.size === 1
-      ? (args.accounts.get(customerId ?? "")?.label ?? "Google Ads")
-      : `${String(customerIds.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.entries.map((entry) => entry.customerId)
+  )
   const add = args.entries.reduce((total, entry) => total + entry.add.length, 0)
   const remove = args.entries.reduce((total, entry) => total + entry.remove.length, 0)
   const targets = targetsText(args)

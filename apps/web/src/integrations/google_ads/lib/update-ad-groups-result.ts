@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/update-ad-groups-result.ts
 
-import type { EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
+import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import {
   AD_GROUP_SETTINGS,
   adGroupValue,
@@ -27,8 +27,6 @@ export type UpdateAdGroupsResult = {
   rows: AdGroupOutcomeRow[]
 }
 
-const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
-
 function parseAdGroup(raw: unknown): AdGroupOutcomeRow[] | null {
   if (!isRecord(raw) || !isNonEmptyString(raw["name"]) || !Array.isArray(raw["settings"]))
     return null
@@ -38,7 +36,7 @@ function parseAdGroup(raw: unknown): AdGroupOutcomeRow[] | null {
     if (!isRecord(item)) return null
     const setting = AD_GROUP_SETTINGS.find((name) => name === item["setting"])
     const outcome = item["outcome"]
-    if (!setting || typeof outcome !== "string" || !OUTCOMES.includes(outcome)) return null
+    if (!setting || !isEditOutcome(outcome)) return null
     const before = adGroupValue(setting, item["before"])
     const after = adGroupValue(setting, item["after"])
     if (before === undefined || after === undefined) return null
@@ -49,7 +47,7 @@ function parseAdGroup(raw: unknown): AdGroupOutcomeRow[] | null {
       campaignName: text("campaign_name") ?? "",
       errorCode: text("error_code"),
       message: text("message"),
-      outcome: outcome as EditOutcome,
+      outcome,
       readBack: raw["read_back"] === true,
       setting,
     })

@@ -4,14 +4,18 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
-import { EDIT_OUTCOME_BADGES, EDIT_OUTCOME_TABS } from "@/integrations/google_ads/lib/edit-outcomes"
+import { cellText } from "@/integrations/ads/lib/cell-text"
+import {
+  EDIT_OUTCOME_BADGES,
+  EDIT_OUTCOME_TABS,
+  type EditOutcome,
+} from "@/integrations/google_ads/lib/edit-outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { statusLabel, STATUS_KIND_TITLES } from "@/integrations/google_ads/lib/status-change"
 import {
   outcomeLabel,
   resultSummary,
   type StatusChangeResult,
-  type StatusOutcome,
 } from "@/integrations/google_ads/lib/status-change-result"
 
 const COLUMNS: DataColumn[] = [
@@ -55,7 +59,7 @@ export function StatusChangeOutcome({ result }: { result: StatusChangeResult }) 
       renderCell={(column, row) => {
         if (column.key === "outcome")
           return (
-            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as StatusOutcome]}>
+            <Badge variant={EDIT_OUTCOME_BADGES[row["token"] as EditOutcome]}>
               {cellText(row["outcome"])}
             </Badge>
           )
@@ -76,8 +80,4 @@ export function StatusChangeOutcome({ result }: { result: StatusChangeResult }) 
       tabs={EDIT_OUTCOME_TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/update-ads-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -13,12 +12,13 @@ import {
   type DataRow,
   type DataTableTab,
 } from "@/components/ui/data-table"
-import { Input } from "@/components/ui/input"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary } from "@/integrations/ads/components/change-summary"
-import { FormField, TextField } from "@/integrations/ads/components/controls"
-import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
+import { CommittedInput } from "@/integrations/ads/components/committed-input"
+import { FormField } from "@/integrations/ads/components/controls"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { SearchAdPreview } from "@/integrations/google_ads/components/search-ad-preview"
 import { TextAssetList } from "@/integrations/google_ads/components/text-asset-list"
@@ -33,22 +33,24 @@ import {
 } from "@/integrations/google_ads/lib/create-ads"
 import {
   adCounts,
+  type AdEdits,
   adGroupOf,
+  adGroupParents,
+  type AdRow,
   adRows,
   adsNeedCheck,
+  assetsInOrder,
   cancelledEntries,
   canCheckAds,
   editsFor,
   editsLine,
+  type LiveCopy,
   previewCopy,
   restoredAds,
   sharedEdits,
+  type UpdateAdsArgs,
   updateAdsBannerDetail,
   withEdits,
-  type AdEdits,
-  type AdRow,
-  type LiveCopy,
-  type UpdateAdsArgs,
 } from "@/integrations/google_ads/lib/update-ads"
 import { cn } from "@/lib/utils"
 
@@ -100,8 +102,12 @@ export function UpdateAdsApproval({
   const many = rows.length > 1
   const tools = rows.length >= TOOLS_FROM
   const openRow = many ? (open ? byKey.get(open) : undefined) : rows[0]
-  const [adGroup, setAdGroup] = useState<string | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
   const parents = useMemo(() => adGroupParents(rows), [rows])
+  // A cancelled ad group draws no selection, so it stops filtering the ads below.
+  const adGroup = parents.some((parent) => parent.key === picked && !parent.cancelled)
+    ? picked
+    : null
   const shown = adGroup === null ? rows : rows.filter((row) => adGroupOf(row.change) === adGroup)
 
   // A review redraws the card, so cancelled ads live beside the request for Undo.
@@ -112,7 +118,21 @@ export function UpdateAdsApproval({
     if (nextCancelled !== cancelled) controls.onRetain?.(nextCancelled)
     onFieldEdit("changes", changes)
   }
+  const cancel = (keys: ReadonlySet<string>) => {
+    save(
+      args.changes.filter((change) => !keys.has(change.key)).map((change) => change.entry),
+      [
+        ...cancelled,
+        ...args.changes.filter((change) => keys.has(change.key)).map((change) => change.entry),
+      ]
+    )
+  }
   const editAd = (key: string, edits: AdEdits) => {
+    // The server refuses an entry with no edits, so an ad edited back to its live copy is cancelled.
+    if (Object.keys(edits).length === 0) {
+      cancel(new Set([key]))
+      return
+    }
     save(
       args.changes.map((change) =>
         change.key === key ? withEdits(change.entry, edits) : change.entry
@@ -124,15 +144,6 @@ export function UpdateAdsApproval({
     save(
       args.changes.map((change) => withEdits(change.entry, edits)),
       cancelled
-    )
-  }
-  const cancel = (keys: ReadonlySet<string>) => {
-    save(
-      args.changes.filter((change) => !keys.has(change.key)).map((change) => change.entry),
-      [
-        ...cancelled,
-        ...args.changes.filter((change) => keys.has(change.key)).map((change) => change.entry),
-      ]
     )
   }
   const undo = (match: (row: AdRow["change"]) => boolean) => {
@@ -205,7 +216,7 @@ export function UpdateAdsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
-              setAdGroup(null)
+              setPicked(null)
               setTab("attention")
             }}
           />
@@ -223,7 +234,7 @@ export function UpdateAdsApproval({
               )
             }}
             onSelect={(key) => {
-              setAdGroup(key)
+              setPicked(key)
               // A shared edit stays closed; otherwise open the ad group's first ad to fix.
               if (shared || key === null) return
               const inGroup = rows.filter((row) => !row.cancelled && adGroupOf(row.change) === key)
@@ -252,6 +263,7 @@ export function UpdateAdsApproval({
               if (column.key === "cancel")
                 return (
                   <CancelCell
+                    cancelled={row.cancelled}
                     disabled={disabled}
                     onCancel={() => {
                       cancel(new Set([row.key]))
@@ -259,7 +271,6 @@ export function UpdateAdsApproval({
                     onUndo={() => {
                       undo((change) => change.key === row.key)
                     }}
-                    row={row}
                   />
                 )
               return null
@@ -354,30 +365,6 @@ function tabs(byKey: ReadonlyMap<string, AdRow>): DataTableTab[] {
 }
 
 /** One row per ad group the ads are in, in the order its ads first appear. */
-function adGroupParents(rows: readonly AdRow[]): ParentRow[] {
-  const groups = new Map<string, AdRow[]>()
-  for (const row of rows) {
-    const key = adGroupOf(row.change)
-    groups.set(key, [...(groups.get(key) ?? []), row])
-  }
-  return [...groups].map(([key, items]) => {
-    const live = items.filter((row) => !row.cancelled)
-    const named = items.find((row) => row.adGroupName)
-    const problems = live.filter((row) => row.problems.length > 0).length
-    return {
-      cancelled: live.length === 0,
-      context: named?.campaignName ?? null,
-      key,
-      name: named ? named.adGroupName : `Ad group ${items[0]?.change.adGroupId ?? ""}`,
-      problems,
-      values: {
-        ads: live.length,
-        problems:
-          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
-      },
-    }
-  })
-}
 
 function AdCell({ row }: { row: AdRow }) {
   return (
@@ -396,49 +383,6 @@ function AdCell({ row }: { row: AdRow }) {
         </span>
       ) : null}
     </div>
-  )
-}
-
-function CancelCell({
-  disabled,
-  onCancel,
-  onUndo,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  onUndo: () => void
-  row: AdRow
-}) {
-  // The row opens its ad on click; these buttons shouldn't.
-  return row.cancelled ? (
-    <Button
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation()
-        onUndo()
-      }}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation()
-        onCancel()
-      }}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }
 
@@ -519,12 +463,13 @@ function SharedChange({
           <div key={`${line.kind}-${String(line.index)}`} className="grid gap-2 sm:grid-cols-2">
             <FormField label={`Replace ${noun}`}>
               {(id) => (
-                <Input
+                <CommittedInput
+                  ariaLabel={`Replace ${noun}`}
                   className="text-sm"
-                  id={id}
                   disabled={disabled}
-                  onChange={(event) => {
-                    replace(line.kind, line.index, "from", event.currentTarget.value)
+                  id={id}
+                  onCommit={(value) => {
+                    replace(line.kind, line.index, "from", value)
                   }}
                   value={line.from}
                 />
@@ -533,13 +478,13 @@ function SharedChange({
             <FormField label="With">
               {(id) => (
                 <span className="flex items-center gap-2">
-                  <Input
-                    aria-invalid={count === 0 || count > limit}
-                    id={id}
+                  <CommittedInput
+                    ariaLabel={`Replace ${noun} With`}
                     className="text-sm"
                     disabled={disabled}
-                    onChange={(event) => {
-                      replace(line.kind, line.index, "to", event.currentTarget.value)
+                    id={id}
+                    onCommit={(value) => {
+                      replace(line.kind, line.index, "to", value)
                     }}
                     value={line.to}
                   />
@@ -578,8 +523,18 @@ function AdEditor({
   titled: boolean
 }) {
   const { after, current } = row
+  // The merge moves an edited headline into the first removed one's place; the editor keeps it put.
+  const [order, setOrder] = useState<{ descriptions: string[]; headlines: string[] }>({
+    descriptions: [],
+    headlines: [],
+  })
   const change = (patch: Partial<LiveCopy>) => {
-    if (current && after) onEdit(editsFor(current, { ...after, ...patch }))
+    if (!current || !after) return
+    setOrder({
+      descriptions: patch.descriptions?.map((item) => item.text.trim()) ?? order.descriptions,
+      headlines: patch.headlines?.map((item) => item.text.trim()) ?? order.headlines,
+    })
+    onEdit(editsFor(current, { ...after, ...patch }))
   }
   return (
     <section
@@ -607,7 +562,7 @@ function AdEditor({
         <>
           <NowAndAfter after={after} current={current} />
           <TextAssetList
-            assets={after.headlines}
+            assets={assetsInOrder(after.headlines, order.headlines)}
             disabled={disabled}
             limits={HEADLINE_LIMITS}
             noun="Headline"
@@ -617,7 +572,7 @@ function AdEditor({
             pins={HEADLINE_PINS}
           />
           <TextAssetList
-            assets={after.descriptions}
+            assets={assetsInOrder(after.descriptions, order.descriptions)}
             disabled={disabled}
             limits={DESCRIPTION_LIMITS}
             noun="Description"
@@ -627,30 +582,28 @@ function AdEditor({
             pins={DESCRIPTION_PINS}
           />
           <div className="grid gap-3 sm:grid-cols-3">
-            <TextField
-              disabled={disabled}
-              label="Final URL"
-              onChange={(finalUrl) => {
-                change({ finalUrl })
-              }}
-              value={after.finalUrl ?? ""}
-            />
-            <TextField
-              disabled={disabled}
-              label="Path 1"
-              onChange={(path1) => {
-                change({ path1: path1 || null })
-              }}
-              value={after.path1 ?? ""}
-            />
-            <TextField
-              disabled={disabled}
-              label="Path 2"
-              onChange={(path2) => {
-                change({ path2: path2 || null })
-              }}
-              value={after.path2 ?? ""}
-            />
+            {(
+              [
+                ["Final URL", after.finalUrl, (value: string) => ({ finalUrl: value })],
+                ["Path 1", after.path1, (value: string) => ({ path1: value || null })],
+                ["Path 2", after.path2, (value: string) => ({ path2: value || null })],
+              ] as const
+            ).map(([label, value, patch]) => (
+              <FormField key={label} label={label}>
+                {(id) => (
+                  <CommittedInput
+                    ariaLabel={label}
+                    className="text-sm"
+                    disabled={disabled}
+                    id={id}
+                    onCommit={(next) => {
+                      change(patch(next))
+                    }}
+                    value={value ?? ""}
+                  />
+                )}
+              </FormField>
+            ))}
           </div>
         </>
       ) : null}

@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest"
 import {
   parseGoogleAdsMoney,
   parseGoogleAdsUrlList,
-  parseGoogleAdsCustomParameters,
 } from "@/integrations/google_ads/lib/field-values"
 
 import { parseOutcomeEnvelope, parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
@@ -15,14 +14,8 @@ import {
   outcomeTone,
   rowsPartlyFailed,
 } from "@/integrations/google_ads/lib/outcomes"
-import {
-  campaignBudgetIdentity,
-  parseCampaignBudgetReference,
-} from "@/integrations/google_ads/lib/campaign-budgets"
 import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import { parseAdGroupReference } from "@/integrations/google_ads/lib/ad-groups"
-import { parseCampaignReference } from "@/integrations/google_ads/lib/campaigns"
-import { parsePositiveKeywordReference } from "@/integrations/google_ads/lib/positive-keywords"
 import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { isRecord } from "@/lib/guards"
@@ -143,15 +136,6 @@ describe("Google Ads result envelopes", () => {
   })
 })
 
-const campaign = { entity_kind: "google_ads_campaign", campaign_id: "1", label: " " }
-const budget = {
-  entity_kind: "google_ads_campaign_budget",
-  customer_id: "1",
-  budget_id: "2",
-  label: "Budget",
-  amount_micros: "000123",
-  currency_code: "GBP",
-}
 const adGroup = {
   entity_kind: "google_ads_ad_group",
   customer_id: "1",
@@ -160,24 +144,8 @@ const adGroup = {
   label: "Group",
   scope_label: "Campaign",
 }
-const keyword = {
-  entity_kind: "google_ads_keyword",
-  customer_id: "1",
-  campaign_id: "2",
-  ad_group_id: "3",
-  criterion_id: "4",
-  label: "",
-  text: "Example",
-  match_type: "EXACT",
-  cpc_bid_micros: "1234567",
-}
-
 describe("Google Ads reference parsers", () => {
-  it("preserves campaign, budget, ad-group, and keyword labels and exact amounts", () => {
-    expect(parseCampaignReference(campaign)).toEqual({ campaignId: "1", label: "1" })
-    const parsed = parseCampaignBudgetReference(budget)
-    expect(parsed?.amountMicros).toBe("123")
-    expect(parsed && campaignBudgetIdentity(parsed)).toBe("1:2")
+  it("preserves an ad group's labels and rejects another kind of reference", () => {
     expect(parseAdGroupReference(adGroup)).toEqual({
       adGroupId: "3",
       campaignId: "2",
@@ -185,35 +153,6 @@ describe("Google Ads reference parsers", () => {
       customerId: "1",
       label: "Group",
     })
-    expect(parsePositiveKeywordReference(keyword)).toMatchObject({
-      identity: "1:3:4",
-      label: "Example",
-      cpcBid: "1.234567",
-      scopeLabel: "Campaign and ad group unavailable",
-    })
-    expect(parsePositiveKeywordReference({ ...keyword, cpc_bid_micros: "0" })?.cpcBid).toBe("0")
-  })
-  it.each([null, { ...campaign, entity_kind: "other" }, { ...campaign, campaign_id: "abc" }])(
-    "rejects invalid campaign references %j",
-    (value) => {
-      expect(parseCampaignReference(value)).toBeNull()
-    }
-  )
-  it("rejects malformed budget and keyword metadata", () => {
-    for (const patch of [
-      { currency_code: "gbp" },
-      { amount_micros: 1.5 },
-      { reference_count: -1 },
-      { explicitly_shared: "true" },
-    ])
-      expect(parseCampaignBudgetReference({ ...budget, ...patch })).toBeNull()
-    for (const patch of [
-      { criterion_id: "abc" },
-      { entity_kind: "other" },
-      { cpc_bid_micros: "9223372036854775808" },
-      { bid_modifier: Infinity },
-    ])
-      expect(parsePositiveKeywordReference({ ...keyword, ...patch })).toBeNull()
     expect(parseAdGroupReference({ ...adGroup, entity_kind: "other" })).toBeNull()
   })
   it("parses recommendation server references", () => {
@@ -274,31 +213,6 @@ describe("Google Ads shared field values", () => {
       Array.from({ length: 11 }, () => urls[0]),
     ]) {
       expect(parseGoogleAdsUrlList(value)).toBeUndefined()
-    }
-  })
-
-  it("validates parameter byte limits and case-insensitive uniqueness in both shapes", () => {
-    expect(parseGoogleAdsCustomParameters({ Campaign: "é".repeat(100) })).toEqual({
-      Campaign: "é".repeat(100),
-    })
-    expect(parseGoogleAdsCustomParameters([{ key: "Campaign", value: " literal " }])).toEqual({
-      Campaign: " literal ",
-    })
-    for (const value of [
-      null,
-      undefined,
-      { Campaign: "é".repeat(101) },
-      { Campaign: "one", campaign: "two" },
-      [
-        { key: "Campaign", value: "one" },
-        { key: "Campaign", value: "two" },
-      ],
-      { invalid_name: "value" },
-      { ["a".repeat(17)]: "value" },
-      { key: 1 },
-      Object.fromEntries(Array.from({ length: 9 }, (_, index) => [String(index), "value"])),
-    ]) {
-      expect(parseGoogleAdsCustomParameters(value)).toBeUndefined()
     }
   })
 })

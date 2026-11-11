@@ -21,7 +21,7 @@ export type ParentRow = {
   // How many of its changes need fixing or cancelling.
   problems: number
   cancelled: boolean
-  // The values of the caller's own columns, by column key.
+  // The values of the caller's own columns, by column key; `problems` replaces the usual text.
   values: DataRow
 }
 
@@ -74,6 +74,11 @@ export function ParentTable({
   const tableRows = useMemo<DataRow[]>(
     () =>
       rows.map((row) => ({
+        problems: row.cancelled
+          ? "Cancelled"
+          : row.problems > 0
+            ? `${String(row.problems)} to fix`
+            : "None",
         ...row.values,
         attention: row.problems > 0 && !row.cancelled ? "yes" : "no",
         cancel: "",

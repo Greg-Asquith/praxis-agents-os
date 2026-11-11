@@ -9,14 +9,15 @@ export function parseKeywordLines(value: string): PastedKeyword[] {
     const trimmed = line.trim()
     if (!trimmed) return []
     const exact = /^\[(.+)\]$/.exec(trimmed)
-    if (exact?.[1]) return [{ matchType: "EXACT", text: collapse(exact[1]) }]
+    if (exact?.[1]) return [{ matchType: "EXACT", text: collapseSpaces(exact[1]) }]
     const phrase = /^"(.+)"$/.exec(trimmed)
-    if (phrase?.[1]) return [{ matchType: "PHRASE", text: collapse(phrase[1]) }]
-    return [{ matchType: "BROAD", text: collapse(trimmed) }]
+    if (phrase?.[1]) return [{ matchType: "PHRASE", text: collapseSpaces(phrase[1]) }]
+    return [{ matchType: "BROAD", text: collapseSpaces(trimmed) }]
   })
 }
 
-function collapse(text: string): string {
+/** Text with outer spaces trimmed and each inner run of spaces made one, as Google compares it. */
+export function collapseSpaces(text: string): string {
   return text.trim().split(/\s+/).join(" ")
 }
 

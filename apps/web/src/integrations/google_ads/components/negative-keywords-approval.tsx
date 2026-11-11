@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/components/negative-keywords-approval.tsx
 
-import { PlusIcon, XIcon } from "lucide-react"
+import { PlusIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { cn } from "@/lib/utils"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
@@ -403,7 +404,19 @@ function ChangeTable({
           return (
             <span className="text-sm wrap-anywhere whitespace-normal">{String(row["target"])}</span>
           )
-        if (column.key === "cancel") return <CancelCell editing={editing} row={change} />
+        if (column.key === "cancel")
+          return (
+            <CancelCell
+              cancelled={change.cancelled}
+              disabled={editing.disabled}
+              onCancel={() => {
+                editing.onCancel([change.id])
+              }}
+              onUndo={() => {
+                editing.onUndo(change)
+              }}
+            />
+          )
         return null
       }}
       rowClassName={(row) => (byId.get(String(row["key"]))?.cancelled ? "opacity-60" : undefined)}
@@ -564,37 +577,6 @@ function ChangeCell({ row }: { row: NegativeRow }) {
   return <Badge variant={row.action === "add" ? "success" : "warning"}>{changeLabel(row)}</Badge>
 }
 
-function CancelCell({ editing, row }: { editing: ChangeEditing; row: NegativeRow }) {
-  const { disabled } = editing
-  return row.cancelled ? (
-    <Button
-      disabled={disabled}
-      onClick={() => {
-        editing.onUndo(row)
-      }}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={() => {
-        editing.onCancel([row.id])
-      }}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
-  )
-}
-
 /** One change on its own reads as a sentence, not a table. */
 function SingleChange({ editing, row }: { editing: ChangeEditing; row: NegativeRow }) {
   const verb =
@@ -623,7 +605,16 @@ function SingleChange({ editing, row }: { editing: ChangeEditing; row: NegativeR
         ) : null}
         <ChangeCell row={row} />
         <span className="ml-auto">
-          <CancelCell editing={editing} row={row} />
+          <CancelCell
+            cancelled={row.cancelled}
+            disabled={editing.disabled}
+            onCancel={() => {
+              editing.onCancel([row.id])
+            }}
+            onUndo={() => {
+              editing.onUndo(row)
+            }}
+          />
         </span>
       </div>
       {!row.cancelled && row.problem ? (

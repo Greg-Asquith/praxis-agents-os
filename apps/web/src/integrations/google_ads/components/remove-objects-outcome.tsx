@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataTableTab } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import { REMOVAL_KIND_TITLES } from "@/integrations/google_ads/lib/remove-objects"
 import {
   REMOVAL_OUTCOME_BADGES,
@@ -40,7 +41,8 @@ export function RemoveObjectsOutcome({ result }: { result: RemoveObjectsResult }
   const rows = useMemo(
     () =>
       result.objects.map((object) => ({
-        also: object.alsoRemoved || "—",
+        // Dependants only went when the item itself did.
+        also: (object.outcome === "removed" && object.alsoRemoved) || "—",
         campaign: object.campaignName ?? "—",
         details: [object.message, object.errorCode ? googleAdsTokenLabel(object.errorCode) : null]
           .filter(Boolean)
@@ -83,8 +85,4 @@ export function RemoveObjectsOutcome({ result }: { result: RemoveObjectsResult }
       tabs={TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

@@ -61,6 +61,16 @@ export function canonicalMoney(value: string): string {
   return decimals ? `${digits}.${decimals}` : digits
 }
 
+/** Raises or lowers a money value by a percentage, in the currency's smallest unit. */
+export function scaledMoney(value: string, percent: number, currency: string | null): string {
+  const digits = currency
+    ? new Intl.NumberFormat("en", { currency, style: "currency" }).resolvedOptions()
+        .maximumFractionDigits
+    : 2
+  const scaled = Number(value) * (1 + percent / 100)
+  return canonicalMoney(Math.max(scaled, 10 ** -(digits ?? 2)).toFixed(digits ?? 2))
+}
+
 function amount(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? canonicalMoney(value) : null
 }

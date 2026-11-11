@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/remove-objects-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
@@ -12,6 +11,7 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { ParentTable } from "@/integrations/ads/components/parent-table"
@@ -100,6 +100,8 @@ export function RemoveObjectsApproval({
     id,
     label,
     onSelect: () => {
+      // A tab's rows can sit under another campaign, so choosing one shows every campaign.
+      setCampaign(null)
       setTab(id)
     },
     selected: tab === id,
@@ -190,11 +192,14 @@ export function RemoveObjectsApproval({
           if (column.key === "cancel")
             return (
               <CancelCell
+                cancelled={removal.cancelled}
                 disabled={disabled}
-                onToggle={(cancelled) => {
-                  edit([removal.key], cancelled)
+                onCancel={() => {
+                  edit([removal.key], true)
                 }}
-                row={removal}
+                onUndo={() => {
+                  edit([removal.key], false)
+                }}
               />
             )
           return null
@@ -272,43 +277,5 @@ function ItemCell({ row }: { row: RemovalRow }) {
         <span className="text-muted-foreground text-xs">Already removed in Google Ads.</span>
       ) : null}
     </div>
-  )
-}
-
-function CancelCell({
-  disabled,
-  onToggle,
-  row,
-}: {
-  disabled: boolean
-  onToggle: (cancelled: boolean) => void
-  row: RemovalRow
-}) {
-  return row.cancelled ? (
-    <Button
-      disabled={disabled}
-      onClick={() => {
-        onToggle(false)
-      }}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={() => {
-        onToggle(true)
-      }}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

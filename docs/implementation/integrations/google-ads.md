@@ -15,7 +15,7 @@ Discovery stores each account's `currency_code` and `time_zone` in
 connection when either is missing. Approval display arguments carry the
 trusted `_accounts` list: `customer_id`, `name`, `currency`, and
 `time_zone` for each account the call touches. The web reads it with
-`parseApprovalAccounts` and shows it with `accountContextLine`.
+`parseApprovalAccounts`.
 
 `google_ads_get_accounts` reads, for each selected account, its name,
 status, currency, time zone, manager flag, auto-tagging, and today's and
@@ -27,7 +27,8 @@ costs. Billing and spending limits are pending.
 ## Backend writes
 
 Google Ads contributes report and field discovery plus approval-only
-writes for recommendations, negative keywords, search terms, positive-keyword creation and
+writes for recommendations (`google_ads_apply_recommendations` and
+`google_ads_dismiss_recommendations`), negative keywords, search terms, positive-keyword creation and
 bid, URL, and match type changes,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location, language, device, and ad schedule targeting, budget
 changes, and permanent removal of any supported kind. Label creation, apply,
@@ -73,7 +74,7 @@ endpoint per resource type. Two seams build on it:
   doesn't name the operation that caused it, so every edit in the group
   fails with Google's message. A group happens whole or not at all, so an
   edit refused at approval or as changed since approval refuses the rest of
-  its group without a request. The read-back settles
+  its group without a request, with the same error code. The read-back settles
   an unclear reply and fails a change Google accepted but didn't keep. If
   the read-back fails or doesn't return the object, Google's reply stands and
   **After** is empty. A cancel during the read-back keeps Google's reply as the
@@ -93,6 +94,13 @@ endpoint per resource type. Two seams build on it:
   `dry_run_build` reports each step Google rejects. `send_build` sends one
   atomic request (`partialFailure: false`), so a rejection creates nothing,
   and maps each temporary name to its real resource name.
+
+Every tool on the edit seam runs an account's approved edits through
+`run_approved_edits` in `tools/utils/edit_runs.py`. The tool supplies the
+plan (the edits and one audit intent per edit, keyed by `object`), the read,
+and the result; the runner applies the edits inside one audited operation. A
+run cancelled after the edits are sent, such as during a follow-up read for
+the result, keeps their outcomes in the audit record.
 
 Both seams return the shared mutation ledger, so `terminal_operation_detail`
 records them like any other write. A request Google never received or
@@ -114,7 +122,7 @@ Every entity list operation (`operations/list_*.py` for campaigns, ad
 groups, ads, keywords, asset groups, budgets, labels, and shared sets) takes
 `exclude_removed`, on by default. It leaves out removed objects and anything
 under a removed ad group or campaign, because Google refuses changes to them.
-No tool turns it off today. The status tool reads removed objects through its
+No tool turns it off. The status tool reads removed objects through its
 own query.
 
 While preparing the approval, the tool reads each object's live status with
@@ -135,7 +143,9 @@ removed objects are refused without a request. Objects already at the
 requested status are reported as `already_set`. The rest go in one
 partial-failure `googleAds:mutate` request per account with a `status` mask,
 and each result row records **Before**, **Requested**, and the status read
-back as **After**.
+back as **After**. The card receives every object with `counts` by outcome.
+The agent receives `counts` and only the failed and unverified objects, up to
+50.
 
 ### Campaign settings
 
@@ -262,10 +272,10 @@ always allowed. The rest are dry run through the edit seam. `_checks`, keyed by
 ad group resource name, holds the ad group's and campaign's names, the
 campaign's `strategy_name` and `bids_used`, `current`, `requested`, `values`,
 `problem`, and `problems` by setting. An edit that changes a bid or target
-sets `FieldChange.compared` to the campaign's `biddingStrategyType` and
-`biddingStrategy` (read as `campaign.biddingStrategyType` and
-`campaign.biddingStrategy`), so a bid whose campaign changed strategy since
-approval is refused (`CHANGED_SINCE_APPROVAL`). Approval, refusal, and the
+sets `FieldChange.compared` to the campaign's `biddingStrategyType`,
+`biddingStrategy`, and campaign-level target CPA and target ROAS (read as
+`campaign.biddingStrategyType` and so on), so a bid whose campaign changed
+strategy or target since approval is refused (`CHANGED_SINCE_APPROVAL`). Approval, refusal, and the
 result follow Update Campaigns; the result carries the account `currency`.
 
 ### Budgets
@@ -301,7 +311,10 @@ counting today, `current`, `requested`, `values` by edit, and `problem`.
 Spend comes only from these reads, never from the agent's arguments.
 
 After approval, the edits are sorted so decreases go before increases, as
-Meta's budget tool does. Each edit is one audit intent. The result has one
+Meta's budget tool does. An amount or delivery change is approved for the
+campaigns the card listed: the edit compares the budget's `referenceCount`
+as well as its settings, so a campaign that joined or left the budget since
+approval refuses the change as `CHANGED_SINCE_APPROVAL`. Each edit is one audit intent. The result has one
 row per change with a setting outcome for each of `amount`, `delivery`, and
 `shared_budget`; a shared budget is shown by name.
 
@@ -327,7 +340,7 @@ and the matching reference:
 removed objects included, through `read_statuses` for campaigns, ad groups,
 ads, keywords, and asset groups. For the approval it also counts what each
 removal takes with it: the live ad groups, ads, and positive keywords under a
-campaign or ad group; the items a label is on (`count_label_associations`);
+campaign or ad group, leaving out ads and keywords in removed ad groups; the items a label is on (`count_label_associations`);
 a list's negative keywords (`shared_set.member_count`) and the campaigns it is
 applied to; and the campaigns still using a budget or portfolio strategy, up
 to three named. Each dependant query reads up to 10,001 rows; more than 10,000
@@ -348,7 +361,8 @@ fails a keyword in it. A removed object reads back with a `REMOVED` status or
 not at all, and both count as removed. Each result row has the kind, name,
 campaign, the dependants the card showed, and `removed`, `already_removed`,
 `failed`, or `unverified`. Audit intents are grouped by entity kind, one per
-item, with what the removal takes with it.
+item. A campaign's or ad group's intent records what the removal takes with
+it.
 
 Removing a campaign leaves its own budget in place; remove the budget in a
 later call. Assets, bid adjustments, and other kinds are pending: their plans
@@ -402,9 +416,10 @@ need a new check (`approval_review_fields`), and after approval an ad whose
 edits differ from its check, or whose check showed a problem, is refused
 without a request. Each result row is one ad with **Before**, **Requested**
 (the merge), **After** (read back), the outcome, and Google's policy review
-(`read_ad_reviews`), which a changed ad starts again. Whether Google accepts
-an in-place update of an enabled ad is check 22 of the live QA; if it
-doesn't, the edit becomes a replacement ad with the old one paused.
+(`read_ad_reviews`), which a changed ad starts again. Live text can be longer
+than the length Google counts, because an insertion such as `{KeyWord:Shoes}`
+counts only its default text, so removals, pins, and results accept up to 512
+characters. In-place updates of enabled ads are pending live verification.
 
 ### Ad creation
 
@@ -549,7 +564,8 @@ runs it, because the keys are the same for every account. A location option has 
 key, name, type, region, and Google's estimated reach. Audit records the kind and
 count, never the search text. Audience search is pending.
 
-`google_ads_update_targeting` changes up to 20 campaigns per call in one approval.
+`google_ads_update_targeting` changes up to 20 campaigns per call in one approval,
+with at most 2,400 items across them.
 Each entry names one campaign and only what changes. Ad group entries are pending,
 because no setting in this tool applies to an ad group yet. Audiences and exclusions
 are also pending. The fields are as follows:
@@ -564,7 +580,7 @@ are also pending. The fields are as follows:
 | `location_setting` | Sets who counts as in a location: `PRESENCE_OR_INTEREST` or `PRESENCE`. |
 | `add_languages`, `remove_languages` | Adds or removes a language. |
 | `devices` | Sets `MOBILE`, `DESKTOP`, or `TABLET` to a `bid_adjustment` percent (0 clears it) or `excluded`. |
-| `ad_schedule` | The campaign's whole week after the change: windows of `day`, `start`, and `end` (HH:MM in quarter hours, in the account's time zone; `end` may be `24:00`), each with an optional bid adjustment. At most 6 a day, none overlapping. |
+| `ad_schedule` | The campaign's whole week after the change: windows of `day`, `start`, and `end` (HH:MM in quarter hours, in the account's time zone; `end` may be `24:00`), each with an optional bid adjustment; a window without one has no adjustment. At most 6 a day, none overlapping. |
 | `clear_ad_schedule` | Removes every window, so ads can show at any time. |
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
@@ -584,11 +600,13 @@ An ad schedule window's times can't change, so the tool diffs the requested week
 the live one: a window with the same day and times is kept, or updated when only its
 adjustment changes; every other live window is removed and every new one created. A
 campaign's schedule edits form one atomic group, so the week changes whole or not at all.
-The check counts the schedule as one change, already set only when no window changes.
+The check counts the schedule as one change, already set only when no window changes,
+which includes clearing a schedule the campaign doesn't have. The week is approved
+whole, so after approval a window added or removed since the check refuses the
+campaign's schedule as `CHANGED_SINCE_APPROVAL`.
 Smart Bidding ignores time adjustments, and Target ROAS, Maximize Conversion Value, and
 Maximize Conversions without a target CPA ignore device adjustments other than
 excluding. The check adds a `note` saying so; it doesn't block approval.
-`google_ads_update_device_bid_modifiers` was removed; this tool replaces it.
 
 The tool refuses these before Google's dry run:
 
@@ -603,7 +621,7 @@ The tool refuses these before Google's dry run:
 
 Radius targets take coordinates, not an address. Google computes a point from an
 address, so the read-back can't be matched to the request until that's confirmed
-against a live account (pending, after check 33 in plan 338).
+against a live account (pending).
 
 `operations/criteria.py` reads each campaign's criteria by type
 (`read_campaign_targeting`) and returns them by edit key. An included and an excluded
@@ -817,7 +835,8 @@ Google's dry-run rejection prefixed "Google says:"), and per-setting
 
 - A max CPC under a strategy that doesn't use keyword bids, naming the
   campaign's strategy. Removing a bid is always allowed.
-- A new match type the ad group already has for the same text.
+- A new match type the ad group already has for the same text, or that an
+  earlier change in the same request adds.
 
 Edits on the card need a new check (`approval_review_fields`). After approval,
 a keyword whose settings differ from its check, or whose check showed a
@@ -877,62 +896,49 @@ item per target.
 
 ## Frontend modules
 
-Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
-types and parsers belong to their domain modules: `campaign-budgets.ts`,
-`campaigns.ts`, `ad-groups.ts`, `positive-keywords.ts`, `negative-keywords.ts`,
-and `recommendations.ts`. Account facts and the account overview parser belong to `accounts.ts`.
-Import directly from those modules. Shared scalar and URL-field validation
-lives in `field-values.ts`; callers own normalisation, defaults, and clears.
-Label draft parsing, approval validation, and the label-reference guard
-belong to `labels.ts`. Draft validation counts code points and approximates
-the server's case folding without the browser locale; the server remains
-authoritative. `GoogleAdsLabelChip` always shows the label name beside a decorative colour
-swatch. `labels.ts` also parses label and target arguments for apply and remove,
-rejecting unknown target kinds and repeated targets. Their approval shows the
-labels and the targets grouped by type, and the result shows one outcome row
-per label and target pair, ordered by type.
-Account metadata requires a nonblank label and a valid currency code.
+Google Ads non-visual presenter helpers live in `google_ads/lib`. Each card
+has its own module for arguments (`update-budgets.ts`) and one for results
+(`update-budgets-result.ts`). Shared modules hold what several cards use:
 
-New Google cards build from the shared ads card kit in
+| Module | What it holds |
+| --- | --- |
+| `accounts.ts` | Account facts, the account overview parser, `parseCheckedEntries` for an argument list with its checks, and `accountsText`. |
+| `field-values.ts` | Scalar and URL validation: `parseGoogleAdsMoney`, `isGoogleAdsUrl`, `parseGoogleAdsUrlList`, and `textOrNull`. Callers own normalisation, defaults, and clears. |
+| `setting-changes.ts` | What the cards that change settings share (Update Campaigns, Update Ad Groups, Update Keywords): URL options and custom parameters, writing a setting into an entry, cancel and restore, and `settingsNeedCheck`, which compares the request with the one Google checked. A requested null differs from a setting the entry doesn't name. |
+| `edit-outcomes.ts` | The edit seam's outcomes: `EditOutcome`, `isEditOutcome`, labels, badges, result tabs, and `editOutcomeSummary`. |
+| `campaign-bidding.ts` | Bidding values, `canonicalMoney`, and `scaledMoney`, the percentage rule for bids and budgets. |
+| `copy.ts` | Card wording shared across cards, such as `unavailableProblem` and `applyChangesLabel`. |
+| `labels.ts` | Label draft parsing, approval validation, the label-reference guard, and label and target arguments for apply and remove. |
+
+Label draft validation counts code points and approximates the server's case
+folding without the browser locale; the server remains authoritative.
+`GoogleAdsLabelChip` always shows the label name beside a decorative colour
+swatch. The label approval shows the labels and the targets grouped by type,
+and the result shows one outcome row per label and target pair, ordered by
+type. Account metadata requires a nonblank label and a valid currency code.
+
+Google cards build from the shared ads card kit in
 `integrations/ads/components/`, which Meta also uses: `SettingRows`,
 `SettingRow`, `SettingLine`, `StatusChoice`, `ChangeBanner`, `ChangeSummary`,
-`AttentionLine`, `MoneyField`,
-`EntityPicker`, `EntitySearch`, and the form controls (`ChoiceCards`, `SegmentedChoice`,
-`Chip`, and the labelled fields). The kit depends on no provider package,
+`AttentionLine`, `MoneyField`, `PercentInput`, `CommittedInput`, `ParentTable`,
+`CancelCell`, `EntityPicker`, `EntitySearch`, and the form controls
+(`ChoiceCards`, `SegmentedChoice`, `Chip`, and the labelled fields).
+`integrations/ads/lib` holds `collapseSpaces` and keyword notation,
+`groupedByParent`, and `cellText`. The kit depends on no provider package,
 and dependency rules enforce that. `StatusChoice` is one plain line: Status, the
 choice, and a note such as "Paused. Will not appear or spend until
 activated." or "Active, pending approval. Will go live once approved by
-Google." Campaign and ad group notes leave out approval. The older Google kit
-(`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsBeforeAfter`,
-`GoogleAdsOutcomeTable`) stays only for the tools plan 312 replaces and
-keyword creation.
+Google." Campaign and ad group notes leave out approval.
 
-### Outcome evidence
+The recommendation and label presenters use an earlier Google kit:
+`GoogleAdsApprovalSection`, `GoogleAdsEntityCard`, `GoogleAdsEntityGroup`,
+and `GoogleAdsOutcomeTable`. The table owns outcome labels, stat order and
+tones, conditional detail and error columns, and sample notices. Every write
+presenter shows accounts that failed with `GoogleAdsFailureTargets`.
 
-Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
-separate modules. Recommendations and positive-keyword creation
-share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
-outcome labels, stat order and tones, conditional detail and error columns,
-and sample notices. Tool columns and result validation stay with each tool.
-Keyword-creation sample envelopes use shared per-outcome count validation,
-including truncated sample upper bounds.
-
-### Approval composition
-
-Approval summaries use `GoogleAdsApprovalSection` and `GoogleAdsEntityCard`.
-Ad-group targets use `GoogleAdsEntityGroup`; approval scale uses one count
-line instead of result stats.
-Every write variant uses `googleAdsWriteCopy`; keep semantic overrides visible
-in the presenter, including declined recommendation dismissal.
-Presenters compose `google_ads/components` and `google_ads/lib`: a new tool
-adds no outcome table, approval section, or lifecycle template. Architecture
-checks forbid direct Stat and Badge imports, and only the two report
-presenters import the generic DataTable. The accounts card reaches DataTable
-through `components/accounts-table.tsx`: one table across all accounts, with
-money in each row's own currency. Bid adjustment formatting belongs
-to `lib/bid-modifiers.ts`. Tool-specific summaries stay inside the shared
-approval section. Construct presenters using this shared kit.
-
+The accounts card reaches `DataTable` through `components/accounts-table.tsx`:
+one table across all accounts, with money in each row's own currency.
+`bidText` in `lib/update-targeting.ts` formats a bid adjustment.
 
 ### Update Status card
 
@@ -1147,6 +1153,12 @@ as on Update Status: Campaign, Setting, Before, After, and Outcome, with tabs fo
 Changed, Already Set, Failed, and Unconfirmed when any, opening on Failed when anything
 failed. The search result (`components/targeting-search-table.tsx`) has columns that
 follow the kind.
+
+A device line whose campaigns ask for different values is read-only until a
+campaign is selected, and Change the Schedule asks for a campaign when the
+live weeks differ. A bid adjustment changes only when its value does. A time
+that isn't on a quarter hour goes back to the last valid time, and the row
+says why. The time zone shows only when every campaign shown shares one.
 
 ### Update Negative Keywords card
 
@@ -1364,6 +1376,10 @@ The result (`components/update-budgets-outcome.tsx`) is the standard
 `DataTable` result card: Campaign or Budget, Setting, Before, After, and
 Outcome, with the edit seam's outcome tabs.
 
+Set Amount and Change by % skip a row that moves a campaign onto a shared
+budget, because a move takes no amount. The banner totals show only when every
+account uses one currency.
+
 ### Remove Items card
 
 `lib/remove-objects.ts` parses `items` with `_accounts` and `_checks` and
@@ -1427,6 +1443,11 @@ result card: Ad, Ad Group, Before (the text taken out), After (the text put
 in), and Outcome. A changed ad still in Google's review shows In Review, and a
 disapproved one shows Disapproved.
 
+Text is committed when the field loses focus, so a space at the end of a word
+stays while typing. An edited headline keeps its row when another was removed
+before it. An ad edited back to its live copy is cancelled, because the tool
+refuses an entry with no edits.
+
 ### Data table extensions
 
 The core `DataTable` stays generic and also serves bulk cards. It filters rows
@@ -1471,65 +1492,21 @@ keywords the change summary appears: a max CPC for every keyword, and Needs
 Attention with Cancel These N. The result is one table:
 Keyword, Match Type, Ad Group, Bid, and Outcome.
 
+A keyword's check is found by its match type and its text with spaces
+collapsed and in lower case, as the server builds the key. A keyword with no
+check shows as not checked, and the card asks for Check Changes. Keywords
+repeated in a paste, or made the same by a match type edit, are added once.
+
 ### Parent tables
 
 `ParentTable` lists the campaigns, ad groups, or lists a card changes, above
 the table of the changes in them. Each row has the parent's name, where it sits,
-the caller's columns, and Cancel or Undo for all of its changes. A click
-selects the parent and the card filters the changes to it. From ten rows it
+the caller's columns, and Cancel or Undo for all of its changes. Undo restores
+every cancelled change in the parent. The table writes the Problems cell
+(Cancelled, the number to fix, or None). A click selects the parent and the
+card filters the changes to it; a cancelled parent stops filtering, and a
+summary or Needs Attention line clears the selection. From ten rows it
 gets search and a Needs Attention tab. A caller can draw its own cells with
 `renderCell`. Add Keywords, Update Keywords, Update Targeting, Update
 Status, the create and edit cards, Update Budgets, Remove Items, Update Negative
 Keywords, and Optimise Search Terms use it.
-
-## Live QA record
-
-The operator tested the new write tools in the running app against live
-accounts from 2026-11-08 to 2026-11-10, at the commits of the day and
-before 305 E was committed. Most tests ran in a paused campaign of the test
-account; the search term tests ran on two client accounts. The record below
-comes from the conversations and the audit log in the local database, keyed
-by conversation ID. Check numbers are those of
-[plan 338](../../plans/google-ads/338-google-ads-live-qa.md) C.
-
-| Check | Result | What happened |
-| --- | --- | --- |
-| 1. Time zone on the card | Passed | An approval in `c6324d66` failed before the connection was refreshed. Every write after the refresh ran. |
-| 2. Status changes | Passed in part | `244b1251`: an ad group and an ad paused, then enabled, each read back. Keywords and an `already_set` reply weren't tried. |
-| 3. Create ads | Passed in part | `f2458033`: two paused ads in one ad group, read back in review. A placeholder landing page was disapproved as prohibited, correctly. Ads in two ad groups and the 31-character block weren't tried. |
-| 4. Create ad groups | Passed in part | `ab802fc2`: three ad groups, nine keywords, and six ads in one request. The CPC bid refusal wasn't tried. |
-| 5. Ad group and its ad in one atomic request | Passed | `ab802fc2` and `9f27e98d` created new ad groups and their ads in one request each. |
-| 6. Campaign build | Passed | `9f27e98d`: a paused Search campaign with its budget, two locations, two ad groups (one added on the card), seven keywords, six negatives, and two ads, read back. |
-| 7. Rejected build leaves nothing | Not run for a campaign | Rejected ad creations in `244b1251` and `f2458033` left nothing behind (`NOTHING_CREATED`). |
-| 8 to 10. Check Changes and card driving | Not recorded | The operator edited cards in several tests (an ad group on Create Ads, status on Create Ad Groups, an ad group on Create Campaign, Target Impression Share values, location bid adjustments), and the edited values were what ran. |
-| 11. Campaign settings | Passed | `bae50edc`: name, an end date set then removed, final URL suffix, tracking template, and custom parameters set then cleared, and both networks on then off, each read back. |
-| 12. Bidding switch | Passed in part | `bae50edc`: Maximise Clicks to Target Impression Share and back, then a cap cleared. Manual CPC to Maximise Conversions and the target ROAS refusal weren't tried. |
-| 13. Target Impression Share after the mask fix | Passed | `bae50edc`: the switch that failed before 9c94f931 ran after it. |
-| 14. Search for locations and languages | Passed | `93477bfe`: language names and France found. Cities weren't searched by name. |
-| 15. Location changes in one approval | Passed in part | `93477bfe`: France added with a −10% adjustment and a city excluded in one approval. A language on a Search campaign is correctly not offered. |
-| 16 to 18. Swap, radius by coordinates, radius by address | Not run | |
-| 19. Negative keywords | Passed | `7c6fa4e9`, through Code Mode: 302 negatives across a campaign, an ad group, and a new list; the list applied to the campaign and detached; duplicate adds reported `already_set` and missing removals `not_found`; everything removed again. |
-| 20. Negative blocking a keyword | Not run | |
-| 21. Search terms | Passed in part | `0f4c4b66` and `f7fe7886`: six and two negatives from search terms on two client accounts. Keyword adds and cost against the Google Ads UI weren't recorded. |
-| 22. Ad edits | Passed in part | `f399543e`: a headline added to two paused ads, updated in place through `AdService` and read back, with review status `REVIEWED` and approval `APPROVED` straight after. A swap, a pin, the two-headline refusal, and an enabled ad weren't tried. |
-
-Faults the tests found:
-
-- Google refuses a mask on a bidding field with subfields set. Fixed in
-  9c94f931 (305 B).
-- The ad group picker offered ad groups under removed campaigns, which Google
-  refused at the send after passing the dry run (`244b1251`). Fixed in 304 A:
-  entity lists leave out removed objects and their children.
-- Large Code Mode approvals never reached the card, and runs were abandoned
-  when their lease expired (`8127ab76`, `5839faeb`). The preview locked the
-  run, and concurrent reads failed with "This session is provisioning a new
-  connection". Fixed in 0be242be; plan 341 removes the repeated token lookups
-  behind it.
-- The agent can't tell when the operator changed its proposal on the card. In
-  `ab802fc2` the operator chose Launch; the agent reported that Google had
-  ignored its paused request and paused all nine objects again. In
-  `93477bfe` it tried to undo a bid adjustment and an exclusion the operator
-  had added, which the operator declined. See FOLLOW_UPS.
-
-Left in the test account: an empty, unlinked negative keyword list from
-`7c6fa4e9`. Check 25 removes it.

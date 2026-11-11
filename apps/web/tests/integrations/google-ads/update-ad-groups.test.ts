@@ -6,16 +6,17 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
+import { scaledMoney } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
   addableSettings,
   addedAdGroupChanges,
   adGroupRows,
   adGroupsApproveLabel,
   adGroupsBlock,
+  adGroupsNeedCheck,
   editedAdGroupChanges,
   parseUpdateAdGroupsArgs,
   restoredAdGroupChanges,
-  scaledMoney,
   type UpdateAdGroupsArgs,
 } from "@/integrations/google_ads/lib/update-ad-groups"
 import { googleAdsUpdateAdGroupsPresenter } from "@/integrations/google_ads/presenters/update-ad-groups"
@@ -76,6 +77,13 @@ describe("approval", () => {
     expect(adGroupsBlock(next, checked)).toBe(
       "Click Check Changes so Google can check your edits, then approve."
     )
+  })
+
+  it("waits for a new check when a removed target is cancelled", () => {
+    const checked = parsed()
+    const next = parsed({ ...raw(), changes: [{ ad_group: adGroup("1"), cpc_bid: "1.21" }] })
+
+    expect(adGroupsNeedCheck(next, checked)).toBe(true)
   })
 
   it("writes a removed target as none and URL settings inside url_options", () => {

@@ -1,16 +1,41 @@
 // apps/web/src/integrations/google_ads/lib/update-keywords.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
-  parseApprovalAccounts,
+  accountsText,
+  parseCheckedEntries,
   type GoogleAdsApprovalAccount,
 } from "@/integrations/google_ads/lib/accounts"
 import { canonicalMoney } from "@/integrations/google_ads/lib/campaign-bidding"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import {
+  applyChangesLabel,
+  approvalCountLine,
+  changesBlock,
+  unavailableProblem,
+} from "@/integrations/google_ads/lib/copy"
+import {
+  googleAdsId,
+  parseGoogleAdsUrlList,
+  textOrNull,
+} from "@/integrations/google_ads/lib/field-values"
 import { MATCH_TYPE_LABELS, MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
-import { parametersText, type UrlParameter } from "@/integrations/google_ads/lib/update-campaigns"
+import {
+  editedSettingChanges,
+  isUrlOption,
+  parametersText,
+  parseSettingMap,
+  parseUrlParameters,
+  requestedUrlOptions,
+  restoredSettingChanges,
+  settingsNeedCheck,
+  soleRow,
+  withoutKey,
+  withUrlOption,
+  type UrlParameter,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -39,13 +64,7 @@ export const KEYWORD_SETTING_TITLES: Record<KeywordSetting, string> = {
   tracking_template: "Tracking Template",
 }
 
-const URL_OPTIONS = new Set<KeywordSetting>([
-  "final_url_suffix",
-  "tracking_template",
-  "custom_parameters",
-])
 const URL_LISTS = new Set<KeywordSetting>(["final_urls", "final_mobile_urls"])
-const URL_PATTERN = /^https?:\/\/\S+$/i
 
 type KeywordChange = {
   customerId: string
@@ -125,12 +144,7 @@ export type KeywordCounts = {
   total: number
 }
 
-const UNAVAILABLE_PROBLEM =
-  "Google Ads couldn't check this keyword. Ask the agent to prepare the change again."
-
-function text(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null
-}
+const UNAVAILABLE_PROBLEM = unavailableProblem("keyword")
 
 function matchType(value: unknown): KeywordMatchType | null {
   return MATCH_TYPES.find((item) => item === value) ?? null
@@ -141,37 +155,16 @@ function strings(value: unknown): string[] | null {
   return value.every((item) => typeof item === "string") ? value : null
 }
 
-function parameters(value: unknown): UrlParameter[] | null {
-  if (!Array.isArray(value)) return null
-  const items: UrlParameter[] = []
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string")
-      return null
-    items.push({ key: item["key"], value: item["value"] })
-  }
-  return items
-}
-
 /** Reads one setting's value in card terms; undefined when it isn't one. */
 export function keywordValue(setting: KeywordSetting, value: unknown): KeywordValue | undefined {
-  if (setting === "custom_parameters") return value === null ? [] : (parameters(value) ?? undefined)
+  if (setting === "custom_parameters")
+    return value === null ? [] : (parseUrlParameters(value) ?? undefined)
   if (URL_LISTS.has(setting)) return value === null ? [] : (strings(value) ?? undefined)
   if (setting === "match_type") return matchType(value) ?? undefined
   if (value === null) return null
   if (setting === "cpc_bid")
     return typeof value === "string" && value.trim() ? canonicalMoney(value) : undefined
   return typeof value === "string" ? value : undefined
-}
-
-function settingMap(value: unknown): Partial<Record<KeywordSetting, KeywordValue>> {
-  const values: Partial<Record<KeywordSetting, KeywordValue>> = {}
-  if (!isRecord(value)) return values
-  for (const setting of KEYWORD_SETTINGS) {
-    if (!Object.hasOwn(value, setting)) continue
-    const parsed = keywordValue(setting, value[setting])
-    if (parsed !== undefined) values[setting] = parsed
-  }
-  return values
 }
 
 /** The settings an entry changes, read the way the server reads them. */
@@ -183,18 +176,12 @@ function requestedOf(
   if (match) values.match_type = match
   // "none" removes the keyword's own bid, so it uses its ad group's.
   if (entry["cpc_bid"] === "none") values.cpc_bid = null
-  else if (text(entry["cpc_bid"])) values.cpc_bid = canonicalMoney(String(entry["cpc_bid"]))
+  else if (textOrNull(entry["cpc_bid"])) values.cpc_bid = canonicalMoney(String(entry["cpc_bid"]))
   for (const setting of ["final_urls", "final_mobile_urls"] as const) {
     const urls = strings(entry[setting])
     if (urls) values[setting] = urls
   }
-  const url = isRecord(entry["url_options"]) ? entry["url_options"] : {}
-  for (const setting of ["final_url_suffix", "tracking_template"] as const) {
-    const value = url[setting]
-    if (typeof value === "string") values[setting] = value.trim() || null
-  }
-  const custom = parameters(url["custom_parameters"])
-  if (custom) values.custom_parameters = custom
+  Object.assign(values, requestedUrlOptions(entry))
   return values
 }
 
@@ -209,7 +196,8 @@ function parseChange(value: unknown): KeywordChange | null {
     customerId,
     entry: value,
     key: `customers/${customerId}/adGroupCriteria/${adGroupId}~${criterionId}`,
-    label: text(reference["label"]) ?? text(reference["text"]) ?? `Keyword ${criterionId}`,
+    label:
+      textOrNull(reference["label"]) ?? textOrNull(reference["text"]) ?? `Keyword ${criterionId}`,
     matchType: matchType(reference["match_type"]),
     requested: requestedOf(value),
   }
@@ -220,42 +208,29 @@ function parseCheck(value: unknown): KeywordCheck {
   const problems: Partial<Record<KeywordSetting, string>> = {}
   const rawProblems = isRecord(value["problems"]) ? value["problems"] : {}
   for (const setting of KEYWORD_SETTINGS) {
-    const problem = text(rawProblems[setting])
+    const problem = textOrNull(rawProblems[setting])
     if (problem) problems[setting] = problem
   }
   const bids = Array.isArray(value["bids_used"]) ? value["bids_used"] : []
   return {
     unavailable: false,
-    adGroupName: text(value["ad_group_name"]),
+    adGroupName: textOrNull(value["ad_group_name"]),
     bidsUsed: bids.includes("cpc_bid"),
-    campaignName: text(value["campaign_name"]),
-    current: settingMap(value["current"]),
+    campaignName: textOrNull(value["campaign_name"]),
+    current: parseSettingMap(KEYWORD_SETTINGS, keywordValue, value["current"]),
     matchType: matchType(value["match_type"]),
-    problem: text(value["problem"]),
+    problem: textOrNull(value["problem"]),
     problems,
-    requested: settingMap(value["requested"]),
-    strategyName: text(value["strategy_name"]),
-    text: text(value["text"]),
+    requested: parseSettingMap(KEYWORD_SETTINGS, keywordValue, value["requested"]),
+    strategyName: textOrNull(value["strategy_name"]),
+    text: textOrNull(value["text"]),
   }
 }
 
 /** Reads `changes` with the trusted `_accounts` and `_checks` beside it; null when malformed. */
 export function parseUpdateKeywordsArgs(value: unknown): UpdateKeywordsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["changes"])) return null
-  const changes: KeywordChange[] = []
-  const keys = new Set<string>()
-  for (const entry of value["changes"]) {
-    const change = parseChange(entry)
-    if (change === null || keys.has(change.key)) return null
-    keys.add(change.key)
-    changes.push(change)
-  }
-  const rawChecks = isRecord(value["_checks"]) ? value["_checks"] : {}
-  return {
-    accounts: parseApprovalAccounts(value["_accounts"]),
-    changes,
-    checks: new Map(Object.entries(rawChecks).map(([key, check]) => [key, parseCheck(check)])),
-  }
+  const parsed = parseCheckedEntries(value, "changes", parseChange, parseCheck)
+  return parsed && { accounts: parsed.accounts, changes: parsed.entries, checks: parsed.checks }
 }
 
 function sameKeywordValue(a: KeywordValue | undefined, b: KeywordValue | undefined) {
@@ -325,7 +300,7 @@ export function keywordRows(
         {
           customerId: googleAdsId(reference["customer_id"]) ?? "",
           key: item.key,
-          label: text(reference["label"]) ?? item.key,
+          label: textOrNull(reference["label"]) ?? item.key,
           matchType: matchType(reference["match_type"]),
         },
         item.setting,
@@ -340,7 +315,7 @@ export function keywordRows(
 export function keywordCounts(rows: readonly KeywordRow[]): KeywordCounts {
   const live = rows.filter((row) => !row.cancelled)
   return {
-    adGroups: new Set(live.map((row) => row.adGroupName ?? row.key)).size,
+    adGroups: new Set(live.map(keywordAdGroup)).size,
     apply: live.filter((row) => !row.unchanged).length,
     keywords: new Set(live.map((row) => row.key)).size,
     problems: live.filter((row) => row.problem !== null).length,
@@ -353,28 +328,19 @@ export function replacesKeyword(row: Pick<KeywordRow, "setting" | "unchanged">):
   return row.setting === "match_type" && !row.unchanged
 }
 
-function without(record: Record<string, unknown>, key: string): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key))
-}
-
 /** Writes a setting into a raw entry in the tool's argument shape; undefined leaves it out. */
 function withSetting(
   entry: Record<string, unknown>,
   setting: KeywordSetting,
   value: KeywordValue | undefined
 ): Record<string, unknown> {
-  if (URL_OPTIONS.has(setting)) {
-    const current = isRecord(entry["url_options"]) ? entry["url_options"] : {}
-    const item = value === null && setting !== "custom_parameters" ? "" : value
-    const group = item === undefined ? without(current, setting) : { ...current, [setting]: item }
-    return Object.keys(group).length > 0
-      ? { ...entry, url_options: group }
-      : without(entry, "url_options")
-  }
-  if (value === undefined) return without(entry, setting)
+  if (isUrlOption(setting)) return withUrlOption(entry, setting, value)
+  if (value === undefined) return withoutKey(entry, setting)
   // Removing a keyword's own bid is "none", so it uses its ad group's.
   return { ...entry, [setting]: setting === "cpc_bid" ? (value ?? "none") : value }
 }
+
+const CARD = { requestedOf, settings: KEYWORD_SETTINGS, withSetting }
 
 /** The `changes` value with one setting set on the given rows, or cancelled when undefined. */
 export function editedKeywordChanges(
@@ -382,15 +348,7 @@ export function editedKeywordChanges(
   ids: ReadonlySet<string>,
   value: (row: { key: string; setting: KeywordSetting }) => KeywordValue | undefined
 ): Record<string, unknown>[] {
-  return args.changes.flatMap((change) => {
-    let entry = change.entry
-    for (const setting of KEYWORD_SETTINGS) {
-      if (change.requested[setting] === undefined || !ids.has(`${change.key}|${setting}`)) continue
-      entry = withSetting(entry, setting, value({ key: change.key, setting }))
-    }
-    // An entry must change something, so a keyword with every setting cancelled leaves.
-    return Object.keys(requestedOf(entry)).length > 0 ? [entry] : []
-  })
+  return editedSettingChanges(CARD, args.changes, ids, value)
 }
 
 /** Settings the request doesn't change on a keyword yet, each starting at its live value.
@@ -429,12 +387,7 @@ export function restoredKeywordChanges(
   args: UpdateKeywordsArgs,
   items: readonly CancelledKeywordSetting[]
 ): Record<string, unknown>[] {
-  const entries = new Map(args.changes.map((change) => [change.key, change.entry]))
-  for (const item of items) {
-    const entry = entries.get(item.key) ?? { keyword: item.keyword }
-    entries.set(item.key, withSetting(entry, item.setting, item.value))
-  }
-  return [...entries.values()]
+  return restoredSettingChanges(CARD, args.changes, items, (item) => ({ keyword: item.keyword }))
 }
 
 export function parseCancelledKeywordSettings(value: unknown): CancelledKeywordSetting[] {
@@ -449,26 +402,13 @@ export function parseCancelledKeywordSettings(value: unknown): CancelledKeywordS
   })
 }
 
-/** Reads URLs separated by spaces or new lines; null when one isn't a full web address. */
+/** Reads URLs separated by spaces or new lines; null when Google Ads wouldn't accept them. */
 export function parseUrls(value: string): string[] | null {
-  const urls = value.split(/\s+/).filter(Boolean)
-  return urls.every((url) => URL_PATTERN.test(url)) ? urls : null
-}
-
-function signature(args: UpdateKeywordsArgs): string {
-  return JSON.stringify(
-    args.changes.map((change) => [
-      change.key,
-      KEYWORD_SETTINGS.map((setting) => change.requested[setting] ?? "-"),
-    ])
-  )
+  return parseGoogleAdsUrlList(value.split(/\s+/).filter(Boolean)) ?? null
 }
 
 export function keywordsNeedCheck(args: UpdateKeywordsArgs, checked: UpdateKeywordsArgs) {
-  return (
-    [...checked.checks.values()].some((check) => check.unavailable) ||
-    signature(args) !== signature(checked)
-  )
+  return settingsNeedCheck(KEYWORD_SETTINGS, args, checked)
 }
 
 /** Why the request can't be approved yet, or null. */
@@ -477,14 +417,11 @@ export function keywordsBlock(
   checked: UpdateKeywordsArgs
 ): string | null {
   if (args === null) return null
-  const counts = keywordCounts(keywordRows(args, checked))
-  if (counts.total === 0) return "Every change is cancelled. Decline this request, or undo one."
-  if (keywordsNeedCheck(args, checked))
-    return "Click Check Changes so Google can check your edits, then approve."
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "change")} to continue.`
-  if (counts.apply === 0) return "These keywords already have these settings."
-  return null
+  return changesBlock(
+    keywordCounts(keywordRows(args, checked)),
+    keywordsNeedCheck(args, checked),
+    "These keywords already have these settings."
+  )
 }
 
 /** A setting's value in the words the card uses. */
@@ -513,15 +450,10 @@ export function keywordCurrency(args: UpdateKeywordsArgs, row: KeywordRow): stri
   return args.accounts.get(row.customerId)?.currencyCode ?? null
 }
 
-function soleRow(args: UpdateKeywordsArgs): KeywordRow | null {
-  const rows = keywordRows(args, args)
-  return rows.length === 1 ? (rows[0] ?? null) : null
-}
-
 export function keywordsPrompt(args: UpdateKeywordsArgs): string {
   const rows = keywordRows(args, args)
   if (rows.length === 0) return "Nothing is left to change."
-  const sole = soleRow(args)
+  const sole = soleRow(rows)
   // The banner names the account, so a sole change's prompt names only the keyword.
   if (sole) {
     if (sole.setting === "match_type" && typeof sole.value === "string")
@@ -531,26 +463,22 @@ export function keywordsPrompt(args: UpdateKeywordsArgs): string {
     return `Change the ${KEYWORD_SETTING_TITLES[sole.setting].toLowerCase()} of “${sole.text}”.`
   }
   const counts = keywordCounts(rows)
-  const ids = new Set(args.changes.map((change) => change.customerId))
-  const [id] = ids
-  const where =
-    ids.size === 1
-      ? (args.accounts.get(id ?? "")?.label ?? "Google Ads")
-      : `${String(ids.size)} accounts`
+  const where = accountsText(
+    args.accounts,
+    args.changes.map((change) => change.customerId)
+  )
   return `Change ${approvalCountLine(counts.keywords, "keyword")} in ${where}.`
 }
 
 /** Names the change when there is only one; otherwise counts what's sent. */
 export function keywordsApproveLabel(args: UpdateKeywordsArgs): string {
-  const sole = soleRow(args)
+  const rows = keywordRows(args, args)
+  const sole = soleRow(rows)
   if (sole && !sole.unchanged)
     return sole.setting === "cpc_bid" && sole.value === null
       ? "Remove Max CPC"
       : `Change ${KEYWORD_SETTING_TITLES[sole.setting]}`
-  const { apply } = keywordCounts(keywordRows(args, args))
-  return apply === 0
-    ? "Apply Changes"
-    : `Apply ${apply.toLocaleString("en-GB")} ${apply === 1 ? "Change" : "Changes"}`
+  return applyChangesLabel(keywordCounts(rows).apply)
 }
 
 export function keywordsBannerDetail(
@@ -571,4 +499,19 @@ export function keywordsBannerDetail(
 
 export function keywordsDetails(args: UpdateKeywordsArgs | null): FanOutDetail[] {
   return args ? [{ label: "Keywords", value: String(args.changes.length) }] : []
+}
+
+/** One row per ad group, in the order its keywords first appear. */
+export function adGroupParents(rows: readonly KeywordRow[]): ParentRow[] {
+  return groupedByParent(rows, keywordAdGroup).map(({ items, key, live }) => {
+    const first = items.find((row) => row.adGroupName) ?? items[0]
+    return {
+      cancelled: live.length === 0,
+      context: first?.campaignName ?? null,
+      key,
+      name: first?.adGroupName ?? `Ad group ${key.split("/").pop() ?? ""}`,
+      problems: live.filter((row) => row.problem !== null).length,
+      values: { changes: live.length, keywords: new Set(live.map((row) => row.key)).size },
+    }
+  })
 }

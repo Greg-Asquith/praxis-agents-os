@@ -1,8 +1,8 @@
 // apps/web/src/integrations/google_ads/lib/update-budgets-result.ts
 
-import type { EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
+import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import type { BudgetSetting } from "@/integrations/google_ads/lib/update-budgets"
-import { isNonEmptyString, isRecord } from "@/lib/guards"
+import { isNonEmptyString, isRecord, optionalString } from "@/lib/guards"
 
 export type BudgetOutcomeRow = {
   after: string | null
@@ -13,7 +13,6 @@ export type BudgetOutcomeRow = {
   outcome: EditOutcome
   readBack: boolean
   setting: BudgetSetting
-  spend: string | null
 }
 
 export type UpdateBudgetsResult = {
@@ -22,12 +21,7 @@ export type UpdateBudgetsResult = {
   rows: BudgetOutcomeRow[]
 }
 
-const OUTCOMES: readonly string[] = ["updated", "already_set", "failed", "unverified"]
 const SETTINGS: readonly string[] = ["amount", "delivery", "shared_budget"]
-
-function textOrNull(value: unknown): string | null {
-  return typeof value === "string" ? value : null
-}
 
 function parseBudget(raw: unknown): BudgetOutcomeRow[] | null {
   if (!isRecord(raw) || !isNonEmptyString(raw["name"]) || !Array.isArray(raw["settings"]))
@@ -38,17 +32,16 @@ function parseBudget(raw: unknown): BudgetOutcomeRow[] | null {
     const setting = item["setting"]
     const outcome = item["outcome"]
     if (typeof setting !== "string" || !SETTINGS.includes(setting)) return null
-    if (typeof outcome !== "string" || !OUTCOMES.includes(outcome)) return null
+    if (!isEditOutcome(outcome)) return null
     rows.push({
-      after: textOrNull(item["after"]),
-      before: textOrNull(item["before"]),
-      errorCode: textOrNull(raw["error_code"]),
-      message: textOrNull(raw["message"]),
+      after: optionalString(item["after"]),
+      before: optionalString(item["before"]),
+      errorCode: optionalString(raw["error_code"]),
+      message: optionalString(raw["message"]),
       name: raw["name"],
-      outcome: outcome as EditOutcome,
+      outcome,
       readBack: raw["read_back"] === true,
       setting: setting as BudgetSetting,
-      spend: textOrNull(raw["spend_this_month"]),
     })
   }
   return rows

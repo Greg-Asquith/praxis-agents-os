@@ -36,8 +36,13 @@ SETTING_PATHS: dict[AdGroupSetting, str] = {
     "ad_rotation": "adRotationMode",
 }
 # Read-only paths a bid change is approved against but never sends, so a campaign strategy
-# changed since approval, which can stop Google using the bid, is refused.
-CAMPAIGN_BIDDING_GUARDS = ("campaign.biddingStrategyType", "campaign.biddingStrategy")
+# or target changed since approval, which can stop Google using the bid, is refused.
+CAMPAIGN_BIDDING_GUARDS = (
+    "campaign.biddingStrategyType",
+    "campaign.biddingStrategy",
+    "campaign.maximizeConversions.targetCpaMicros",
+    "campaign.maximizeConversionValue.targetRoas",
+)
 _URL_SETTINGS = frozenset({"final_url_suffix", "tracking_template", "custom_parameters"})
 _ROTATIONS = frozenset({"OPTIMIZE", "ROTATE_FOREVER"})
 _FIELDS = (
@@ -159,8 +164,10 @@ async def read_ad_group_settings(
             ),
             values={
                 **_values(ad_group),
-                "campaign.biddingStrategyType": bidding["biddingStrategyType"],
-                "campaign.biddingStrategy": bidding["biddingStrategy"],
+                **{
+                    path: bidding[path.removeprefix("campaign.")]
+                    for path in CAMPAIGN_BIDDING_GUARDS
+                },
             },
         )
     return live

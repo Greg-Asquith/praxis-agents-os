@@ -37,6 +37,8 @@ export function TextAssetList({
   pins: readonly string[]
 }) {
   const [showAll, setShowAll] = useState(false)
+  // Typing stays here until the field is left, so a caller that tidies the text can't redraw it mid-word.
+  const [draft, setDraft] = useState<{ at: number; text: string } | null>(null)
   const plural = `${noun}s`
   const shown = showAll ? assets : assets.slice(0, FIRST_SHOWN)
   const pinOptions = [
@@ -62,21 +64,27 @@ export function TextAssetList({
       </p>
       <ul className="grid gap-1.5">
         {shown.map((asset, index) => {
-          const count = characterCount(asset.text.trim())
+          const text = draft?.at === index ? draft.text : asset.text
+          const count = characterCount(text.trim())
           const over = count > limits.length || count === 0
           const label = `${noun} ${String(index + 1)}`
           return (
-            // eslint-disable-next-line react-x/no-array-index-key -- Headlines have no ID, and a key from their text would remount the input, and lose focus, on each edit.
+            // eslint-disable-next-line react-x/no-array-index-key -- Headlines have no ID, and their text can repeat.
             <li key={index} className="flex min-w-0 items-center gap-2">
               <Input
                 aria-invalid={over}
                 aria-label={label}
                 className="text-sm"
                 disabled={disabled}
-                onChange={(event) => {
-                  update(index, { text: event.currentTarget.value })
+                onBlur={() => {
+                  setDraft(null)
+                  if (draft?.at === index && draft.text !== asset.text)
+                    update(index, { text: draft.text })
                 }}
-                value={asset.text}
+                onChange={(event) => {
+                  setDraft({ at: index, text: event.currentTarget.value })
+                }}
+                value={text}
               />
               <span
                 className={cn(

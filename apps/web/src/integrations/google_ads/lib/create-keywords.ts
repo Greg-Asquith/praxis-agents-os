@@ -1,7 +1,11 @@
 // apps/web/src/integrations/google_ads/lib/create-keywords.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import {
+  collapseSpaces,
+  type KeywordMatchType,
+  type PastedKeyword,
+} from "@/integrations/ads/lib/keyword-notation"
 import {
   parseApprovalAccounts,
   type GoogleAdsApprovalAccount,
@@ -13,12 +17,13 @@ import {
 import { canonicalMoney } from "@/integrations/google_ads/lib/campaign-bidding"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import type { DraftKeyword } from "@/integrations/google_ads/lib/create-ad-groups"
+import { isGoogleAdsUrl, parseGoogleAdsMoney } from "@/integrations/google_ads/lib/field-values"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
-const MONEY_PATTERN = /^\d+(?:\.\d{1,6})?$/
-const URL_PATTERN = /^https?:\/\/\S+$/i
 const MATCH_TYPES = new Set<string>(["EXACT", "PHRASE", "BROAD"])
+const MAX_KEYWORD_LENGTH = 80
+const MAX_KEYWORD_WORDS = 10
 const UNAVAILABLE =
   "Google Ads couldn't check this keyword. Check again, or decline and ask the agent to prepare it again."
 
@@ -133,9 +138,28 @@ export function parseCreateKeywordsArgs(value: unknown): CreateKeywordsArgs | nu
   }
 }
 
-/** Names a keyword in the checks, as the server writes it. */
-function keywordCheckKey(entry: KeywordEntry, keyword: DraftKeyword): string {
-  return `${entry.key}/${keyword.matchType}/${keyword.text.toLowerCase()}`
+/** Names a keyword within its ad group as the server does: spaces collapsed, case ignored. */
+function keywordKey(keyword: PastedKeyword): string {
+  return `${keyword.matchType}/${collapseSpaces(keyword.text).toLowerCase()}`
+}
+
+/** Whether Google Ads accepts a keyword's text: at most 80 characters and 10 words. */
+export function keywordTextAllowed(text: string): boolean {
+  const words = text.trim().split(/\s+/)
+  return (
+    Array.from(words.join(" ")).length <= MAX_KEYWORD_LENGTH && words.length <= MAX_KEYWORD_WORDS
+  )
+}
+
+/** Keeps the first of each keyword and match type, since an ad group takes each pair once. */
+export function distinctKeywords(keywords: readonly DraftKeyword[]): DraftKeyword[] {
+  const seen = new Set<string>()
+  return keywords.filter((keyword) => {
+    const key = keywordKey(keyword)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 export function serializeEntries(entries: readonly KeywordEntry[]): Record<string, unknown>[] {
@@ -150,29 +174,34 @@ export function serializeEntries(entries: readonly KeywordEntry[]): Record<strin
   }))
 }
 
-/** What stops one keyword: the card's own rules first, then what Google last said. */
+/** What stops one keyword: the card's own rules first, then what Google last said.
+
+A keyword Google hasn't answered for is unchecked, unless `edited` says a new check is due.
+ */
 export function keywordProblem(
   checked: CreateKeywordsArgs,
   entry: KeywordEntry,
-  keyword: DraftKeyword
+  keyword: DraftKeyword,
+  edited: boolean
 ): string | null {
   const bid = keyword.cpcBid.trim()
-  if (bid && (!MONEY_PATTERN.test(bid) || Number(bid) <= 0))
+  if (bid && parseGoogleAdsMoney(bid) === undefined)
     return `Enter a max CPC above zero for “${keyword.text}”.`
   const url = keyword.finalUrl.trim()
-  if (url && !URL_PATTERN.test(url))
+  if (url && !isGoogleAdsUrl(url))
     return `Enter a final URL starting with http:// or https:// for “${keyword.text}”.`
   const facts = checked.adGroups.get(entry.key)
   if (facts?.problem) return facts.problem
-  const check = checked.checks.get(keywordCheckKey(entry, keyword))
-  if (check?.unavailable) return UNAVAILABLE
-  return check?.problem ?? null
+  const check = checked.checks.get(`${entry.key}/${keywordKey(keyword)}`)
+  if (check === undefined) return edited ? null : UNAVAILABLE
+  return check.unavailable ? UNAVAILABLE : check.problem
 }
 
 export function keywordAdGroupRows(
   args: CreateKeywordsArgs,
   checked: CreateKeywordsArgs
 ): KeywordAdGroupRow[] {
+  const edited = keywordsEdited(args, checked)
   return args.entries.map((entry) => {
     const facts = checked.adGroups.get(entry.key)
     const currency = args.accounts.get(entry.adGroup.customerId)?.currencyCode
@@ -181,7 +210,8 @@ export function keywordAdGroupRows(
       campaignName: facts?.campaignName ?? entry.adGroup.campaignLabel ?? "",
       entry,
       name: facts?.name ?? entry.adGroup.label,
-      problems: entry.keywords.filter((keyword) => keywordProblem(checked, entry, keyword)).length,
+      problems: entry.keywords.filter((keyword) => keywordProblem(checked, entry, keyword, edited))
+        .length,
     }
   })
 }
@@ -211,12 +241,24 @@ function signature(args: CreateKeywordsArgs): string {
   return JSON.stringify(serializeEntries(args.entries).map((entry) => entry["keywords"]))
 }
 
+/** Whether the request differs from the one Google last answered for. */
+export function keywordsEdited(args: CreateKeywordsArgs, checked: CreateKeywordsArgs): boolean {
+  return (
+    args.entries.map((entry) => entry.key).join() !==
+      checked.entries.map((entry) => entry.key).join() || signature(args) !== signature(checked)
+  )
+}
+
 export function keywordsNeedCheck(args: CreateKeywordsArgs, checked: CreateKeywordsArgs): boolean {
   return (
-    [...checked.checks.values()].some((check) => check.unavailable) ||
-    args.entries.map((entry) => entry.key).join() !==
-      checked.entries.map((entry) => entry.key).join() ||
-    signature(args) !== signature(checked)
+    keywordsEdited(args, checked) ||
+    // A keyword without an answer from Google can only get one from another check.
+    args.entries.some((entry) =>
+      entry.keywords.some(
+        (keyword) =>
+          checked.checks.get(`${entry.key}/${keywordKey(keyword)}`)?.unavailable !== false
+      )
+    )
   )
 }
 
@@ -262,7 +304,7 @@ export function createKeywordsDetails(args: CreateKeywordsArgs | null): FanOutDe
   if (!args) return []
   const keywords = args.entries.reduce((total, entry) => total + entry.keywords.length, 0)
   return [
-    { label: "Ad groups", value: String(args.entries.length) },
+    { label: "Ad Groups", value: String(args.entries.length) },
     { label: "Keywords", value: String(keywords) },
   ]
 }

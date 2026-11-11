@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/components/update-budgets-approval.tsx
 
-import { ArrowRightIcon, XIcon } from "lucide-react"
+import { ArrowRightIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -14,15 +14,17 @@ import {
   type DataTableTab,
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { ParentTable } from "@/integrations/ads/components/parent-table"
+import { PercentInput } from "@/integrations/ads/components/percent-input"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
-import { moneyInput } from "@/integrations/google_ads/lib/campaign-bidding"
-import { scaledMoney } from "@/integrations/google_ads/lib/update-ad-groups"
+import { moneyInput, scaledMoney } from "@/integrations/google_ads/lib/campaign-bidding"
+import { parseGoogleAdsMoney } from "@/integrations/google_ads/lib/field-values"
 import {
   budgetCounts,
   budgetCurrency,
@@ -101,8 +103,8 @@ export function UpdateBudgetsApproval({
   const tools = rows.length >= TOOLS_FROM
   const live = rows.filter((row) => !row.cancelled)
   const accountIds = [...new Set(live.map((row) => row.customerId))]
-  const [firstAccount] = accountIds
-  const currency = args.accounts.get(firstAccount ?? "")?.currencyCode ?? null
+  const currencies = new Set(accountIds.map((id) => args.accounts.get(id)?.currencyCode ?? null))
+  const [currency = null] = currencies
   const [parent, setParent] = useState<string | null>(null)
   const parents = budgetParents(rows, args.accounts, accountIds.length > 1)
   const shown = parent === null ? rows : rows.filter((row) => row.id === parent)
@@ -128,9 +130,7 @@ export function UpdateBudgetsApproval({
   const scaleBy = (ids: Ids, percent: number) => {
     setAmounts(ids, (row) => {
       const was = row.was?.amount
-      return row.sharedBudget === null && was
-        ? scaledMoney(was, percent, budgetCurrency(args, row))
-        : null
+      return was ? scaledMoney(was, percent, budgetCurrency(args, row)) : null
     })
   }
   const cancel = (ids: Ids) => {
@@ -145,6 +145,11 @@ export function UpdateBudgetsApproval({
         cancelled.filter((entry) => entry !== item)
       )
   }
+  // A tab's rows can sit under another parent, so choosing one shows every parent.
+  const showTab = (id: string) => {
+    setParent(null)
+    setTab(id)
+  }
   const liveIds = (match: (row: BudgetRow) => boolean) => live.filter(match).map((row) => row.id)
   const raised = liveIds((row) => (dailyDelta(row) ?? 0) > 0)
   const attention = liveIds((row) => row.problem !== null)
@@ -154,7 +159,8 @@ export function UpdateBudgetsApproval({
     <div className="grid min-w-0 gap-3">
       <ChangeBanner
         aside={
-          daily !== 0 ? (
+          // Amounts in different currencies have no meaningful total.
+          daily !== 0 && currencies.size === 1 ? (
             <div className="grid text-right">
               <p className="text-sm font-medium tabular-nums">
                 {signedMoney(daily, currency)} a day
@@ -185,7 +191,7 @@ export function UpdateBudgetsApproval({
                 id: "raise",
                 label: "Raise Daily Budget",
                 onSelect: () => {
-                  setTab("raise")
+                  showTab("raise")
                 },
                 selected: tab === "raise",
               },
@@ -194,7 +200,7 @@ export function UpdateBudgetsApproval({
                 id: "lower",
                 label: "Lower Daily Budget",
                 onSelect: () => {
-                  setTab("lower")
+                  showTab("lower")
                 },
                 selected: tab === "lower",
               },
@@ -204,7 +210,7 @@ export function UpdateBudgetsApproval({
                 id: "shared",
                 label: "Change a Shared Budget",
                 onSelect: () => {
-                  setTab("shared")
+                  showTab("shared")
                 },
                 selected: tab === "shared",
               },
@@ -213,7 +219,7 @@ export function UpdateBudgetsApproval({
                 id: "move",
                 label: "Move Onto a Shared Budget",
                 onSelect: () => {
-                  setTab("move")
+                  showTab("move")
                 },
                 selected: tab === "move",
               },
@@ -235,7 +241,7 @@ export function UpdateBudgetsApproval({
                 id: "attention",
                 label: "Needs Attention",
                 onSelect: () => {
-                  setTab("attention")
+                  showTab("attention")
                 },
                 selected: tab === "attention",
                 tone: "danger",
@@ -245,8 +251,7 @@ export function UpdateBudgetsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
-              setParent(null)
-              setTab("attention")
+              showTab("attention")
             }}
           />
         </>
@@ -315,6 +320,7 @@ export function UpdateBudgetsApproval({
           if (column.key === "cancel")
             return (
               <CancelCell
+                cancelled={row.cancelled}
                 disabled={disabled}
                 onCancel={() => {
                   cancel([row.id])
@@ -322,7 +328,6 @@ export function UpdateBudgetsApproval({
                 onUndo={() => {
                   undo(row.key)
                 }}
-                row={row}
               />
             )
           return null
@@ -345,7 +350,7 @@ export function UpdateBudgetsApproval({
                       disabled={disabled}
                       onCommit={(next) => {
                         const amount = next.trim()
-                        if (Number(amount) > 0) setAmounts(selected, () => amount)
+                        if (parseGoogleAdsMoney(amount)) setAmounts(selected, () => amount)
                       }}
                       placeholder="Set amount"
                       value=""
@@ -588,7 +593,7 @@ function AmountCell({
               disabled={disabled}
               onCommit={(next) => {
                 const amount = next.trim()
-                if (Number(amount) > 0) onAmount(amount)
+                if (parseGoogleAdsMoney(amount)) onAmount(amount)
               }}
               value={moneyInput(row.amount)}
             />
@@ -623,58 +628,4 @@ function ChangeBadge({ row }: { row: BudgetRow }) {
         ? "success"
         : "warning"
   return <Badge variant={variant}>{changeText(row)}</Badge>
-}
-
-function PercentInput({
-  disabled,
-  label,
-  onCommit,
-}: {
-  disabled: boolean
-  label: string
-  onCommit: (percent: number) => void
-}) {
-  return (
-    <CommittedInput
-      ariaLabel={label}
-      className="h-7 w-28 text-sm tabular-nums"
-      disabled={disabled}
-      onCommit={(next) => {
-        const percent = Number(next.trim().replace(/%$/, ""))
-        if (next.trim() && Number.isFinite(percent) && percent > -100) onCommit(percent)
-      }}
-      placeholder="Change by %"
-      value=""
-    />
-  )
-}
-
-function CancelCell({
-  disabled,
-  onCancel,
-  onUndo,
-  row,
-}: {
-  disabled: boolean
-  onCancel: () => void
-  onUndo: () => void
-  row: BudgetRow
-}) {
-  return row.cancelled ? (
-    <Button disabled={disabled} onClick={onUndo} size="sm" type="button" variant="ghost">
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={onCancel}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
-  )
 }

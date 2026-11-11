@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/components/search-terms-approval.tsx
 
-import { XIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -21,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { formatCurrency } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
@@ -367,7 +367,19 @@ function ChangeTable({
             />
           )
         if (column.key === "target") return <TargetCell editing={editing} row={change} />
-        if (column.key === "cancel") return <CancelCell editing={editing} row={change} />
+        if (column.key === "cancel")
+          return (
+            <CancelCell
+              cancelled={change.cancelled}
+              disabled={editing.disabled}
+              onCancel={() => {
+                editing.onCancel([change.id])
+              }}
+              onUndo={() => {
+                editing.onUndo(change)
+              }}
+            />
+          )
         return null
       }}
       rowClassName={(row) => (byId.get(String(row["key"]))?.cancelled ? "opacity-60" : undefined)}
@@ -588,36 +600,5 @@ function TargetCell({ editing, row }: { editing: RowEditing; row: SearchTermRow 
       searchKind={row.action === "add_negative" ? "list" : "ad_group"}
       value={current}
     />
-  )
-}
-
-function CancelCell({ editing, row }: { editing: RowEditing; row: SearchTermRow }) {
-  const { disabled } = editing
-  return row.cancelled ? (
-    <Button
-      disabled={disabled}
-      onClick={() => {
-        editing.onUndo(row)
-      }}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      Undo
-    </Button>
-  ) : (
-    <Button
-      aria-label="Cancel This Change"
-      disabled={disabled}
-      onClick={() => {
-        editing.onCancel([row.id])
-      }}
-      size="icon-xs"
-      title="Cancel This Change"
-      type="button"
-      variant="ghost"
-    >
-      <XIcon />
-    </Button>
   )
 }

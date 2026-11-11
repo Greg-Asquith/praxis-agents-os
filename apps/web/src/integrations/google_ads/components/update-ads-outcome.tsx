@@ -4,14 +4,15 @@ import { useMemo, useState, type ComponentProps } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
+import { cellText } from "@/integrations/ads/lib/cell-text"
 import {
   EDIT_OUTCOME_BADGES,
   EDIT_OUTCOME_LABELS,
   EDIT_OUTCOME_TABS,
+  editOutcomeSummary,
 } from "@/integrations/google_ads/lib/edit-outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
-  adsOutcomeSummary,
   changeLines,
   inReview,
   type AdOutcomeRow,
@@ -89,12 +90,12 @@ export function UpdateAdsOutcome({ result }: { result: UpdateAdsResult }) {
       }}
       rowNoun={["ad", "ads"]}
       rows={rows}
-      summary={<span>{adsOutcomeSummary(result)}</span>}
+      summary={
+        <span>
+          {editOutcomeSummary(result.rows, { inReview: result.rows.filter(inReview).length })}
+        </span>
+      }
       tabs={EDIT_OUTCOME_TABS}
     />
   )
-}
-
-function cellText(value: unknown): string {
-  return typeof value === "string" ? value : ""
 }

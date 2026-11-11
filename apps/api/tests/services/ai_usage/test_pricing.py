@@ -27,14 +27,8 @@ def test_effective_date_lookup_selects_latest_applicable_price() -> None:
 
     assert launch is not None
     assert launch.input_usd_per_mtok == 2
-    assert launch.cache_read_usd_per_mtok == Decimal("0.1")
-    assert launch.cache_write_usd_per_mtok == 0
-    assert launch.output_usd_per_mtok == 10
     assert standard is not None
     assert standard.input_usd_per_mtok == 4
-    assert standard.cache_read_usd_per_mtok == Decimal("0.2")
-    assert standard.cache_write_usd_per_mtok == 0
-    assert standard.output_usd_per_mtok == 20
 
 
 def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:

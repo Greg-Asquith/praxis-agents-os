@@ -39,10 +39,19 @@ _USER_FIELDS = {
 }
 # What removing a campaign or ad group takes with it: (count key, GAQL resource, filter).
 _DEPENDANTS = {
+    # A child keeps its own status when its ad group is removed, so the ad group is checked too.
     "campaign": (
         ("ad_groups", "ad_group", "ad_group.status != 'REMOVED'"),
-        ("ads", "ad_group_ad", "ad_group_ad.status != 'REMOVED'"),
-        ("keywords", "ad_group_criterion", "ad_group_criterion.status != 'REMOVED'"),
+        (
+            "ads",
+            "ad_group_ad",
+            "ad_group.status != 'REMOVED' AND ad_group_ad.status != 'REMOVED'",
+        ),
+        (
+            "keywords",
+            "ad_group_criterion",
+            "ad_group.status != 'REMOVED' AND ad_group_criterion.status != 'REMOVED'",
+        ),
     ),
     "ad_group": (
         ("ads", "ad_group_ad", "ad_group_ad.status != 'REMOVED'"),

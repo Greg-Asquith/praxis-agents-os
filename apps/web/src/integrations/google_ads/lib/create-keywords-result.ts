@@ -2,6 +2,7 @@
 
 import type { DataTableTab } from "@/components/ui/data-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { countsText } from "@/integrations/google_ads/lib/edit-outcomes"
 import { isNonEmptyString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["added", "already_set", "failed", "unverified"] as const
@@ -87,14 +88,10 @@ export function parseCreateKeywordsResult(raw: unknown): CreateKeywordsResult | 
 
 /** Counts each outcome, such as "600 added · 2 failed", leaving out outcomes with none. */
 export function additionSummary(rows: readonly AddedKeywordRow[]): string {
-  return OUTCOMES.map(
-    (outcome) =>
-      [
-        rows.filter((row) => row.outcome === outcome).length,
-        ADDITION_LABELS[outcome].toLowerCase(),
-      ] as const
+  return countsText(
+    OUTCOMES.map((outcome) => [
+      rows.filter((row) => row.outcome === outcome).length,
+      ADDITION_LABELS[outcome].toLowerCase(),
+    ])
   )
-    .filter(([total]) => total > 0)
-    .map(([total, label]) => `${String(total)} ${label}`)
-    .join(" · ")
 }

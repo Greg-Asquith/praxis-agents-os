@@ -2,7 +2,6 @@
 
 """Approval-only tool that changes daily budgets and moves campaigns onto shared budgets."""
 
-import asyncio
 import calendar
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -24,7 +23,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -33,16 +31,13 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
 from ..operations.budget_settings import (
     AMOUNT_PATH,
     CAMPAIGN_BUDGET_PATH,
     DELIVERY_PATH,
+    REFERENCE_COUNT_PATH,
     BudgetCampaign,
     LiveBudget,
     LiveCampaign,
@@ -57,7 +52,6 @@ from ..operations.edits import (
     FieldChange,
     Removal,
     SettingValues,
-    apply_edits,
     prepare_edits,
 )
 from .schemas.budget_updates import (
@@ -69,19 +63,16 @@ from .schemas.budget_updates import (
 )
 from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditPlan, run_approved_edits
 from .utils.money import money_to_micros
 from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
     google_ads_account_target,
-    terminal_operation_detail,
 )
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_budgets"
-_IDENTITY = ("object",)
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
 # The card names this many of the campaigns a shared budget funds; the count covers the rest.
 _LISTED_CAMPAIGNS = 50
@@ -113,7 +104,13 @@ def _budget_edits(change: GoogleAdsBudgetUpdate, budget: str) -> FieldChange:
         requested[AMOUNT_PATH] = str(money_to_micros(change.amount))
     if change.delivery is not None:
         requested[DELIVERY_PATH] = change.delivery
-    return FieldChange(resource="campaignBudget", resource_name=budget, requested=requested)
+    # A campaign that joined or left the budget since approval makes the change stale.
+    return FieldChange(
+        resource="campaignBudget",
+        resource_name=budget,
+        requested=requested,
+        compared=(REFERENCE_COUNT_PATH,),
+    )
 
 
 def _edits(change: GoogleAdsBudgetUpdate, budget: str | None, *, removes: bool) -> list[Edit]:
@@ -227,13 +224,8 @@ async def google_ads_update_budgets(
 
     async def operation(entry: ResolvedContextEntry, selected: Sequence[Any]) -> Any:
         account_changes = [by_key[_reference_key(reference)] for reference in selected]
-        client: GoogleAdsClient | None = None
-        edits: list[Edit] = []
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, edits, pending
-            client = await google_ads_client(ctx, entry)
+        async def plan(_client: GoogleAdsClient) -> EditPlan:
             owned = [
                 (change, edit)
                 for change in account_changes
@@ -241,44 +233,20 @@ async def google_ads_update_budgets(
             ]
             # Spending drops before it rises.
             owned.sort(key=lambda item: _rank(item[1]))
-            edits = [edit for _change, edit in owned]
-            pending = _pending_detail(entry, owned, shown)
-            return pending
+            return [edit for _change, edit in owned], _pending_detail(entry, owned, shown)
 
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not edits:
-                raise RuntimeError("Google Ads budget update preparation did not complete")
-            try:
-                result = await apply_edits(
-                    client,
-                    customer_id=entry.external_id,
-                    login_customer_id=login_customer_id(entry),
-                    edits=edits,
-                    read=_reader(client, entry),
-                    family="campaign_budgets",
-                    operation=_OPERATION,
-                )
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, result.ledger, identity_keys=_IDENTITY)
-            data = _result(entry, account_changes, shown, result)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(result.ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
-            )
+        async def result(client: GoogleAdsClient, applied: EditResult) -> dict[str, Any]:
+            return _result(entry, account_changes, shown, applied)
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits(
             ctx,
             entry,
             tool_name="google_ads_update_budgets",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family="campaign_budgets",
+            plan=plan,
+            read=lambda client: _reader(client, entry),
+            result=result,
         )
 
     results = await run_context_targets(
@@ -484,7 +452,10 @@ def _setting_outcomes(
                 "before": names.get(before, before) if named else before,
                 "requested": names.get(requested, requested) if named else requested,
                 "after": names.get(value, value) if named else value,
-                "outcome": "already_set" if before == requested else outcome,
+                # With no check there is no live value to match, so null never reads as set.
+                "outcome": (
+                    "already_set" if setting in current and before == requested else outcome
+                ),
             }
         )
     return settings
