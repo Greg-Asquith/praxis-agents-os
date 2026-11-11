@@ -1,0 +1,430 @@
+# apps/api/tests/integrations/google_ads/test_update_assets_tool.py
+
+"""Sitelinks and callouts on campaigns and ad groups: checked before approval, then sent."""
+
+import re
+from dataclasses import replace
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+from pydantic import ValidationError
+
+from integrations.google_ads.tools import update_assets as tool_module
+from integrations.google_ads.tools.schemas.assets import (
+    GoogleAdsUpdateAssetsOutput,
+    GoogleAdsUpdateAssetsRequest,
+)
+from services.integrations.context.domain import ResolvedActiveContext
+from tests.integrations.google_ads.support import _writable_google_ads_entry
+
+_C = "customers/111"
+
+
+class _Account:
+    """One Google Ads account's campaigns, ad groups, assets, and their links."""
+
+    def __init__(self) -> None:
+        self.campaigns = {"10": "Trail", "20": "Road"}
+        self.ad_groups = {"40": ("Trail Shoes", "Trail")}
+        self.assets: dict[str, dict[str, Any]] = {
+            "70": {
+                "type": "SITELINK",
+                "source": "ADVERTISER",
+                "finalUrls": ["https://shop.example/sale"],
+                "sitelinkAsset": {"linkText": "Sale"},
+            },
+            "71": {
+                "type": "CALLOUT",
+                "source": "ADVERTISER",
+                "calloutAsset": {"calloutText": "Free Returns"},
+            },
+            "72": {
+                "type": "CALLOUT",
+                "source": "ADVERTISER",
+                "calloutAsset": {"calloutText": "Next-Day Delivery"},
+            },
+            "73": {
+                "type": "CALLOUT",
+                "source": "AUTOMATICALLY_CREATED",
+                "calloutAsset": {"calloutText": "Made By Google"},
+            },
+        }
+        # (collection, owner ID, asset ID, field type).
+        self.links: set[tuple[str, str, str, str]] = {
+            ("campaigns", "10", "70", "SITELINK"),
+            ("campaigns", "20", "70", "SITELINK"),
+            ("campaigns", "10", "71", "CALLOUT"),
+            ("adGroups", "40", "72", "CALLOUT"),
+        }
+        self.mutates: list[dict[str, Any]] = []
+        self.next_id = 900
+
+    async def post(self, path: str, **kwargs: Any) -> Any:
+        body = kwargs["json"]
+        if path.endswith("googleAds:searchStream"):
+            return [{"results": self._search(body["query"])}]
+        assert path == f"{_C}/googleAds:mutate"
+        self.mutates.append(body)
+        return self._mutate(body)
+
+    def _asset(self, asset_id: str) -> dict[str, Any]:
+        return {"id": asset_id, **self.assets[asset_id]}
+
+    def _search(self, query: str) -> list[dict[str, Any]]:
+        match = re.search(r"\.id IN \(([^)]*)\)", query)
+        ids = set(re.findall(r"\d+", match.group(1))) if match else set()
+        resource = re.search(r"FROM (\w+)", query).group(1)
+        if resource == "campaign":
+            return [
+                {"campaign": {"id": key, "name": name, "status": "ENABLED"}}
+                for key, name in self.campaigns.items()
+                if key in ids
+            ]
+        if resource == "ad_group":
+            return [
+                {
+                    "adGroup": {"id": key, "name": name, "status": "ENABLED"},
+                    "campaign": {"name": campaign},
+                }
+                for key, (name, campaign) in self.ad_groups.items()
+                if key in ids
+            ]
+        if resource == "asset":
+            return [{"asset": self._asset(key)} for key in self.assets if key in ids]
+        collection, owner_key, names = {
+            "campaign_asset": ("campaigns", "campaign", self.campaigns),
+            "ad_group_asset": ("adGroups", "adGroup", {k: v[0] for k, v in self.ad_groups.items()}),
+        }[resource]
+        by_asset = query.startswith("SELECT asset.id,")
+        return [
+            {
+                f"{owner_key}Asset": {
+                    "resourceName": f"{_C}/{collection}Assets/{owner}~{asset}~{field}".replace(
+                        "campaignsAssets", "campaignAssets"
+                    ).replace("adGroupsAssets", "adGroupAssets")
+                },
+                owner_key: {"id": owner, "name": names[owner]},
+                "asset": self._asset(asset),
+            }
+            for kind, owner, asset, field in sorted(self.links)
+            if kind == collection and (asset if by_asset else owner) in ids
+        ]
+
+    def _mutate(self, body: dict[str, Any]) -> dict[str, Any]:
+        created: dict[str, str] = {}
+        responses = []
+        for operation in body["mutateOperations"]:
+            ((key, value),) = operation.items()
+            name = self._apply(key.removesuffix("Operation"), value, created, body["validateOnly"])
+            responses.append({key.replace("Operation", "Result"): {"resourceName": name}})
+        return {"mutateOperationResponses": responses}
+
+    def _apply(self, resource: str, value: dict, created: dict, dry: bool) -> str:
+        if "remove" in value:
+            _c, _id, collection, ids = value["remove"].split("/")
+            owner, asset, field = ids.split("~")
+            if not dry:
+                self.links.discard((collection.removesuffix("Assets") + "s", owner, asset, field))
+            return value["remove"]
+        if "update" in value:
+            update = value["update"]
+            asset_id = update["resourceName"].rsplit("/", 1)[1]
+            if not dry:
+                for path in value["updateMask"].split(","):
+                    *parents, leaf = path.split(".")
+                    source, target = update, self.assets[asset_id]
+                    for part in parents:
+                        source, target = source.get(part, {}), target.setdefault(part, {})
+                    target[leaf] = source.get(leaf)
+            return update["resourceName"]
+        create = {
+            key: created.get(item, item) if isinstance(item, str) else item
+            for key, item in value["create"].items()
+        }
+        self.next_id += 1
+        if resource == "asset":
+            name = f"{_C}/assets/{self.next_id}"
+            created[create.pop("resourceName")] = name
+            if not dry:
+                asset_type = "SITELINK" if "sitelinkAsset" in create else "CALLOUT"
+                self.assets[str(self.next_id)] = {
+                    "type": asset_type,
+                    "source": "ADVERTISER",
+                    **create,
+                }
+            return name
+        owner_field, collection = {
+            "campaignAsset": ("campaign", "campaigns"),
+            "adGroupAsset": ("adGroup", "adGroups"),
+        }[resource]
+        owner = create[owner_field].rsplit("/", 1)[1]
+        asset = create["asset"].rsplit("/", 1)[1]
+        if not dry:
+            self.links.add((collection, owner, asset, create["fieldType"]))
+        return f"{_C}/{resource}s/{owner}~{asset}~{create['fieldType']}"
+
+
+def _campaign(campaign_id: str) -> dict[str, Any]:
+    return {"customer_id": "111", "campaign_id": campaign_id, "label": f"Campaign {campaign_id}"}
+
+
+def _ad_group(ad_group_id: str) -> dict[str, Any]:
+    return {**_campaign("10"), "ad_group_id": ad_group_id, "label": "Trail Shoes"}
+
+
+def _asset(asset_id: str, asset_type: str = "CALLOUT") -> dict[str, Any]:
+    return {"customer_id": "111", "asset_id": asset_id, "asset_type": asset_type, "label": "Asset"}
+
+
+_NEW_SITELINK = {
+    "type": "sitelink",
+    "link_text": "Size Guide",
+    "description1": "Find your size",
+    "description2": "Fit tips for wide feet",
+    "final_url": "https://shop.example/size-guide",
+}
+_FREE_RETURNS = {"type": "callout", "text": "Free Returns"}
+
+
+def _args(entries: list[dict[str, Any]], change: list[dict[str, Any]] = ()) -> dict[str, Any]:
+    return GoogleAdsUpdateAssetsRequest.model_validate(
+        {"entries": entries, "change": list(change)}
+    ).model_dump(mode="json")
+
+
+def _entry():
+    entry = _writable_google_ads_entry()
+    metadata = {**entry.permissions_metadata, "currency_code": "GBP", "time_zone": "Europe/London"}
+    return replace(entry, permissions_metadata=metadata)
+
+
+async def _display(monkeypatch, account: _Account, args: dict[str, Any]) -> dict[str, Any]:
+    monkeypatch.setattr(
+        tool_module, "google_ads_client_for_principal", AsyncMock(return_value=account)
+    )
+    deps = SimpleNamespace(
+        db=None,
+        user=None,
+        workspace=None,
+        active_context=ResolvedActiveContext(entries=(_entry(),)),
+    )
+    return await tool_module._approval_display_args(deps, args)
+
+
+async def _run(monkeypatch, account: _Account, args: dict[str, Any], display: dict[str, Any]):
+    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(_entry(),)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_update_assets",
+        tool_call_id="update-assets-call",
+    )
+    request = GoogleAdsUpdateAssetsRequest.model_validate(args)
+    result = await tool_module.google_ads_update_assets(ctx, request.entries, request.change)
+    GoogleAdsUpdateAssetsOutput.model_validate(result.return_value)
+    shown = result.metadata["public_result"]
+    return GoogleAdsUpdateAssetsOutput.model_validate(shown).model_dump(mode="json")
+
+
+def _outcomes(result: dict[str, Any]) -> set[tuple[Any, ...]]:
+    return {
+        (row["target_name"], row["action"], row["asset_label"], row["outcome"])
+        for row in result["results"][0]["data"]["outcomes"]
+    }
+
+
+async def test_one_approval_adds_new_assets_once_links_removes_and_edits_where_used(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("10"),
+                "add": [_NEW_SITELINK, _FREE_RETURNS],
+            },
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [_NEW_SITELINK, _FREE_RETURNS],
+            },
+            {
+                "kind": "ad_group",
+                "ad_group": _ad_group("40"),
+                "add": [{"type": "existing", "asset": _asset("71")}],
+                "remove": [_asset("72")],
+            },
+        ],
+        [
+            {
+                "asset": _asset("70", "SITELINK"),
+                "content": {
+                    "type": "sitelink",
+                    "link_text": "Winter Sale",
+                    "final_url": "https://shop.example/sale",
+                },
+            }
+        ],
+    )
+
+    display = await _display(monkeypatch, account, args)
+    trail = display["_checks"][f"{_C}/campaigns/10"]
+    # Campaign 10 already shows "Free Returns", so only the sitelink is new there.
+    assert {(row["label"], row["state"]) for row in trail["rows"]} == {
+        ("Size Guide", "change"),
+        ("Free Returns", "already_set"),
+    }
+    assert trail["now"] == {"SITELINK": 1, "CALLOUT": 1}
+    assert display["_changes"][f"{_C}/assets/70"]["used_in"] == ["Trail", "Road"]
+    assert [body["validateOnly"] for body in account.mutates] == [True, True]
+
+    result = await _run(monkeypatch, account, args, display)
+
+    edits, build = account.mutates[2:]
+    assert edits["partialFailure"] is True
+    assert edits["mutateOperations"] == [
+        {"adGroupAssetOperation": {"remove": f"{_C}/adGroupAssets/40~72~CALLOUT"}},
+        {
+            "adGroupAssetOperation": {
+                "create": {
+                    "adGroup": f"{_C}/adGroups/40",
+                    "asset": f"{_C}/assets/71",
+                    "fieldType": "CALLOUT",
+                }
+            }
+        },
+        {
+            "assetOperation": {
+                "update": {
+                    "resourceName": f"{_C}/assets/70",
+                    "sitelinkAsset": {"linkText": "Winter Sale"},
+                },
+                "updateMask": "sitelinkAsset.linkText",
+            }
+        },
+    ]
+    # Each new asset is made once and linked to every campaign in one atomic request.
+    assert build["partialFailure"] is False
+    assert build["mutateOperations"] == [
+        {
+            "assetOperation": {
+                "create": {
+                    "sitelinkAsset": {
+                        "linkText": "Size Guide",
+                        "description1": "Find your size",
+                        "description2": "Fit tips for wide feet",
+                    },
+                    "finalUrls": ["https://shop.example/size-guide"],
+                    "resourceName": f"{_C}/assets/-1",
+                }
+            }
+        },
+        {
+            "assetOperation": {
+                "create": {
+                    "calloutAsset": {"calloutText": "Free Returns"},
+                    "resourceName": f"{_C}/assets/-2",
+                }
+            }
+        },
+        {
+            "campaignAssetOperation": {
+                "create": {
+                    "campaign": f"{_C}/campaigns/10",
+                    "asset": f"{_C}/assets/-1",
+                    "fieldType": "SITELINK",
+                }
+            }
+        },
+        {
+            "campaignAssetOperation": {
+                "create": {
+                    "campaign": f"{_C}/campaigns/20",
+                    "asset": f"{_C}/assets/-1",
+                    "fieldType": "SITELINK",
+                }
+            }
+        },
+        {
+            "campaignAssetOperation": {
+                "create": {
+                    "campaign": f"{_C}/campaigns/20",
+                    "asset": f"{_C}/assets/-2",
+                    "fieldType": "CALLOUT",
+                }
+            }
+        },
+    ]
+    assert _outcomes(result) == {
+        ("Trail", "add", "Size Guide", "added"),
+        ("Trail", "add", "Free Returns", "already_set"),
+        ("Road", "add", "Size Guide", "added"),
+        ("Road", "add", "Free Returns", "added"),
+        ("Trail Shoes", "add", "Free Returns", "added"),
+        ("Trail Shoes", "remove", "Next-Day Delivery", "removed"),
+        (None, "change", "Winter Sale", "changed"),
+    }
+
+
+async def test_an_asset_google_made_is_refused_and_nothing_is_sent_for_it(monkeypatch) -> None:
+    account = _Account()
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [{"type": "existing", "asset": _asset("73")}],
+            }
+        ],
+        [{"asset": _asset("73"), "content": {"type": "callout", "text": "Mine Now"}}],
+    )
+
+    display = await _display(monkeypatch, account, args)
+    assert (
+        display["_checks"][f"{_C}/campaigns/20"]["rows"][0]["problem"]
+        == tool_module._MADE_BY_GOOGLE
+    )
+    assert display["_changes"][f"{_C}/assets/73"]["problem"] == tool_module._MADE_BY_GOOGLE
+
+    result = await _run(monkeypatch, account, args, display)
+
+    assert all(body["validateOnly"] for body in account.mutates)
+    assert {row[3] for row in _outcomes(result)} == {"failed"}
+
+
+async def test_an_asset_edited_in_google_ads_after_approval_is_not_overwritten(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args(
+        [],
+        [{"asset": _asset("71"), "content": {"type": "callout", "text": "Free 60-Day Returns"}}],
+    )
+    display = await _display(monkeypatch, account, args)
+    account.assets["71"]["calloutAsset"]["calloutText"] = "Free Returns Always"
+
+    result = await _run(monkeypatch, account, args, display)
+
+    assert all(body["validateOnly"] for body in account.mutates)
+    (row,) = result["results"][0]["data"]["outcomes"]
+    assert (row["outcome"], row["error_code"]) == ("failed", "CHANGED_SINCE_APPROVAL")
+    assert account.assets["71"]["calloutAsset"]["calloutText"] == "Free Returns Always"
+
+
+def test_a_target_cannot_use_an_asset_from_another_account() -> None:
+    foreign = {**_asset("71"), "customer_id": "222"}
+    with pytest.raises(ValidationError, match="its own account"):
+        _args([{"kind": "campaign", "campaign": _campaign("10"), "remove": [foreign]}])

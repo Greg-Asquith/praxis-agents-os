@@ -24,6 +24,7 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveObjectsPresenter } from "@/integrations/google_ads/presenters/remove-objects"
 import { googleAdsUpdateKeywordsPresenter } from "@/integrations/google_ads/presenters/update-keywords"
+import { googleAdsUpdateAssetsPresenter } from "@/integrations/google_ads/presenters/update-assets"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -52,5 +53,6 @@ export default {
     googleAdsUpdateBudgetsPresenter,
     googleAdsUpdateKeywordsPresenter,
     googleAdsRemoveObjectsPresenter,
+    googleAdsUpdateAssetsPresenter,
   ],
 } satisfies IntegrationUiModule

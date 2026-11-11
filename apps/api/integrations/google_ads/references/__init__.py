@@ -2,6 +2,7 @@
 
 from .ad import GoogleAdsAdReference
 from .ad_group import GoogleAdsAdGroupReference
+from .asset import GoogleAdsAssetReference, GoogleAdsAssetType
 from .asset_group import GoogleAdsAssetGroupReference
 from .bidding_strategy import GoogleAdsBiddingStrategyReference
 from .campaign import GoogleAdsCampaignReference
@@ -19,6 +20,8 @@ __all__ = [
     "GoogleAdsAdGroupReference",
     "GoogleAdsAdReference",
     "GoogleAdsAssetGroupReference",
+    "GoogleAdsAssetReference",
+    "GoogleAdsAssetType",
     "GoogleAdsBiddingStrategyReference",
     "GoogleAdsCampaignBudgetReference",
     "GoogleAdsCampaignReference",

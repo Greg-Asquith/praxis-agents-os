@@ -260,7 +260,10 @@ def _ledger(
 
 def _created_name(customer_id: str, step: BuildStep, name: str) -> bool:
     collection = _COLLECTIONS[step.resource][0]
-    return re.fullmatch(rf"customers/{customer_id}/{collection}/\d+(?:~\d+)*", name) is not None
+    return (
+        re.fullmatch(rf"customers/{customer_id}/{collection}/\d+(?:~\d+)*(?:~[A-Z_]+)?", name)
+        is not None
+    )
 
 
 def _temporary_names(value: Any) -> set[str]:

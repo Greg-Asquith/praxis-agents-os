@@ -4,6 +4,7 @@
 
 import asyncio
 import contextlib
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -52,7 +53,11 @@ _CRITERION_COLLECTIONS = {
     "sharedCriterion": "sharedCriteria",
     # A campaign's use of a shared list, named `{campaign}~{list}`.
     "campaignSharedSet": "campaignSharedSets",
+    # An asset's link to a campaign or ad group, named `{owner}~{asset}~{field type}`.
+    "campaignAsset": "campaignAssets",
+    "adGroupAsset": "adGroupAssets",
 }
+_CREATED_SUFFIX = re.compile(r"\d+(?:~[A-Z_]+)?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +120,7 @@ class CriterionChange:
     """Adds or removes one criterion, such as a location, audience, or negative keyword.
 
     A criterion's value can't be updated, so changing one is a remove plus an add. A
-    campaign's use of a shared list is added and removed the same way.
+    campaign's use of a shared list, and an asset's link, are added and removed the same way.
     """
 
     # A key of `_CRITERION_COLLECTIONS`, such as `campaignCriterion`.
@@ -161,7 +166,9 @@ class CriterionChange:
         # The owner is `customers/{customer}/{campaigns, adGroups, or sharedSets}/{id}`.
         _customers, customer_id, _owners, owner_id = self.owner.split("/")
         prefix = f"customers/{customer_id}/{_CRITERION_COLLECTIONS[self.resource]}/{owner_id}~"
-        return resource_name.startswith(prefix) and resource_name[len(prefix) :].isdigit()
+        return resource_name.startswith(prefix) and bool(
+            _CREATED_SUFFIX.fullmatch(resource_name[len(prefix) :])
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -31,7 +31,7 @@ writes for recommendations (`google_ads_apply_recommendations` and
 `google_ads_dismiss_recommendations`), negative keywords, search terms, positive-keyword creation and
 bid, URL, and match type changes,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location, language, device, and ad schedule targeting, budget
-changes, and permanent removal of any supported kind. Label creation, apply,
+changes, sitelinks and callouts on campaigns and ad groups, and permanent removal of any supported kind. Label creation, apply,
 and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
@@ -890,6 +890,45 @@ for a new match type, the added keyword's resource name in `replacement`. The
 card gets every keyword; the agent gets the counts and only the keywords that
 didn't change.
 
+### Assets
+
+`google_ads_update_assets` adds, removes, and edits sitelinks and callouts in one
+approval. `entries` names one campaign or ad group each by `kind`, with `add` and
+`remove`. `add` takes new assets (`{type: sitelink, link_text, description1,
+description2, final_url}` or `{type: callout, text}`, each with optional `start_date` and
+`end_date`) or existing ones (`{type: existing, asset}`), and `remove` takes asset
+references. `change` gives existing assets new content, wherever they're used. Limits
+follow Google: link text and callout text 25 characters, description lines 35 each and
+both or neither. One call holds up to 100 targets, 20 assets a target, 1,000 links, and
+20 content changes. Account-level assets are pending, because tool arguments name an
+account only through references and there's no account reference yet.
+
+`GoogleAdsAssetReference` (`references/asset.py`) carries the asset ID and type, and the
+`google_ads_asset` resolver searches sitelinks and callouts by their text.
+`operations/assets.py` reads each target, its sitelink and callout links, the named
+assets with their `source`, and the campaigns and ad groups each named asset is linked
+to. An asset Google made (`AUTOMATICALLY_CREATED`) can't be edited or linked.
+
+A new asset is named by its content (`new_asset_key`), so the same sitelink added to 30
+campaigns is created once and linked to each. A target that already links an asset with
+the same content reports `already_set` without a write. Every new asset in an account,
+with its links, goes through the build seam in one atomic request. Links to existing
+assets and removals go through the edit seam as `campaignAsset` and `adGroupAsset`
+criterion changes, and content changes as `asset` field changes with an update mask.
+Removing a link leaves the asset in the account, because Google Ads has no asset
+removal.
+
+The trusted `_checks` display argument holds, per target, its name, status, problem,
+its sitelink and callout counts now, and one row per link with its live link, state,
+and problem. `_changes` holds, per edited asset, its live content, the campaigns and ad
+groups it's used in (the first 50, with the total), and its problem. The tool declares
+`entries` and `change` in `approval_review_fields`. Approval plans against what the
+operator saw: a link or change with no check is refused, and an asset whose content
+changed since is refused as changed since approval.
+
+The display result has one row per link and per content change with its outcome. The
+agent gets the counts and only the rows that failed or are unconfirmed, up to 50.
+
 ### Labels
 
 `google_ads_create_labels` creates 1 to 50 text labels in each selected
@@ -1257,6 +1296,28 @@ Removed Negative Keywords, each a standard `DataTable` of 10 rows a page with Ne
 Keyword, Match Type, Added To or Removed From, and Outcome, tabs per outcome, opening on
 Failed when that table has a failure.
 
+### Update Ad Assets card
+
+`lib/update-assets.ts` parses `entries` and `change` with `_accounts`, `_checks`, and
+`_changes`, and keeps each entry as received. `newAssetKey` names a new asset the same
+way the server does, so the card matches each link to its check. Field problems
+(`fieldProblem`) are checked on the card: a field over its limit, a missing link text or
+URL, and one description line without the other. Any problem, and any edit Google
+hasn't checked, blocks approval.
+
+The card (`components/update-assets-approval.tsx`) shows **New Sitelinks** and **New
+Callouts** first, each asset once however many targets it's added to, with every field
+editable in the row and its character count. An edit changes the asset in every
+target. **Add Campaign** and **Add Ad Group** add a target with every new asset in the
+request. The `ParentTable` of campaigns and ad groups (`assetParents`) has Sitelinks
+Now, Callouts Now, To Add, To Remove, and Problems, and notes a campaign left with fewer
+than four sitelinks. Below it, one row per link (new, existing, or removed) with
+**Cancel This Change** and **Undo**; a click on a parent filters it. **Edit Assets**
+lists each content change with what each field says now and where the asset is used.
+
+The result (`components/update-assets-outcome.tsx`) is one `DataTable` with a row per
+asset and target, tabs per outcome, opening on Failed when anything failed.
+
 ### Optimise Search Terms card
 
 `lib/search-terms.ts` parses `decisions` with `_accounts` and `_checks`, and keeps each
@@ -1569,4 +1630,4 @@ summary or Needs Attention line clears the selection. From ten rows it
 gets search and a Needs Attention tab. A caller can draw its own cells with
 `renderCell`. Add Keywords, Update Keywords, Update Targeting, Update
 Status, the create and edit cards, Update Budgets, Remove Items, Update Negative
-Keywords, and Optimise Search Terms use it.
+Keywords, Optimise Search Terms, and Update Ad Assets use it.
