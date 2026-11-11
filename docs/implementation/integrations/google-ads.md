@@ -31,7 +31,7 @@ writes for recommendations (`google_ads_apply_recommendations` and
 `google_ads_dismiss_recommendations`), negative keywords, search terms, positive-keyword creation and
 bid, URL, and match type changes,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location, language, device, and ad schedule targeting, budget
-changes, sitelinks and callouts on campaigns and ad groups, and permanent removal of any supported kind. Label creation, apply,
+changes, sitelinks and callouts on campaigns and ad groups, conversion action settings and account goals, and permanent removal of any supported kind. Label creation, apply,
 and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
@@ -992,6 +992,40 @@ and each video ID, never image bytes. Each result row has the item's outcome
 (`uploaded`, `linked`, `failed`, or `unverified`), its `GoogleAdsAssetReference`, and an
 image's size, dimensions, and fits.
 
+### Conversions
+
+`google_ads_update_conversions` changes existing conversion actions and which account
+goals count for bidding, in one account per call and one approval. It's approval only:
+these settings change what Smart Bidding optimises for. Creating or removing actions,
+tag setup, and campaign goals (305 C) are out of scope.
+
+| Argument | Entry |
+| --- | --- |
+| `changes` | One `GoogleAdsConversionActionReference` (`google_ads_conversion_action`) and only what changes: `status` (`ENABLED` or `HIDDEN`), `primary`, `default_value` (a decimal string, zero allowed), `currency`, `always_use_default_value`, `counting` (`ONE_PER_CLICK` or `MANY_PER_CLICK`), `click_through_days` (1 to 90), and `view_through_days` (1 to 30). |
+| `account_goals` | One `GoogleAdsConversionGoalReference` (`google_ads_conversion_goal`: customer, category, and origin) and `biddable`. |
+
+Every entry must be in the same account, because the entries are checked and sent as one
+edit seam run. `operations/conversion_settings.py` maps each setting to its
+`ConversionAction` path (`primaryForGoal`, `valueSettings.defaultValue`,
+`countingType`, and so on) and writes `customerConversionGoals/{category}~{origin}`
+`biddable`. Google makes account goals itself, so they can only be updated. The tool
+never writes the deprecated `include_in_conversions_metric`. Windows are int64 fields,
+which Google's JSON writes as strings.
+
+Before approval the tool reads every conversion action and account goal in the account
+(accounts hold a handful) and the last 30 days of `metrics.all_conversions` by
+`segments.conversion_action`, so secondary actions count too. A goal's count is the sum
+of its live actions. A failed metrics read leaves the counts out rather than blocking.
+It refuses a removed action, an action another account owns under cross-account
+conversion tracking (`owner_customer`), and a goal the account doesn't have. Google's
+dry run reports any setting an action's type doesn't allow, such as values on imported
+actions, as a problem on the card. After approval the edit seam refuses an action
+changed since the card was shown and reads every item back.
+
+The resolvers are in `entity_resolvers/conversion_action.py`. Conversion actions page
+by ID and search by name; account goals list every goal of each selected account,
+filtered by words in their label, on one page.
+
 ### Keyword research
 
 `google_ads_research_keywords` is a read with auto approval. It calls Keyword Planner
@@ -1431,6 +1465,24 @@ review. **Add Images** searches workspace Files, and each YouTube link is its ow
 
 The result (`components/upload-media-outcome.tsx`) is one `DataTable` with Name, Kind,
 Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed.
+
+### Update Conversions card
+
+`lib/update-conversions.ts` parses `changes` and `account_goals` with `_accounts` and
+`_checks` into one row per item and setting. The card
+(`components/update-conversions-approval.tsx`) is one `DataTable`: Conversion Action,
+Setting, the live value then an inline editor in Change, Last 30 Days, and Cancel.
+Account goals sit in the same table, marked Account goal. There is no parent table:
+conversion actions and goals belong to the account, not to campaigns. The banner reads
+**Bidding will optimise for different conversions** when a sent change touches the goal
+type, value, or account goals, with a note beside the table. **Add a Change** offers an
+action's other settings at their live values. Each control edits one item, so only one of
+the two request fields changes at a time; cancelled settings live in `retained` for Undo.
+From ten rows the table gets search and a Needs Attention tab.
+
+The result (`components/update-conversions-outcome.tsx`) is one `DataTable` with
+Conversion Action, Setting, Before, After, and Outcome, opening on Failed when anything
+failed.
 
 ### Research Keywords card
 

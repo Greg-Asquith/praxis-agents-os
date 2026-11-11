@@ -209,6 +209,7 @@ def _google_ads_choice_entity_ids(choice: EntityChoice) -> tuple[int, int] | Non
         "google_ads_bidding_strategy": "bidding_strategy_id",
         "google_ads_campaign_budget": "budget_id",
         "google_ads_campaign": "campaign_id",
+        "google_ads_conversion_action": "conversion_action_id",
         "google_ads_label": "label_id",
         "google_ads_shared_set": "shared_set_id",
     }

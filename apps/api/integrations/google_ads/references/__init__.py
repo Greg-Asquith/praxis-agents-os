@@ -7,6 +7,10 @@ from .asset_group import GoogleAdsAssetGroupReference
 from .bidding_strategy import GoogleAdsBiddingStrategyReference
 from .campaign import GoogleAdsCampaignReference
 from .campaign_budget import GoogleAdsCampaignBudgetReference
+from .conversion_action import (
+    GoogleAdsConversionActionReference,
+    GoogleAdsConversionGoalReference,
+)
 from .keyword import GoogleAdsKeywordReference, positive_keyword_reference_from_row
 from .label import (
     GoogleAdsLabelAssociationCounts,
@@ -25,6 +29,8 @@ __all__ = [
     "GoogleAdsBiddingStrategyReference",
     "GoogleAdsCampaignBudgetReference",
     "GoogleAdsCampaignReference",
+    "GoogleAdsConversionActionReference",
+    "GoogleAdsConversionGoalReference",
     "GoogleAdsKeywordReference",
     "GoogleAdsLabelAssociationCounts",
     "GoogleAdsLabelReference",
