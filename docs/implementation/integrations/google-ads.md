@@ -21,8 +21,36 @@ trusted `_accounts` list: `customer_id`, `name`, `currency`, and
 status, currency, time zone, manager flag, auto-tagging, and today's and
 this month's cost. Costs are exact decimal strings in the account currency.
 Today is the current date in the account time zone. Manager accounts have
-no cost of their own, so the tool skips the cost query and returns null
-costs. Billing and spending limits are pending.
+no cost of their own, so the tool skips the cost and billing queries and
+returns null costs and billing.
+
+For every other account, `data.billing` comes from
+`operations/account_billing.py`, which reads `billing_setup` and then, when
+the account has a setup that isn't cancelled, `account_budget` (approved and
+pending only). Google reports billing only for accounts paid by monthly
+invoice. An account with no billing setup returns `monthly_invoicing:
+false` and state `not_monthly_invoicing`, and its card says **Managed in
+Google Ads**; this isn't an error. The fields are as follows:
+
+| Field | Content |
+| --- | --- |
+| `state` | `not_monthly_invoicing`, `setup_pending` (no approved setup), `no_active_limit` (ads don't run), `active`, `running_low`, or `limit_reached`. |
+| `billing_setup` and `payments_*` | The approved setup, or the newest one waiting for Google, as a `GoogleAdsBillingSetupReference` (`references/billing.py`), with the payments account and profile that pay. |
+| `active_limit` | The account spending limit in force, with its `GoogleAdsAccountBudgetReference`, the adjusted limit (null for no ceiling), served spend, the amount left, its dates, and the purchase order number. |
+| `queued_limits` and `last_ended_limit` | Approved limits that start later, soonest first, and the latest one that ended. |
+| `pending_changes` | Each budget's `pending_proposal`: the kind (`create`, `update`, `end`, or `remove`), the proposed limit, dates, and when it was submitted. A new limit waiting for review is a pending budget with a `create` change. |
+
+The amount left is the adjusted limit, which Google enforces, minus
+`amount_served_micros`. Served spend can differ from invoiced spend, and the
+card says so. Budgets made before 2019 have no approved start, so the start
+falls back to the proposed start. Dates are Google's
+`YYYY-MM-DD HH:MM:SS` in the account time zone, compared with the current
+time there. `running_low` means less than seven days of this month's
+average daily cost is left; `limit_reached` means nothing is left. The card
+adds **Limit Left** and **Billing** columns and a **Needs Attention** tab
+for those two states, `no_active_limit`, `setup_pending`, and suspended
+accounts. Raw payments, setup, and limit IDs are hidden columns. Listing
+payments accounts is pending, with billing setup changes (314 D).
 
 ## Backend writes
 

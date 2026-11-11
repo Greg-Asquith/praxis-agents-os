@@ -65,11 +65,15 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_get_accounts",
     function=google_ads_get_accounts,
     description=(
-        "Read name, status, currency, time zone, manager flag, auto-tagging, and today's and "
-        "this month's cost for every Google Ads account selected in Active Context. Costs are "
-        "exact decimal strings in major units of data.currency, and today and this month "
-        "follow data.time_zone. Manager accounts have null costs; read their client accounts "
-        "instead."
+        "Read name, status, currency, time zone, manager flag, auto-tagging, today's and "
+        "this month's cost, and billing for every Google Ads account selected in Active "
+        "Context. Money is exact decimal strings in major units of data.currency, and dates "
+        "follow data.time_zone. data.billing names who pays, the account spending limit in "
+        "force with the amount left, queued limits, and changes waiting for Google's review. "
+        "billing.state is running_low when less than seven days of this month's average daily "
+        "cost is left, and limit_reached when ads have stopped for the limit. "
+        "monthly_invoicing false means billing is managed in Google Ads, not an error. "
+        "Manager accounts have null costs and billing; read their client accounts instead."
     ),
     provider="google_ads",
     label="Get Google Ads Accounts",

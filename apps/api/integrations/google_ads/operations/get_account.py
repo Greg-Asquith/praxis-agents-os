@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/get_account.py
 
-"""Read one Google Ads account's settings and this month's cost."""
+"""Read one Google Ads account's settings, this month's cost, and its billing."""
 
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -11,6 +11,7 @@ from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient
+from .account_billing import read_account_billing
 from .utils import nonnegative_int, stream_rows
 
 _OPERATION = "get_account"
@@ -54,16 +55,30 @@ async def get_account(
     currency = str(customer.get("currencyCode") or "")
     time_zone = str(customer.get("timeZone") or "")
     manager = bool(customer.get("manager", False))
-    cost_today = cost_this_month = None
+    name = str(customer.get("descriptiveName") or "").strip() or None
+    cost_today = cost_this_month = billing = None
+    # Manager accounts have no cost, billing setup, or spending limit of their own.
     if not manager:
+        local_now = _account_now(time_zone, now)
         cost_rows = stream_rows(
             await _search(client, customer_id, login_customer_id, _COST_QUERY, max_response_bytes)
         )
-        cost_today, cost_this_month = _costs(cost_rows, _account_today(time_zone, now))
+        today_micros, month_micros = _costs(cost_rows, local_now)
+        cost_today = _money(today_micros) if local_now is not None else None
+        cost_this_month = _money(month_micros)
+        billing = await read_account_billing(
+            client,
+            customer_id=customer_id,
+            account_name=name or customer_id,
+            login_customer_id=login_customer_id,
+            max_response_bytes=max_response_bytes,
+            local_now=local_now or (now or datetime.now(UTC)),
+            cost_this_month_micros=month_micros,
+        )
     auto_tagging = customer.get("autoTaggingEnabled")
     return {
         "customer_id": customer_id,
-        "name": str(customer.get("descriptiveName") or "").strip() or None,
+        "name": name,
         "status": str(customer.get("status") or "UNKNOWN"),
         "currency": currency,
         "time_zone": time_zone,
@@ -71,6 +86,7 @@ async def get_account(
         "auto_tagging_enabled": auto_tagging if isinstance(auto_tagging, bool) else None,
         "cost_today": cost_today,
         "cost_this_month": cost_this_month,
+        "billing": billing,
     }
 
 
@@ -91,15 +107,16 @@ async def _search(
     )
 
 
-def _account_today(time_zone: str, now: datetime | None) -> str | None:
+def _account_now(time_zone: str, now: datetime | None) -> datetime | None:
     try:
         zone = ZoneInfo(time_zone)
     except (ValueError, ZoneInfoNotFoundError):
         return None
-    return (now or datetime.now(UTC)).astimezone(zone).date().isoformat()
+    return (now or datetime.now(UTC)).astimezone(zone)
 
 
-def _costs(rows: list[dict[str, Any]], today: str | None) -> tuple[str | None, str]:
+def _costs(rows: list[dict[str, Any]], local_now: datetime | None) -> tuple[int, int]:
+    today = local_now.date().isoformat() if local_now is not None else None
     today_micros = 0
     month_micros = 0
     for row in rows:
@@ -109,7 +126,7 @@ def _costs(rows: list[dict[str, Any]], today: str | None) -> tuple[str | None, s
         month_micros += micros or 0
         if isinstance(segments, dict) and segments.get("date") == today:
             today_micros += micros or 0
-    return (_money(today_micros) if today is not None else None, _money(month_micros))
+    return today_micros, month_micros
 
 
 def _money(micros: int) -> str:

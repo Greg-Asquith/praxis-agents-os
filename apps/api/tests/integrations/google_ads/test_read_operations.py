@@ -28,6 +28,7 @@ from integrations.google_ads.operations.utils import (
     stream_rows,
 )
 from integrations.google_ads.tools.run_report import google_ads_run_report
+from integrations.google_ads.tools.schemas.accounts import GoogleAdsAccountData
 from integrations.google_ads.tools.schemas.report_fields import (
     GoogleAdsGetReportFieldOutput,
     GoogleAdsListReportFieldsOutput,
@@ -392,9 +393,18 @@ async def test_list_report_fields_retains_all_pages_and_compatibility_by_default
 
 
 class _AccountClient:
-    def __init__(self, customer: dict, cost_rows: list[dict]) -> None:
+    def __init__(
+        self,
+        customer: dict,
+        cost_rows: list[dict],
+        *,
+        setups: list[dict] = (),
+        budgets: list[dict] = (),
+    ) -> None:
         self.customer = customer
         self.cost_rows = cost_rows
+        self.setups = list(setups)
+        self.budgets = list(budgets)
         self.queries: list[str] = []
 
     async def post(self, _path: str, **kwargs):
@@ -402,6 +412,10 @@ class _AccountClient:
         self.queries.append(query)
         if "metrics.cost_micros" in query:
             return [{"results": self.cost_rows}]
+        if "FROM billing_setup" in query:
+            return [{"results": [{"billingSetup": setup} for setup in self.setups]}]
+        if "FROM account_budget" in query:
+            return [{"results": [{"accountBudget": budget} for budget in self.budgets]}]
         return [{"results": [{"customer": self.customer}]}]
 
 
@@ -472,3 +486,112 @@ def test_account_facts_require_a_refresh_when_time_zone_is_missing() -> None:
 
     with pytest.raises(ModelRetry, match="Refresh the connection and retry"):
         account_facts(entry)
+
+
+_APPROVED_SETUP = {
+    "id": "71",
+    "status": "APPROVED",
+    "paymentsAccountInfo": {
+        "paymentsAccountId": "1234-5678-9012-3456",
+        "paymentsAccountName": "Northwind invoices",
+        "paymentsProfileName": "Northwind Group",
+    },
+}
+
+
+async def _billing(client: _AccountClient, now: datetime) -> dict:
+    account = await get_account(
+        client,  # type: ignore[arg-type]
+        customer_id="333",
+        login_customer_id="111",
+        max_response_bytes=100_000,
+        now=now,
+    )
+    GoogleAdsAccountData.model_validate(account)
+    return account["billing"]
+
+
+async def test_account_billing_reads_a_pre_2019_limit_with_no_ceiling() -> None:
+    # Google leaves the approved start empty for budgets made before 2019.
+    client = _AccountClient(
+        _CUSTOMER,
+        [],
+        setups=[_APPROVED_SETUP],
+        budgets=[
+            {
+                "id": "9",
+                "status": "APPROVED",
+                "adjustedSpendingLimitType": "INFINITE",
+                "amountServedMicros": "88000000",
+                "proposedStartDateTime": "2018-03-01 00:00:00",
+                "approvedEndTimeType": "FOREVER",
+            }
+        ],
+    )
+
+    billing = await _billing(client, datetime(2026, 11, 11, 12, tzinfo=UTC))
+
+    assert billing["state"] == "active"
+    assert billing["payments_account_name"] == "Northwind invoices"
+    limit = billing["active_limit"]
+    assert (limit["limit"], limit["left"], limit["served"]) == (None, None, "88")
+    assert (limit["starts"], limit["ends"]) == ("2018-03-01 00:00:00", None)
+
+
+async def test_account_billing_runs_low_under_seven_days_of_average_cost() -> None:
+    # 10 days of £100 a day leaves £650 against a £2,000 limit: six and a half days.
+    client = _AccountClient(
+        _CUSTOMER,
+        [{"segments": {"date": "2026-11-05"}, "metrics": {"costMicros": "1000000000"}}],
+        setups=[{**_APPROVED_SETUP, "id": "70", "status": "CANCELLED"}, _APPROVED_SETUP],
+        budgets=[
+            {
+                "id": "12",
+                "status": "APPROVED",
+                "adjustedSpendingLimitMicros": "2000000000",
+                "amountServedMicros": "1350000000",
+                "approvedStartDateTime": "2026-11-01 00:00:00",
+                "approvedEndTimeType": "FOREVER",
+                "pendingProposal": {
+                    "accountBudgetProposal": "customers/333/accountBudgetProposals/5",
+                    "proposalType": "UPDATE",
+                    "spendingLimitMicros": "5000000000",
+                },
+            },
+            {
+                "id": "13",
+                "status": "APPROVED",
+                "approvedSpendingLimitMicros": "3000000000",
+                "approvedStartDateTime": "2026-12-01 00:00:00",
+            },
+            {
+                "id": "8",
+                "status": "APPROVED",
+                "adjustedSpendingLimitMicros": "1000000000",
+                "approvedStartDateTime": "2026-10-01 00:00:00",
+                "approvedEndDateTime": "2026-10-31 23:59:59",
+            },
+        ],
+    )
+
+    billing = await _billing(client, datetime(2026, 11, 10, 12, tzinfo=UTC))
+
+    assert billing["state"] == "running_low"
+    assert billing["billing_setup"]["billing_setup_id"] == "71"
+    assert billing["active_limit"]["left"] == "650"
+    assert [item["account_budget"]["account_budget_id"] for item in billing["queued_limits"]] == [
+        "13"
+    ]
+    assert billing["last_ended_limit"]["account_budget"]["account_budget_id"] == "8"
+    assert billing["pending_changes"][0]["kind"] == "update"
+    assert billing["pending_changes"][0]["limit"] == "5000"
+
+
+async def test_account_billing_reports_accounts_not_on_monthly_invoicing() -> None:
+    client = _AccountClient(_CUSTOMER, [])
+
+    billing = await _billing(client, datetime(2026, 11, 11, 12, tzinfo=UTC))
+
+    assert billing["monthly_invoicing"] is False
+    assert billing["state"] == "not_monthly_invoicing"
+    assert not any("FROM account_budget" in query for query in client.queries)

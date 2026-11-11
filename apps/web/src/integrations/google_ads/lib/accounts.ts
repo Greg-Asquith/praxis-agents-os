@@ -1,12 +1,56 @@
 // apps/web/src/integrations/google_ads/lib/accounts.ts
 
-import { CURRENCY_CODE_PATTERN, googleAdsId } from "@/integrations/google_ads/lib/field-values"
-import { isRecord } from "@/lib/guards"
+import {
+  CURRENCY_CODE_PATTERN,
+  googleAdsId,
+  textOrNull,
+} from "@/integrations/google_ads/lib/field-values"
+import { isOneOf, isRecord } from "@/lib/guards"
 
 export type GoogleAdsApprovalAccount = { currencyCode: string; label: string; timeZone: string }
 
+export type GoogleAdsBillingState =
+  | "not_monthly_invoicing"
+  | "setup_pending"
+  | "no_active_limit"
+  | "active"
+  | "running_low"
+  | "limit_reached"
+
+const BILLING_STATES: ReadonlySet<GoogleAdsBillingState> = new Set([
+  "not_monthly_invoicing",
+  "setup_pending",
+  "no_active_limit",
+  "active",
+  "running_low",
+  "limit_reached",
+])
+
+type GoogleAdsSpendingLimit = {
+  accountBudgetId: string
+  ends: string | null
+  // Null when the limit has no ceiling.
+  left: string | null
+  limit: string | null
+  served: string
+}
+
+type GoogleAdsPendingLimitChange = { kind: string; limit: string | null }
+
+export type GoogleAdsAccountBilling = {
+  activeLimit: GoogleAdsSpendingLimit | null
+  billingSetupId: string | null
+  paymentsAccountId: string | null
+  paymentsAccountName: string | null
+  paymentsProfileName: string | null
+  pendingChanges: GoogleAdsPendingLimitChange[]
+  queuedLimits: number
+  state: GoogleAdsBillingState
+}
+
 export type GoogleAdsAccountOverview = {
   autoTaggingEnabled: boolean | null
+  billing: GoogleAdsAccountBilling | null
   costThisMonth: string | null
   costToday: string | null
   currency: string
@@ -93,7 +137,9 @@ export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountO
   const autoTagging = value["auto_tagging_enabled"] ?? null
   const costToday = value["cost_today"] ?? null
   const costThisMonth = value["cost_this_month"] ?? null
+  const billing = value["billing"] == null ? null : parseBilling(value["billing"])
   if (
+    billing === undefined ||
     !customerId ||
     (name !== null && typeof name !== "string") ||
     typeof status !== "string" ||
@@ -109,6 +155,7 @@ export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountO
   }
   return {
     autoTaggingEnabled: autoTagging,
+    billing,
     costThisMonth,
     costToday,
     currency,
@@ -118,6 +165,54 @@ export function parseGoogleAdsAccountOverview(value: unknown): GoogleAdsAccountO
     status,
     timeZone,
   }
+}
+
+// Undefined when the billing block is malformed.
+function parseBilling(value: unknown): GoogleAdsAccountBilling | undefined {
+  if (!isRecord(value) || !isOneOf(BILLING_STATES, value["state"])) return undefined
+  const activeLimit = value["active_limit"] == null ? null : parseLimit(value["active_limit"])
+  const { pending_changes: pending, queued_limits: queued } = value
+  if (activeLimit === undefined || !Array.isArray(pending) || !Array.isArray(queued)) {
+    return undefined
+  }
+  const pendingChanges: GoogleAdsPendingLimitChange[] = []
+  for (const item of pending) {
+    if (!isRecord(item) || typeof item["kind"] !== "string") return undefined
+    const limit = item["limit"] ?? null
+    if (!isMoneyOrNull(limit)) return undefined
+    pendingChanges.push({ kind: item["kind"], limit })
+  }
+  const setup = isRecord(value["billing_setup"]) ? value["billing_setup"] : {}
+  return {
+    activeLimit,
+    billingSetupId: googleAdsId(setup["billing_setup_id"]),
+    paymentsAccountId: textOrNull(value["payments_account_id"]),
+    paymentsAccountName: textOrNull(value["payments_account_name"]),
+    paymentsProfileName: textOrNull(value["payments_profile_name"]),
+    pendingChanges,
+    queuedLimits: queued.length,
+    state: value["state"],
+  }
+}
+
+function parseLimit(value: unknown): GoogleAdsSpendingLimit | undefined {
+  if (!isRecord(value) || !isRecord(value["account_budget"])) return undefined
+  const accountBudgetId = googleAdsId(value["account_budget"]["account_budget_id"])
+  const limit = value["limit"] ?? null
+  const left = value["left"] ?? null
+  const ends = value["ends"] ?? null
+  const { served } = value
+  if (
+    !accountBudgetId ||
+    !isMoneyOrNull(limit) ||
+    !isMoneyOrNull(left) ||
+    typeof served !== "string" ||
+    !MONEY_PATTERN.test(served) ||
+    (ends !== null && typeof ends !== "string")
+  ) {
+    return undefined
+  }
+  return { accountBudgetId, ends, left, limit, served }
 }
 
 function isMoneyOrNull(value: unknown): value is string | null {

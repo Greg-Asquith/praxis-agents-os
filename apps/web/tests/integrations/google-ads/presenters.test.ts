@@ -14,9 +14,22 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
 describe("Google Ads tool presenters", () => {
-  it("renders one accounts table with each account's own currency", () => {
+  it("renders one accounts table with each account's own currency and limit left", () => {
     const account = {
       auto_tagging_enabled: true,
+      billing: {
+        active_limit: {
+          account_budget: { account_budget_id: "12" },
+          ends: null,
+          left: "658.25",
+          limit: "3000",
+          served: "2341.75",
+        },
+        billing_setup: { billing_setup_id: "71" },
+        pending_changes: [],
+        queued_limits: [],
+        state: "running_low",
+      },
       cost_this_month: "24906.55",
       cost_today: "1284.1",
       currency: "GBP",
@@ -39,6 +52,7 @@ describe("Google Ads tool presenters", () => {
               entry(account),
               entry({
                 ...account,
+                billing: null,
                 cost_this_month: "8115.2",
                 cost_today: "402.88",
                 currency: "EUR",
@@ -54,6 +68,7 @@ describe("Google Ads tool presenters", () => {
 
     expect(html).toMatch(/£1,284\.10/)
     expect(html).toMatch(/€8,115\.20/)
+    expect(html).toMatch(/£658\.25/)
     expect(html).toContain("482-193-0571")
   })
 
