@@ -38,6 +38,7 @@ export type AdEdits = {
 }
 
 type AdChange = {
+  adGroupId: string
   adId: string
   customerId: string
   edits: AdEdits
@@ -157,6 +158,7 @@ function parseChange(value: unknown): AdChange | null {
   const adId = googleAdsId(reference["ad_id"])
   if (customerId === null || adGroupId === null || adId === null) return null
   return {
+    adGroupId,
     adId,
     customerId,
     edits: editsOf(value),
@@ -433,6 +435,27 @@ export function cancelledEntries(
     const change = parseChange(entry)
     return change !== null && !current.has(change.key)
   })
+}
+
+/** The ad group an ad sits in, as the `adGroups` resource name. */
+export function adGroupOf(change: AdChange): string {
+  return `customers/${change.customerId}/adGroups/${change.adGroupId}`
+}
+
+/** Brings back the cancelled ads that match, after the ones still requested. */
+export function restoredAds(
+  args: UpdateAdsArgs,
+  cancelled: readonly Record<string, unknown>[],
+  match: (change: AdChange) => boolean
+): { cancelled: Record<string, unknown>[]; changes: Record<string, unknown>[] } {
+  const restored = cancelled.filter((entry) => {
+    const change = parseChange(entry)
+    return change !== null && match(change)
+  })
+  return {
+    cancelled: cancelled.filter((entry) => !restored.includes(entry)),
+    changes: [...args.changes.map((change) => change.entry), ...restored],
+  }
 }
 
 export function adsNeedCheck(args: UpdateAdsArgs, checked: UpdateAdsArgs): boolean {

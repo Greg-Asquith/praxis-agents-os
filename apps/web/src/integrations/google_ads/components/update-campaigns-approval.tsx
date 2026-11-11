@@ -18,6 +18,7 @@ import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { BiddingCell, BiddingChange } from "@/integrations/google_ads/components/bidding-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
@@ -59,10 +60,16 @@ import {
 const TOOLS_FROM = 10
 
 const COLUMNS: DataColumn[] = [
-  { key: "campaign", kind: "text", label: "Campaign", width: 220 },
-  { key: "setting", kind: "text", label: "Setting", width: 150 },
-  { key: "change", kind: "text", label: "Change", width: 420 },
+  // The campaigns table above names them, so this column is for the chooser and the export.
+  { key: "campaign", kind: "text", label: "Campaign", width: 220, hidden: true },
+  { key: "setting", kind: "text", label: "Setting", width: 170 },
+  { key: "change", kind: "text", label: "Change", width: 440 },
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "changes", kind: "number", label: "Changes", width: 100 },
+  { key: "problems", kind: "text", label: "Problems", width: 140 },
 ]
 
 const ON_OFF = [
@@ -93,6 +100,12 @@ export function UpdateCampaignsApproval({
   const many = new Set(rows.map((row) => row.key)).size > 1
   const tools = rows.length >= TOOLS_FROM
   const accountIds = [...new Set(rows.filter((row) => !row.cancelled).map((row) => row.customerId))]
+  const [campaign, setCampaign] = useState<string | null>(null)
+  const parents = useMemo(
+    () => campaignParents(rows, args.accounts, accountIds.length > 1),
+    [accountIds.length, args.accounts, rows]
+  )
+  const shown = campaign === null ? rows : rows.filter((row) => row.key === campaign)
 
   // A review redraws the card, so cancelled settings live beside the request for Undo.
   const save = (changes: Record<string, unknown>[], nextCancelled: readonly CancelledSetting[]) => {
@@ -125,12 +138,12 @@ export function UpdateCampaignsApproval({
       [...cancelled, ...items]
     )
   }
-  const undo = (id: string) => {
-    const item = cancelled.find((entry) => `${entry.key}|${entry.setting}` === id)
-    if (item)
+  const undo = (match: (item: CancelledSetting) => boolean) => {
+    const items = cancelled.filter(match)
+    if (items.length > 0)
       save(
-        restoredChanges(args, [item]),
-        cancelled.filter((entry) => entry !== item)
+        restoredChanges(args, items),
+        cancelled.filter((item) => !items.includes(item))
       )
   }
   // One campaign shows bidding in its own section, beside the list of its other settings.
@@ -146,7 +159,7 @@ export function UpdateCampaignsApproval({
           cancel([row.id])
         }}
         onUndo={() => {
-          undo(row.id)
+          undo((item) => `${item.key}|${item.setting}` === row.id)
         }}
         row={row}
       />
@@ -230,10 +243,28 @@ export function UpdateCampaignsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setCampaign(null)
               setTab("attention")
             }}
           />
         </>
+      ) : null}
+      {many ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={(key) => {
+            cancel(idsOf((row) => row.key === key))
+          }}
+          onSelect={setCampaign}
+          onUndo={(key) => {
+            undo((item) => item.key === key)
+          }}
+          rowNoun={["campaign", "campaigns"]}
+          rows={parents}
+          selected={campaign}
+        />
       ) : null}
       {many ? (
         <DataTable
@@ -245,7 +276,7 @@ export function UpdateCampaignsApproval({
           renderCell={(column, dataRow) => {
             const row = byId.get(String(dataRow["id"]))
             if (!row) return null
-            if (column.key === "campaign") return <CampaignCell row={row} />
+            if (column.key === "setting") return <SettingCell row={row} />
             if (column.key === "change" || column.key === "cancel") return cells(row)[column.key]
             return null
           }}
@@ -254,7 +285,7 @@ export function UpdateCampaignsApproval({
           }
           rowDetails={false}
           rowNoun={["change", "changes"]}
-          rows={rows.map((row) => ({
+          rows={shown.map((row) => ({
             campaign: row.campaignName,
             cancel: "",
             change: valueText(row.setting, row.value, rowContext(args, row)),
@@ -323,7 +354,7 @@ export function UpdateCampaignsApproval({
                   setValue([row.id], value)
                 }}
                 onUndo={() => {
-                  undo(row.id)
+                  undo((item) => `${item.key}|${item.setting}` === row.id)
                 }}
                 row={row}
               />
@@ -336,11 +367,13 @@ export function UpdateCampaignsApproval({
         onAdd={(key, setting, value) => {
           save(addedCampaignChanges(args, key, setting, value), cancelled)
         }}
-        targets={args.changes.map((change) => ({
-          key: change.key,
-          name: rows.find((row) => row.key === change.key)?.campaignName ?? change.label,
-          options: addableCampaignSettings(args, checked, rows, change.key),
-        }))}
+        targets={args.changes
+          .filter((change) => campaign === null || change.key === campaign)
+          .map((change) => ({
+            key: change.key,
+            name: rows.find((row) => row.key === change.key)?.campaignName ?? change.label,
+            options: addableCampaignSettings(args, checked, rows, change.key),
+          }))}
         titles={SETTING_TITLES}
       />
       {needsCheck(args, checked) && args.changes.length > 0 ? (
@@ -389,13 +422,31 @@ function Problem({ row }: { row: CampaignRow }) {
   ) : null
 }
 
-function CampaignCell({ row }: { row: CampaignRow }) {
-  return (
-    <div className="grid min-w-0 gap-0.5 text-sm">
-      <span className="font-medium wrap-anywhere whitespace-normal">{row.campaignName}</span>
-      <Problem row={row} />
-    </div>
-  )
+/** One row per campaign, in the order its settings first appear. */
+function campaignParents(
+  rows: readonly CampaignRow[],
+  accounts: UpdateCampaignsArgs["accounts"],
+  showAccount: boolean
+): ParentRow[] {
+  const campaigns = new Map<string, CampaignRow[]>()
+  for (const row of rows) campaigns.set(row.key, [...(campaigns.get(row.key) ?? []), row])
+  return [...campaigns].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const problems = live.filter((row) => row.problem !== null).length
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? key,
+      problems,
+      values: {
+        changes: live.length,
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+      },
+    }
+  })
 }
 
 function SettingCell({ row }: { row: CampaignRow }) {

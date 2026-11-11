@@ -7,10 +7,12 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
+  adGroupOf,
   adRows,
   editsFor,
   mergedCopy,
   parseUpdateAdsArgs,
+  restoredAds,
   updateAdsBlock,
   withEdits,
   type LiveCopy,
@@ -142,6 +144,19 @@ describe("approval", () => {
     expect(updateAdsBlock(next, checked)).toBe(
       "Click Check Changes so Google can check your edits, then approve."
     )
+  })
+
+  it("brings back every cancelled ad in an ad group, and only that ad group", () => {
+    const [kept, first, second] = raw(["30", "31", "32"]).changes
+    if (!kept || !first || !second) throw new Error("Expected three changes")
+    const other = { ad: { ...ad("40"), ad_group_id: "21" }, ...swap }
+    const restored = restoredAds(
+      parsed(raw(["30"])),
+      [first, other, second],
+      (change) => adGroupOf(change) === `customers/${CUSTOMER}/adGroups/20`
+    )
+    expect(restored.changes).toEqual([kept, first, second])
+    expect(restored.cancelled).toEqual([other])
   })
 })
 

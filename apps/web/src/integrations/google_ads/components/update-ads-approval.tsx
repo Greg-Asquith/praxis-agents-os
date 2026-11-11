@@ -18,6 +18,7 @@ import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary } from "@/integrations/ads/components/change-summary"
 import { FormField, TextField } from "@/integrations/ads/components/controls"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { SearchAdPreview } from "@/integrations/google_ads/components/search-ad-preview"
 import { TextAssetList } from "@/integrations/google_ads/components/text-asset-list"
@@ -32,6 +33,7 @@ import {
 } from "@/integrations/google_ads/lib/create-ads"
 import {
   adCounts,
+  adGroupOf,
   adRows,
   adsNeedCheck,
   cancelledEntries,
@@ -39,6 +41,7 @@ import {
   editsFor,
   editsLine,
   previewCopy,
+  restoredAds,
   sharedEdits,
   updateAdsBannerDetail,
   withEdits,
@@ -53,11 +56,17 @@ import { cn } from "@/lib/utils"
 const TOOLS_FROM = 10
 
 const COLUMNS: DataColumn[] = [
-  { key: "ad", kind: "text", label: "Ad", width: 240 },
-  { key: "adGroup", kind: "text", label: "Ad Group", width: 170 },
-  { key: "campaign", kind: "text", label: "Campaign", width: 170 },
+  { key: "ad", kind: "text", label: "Ad", width: 320 },
+  // The ad groups table above names them, so these columns are for the chooser and the export.
+  { key: "adGroup", kind: "text", label: "Ad Group", width: 170, hidden: true },
+  { key: "campaign", kind: "text", label: "Campaign", width: 170, hidden: true },
   { key: "headlines", kind: "text", label: "Headlines", width: 100 },
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "ads", kind: "number", label: "Ads", width: 90 },
+  { key: "problems", kind: "text", label: "Problems", width: 140 },
 ]
 
 export function UpdateAdsApproval({
@@ -91,6 +100,9 @@ export function UpdateAdsApproval({
   const many = rows.length > 1
   const tools = rows.length >= TOOLS_FROM
   const openRow = many ? (open ? byKey.get(open) : undefined) : rows[0]
+  const [adGroup, setAdGroup] = useState<string | null>(null)
+  const parents = useMemo(() => adGroupParents(rows), [rows])
+  const shown = adGroup === null ? rows : rows.filter((row) => adGroupOf(row.change) === adGroup)
 
   // A review redraws the card, so cancelled ads live beside the request for Undo.
   const save = (
@@ -123,13 +135,9 @@ export function UpdateAdsApproval({
       ]
     )
   }
-  const undo = (key: string) => {
-    const entry = rows.find((row) => row.key === key && row.cancelled)?.change.entry
-    if (entry)
-      save(
-        [...args.changes.map((change) => change.entry), entry],
-        cancelled.filter((item) => item !== entry)
-      )
+  const undo = (match: (row: AdRow["change"]) => boolean) => {
+    const restored = restoredAds(args, cancelled, match)
+    save(restored.changes, restored.cancelled)
   }
 
   const sample = rows.find((row) => !row.cancelled && row.current && row.after)
@@ -197,8 +205,36 @@ export function UpdateAdsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setAdGroup(null)
               setTab("attention")
             }}
+          />
+          <ParentTable
+            columns={PARENT_COLUMNS}
+            disabled={disabled}
+            label="Ad Groups"
+            onCancel={(key) => {
+              cancel(
+                new Set(
+                  rows
+                    .filter((row) => !row.cancelled && adGroupOf(row.change) === key)
+                    .map((row) => row.key)
+                )
+              )
+            }}
+            onSelect={(key) => {
+              setAdGroup(key)
+              // A shared edit stays closed; otherwise open the ad group's first ad to fix.
+              if (shared || key === null) return
+              const inGroup = rows.filter((row) => !row.cancelled && adGroupOf(row.change) === key)
+              setOpen((inGroup.find((row) => row.problems.length > 0) ?? inGroup[0])?.key ?? null)
+            }}
+            onUndo={(key) => {
+              undo((change) => adGroupOf(change) === key)
+            }}
+            rowNoun={["ad group", "ad groups"]}
+            rows={parents}
+            selected={adGroup}
           />
           <DataTable
             activeTab={tab}
@@ -221,7 +257,7 @@ export function UpdateAdsApproval({
                       cancel(new Set([row.key]))
                     }}
                     onUndo={() => {
-                      undo(row.key)
+                      undo((change) => change.key === row.key)
                     }}
                     row={row}
                   />
@@ -237,7 +273,7 @@ export function UpdateAdsApproval({
             }}
             rowDetails={false}
             rowNoun={["ad", "ads"]}
-            rows={rows.map((row) => ({
+            rows={shown.map((row) => ({
               ad: row.name,
               adGroup: row.adGroupName,
               campaign: row.campaignName,
@@ -315,6 +351,32 @@ function tabs(byKey: ReadonlyMap<string, AdRow>): DataTableTab[] {
       },
     },
   ]
+}
+
+/** One row per ad group the ads are in, in the order its ads first appear. */
+function adGroupParents(rows: readonly AdRow[]): ParentRow[] {
+  const groups = new Map<string, AdRow[]>()
+  for (const row of rows) {
+    const key = adGroupOf(row.change)
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
+  return [...groups].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const named = items.find((row) => row.adGroupName)
+    const problems = live.filter((row) => row.problems.length > 0).length
+    return {
+      cancelled: live.length === 0,
+      context: named?.campaignName ?? null,
+      key,
+      name: named ? named.adGroupName : `Ad group ${items[0]?.change.adGroupId ?? ""}`,
+      problems,
+      values: {
+        ads: live.length,
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+      },
+    }
+  })
 }
 
 function AdCell({ row }: { row: AdRow }) {

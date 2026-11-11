@@ -18,6 +18,7 @@ import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import {
@@ -57,10 +58,18 @@ const TOOLS_FROM = 10
 
 const COLUMNS: DataColumn[] = [
   { key: "ad_group", kind: "text", label: "Ad Group", width: 220 },
-  { key: "campaign", kind: "text", label: "Campaign", width: 200 },
+  // The campaigns table above names them, so this column is for the chooser and the export.
+  { key: "campaign", kind: "text", label: "Campaign", width: 200, hidden: true },
   { key: "setting", kind: "text", label: "Setting", width: 140 },
-  { key: "change", kind: "text", label: "Change", width: 300 },
+  { key: "change", kind: "text", label: "Change", width: 340 },
   { key: "cancel", kind: "text", label: "Cancel", width: 80 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "strategy", kind: "text", label: "Bidding", width: 190 },
+  { key: "ad_groups", kind: "number", label: "Ad Groups", width: 100 },
+  { key: "changes", kind: "number", label: "Changes", width: 100 },
+  { key: "problems", kind: "text", label: "Problems", width: 130 },
 ]
 
 const ROTATION_OPTIONS = ROTATIONS.map((value) => ({ value, label: ROTATION_LABELS[value] }))
@@ -93,6 +102,14 @@ export function UpdateAdGroupsApproval({
   const many = new Set(rows.map((row) => row.key)).size > 1
   const tools = rows.length >= TOOLS_FROM
   const accountIds = [...new Set(rows.filter((row) => !row.cancelled).map((row) => row.customerId))]
+  const [campaign, setCampaign] = useState<string | null>(null)
+  const parents = useMemo(
+    () => campaignParents(rows, args.accounts, accountIds.length > 1),
+    [accountIds.length, args.accounts, rows]
+  )
+  const shown = campaign === null ? rows : rows.filter((row) => campaignOf(row) === campaign)
+  // Cancelled settings by the campaign their ad group is in.
+  const campaignOfAdGroup = new Map(rows.map((row) => [row.key, campaignOf(row)]))
 
   // A review redraws the card, so cancelled settings live beside the request for Undo.
   const save = (
@@ -128,12 +145,12 @@ export function UpdateAdGroupsApproval({
       [...cancelled, ...items]
     )
   }
-  const undo = (id: string) => {
-    const item = cancelled.find((entry) => `${entry.key}|${entry.setting}` === id)
-    if (item)
+  const undo = (match: (item: CancelledAdGroupSetting) => boolean) => {
+    const items = cancelled.filter(match)
+    if (items.length > 0)
       save(
-        restoredAdGroupChanges(args, [item]),
-        cancelled.filter((entry) => entry !== item)
+        restoredAdGroupChanges(args, items),
+        cancelled.filter((item) => !items.includes(item))
       )
   }
   const liveOf = (match: (row: AdGroupRow) => boolean) =>
@@ -145,7 +162,7 @@ export function UpdateAdGroupsApproval({
         cancel([row.id])
       }}
       onUndo={() => {
-        undo(row.id)
+        undo((item) => `${item.key}|${item.setting}` === row.id)
       }}
       row={row}
     />
@@ -219,10 +236,28 @@ export function UpdateAdGroupsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setCampaign(null)
               setTab("attention")
             }}
           />
         </>
+      ) : null}
+      {many ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Campaigns"
+          onCancel={(key) => {
+            cancel(liveOf((row) => campaignOf(row) === key).map((row) => row.id))
+          }}
+          onSelect={setCampaign}
+          onUndo={(key) => {
+            undo((item) => campaignOfAdGroup.get(item.key) === key)
+          }}
+          rowNoun={["campaign", "campaigns"]}
+          rows={parents}
+          selected={campaign}
+        />
       ) : null}
       {many ? (
         <DataTable
@@ -235,7 +270,6 @@ export function UpdateAdGroupsApproval({
             const row = byId.get(String(dataRow["id"]))
             if (!row) return null
             if (column.key === "ad_group") return <NameCell row={row} />
-            if (column.key === "campaign") return <CampaignCell row={row} />
             if (column.key === "cancel") return cancelCell(row)
             if (column.key === "change")
               return (
@@ -253,7 +287,7 @@ export function UpdateAdGroupsApproval({
           }
           rowDetails={false}
           rowNoun={["change", "changes"]}
-          rows={rows.map((row) => ({
+          rows={shown.map((row) => ({
             ad_group: row.adGroupName,
             campaign: row.campaignName ?? "",
             cancel: "",
@@ -299,11 +333,13 @@ export function UpdateAdGroupsApproval({
       <AddChange
         noun="Ad Group"
         titles={AD_GROUP_SETTING_TITLES}
-        targets={args.changes.map((change) => ({
-          key: change.key,
-          name: rows.find((row) => row.key === change.key)?.adGroupName ?? change.label,
-          options: addableSettings(checked, rows, change.key),
-        }))}
+        targets={args.changes
+          .filter((change) => campaign === null || campaignOfAdGroup.get(change.key) === campaign)
+          .map((change) => ({
+            key: change.key,
+            name: rows.find((row) => row.key === change.key)?.adGroupName ?? change.label,
+            options: addableSettings(checked, rows, change.key),
+          }))}
         disabled={disabled}
         onAdd={(key, setting, value) => {
           save(addedAdGroupChanges(args, key, setting, value), cancelled)
@@ -416,16 +452,39 @@ function NameCell({ row }: { row: AdGroupRow }) {
   )
 }
 
-/** The campaign, with the strategy that decides which ad group bids Google uses. */
-function CampaignCell({ row }: { row: AdGroupRow }) {
-  return (
-    <div className="grid min-w-0 gap-0.5 text-sm">
-      <span className="wrap-anywhere whitespace-normal">{row.campaignName ?? "—"}</span>
-      {row.strategyName ? (
-        <span className="text-muted-foreground text-xs">{row.strategyName}</span>
-      ) : null}
-    </div>
-  )
+// Google keeps campaign names unique within an account.
+function campaignOf(row: AdGroupRow): string {
+  return `${row.customerId}:${row.campaignName ?? ""}`
+}
+
+/** One row per campaign, with the strategy that decides which ad group bids Google uses. */
+function campaignParents(
+  rows: readonly AdGroupRow[],
+  accounts: UpdateAdGroupsArgs["accounts"],
+  showAccount: boolean
+): ParentRow[] {
+  const campaigns = new Map<string, AdGroupRow[]>()
+  for (const row of rows)
+    campaigns.set(campaignOf(row), [...(campaigns.get(campaignOf(row)) ?? []), row])
+  return [...campaigns].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const problems = live.filter((row) => row.problem !== null).length
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
+      key,
+      name: first?.campaignName ?? "Unknown Campaign",
+      problems,
+      values: {
+        ad_groups: new Set(live.map((row) => row.key)).size,
+        changes: live.length,
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+        strategy: first?.strategyName ?? "—",
+      },
+    }
+  })
 }
 
 /** The live value, then the new one as an inline edit. */
