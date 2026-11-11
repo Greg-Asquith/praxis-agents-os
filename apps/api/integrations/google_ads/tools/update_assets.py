@@ -2,15 +2,14 @@
 
 """Approval-only tool that adds, removes, and edits sitelinks and callouts on campaigns and ad groups."""
 
-import asyncio
 import hashlib
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
-from pydantic_ai import RunContext, ToolReturn
+from pydantic_ai import ModelRetry, RunContext, ToolReturn
 
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
@@ -24,7 +23,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -33,25 +31,16 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
 from ..operations.assets import ASSET_PATHS, LiveAssets, new_asset_body, read_assets
-from ..operations.build import CampaignBuild, dry_run_build, send_build
-from ..operations.edits import CriterionChange, Edit, FieldChange, apply_edits, prepare_edits
-from ..operations.mutation_outcomes import (
-    GoogleAdsMutationLedger,
-    GoogleAdsMutationProjection,
-    build_mutation_ledger,
-    freeze_fields,
-    joined_ledger,
-)
+from ..operations.build import CampaignBuild, dry_run_build
+from ..operations.edits import CriterionChange, Edit, FieldChange, ReadState, prepare_edits
+from ..operations.mutation_outcomes import GoogleAdsMutationLedger
 from .schemas.assets import (
     MAX_ASSET_CHANGES,
     MAX_ASSET_TARGETS,
+    MAX_ASSETS_PER_TARGET,
     GoogleAdsAssetChange,
     GoogleAdsAssetTarget,
     GoogleAdsCallout,
@@ -63,19 +52,14 @@ from .schemas.assets import (
 )
 from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
-from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
-    google_ads_account_target,
-    terminal_operation_detail,
-)
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditBuildPlan, run_approved_edits_then_build
+from .utils.mutation_evidence import google_ads_account_target
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_assets"
 _FAMILY = "assets"
-_IDENTITY = ("object",)
 # One row per link and change, with room for long names.
 _MAX_PUBLIC_RESULT_CHARS = 1_000_000
 _MAX_MODEL_OUTCOMES = 50
@@ -87,9 +71,14 @@ _LINKS = {"campaign": ("campaignAsset", "campaign"), "ad_group": ("adGroupAsset"
 _ASSET_MISSING = "This asset no longer exists in Google Ads."
 _MADE_BY_GOOGLE = "Google made this asset, so it can't be changed or linked."
 _WRONG_TYPE = "This asset isn't a {expected}."
-_INTERRUPTED = "This wasn't sent, because the change was interrupted."
+_TOO_MANY = "This {noun} would have more than 20 {plural}. Remove some first, or add fewer."
+_TOO_MANY_USES = (
+    "These assets are used in too many campaigns and ad groups to check at once. "
+    "Change fewer assets in one request."
+)
 _APPLIED = {"add": "added", "remove": "removed", "change": "changed"}
 _TYPE_NOUNS = {"SITELINK": "sitelink", "CALLOUT": "callout"}
+_TYPE_PLURALS = {"SITELINK": "sitelinks", "CALLOUT": "callouts"}
 
 type _Action = Literal["add", "remove", "change", "create"]
 type _NewAsset = GoogleAdsSitelink | GoogleAdsCallout
@@ -110,20 +99,31 @@ class _Planned:
     target: str | None = None
     target_kind: str | None = None
     # A change to something that exists; new assets and their links are build steps instead.
+    # A new asset the target already links with the same content has that link as its edit.
     edit: Edit | None = None
     new: _NewAsset | None = None
-    # A new asset already linked to the target with the same content, so nothing changes.
-    linked: bool = False
     refused: str | None = None
 
 
 def _link_key(target: str, row: str) -> str:
-    return f"{target}|{row}"
+    """Names a link for the audit record; a new asset's content is hashed to keep it short."""
+    if row.startswith("asset:"):
+        return f"{target}|{row}"
+    return f"{target}|new:{hashlib.sha256(row.encode()).hexdigest()[:16]}"
 
 
-def _create_key(customer_id: str, content: str) -> str:
-    digest = hashlib.sha256(content.encode()).hexdigest()[:16]
-    return f"customers/{customer_id}/newAssets/{digest}"
+def _linked(item: _Planned, link: str) -> _Planned:
+    """Gives a new asset the target already links an edit that only checks the link is there."""
+    resource, owner_field = _LINKS[item.target_kind or "campaign"]
+    customer_id = link.split("/")[1]
+    asset_id = link.rsplit("/", 1)[1].split("~")[1]
+    body = {
+        owner_field: item.target,
+        "asset": f"customers/{customer_id}/assets/{asset_id}",
+        "fieldType": item.asset_type,
+    }
+    edit = CriterionChange(resource, "add", item.key, item.target or "", body, before=link)
+    return replace(item, edit=edit)
 
 
 def _plan_target(entry: GoogleAdsAssetTarget) -> list[_Planned]:
@@ -199,14 +199,18 @@ def _target_problem(live: LiveAssets, entry: GoogleAdsAssetTarget) -> str | None
     return None
 
 
-def _linked_same(live: LiveAssets, target: str, asset: _NewAsset) -> str | None:
-    """The link of an asset on the target with the same content as a new one, if any."""
+def _linked_same(
+    live: LiveAssets, target: str, asset: _NewAsset, removed: frozenset[str]
+) -> str | None:
+    """The link of an asset staying on the target with the same content as a new one, if any."""
     values = asset.values()
     return next(
         (
             link.resource_name
             for link in live.links.get(target, ())
-            if link.asset.asset_type == asset.asset_type and link.asset.values == values
+            if link.asset.asset_type == asset.asset_type
+            and link.asset.values == values
+            and link.asset.resource_name not in removed
         ),
         None,
     )
@@ -215,23 +219,54 @@ def _linked_same(live: LiveAssets, target: str, asset: _NewAsset) -> str | None:
 def _plan_live(entry: GoogleAdsAssetTarget, live: LiveAssets) -> tuple[list[_Planned], str | None]:
     """Plans one target against what's live, with each problem that stops a change."""
     problem = _target_problem(live, entry)
+    assets = f"customers/{entry.customer_id}/assets"
+    removed = frozenset(f"{assets}/{reference.asset_id}" for reference in entry.remove)
     planned = []
     for item in _plan_target(entry):
         if item.new is not None:
-            linked = _linked_same(live, entry.target_key, item.new) is not None
-            planned.append(replace(item, linked=linked, refused=problem))
+            link = _linked_same(live, entry.target_key, item.new, removed)
+            planned.append(replace(_linked(item, link) if link else item, refused=problem))
             continue
-        asset = item.row.removeprefix("asset:")
-        name = f"customers/{entry.customer_id}/assets/{asset}"
-        before = live.link(entry.target_key, name)
+        name = f"{assets}/{item.row.removeprefix('asset:')}"
         reason = problem
         if reason is None and item.action == "add":
             reason = _asset_problem(live, name, item.asset_type)
-        edit = replace(item.edit, before=before) if item.edit is not None else None
-        asset_live = live.assets.get(name)
-        label = asset_live.label if asset_live else item.label
-        planned.append(replace(item, edit=edit, label=label, refused=reason))
-    return planned, problem
+        edit = replace(item.edit, before=live.link(entry.target_key, name)) if item.edit else None
+        asset = live.assets.get(name)
+        if asset is not None:
+            item = replace(item, label=asset.label)
+            # A removal names its link by the asset, whatever type the reference gives.
+            if asset.asset_type in ASSET_PATHS:
+                item = replace(item, asset_type=asset.asset_type)
+        planned.append(replace(item, edit=edit, refused=reason))
+    return _within_limit(entry, live, planned), problem
+
+
+def _within_limit(
+    entry: GoogleAdsAssetTarget, live: LiveAssets, planned: Sequence[_Planned]
+) -> list[_Planned]:
+    """Refuses the additions of a type that would leave the target with more than Google allows."""
+
+    def changes(item: _Planned) -> bool:
+        return item.refused is None and (item.edit is None or not item.edit.unchanged)
+
+    counts = Counter(link.asset.asset_type for link in live.links.get(entry.target_key, ()))
+    for item in planned:
+        if changes(item):
+            counts[item.asset_type] += 1 if item.action == "add" else -1
+    return [
+        replace(
+            item,
+            refused=_TOO_MANY.format(
+                noun=_NOUNS[entry.kind], plural=_TYPE_PLURALS[item.asset_type]
+            ),
+        )
+        if item.action == "add"
+        and changes(item)
+        and counts[item.asset_type] > MAX_ASSETS_PER_TARGET
+        else item
+        for item in planned
+    ]
 
 
 def _plan_change_live(change: GoogleAdsAssetChange, live: LiveAssets) -> _Planned:
@@ -248,7 +283,7 @@ def _new_asset_parts(customer_id: str, planned: Sequence[_Planned]) -> list[_Pla
     """One create per new asset content with a link to send, followed by its links."""
     links: dict[str, list[_Planned]] = defaultdict(list)
     for item in planned:
-        if item.new is not None and not item.linked:
+        if item.new is not None and item.edit is None:
             links[item.row].append(item)
     parts: list[_Planned] = []
     for row, items in links.items():
@@ -256,9 +291,10 @@ def _new_asset_parts(customer_id: str, planned: Sequence[_Planned]) -> list[_Pla
         if all(item.refused is not None for item in items):
             parts.extend(items)
             continue
+        digest = hashlib.sha256(row.encode()).hexdigest()[:16]
         parts.append(
             _Planned(
-                _create_key(customer_id, row),
+                f"customers/{customer_id}/newAssets/{digest}",
                 row,
                 "create",
                 first.asset_type,
@@ -322,6 +358,8 @@ async def _read_live(
     entry: ResolvedContextEntry,
     targets: Sequence[GoogleAdsAssetTarget],
     changes: Sequence[GoogleAdsAssetChange],
+    *,
+    with_uses: bool = True,
 ) -> LiveAssets:
     assets = [item.asset.asset_id for item in changes]
     for target in targets:
@@ -334,18 +372,25 @@ async def _read_live(
         campaign_ids=[t.campaign.campaign_id for t in targets if t.kind == "campaign"],
         ad_group_ids=[t.ad_group.ad_group_id for t in targets if t.kind == "ad_group"],
         asset_ids=assets,
+        with_uses=with_uses,
     )
 
 
-def _edit_values(live: LiveAssets) -> dict[str, Mapping[str, Any]]:
+def _edit_values(live: LiveAssets, items: Sequence[_Planned]) -> dict[str, Mapping[str, Any]]:
     """Each link and named asset's live values, keyed as the edits name them."""
     values: dict[str, Mapping[str, Any]] = {
         name: asset.values for name, asset in live.assets.items()
     }
+    present = set()
     for target, links in live.links.items():
         for link in links:
             row = f"asset:{link.asset.resource_name.rsplit('/', 1)[1]}"
             values[_link_key(target, row)] = {"resourceName": link.resource_name}
+            present.add(link.resource_name)
+    # A new asset the target already links is checked by that link's own name.
+    for item in items:
+        if item.new is not None and item.edit is not None and item.edit.before in present:
+            values[item.key] = {"resourceName": item.edit.before}
     return values
 
 
@@ -387,13 +432,9 @@ async def google_ads_update_assets(
 
     async def operation(entry: ResolvedContextEntry, _selected: Sequence[Any]) -> Any:
         targets, changes = by_account[entry.external_id]
-        client: GoogleAdsClient | None = None
         planned: dict[str, list[_Planned]] = {}
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, pending
-            client = await google_ads_client(ctx, entry)
+        def plan() -> EditBuildPlan:
             for target in targets:
                 planned[target.target_key] = _approved_target(
                     target, shown_targets.get(target.target_key)
@@ -401,35 +442,33 @@ async def google_ads_update_assets(
             for item in changes:
                 approved = _approved_change(item, shown_changes.get(item.asset.resource_name))
                 planned[approved.key] = [approved]
-            pending = _pending_detail(entry, planned)
-            return pending
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not planned:
-                raise RuntimeError("Google Ads asset preparation did not complete")
-            try:
-                ledger = await _send(client, entry, targets, changes, planned)
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, ledger, identity_keys=_IDENTITY)
-            data = _result(entry, planned, shown_targets, ledger)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
+            items = [item for group in planned.values() for item in group]
+            build, left_out = _asset_build(
+                entry.external_id, _new_asset_parts(entry.external_id, items)
+            )
+            return EditBuildPlan(
+                edits=[replace(i.edit, refused=i.refused) for i in items if i.edit is not None],
+                build=build,
+                refused={item.key: item.refused or NOT_SHOWN for item in left_out},
+                pending=_pending_detail(entry, items),
             )
 
-        return await run_audited_integration_operation(
+        def read(client: GoogleAdsClient) -> ReadState:
+            async def values(_edits: Sequence[Edit]) -> Mapping[str, Mapping[str, Any]]:
+                live = await _read_live(client, entry, targets, changes, with_uses=False)
+                return _edit_values(live, [item for group in planned.values() for item in group])
+
+            return values
+
+        return await run_approved_edits_then_build(
             ctx,
             entry,
             tool_name="google_ads_update_assets",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family=_FAMILY,
+            plan=plan,
+            read=read,
+            result=lambda ledger: _result(entry, planned, shown_targets, ledger),
         )
 
     references = [
@@ -440,127 +479,6 @@ async def google_ads_update_assets(
         ctx, binding=GOOGLE_ADS_WRITE_BINDING, references=references, operation=operation
     )
     return split_fan_out_tool_return(results)
-
-
-async def _send(
-    client: GoogleAdsClient,
-    entry: ResolvedContextEntry,
-    targets: Sequence[GoogleAdsAssetTarget],
-    changes: Sequence[GoogleAdsAssetChange],
-    planned: Mapping[str, Sequence[_Planned]],
-) -> GoogleAdsMutationLedger:
-    """Sends changes to what exists, then builds new assets with their links, in one ledger."""
-    items = [item for group in planned.values() for item in group]
-    edits = [replace(i.edit, refused=i.refused) for i in items if i.edit is not None]
-    parts = _new_asset_parts(entry.external_id, items)
-    linked = [item for item in items if item.linked]
-    ledgers: list[GoogleAdsMutationLedger] = []
-    if linked:
-        ledgers.append(_parts_ledger(linked, skipped=True))
-    if edits:
-        try:
-            result = await apply_edits(
-                client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                edits=edits,
-                read=_reader(client, entry, targets, changes),
-                family=_FAMILY,
-                operation=_OPERATION,
-            )
-        except asyncio.CancelledError as exc:
-            sent = getattr(exc, "ledger", None)
-            if sent is not None:
-                rest = (
-                    [_parts_ledger(parts, code="CANCELLED", message=_INTERRUPTED)] if parts else []
-                )
-                exc.ledger = joined_ledger([*ledgers, sent, *rest], family=_FAMILY)
-            raise
-        ledgers.append(result.ledger)
-    if parts:
-        ledgers.extend(await _send_new_assets(client, entry, parts, ledgers))
-    return joined_ledger(ledgers, family=_FAMILY)
-
-
-async def _send_new_assets(
-    client: GoogleAdsClient,
-    entry: ResolvedContextEntry,
-    parts: Sequence[_Planned],
-    earlier: Sequence[GoogleAdsMutationLedger],
-) -> list[GoogleAdsMutationLedger]:
-    build, left_out = _asset_build(entry.external_id, parts)
-    ledgers: list[GoogleAdsMutationLedger] = []
-    refused = [replace(item, refused=item.refused or NOT_SHOWN) for item in left_out]
-    if build.steps:
-        keys = [step.source for step in build.steps]
-        try:
-            built = await send_build(
-                client,
-                build,
-                login_customer_id=login_customer_id(entry),
-                family=_FAMILY,
-                operation=_OPERATION,
-            )
-        except asyncio.CancelledError as exc:
-            exc.ledger = joined_ledger(
-                [
-                    *earlier,
-                    _keyed(exc.ledger, keys),
-                    *([_parts_ledger(refused)] if refused else []),
-                ],
-                family=_FAMILY,
-            )
-            raise
-        ledgers.append(_keyed(built.ledger, keys))
-    if refused:
-        ledgers.append(_parts_ledger(refused))
-    return ledgers
-
-
-def _keyed(ledger: GoogleAdsMutationLedger, keys: Sequence[str]) -> GoogleAdsMutationLedger:
-    """Names each build step by its change's key, as the audit record names every change."""
-    parents = []
-    for parent, key in zip(ledger.parents, keys, strict=True):
-        identity = freeze_fields({"object": key, "settings": "create"})
-        effects = tuple(replace(effect, fields=identity) for effect in parent.effects)
-        parents.append(replace(parent, identity=identity, effects=effects))
-    return replace(ledger, parents=tuple(parents))
-
-
-def _parts_ledger(
-    parts: Sequence[_Planned],
-    *,
-    skipped: bool = False,
-    code: str = "REFUSED",
-    message: str | None = None,
-) -> GoogleAdsMutationLedger:
-    """Records new asset links that weren't sent: already linked, refused, or interrupted."""
-    fields = [{"object": item.key, "settings": "create"} for item in parts]
-    return build_mutation_ledger(
-        family=_FAMILY,
-        action="update",
-        parent_fields=fields,
-        skipped_indices=dict.fromkeys(range(len(parts)), "already_set") if skipped else {},
-        submitted=[] if skipped else list(enumerate(fields)),
-        outcomes=[]
-        if skipped
-        else [("failed", None, code, message or item.refused or NOT_SHOWN) for item in parts],
-        projection=GoogleAdsMutationProjection(
-            applied_key="updated", skipped_key="already_set", errors_key="errors"
-        ),
-    )
-
-
-def _reader(
-    client: GoogleAdsClient,
-    entry: ResolvedContextEntry,
-    targets: Sequence[GoogleAdsAssetTarget],
-    changes: Sequence[GoogleAdsAssetChange],
-) -> Callable[[Sequence[Edit]], Awaitable[Mapping[str, Mapping[str, Any]]]]:
-    async def read(_edits: Sequence[Edit]) -> Mapping[str, Mapping[str, Any]]:
-        return _edit_values(await _read_live(client, entry, targets, changes))
-
-    return read
 
 
 def _shown_rows(check: Any) -> tuple[dict[tuple[Any, Any], Mapping[str, Any]], str | None] | None:
@@ -593,10 +511,14 @@ def _approved_target(target: GoogleAdsAssetTarget, check: Any) -> list[_Planned]
             continue
         before = row.get("before") if isinstance(row.get("before"), str) else None
         reason = problem or (row.get("problem") if isinstance(row.get("problem"), str) else None)
-        edit = replace(item.edit, before=before) if item.edit is not None else None
+        if item.new is not None:
+            item = _linked(item, before) if before else item
+        elif item.edit is not None:
+            item = replace(item, edit=replace(item.edit, before=before))
         label = row.get("label") if isinstance(row.get("label"), str) else item.label
-        linked = item.new is not None and before is not None
-        approved.append(replace(item, edit=edit, label=label, linked=linked, refused=reason))
+        shown_type = row.get("asset_type")
+        asset_type = shown_type if shown_type in ASSET_PATHS else item.asset_type
+        approved.append(replace(item, label=label, asset_type=asset_type, refused=reason))
     return approved
 
 
@@ -612,11 +534,10 @@ def _approved_change(change: GoogleAdsAssetChange, check: Any) -> _Planned:
 
 
 def _pending_detail(
-    entry: ResolvedContextEntry, planned: Mapping[str, Sequence[_Planned]]
+    entry: ResolvedContextEntry, items: Sequence[_Planned]
 ) -> PendingIntegrationOperationDetail:
-    items = [item for group in planned.values() for item in group]
-    # The same changes `_send` records: edits, links already in place, then the build's parts.
-    recorded = [item for item in items if item.edit is not None or item.linked]
+    # Every change the ledger records: the edits, then each new asset with its links.
+    recorded = [item for item in items if item.edit is not None]
     recorded.extend(_new_asset_parts(entry.external_id, items))
     groups: dict[tuple[str, str], list[IntegrationOperationIntent]] = defaultdict(list)
     for item in recorded:
@@ -726,6 +647,8 @@ async def _account_checks(
             deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
         )
         live = await _read_live(client, entry, targets, changes)
+        if live.uses_truncated:
+            raise ModelRetry(_TOO_MANY_USES)
         planned, problems = _account_plan(targets, changes, live)
         google = await _dry_run(client, entry, planned, live)
     except (IntegrationError, LookupError):
@@ -764,7 +687,7 @@ async def _dry_run(
     edits = [replace(i.edit, refused=i.refused) for i in items if i.edit is not None]
     problems: dict[str, str] = {}
     if edits:
-        values = _edit_values(live)
+        values = _edit_values(live, items)
 
         async def read(_edits: Sequence[Edit]) -> Mapping[str, Mapping[str, Any]]:
             return values
@@ -814,10 +737,7 @@ def _target_check(
     rows = []
     for item in planned:
         reason = None if problem else item.refused or google.get(item.key)
-        if item.new is not None:
-            before = _linked_same(live, target.target_key, item.new)
-        else:
-            before = item.edit.before if isinstance(item.edit, CriterionChange) else None
+        before = item.edit.before if isinstance(item.edit, CriterionChange) else None
         if item.action == "remove":
             state = "change" if before else "not_found"
         else:
@@ -860,6 +780,7 @@ def _change_check(item: _Planned, live: LiveAssets, google: Mapping[str, str]) -
         "state": "already_set" if edit is not None and edit.unchanged else "change",
         "used_in": list(uses[:_MAX_USES_SHOWN]),
         "use_count": len(uses),
+        "account_level": item.key in live.account_level,
         "problem": item.refused or google.get(item.key),
     }
 
@@ -876,7 +797,8 @@ DEFINITION = RuntimeToolDefinition(
         "({type: existing, asset}). A new asset added to several targets is made once and "
         "linked to each. remove unlinks an asset; it stays in the account, because Google "
         "Ads doesn't delete assets. change gives existing assets new content, "
-        "which changes them everywhere they're used. To add the same assets to several "
+        "which changes them everywhere they're used. content replaces the whole asset, so "
+        "repeat every field to keep, such as descriptions and dates. To add the same assets to several "
         "campaigns, give each campaign its own entry. An asset already linked, or a "
         "removal that isn't there, is reported without a change. Google shows sitelinks "
         "only when a campaign has at least two, and best with four or more."

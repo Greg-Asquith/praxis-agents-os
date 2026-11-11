@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/search-terms-result.ts
 
-import type { DataTableTab } from "@/components/ui/data-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { outcomeTabs } from "@/integrations/google_ads/lib/edit-outcomes"
 import { MATCH_TYPES } from "@/integrations/google_ads/lib/negative-keywords"
 import type { SearchTermAction } from "@/integrations/google_ads/lib/search-terms"
 import { isRecord } from "@/lib/guards"
@@ -120,20 +120,10 @@ export function searchTermOutcomeSummary(rows: readonly SearchTermOutcomeRow[]):
     .join(" · ")
 }
 
-function tab(id: SearchTermToken | "all", hideWhenEmpty = true): DataTableTab {
-  return {
-    hideWhenEmpty,
-    id,
-    label: id === "all" ? "All" : SEARCH_TERM_TOKEN_LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
-}
-
-export const SEARCH_TERM_OUTCOME_TABS: DataTableTab[] = [
-  tab("all", false),
-  tab("blocked"),
-  tab("added"),
-  tab("already_set"),
-  tab("failed"),
-  tab("unverified"),
-]
+export const SEARCH_TERM_OUTCOME_TABS = outcomeTabs(SEARCH_TERM_TOKEN_LABELS, [
+  "blocked",
+  "added",
+  "already_set",
+  "failed",
+  "unverified",
+])

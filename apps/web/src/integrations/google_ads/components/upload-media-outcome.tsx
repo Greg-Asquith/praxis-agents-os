@@ -45,7 +45,12 @@ export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
         ]
           .filter(Boolean)
           .join(" · "),
-        fits: upload.kind === "image" ? fitsText(upload.fits) : "Video",
+        fits:
+          upload.kind !== "image"
+            ? "Video"
+            : upload.outcome === "uploaded"
+              ? fitsText(upload.fits)
+              : "—",
         index,
         kind: upload.kind === "image" ? "Image" : "YouTube video",
         name: upload.name,

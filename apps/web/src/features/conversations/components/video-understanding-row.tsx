@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/components/video-understanding-row.tsx
 
-import { use, useState } from "react"
+import { useState } from "react"
 import { FilmIcon, ScissorsIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
@@ -10,7 +10,7 @@ import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ConversationActionsContext } from "@/components/tool-ui/conversation-actions-context"
+import { useInstructionAction } from "@/components/tool-ui/conversation-actions-context"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -20,7 +20,6 @@ import {
   findVideoMomentsResult,
   type VideoMoment,
 } from "@/features/conversations/native-tools/video-tools"
-import { getErrorMessage } from "@/lib/api/errors"
 import { formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
@@ -96,33 +95,16 @@ export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
 }
 
 function CutMomentsAction({ moments, videoName }: { moments: VideoMoment[]; videoName: string }) {
-  const sendInstruction = use(ConversationActionsContext)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { available, error, send, sending } = useInstructionAction()
   const count = moments.length
-
-  async function handleCut() {
-    if (!sendInstruction) {
-      return
-    }
-    setError(null)
-    setSending(true)
-    try {
-      await sendInstruction(cutMomentsInstruction(videoName, moments))
-    } catch (sendError) {
-      setError(getErrorMessage(sendError))
-    } finally {
-      setSending(false)
-    }
-  }
 
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
       {error ? <p className="text-destructive mr-auto text-xs">{error}</p> : null}
       <Button
-        disabled={!sendInstruction || sending || count === 0}
+        disabled={!available || sending || count === 0}
         onClick={() => {
-          void handleCut()
+          void send(cutMomentsInstruction(videoName, moments))
         }}
         size="sm"
         type="button"

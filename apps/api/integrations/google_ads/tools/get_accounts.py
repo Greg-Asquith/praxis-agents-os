@@ -73,7 +73,8 @@ DEFINITION = RuntimeToolDefinition(
         "billing.state is running_low when less than seven days of this month's average daily "
         "cost is left, and limit_reached when ads have stopped for the limit. "
         "monthly_invoicing false means billing is managed in Google Ads, not an error. "
-        "Manager accounts have null costs and billing; read their client accounts instead."
+        "Manager accounts have null costs and billing; read their client accounts instead. "
+        "billing is also null when Google didn't return it for this sign-in."
     ),
     provider="google_ads",
     label="Get Google Ads Accounts",

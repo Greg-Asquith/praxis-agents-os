@@ -14,6 +14,9 @@ from .utils import nonnegative_int
 # Google returns up to 10,000 ideas a page, in no volume order; this many is enough to rank.
 IDEA_PAGE_SIZE = 2_000
 MAX_THEMES_PER_KEYWORD = 10
+MAX_CLOSE_VARIANTS = 10
+# Google's keyword limit is 80; this bounds whatever comes back.
+_MAX_TEXT = 200
 _MONTHS = (
     "JANUARY",
     "FEBRUARY",
@@ -67,13 +70,13 @@ def _metrics(text: str, metrics: Any, annotations: Any, variants: Any) -> Keywor
     ]
     concepts = annotations.get("concepts") if isinstance(annotations, Mapping) else None
     themes = dict.fromkeys(
-        concept["name"]
+        concept["name"][:_MAX_TEXT]
         for concept in concepts or []
         if isinstance(concept, Mapping) and isinstance(concept.get("name"), str) and concept["name"]
     )
     competition = metrics.get("competition")
     return KeywordMetrics(
-        text=text,
+        text=text[:_MAX_TEXT],
         avg_monthly_searches=nonnegative_int(metrics.get("avgMonthlySearches")),
         competition=competition if competition in ("LOW", "MEDIUM", "HIGH") else None,
         low_bid_micros=nonnegative_int(metrics.get("lowTopOfPageBidMicros")),
@@ -83,7 +86,9 @@ def _metrics(text: str, metrics: Any, annotations: Any, variants: Any) -> Keywor
             for volume in sorted(volumes, key=_month_order)
         ),
         themes=tuple(themes)[:MAX_THEMES_PER_KEYWORD],
-        close_variants=tuple(item for item in variants or [] if isinstance(item, str)),
+        close_variants=tuple(
+            item[:_MAX_TEXT] for item in variants or [] if isinstance(item, str) and item
+        )[:MAX_CLOSE_VARIANTS],
     )
 
 

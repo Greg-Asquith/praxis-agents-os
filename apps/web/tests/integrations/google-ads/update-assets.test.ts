@@ -5,19 +5,21 @@ import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
+import { restoreParent, restoreRow } from "@/integrations/ads/lib/cancelled-rows"
 import type { ToolActivity } from "@/integrations/contract"
+import { fieldProblem, newAssetKey } from "@/integrations/google_ads/lib/new-assets"
 import {
   addTarget,
-  assetParents,
+  ASSET_CANCEL_CARD,
   assetsBlock,
   cancelLinks,
+  canCheckAssets,
   editNewAsset,
-  fieldProblem,
   linkRows,
-  newAssetKey,
+  needsCheck,
   newAssetRows,
   parseUpdateAssetsArgs,
-  restoreLink,
+  sitelinksAfter,
   type UpdateAssetsArgs,
 } from "@/integrations/google_ads/lib/update-assets"
 import { googleAdsUpdateAssetsPresenter } from "@/integrations/google_ads/presenters/update-assets"
@@ -82,8 +84,11 @@ function args(value: unknown = raw()): UpdateAssetsArgs {
 }
 
 describe("update assets", () => {
-  it("names a new asset as the server does, collapsing spaces", () => {
+  it("names a new asset as the server does, collapsing spaces and keeping a date's day", () => {
     expect(newAssetKey(SITELINK)).toBe(SITELINK_KEY)
+    expect(newAssetKey({ type: "callout", text: "Sale", start_date: "2026-12-01T00:00:00" })).toBe(
+      "new|callout|Sale|2026-12-01|"
+    )
   })
 
   it("shows a new asset once, and an edit changes it in every target and asks for a check", () => {
@@ -94,12 +99,27 @@ describe("update assets", () => {
     ])
     expect(assetsBlock(checked, checked)).toBeNull()
 
-    const entries = editNewAsset(checked, SITELINK_KEY, "link_text", "Find Your Size")
+    const { entries } = editNewAsset(checked, [], SITELINK_KEY, "link_text", "Find Your Size")
     expect(entries.map((entry) => entry.add[0]?.value["link_text"])).toEqual([
       "Find Your Size",
       "Find Your Size",
     ])
-    expect(assetsBlock({ ...checked, entries }, checked)).toMatch(/Check Changes/)
+    expect(needsCheck({ ...checked, entries }, checked)).toBe(true)
+  })
+
+  it("leaves one asset when an edit makes two the same, and a cancelled link follows the edit", () => {
+    const other = { ...SITELINK, link_text: "Fit Guide" }
+    const value = raw()
+    value.entries[0]?.add.push(other)
+    const checked = args(value)
+    const road = linkRows(checked, checked).find((row) => row.targetName === "Road")
+    if (!road) throw new Error("expected Road's link")
+
+    const edit = editNewAsset(checked, [road], SITELINK_KEY, "link_text", "Fit Guide")
+    expect(edit.entries[0]?.add.map((item) => item.key)).toEqual([newAssetKey(other)])
+    expect(edit.rows.map((row) => [row.assetKey, row.value["link_text"]])).toEqual([
+      [newAssetKey(other), "Fit Guide"],
+    ])
   })
 
   it("blocks a field over Google's limit and a sitelink with one description line", () => {
@@ -109,34 +129,79 @@ describe("update assets", () => {
     expect(fieldProblem({ ...SITELINK, description2: null })).toBe(
       "Add both description lines, or neither."
     )
-  })
-
-  it("warns when a campaign ends with fewer than four sitelinks", () => {
+    // The server refuses these, so the card doesn't send them to be checked.
     const checked = args()
-    const [trail, road] = assetParents(checked, linkRows(checked, checked), false)
-    // Trail has 2, gains 1 and loses 1; Road already has the new one among its 5.
-    expect(trail?.context).toContain("2 sitelinks after")
-    expect(road?.context ?? "").not.toContain("after")
+    const { entries } = editNewAsset(checked, [], SITELINK_KEY, "link_text", "")
+    expect(canCheckAssets({ ...checked, entries })).toBe(false)
   })
 
-  it("gives a campaign added on the card every new asset, once", () => {
+  it("doesn't approve a link Google gave no answer for", () => {
+    const value = raw()
+    value._checks[`${C}/campaigns/20`].rows.pop()
+    const unanswered = args(value)
+    expect(needsCheck(unanswered, unanswered)).toBe(true)
+    expect(
+      linkRows(unanswered, unanswered).map((row) => [row.targetName, row.problem !== null])
+    ).toEqual([
+      ["Trail", false],
+      ["Trail", false],
+      ["Road", true],
+    ])
+  })
+
+  it("counts a campaign's sitelinks once its changes apply", () => {
+    const checked = args()
+    const rows = linkRows(checked, checked)
+    const of = (name: string) => rows.filter((row) => row.targetName === name)
+    // Trail has 2, gains 1 and loses 1; Road already has the new one among its 5.
+    expect(sitelinksAfter(2, of("Trail"))).toBe(2)
+    expect(sitelinksAfter(5, of("Road"))).toBe(5)
+  })
+
+  it("gives a campaign added on the card the new assets once, up to the limit per target", () => {
     const checked = args()
     const entries = addTarget(checked, "campaign", campaign("30", "Kids"))
     expect(entries.at(-1)?.add.map((item) => item.key)).toEqual([SITELINK_KEY])
     expect(addTarget({ ...checked, entries }, "campaign", campaign("30", "Kids"))).toHaveLength(3)
+
+    const callouts = (prefix: string) =>
+      Array.from({ length: 15 }, (_, at) => ({ type: "callout", text: `${prefix} ${String(at)}` }))
+    const many = args({
+      entries: [
+        { kind: "campaign", campaign: campaign("10", "Trail"), add: callouts("A") },
+        { kind: "campaign", campaign: campaign("20", "Road"), add: callouts("B") },
+      ],
+    })
+    const added = addTarget(many, "campaign", campaign("30", "Kids"))
+    expect(added.at(-1)?.add).toHaveLength(20)
+    expect(canCheckAssets({ ...many, entries: added })).toBe(true)
   })
 
-  it("puts a cancelled removal back with Undo", () => {
+  it("puts cancelled links back with Undo, after their campaign left the request too", () => {
     const checked = args()
     const rows = linkRows(checked, checked)
-    const removal = rows.find((row) => row.action === "remove")
-    if (!removal) throw new Error("expected a removal")
-    const edit = cancelLinks(checked, rows, new Set([removal.id]))
-    expect(edit.entries[0]?.remove).toEqual([])
+    const [removal, addition] = rows.filter((row) => row.targetName === "Trail")
+    if (!removal || !addition) throw new Error("expected Trail's two links")
+    const first = cancelLinks(checked, rows, new Set([removal.id]))
+    expect(first.entries[0]?.remove).toEqual([])
 
-    const cancelled = { ...checked, entries: edit.entries }
-    const restored = restoreLink(cancelled, edit.departed, { ...removal, cancelled: true })
-    expect(restored[0]?.remove.map((ref) => ref.assetId)).toEqual(["70"])
+    const second = cancelLinks({ ...checked, entries: first.entries }, rows, new Set([addition.id]))
+    expect(second.entries.map((entry) => entry.label)).toEqual(["Road"])
+    const undone = { ...removal, cancelled: true }
+    const cancelled = [undone, { ...addition, cancelled: true }]
+    const one = restoreRow(ASSET_CANCEL_CARD, second.entries, second.departed, undone)
+    expect(one.at(-1)).toMatchObject({ label: "Trail", add: [] })
+    expect(one.at(-1)?.remove.map((ref) => ref.assetId)).toEqual(["70"])
+
+    const both = restoreParent(
+      ASSET_CANCEL_CARD,
+      second.entries,
+      second.departed,
+      cancelled,
+      removal.targetKey
+    )
+    expect(both.at(-1)?.add.map((item) => item.key)).toEqual([SITELINK_KEY])
+    expect(both.at(-1)?.remove.map((ref) => ref.assetId)).toEqual(["70"])
   })
 })
 

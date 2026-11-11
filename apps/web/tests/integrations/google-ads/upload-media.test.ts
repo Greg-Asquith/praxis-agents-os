@@ -39,7 +39,9 @@ function raw() {
   return {
     files: [SQUARE, LARGE],
     youtube_videos: ["https://youtu.be/dQw4w9WgXcQ"],
-    _account_name: "Northwind",
+    _accounts: [
+      { customer_id: "111", name: "Northwind", currency: "GBP", time_zone: "Europe/London" },
+    ],
     _files: [
       check("f-1"),
       check("f-2", {
@@ -109,8 +111,8 @@ describe("presenter", () => {
     providerKey: "google_ads",
   })
 
-  it("renders the approval and the result", () => {
-    const approval = html(
+  const approval = (args: Record<string, unknown>) =>
+    html(
       googleAdsUploadMediaPresenter.render(
         props(
           {
@@ -118,13 +120,20 @@ describe("presenter", () => {
             kind: "approval",
             name: "google_ads_upload_media",
             status: "awaiting_approval",
-            args: raw(),
+            args,
           },
           true
         )
       )
     )
-    expect(approval).toContain("Square, Logo")
+
+  it("offers the check when every image is cancelled and only videos are left", () => {
+    // The server still holds the old File list, so approval waits for this check.
+    expect(approval({ ...raw(), files: [] })).toContain("Check Files")
+  })
+
+  it("renders the approval and the result", () => {
+    expect(approval(raw())).toContain("Square, Logo")
 
     const result = html(
       googleAdsUploadMediaPresenter.render(

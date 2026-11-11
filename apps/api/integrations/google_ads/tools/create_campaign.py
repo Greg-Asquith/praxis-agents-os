@@ -33,7 +33,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.approved_display_args import approved_display_args
-from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_scope
 from services.integrations.operations import (
@@ -53,7 +53,7 @@ from .schemas.campaigns import (
     GoogleAdsCreateCampaignRequest,
     GoogleAdsNewSearchCampaign,
 )
-from .utils.accounts import account_facts, approval_accounts
+from .utils.accounts import account_facts, approval_accounts, sole_writable_entry
 from .utils.ad_group_builds import (
     MAX_AUDIT_ITEM_CHARS,
     STRATEGY_NAMES,
@@ -110,7 +110,7 @@ async def google_ads_create_campaign(
     status: Literal["PAUSED", "ENABLED"] = "PAUSED",
 ) -> dict[str, Any]:
     request = _request(campaign, ad_groups, status)
-    selected = _account_entry(ctx.deps.active_context)
+    selected = sole_writable_entry(ctx.deps.active_context)
     if selected is None:
         raise ModelRetry(_ONE_ACCOUNT)
 
@@ -204,17 +204,10 @@ def _validate_args(
 ) -> None:
     """Refuses a campaign that couldn't serve before asking the operator to approve it."""
     request = _request(campaign, ad_groups, status)
-    entry = _account_entry(ctx.deps.active_context)
+    entry = sole_writable_entry(ctx.deps.active_context)
     problems = _problems(request, entry.external_id if entry else None, None)
     if problems:
         raise ModelRetry(" ".join(problems))
-
-
-def _account_entry(active: ResolvedActiveContext | None) -> ResolvedContextEntry | None:
-    """Returns the one account in Active Context this run may write to, or None."""
-    entries = active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ()
-    writable = [entry for entry in entries if entry.write_allowed]
-    return writable[0] if len(writable) == 1 else None
 
 
 def _problems(
@@ -433,7 +426,7 @@ def _ad_group_reference(
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
     """Adds the account's facts, Google's location names, and Google's dry run."""
     request = GoogleAdsCreateCampaignRequest.model_validate(args)
-    entry = _account_entry(deps.active_context)
+    entry = sole_writable_entry(deps.active_context)
     accounts = approval_accounts([entry]) if entry is not None else []
     return {**args, "_accounts": accounts, "_checks": await _checks(deps, entry, request)}
 

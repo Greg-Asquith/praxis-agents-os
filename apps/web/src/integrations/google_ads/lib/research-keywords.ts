@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/research-keywords.ts
 
 import type { DataRow, DataTableTab } from "@/components/ui/data-table"
+import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
 import { formatGoogleAdsAccountId } from "@/lib/format"
 import { isRecord, isStringArray } from "@/lib/guards"
 
@@ -8,6 +9,8 @@ const COMPETITION = new Set(["LOW", "MEDIUM", "HIGH"])
 const MATCH_TYPES = new Set(["EXACT", "PHRASE", "BROAD"])
 // More themes than this become Other Themes, so the tabs fit on one line.
 const MAX_THEME_TABS = 3
+// One ad group's worth, and short enough to send as one turn.
+export const MAX_BUILD_KEYWORDS = 100
 
 export type KeywordIdea = {
   adGroupId: string | null
@@ -148,12 +151,14 @@ export function themeTabs(ideas: readonly KeywordIdea[]): DataTableTab[] {
   ]
 }
 
-/** What the card sends as the operator's own turn to build an ad group from chosen rows. */
+/** What the card sends as the operator's own turn to build an ad group from chosen rows.
+
+Carries only Google's keyword text and match types, never names the agent supplied.
+ */
 export function buildAdGroupInstruction(
   result: KeywordResearchResult,
   keywords: readonly KeywordIdea[]
 ): string {
-  const adGroups = new Map(result.adGroups.map((group) => [group.id, group.name]))
   const places = [
     result.locations.map((place) => place.name).join(", ") || "every location",
     result.language?.name ?? "every language",
@@ -162,13 +167,10 @@ export function buildAdGroupInstruction(
     `Build one new Search ad group in Google Ads account ${formatGoogleAdsAccountId(result.accountId)} ` +
       `from these ${String(keywords.length)} researched keywords (${places}). ` +
       "Ask me which campaign it goes in and which match types to use if I haven't said.",
-    ...keywords.map((idea) => {
-      const placed = idea.adGroupId ? adGroups.get(idea.adGroupId) : undefined
-      const hint = [
-        idea.matchType ? `Google suggests ${idea.matchType.toLowerCase()} match` : null,
-        placed ? `fits ${placed}` : null,
-      ].filter(Boolean)
-      return `- ${idea.text}${hint.length > 0 ? ` (${hint.join("; ")})` : ""}`
-    }),
+    ...keywords.map(
+      (idea) =>
+        `- ${collapseSpaces(idea.text)}` +
+        (idea.matchType ? ` (Google suggests ${idea.matchType.toLowerCase()} match)` : "")
+    ),
   ].join("\n")
 }

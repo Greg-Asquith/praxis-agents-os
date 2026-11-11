@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/edit-outcomes.ts
 
-import type { DataTableTab } from "@/components/ui/data-table"
+import type { DataRow, DataTableTab } from "@/components/ui/data-table"
 
 /** What the edit seam reports for each change. */
 export type EditOutcome = "updated" | "already_set" | "failed" | "unverified"
@@ -25,23 +25,30 @@ export const EDIT_OUTCOME_BADGES = {
   updated: "success",
 } as const
 
-function outcomeTab(id: EditOutcome | "all", hideWhenEmpty = false): DataTableTab {
-  return {
-    hideWhenEmpty,
-    id,
-    label: id === "all" ? "All" : EDIT_OUTCOME_LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
+/** Result tabs: All, then one per outcome, hidden while empty unless in `always`.
+ *
+ * Result tables put each row's outcome in `token`. */
+export function outcomeTabs<T extends string>(
+  labels: Record<T, string>,
+  outcomes: readonly T[],
+  always: readonly T[] = []
+): DataTableTab[] {
+  return [
+    { id: "all", label: "All", match: () => true },
+    ...outcomes.map((id) => ({
+      hideWhenEmpty: !always.includes(id),
+      id,
+      label: labels[id],
+      match: (row: DataRow) => row["token"] === id,
+    })),
+  ]
 }
 
-// Result tables put each row's outcome in `token`.
-export const EDIT_OUTCOME_TABS: DataTableTab[] = [
-  outcomeTab("all"),
-  outcomeTab("updated"),
-  outcomeTab("already_set"),
-  outcomeTab("failed"),
-  outcomeTab("unverified", true),
-]
+export const EDIT_OUTCOME_TABS = outcomeTabs(
+  EDIT_OUTCOME_LABELS,
+  ["updated", "already_set", "failed", "unverified"],
+  ["updated", "already_set", "failed"]
+)
 
 /** Joins counts with their labels, such as "3 changed · 1 failed", leaving out counts of none. */
 export function countsText(

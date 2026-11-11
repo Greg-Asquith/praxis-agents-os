@@ -7,6 +7,7 @@ import {
   type KeywordMatchType,
   type PastedKeyword,
 } from "@/integrations/ads/lib/keyword-notation"
+import type { CancelCard } from "@/integrations/ads/lib/cancelled-rows"
 import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
   accountsText,
@@ -470,19 +471,10 @@ export function setMatchType(
   return editRows(args, rows, ids, (keyword) => ({ ...keyword, matchType }), false)
 }
 
-/** Puts a cancelled row back; a target that left the request comes back whole. */
-export function restoreRow(
-  args: UpdateNegativeKeywordsArgs,
-  departed: readonly NegativeEntry[],
-  row: NegativeRow
-): NegativeEntry[] {
-  const entry = args.entries.find((item) => item.key === row.targetKey)
-  if (!entry) {
-    const whole = departed.find((item) => item.key === row.targetKey)
-    return whole ? [...args.entries, whole] : args.entries
-  }
+/** The target with a cancelled row back in it. */
+function withRow(entry: NegativeEntry, row: NegativeRow): NegativeEntry | null {
   const keyword = row.matchType ? { matchType: row.matchType, text: row.name } : null
-  const next = withChanges(entry, {
+  return withChanges(entry, {
     add: row.action === "add" && keyword ? unique([...entry.add, keyword]) : entry.add,
     apply:
       row.action === "add" && row.campaign && !entry.apply.some((c) => c.key === row.campaign?.key)
@@ -496,19 +488,6 @@ export function restoreRow(
         ? [...entry.removeFrom, row.campaign]
         : entry.removeFrom,
   })
-  return args.entries.map((item) => (item === entry && next ? next : item))
-}
-
-/** Puts back every cancelled row of one target, bringing the target back if it left. */
-export function restoreTarget(
-  args: UpdateNegativeKeywordsArgs,
-  departed: readonly NegativeEntry[],
-  rows: readonly NegativeRow[],
-  targetKey: string
-): NegativeEntry[] {
-  return rows
-    .filter((row) => row.cancelled && row.targetKey === targetKey)
-    .reduce((entries, row) => restoreRow({ ...args, entries }, departed, row), args.entries)
 }
 
 function linksText(rows: readonly NegativeRow[]): string | null {
@@ -681,8 +660,6 @@ export function negativeDetails(args: UpdateNegativeKeywordsArgs | null): FanOut
   return args ? [{ label: "Targets", value: String(args.entries.length) }] : []
 }
 
-export type CancelledChanges = { entries: NegativeEntry[]; rows: NegativeRow[] }
-
 function isRow(value: unknown): value is NegativeRow {
   return (
     isRecord(value) &&
@@ -692,17 +669,10 @@ function isRow(value: unknown): value is NegativeRow {
   )
 }
 
-/** The card's own record of cancelled rows and targets, which survives a check's redraw. */
-export function parseCancelled(value: unknown): CancelledChanges {
-  if (!isRecord(value)) return { entries: [], rows: [] }
-  const entries = Array.isArray(value["entries"]) ? value["entries"] : []
-  const rows = Array.isArray(value["rows"]) ? value["rows"] : []
-  return {
-    entries: entries.flatMap((entry) => parseEntry(entry) ?? []),
-    rows: rows.filter(isRow),
-  }
-}
-
-export function serializeCancelled(cancelled: CancelledChanges): Record<string, unknown> {
-  return { entries: serializeEntries(cancelled.entries), rows: cancelled.rows }
+// How the shared cancelled-rows helpers read and restore this card's rows.
+export const NEGATIVE_CANCEL_CARD: CancelCard<NegativeEntry, NegativeRow> = {
+  isRow,
+  parseEntry,
+  serializeEntries,
+  withRow,
 }

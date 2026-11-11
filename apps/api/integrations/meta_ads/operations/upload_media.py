@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from services.audit_events import IntegrationOperationCheckpoint
+from services.integrations.files import read_pinned_file_source
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.operations import checkpoint_integration_operation
 from services.integrations.report_results import ReportResultBudget
@@ -19,7 +20,7 @@ from ..client import MetaAdsClient, ad_account_path
 from ..references import MetaAdsMediaReference
 from ..throttle import ensure_account_available
 from .list_assets import read_image_references, video_reference, video_status
-from .media_source import MediaSource, RevisionStream, read_image
+from .media_source import MediaSource, RevisionStream
 from .mutations import (
     NOT_DISPATCHED_CODE,
     NOT_DISPATCHED_MESSAGE,
@@ -172,7 +173,9 @@ async def _upload_image(
     client: MetaAdsClient, account_id: str, scope_label: str, upload: MediaUpload
 ) -> None:
     try:
-        data = await read_image(upload.source)
+        data = await read_pinned_file_source(
+            upload.source.revision, provider_key="meta_ads", operation="media_source"
+        )
     except IntegrationError as exc:
         upload.effect = _failed(upload, exc)
         return

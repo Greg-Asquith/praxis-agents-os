@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/data-table"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { CancelCell } from "@/integrations/ads/components/cancel-cell"
-import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
+import { ChangeSummary } from "@/integrations/ads/components/change-summary"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
@@ -23,6 +23,8 @@ import {
   editImages,
   fitsText,
   kilobytes,
+  MAX_IMAGES,
+  MAX_VIDEOS,
   serializeCancelled,
   uploadCounts,
   youtubeVideoId,
@@ -33,7 +35,6 @@ import {
 
 // Below this many images the selection and search only add noise.
 const TOOLS_FROM = 10
-const MAX_VIDEOS = 20
 
 const COLUMNS: DataColumn[] = [
   { key: "name", kind: "text", label: "Name", width: 280 },
@@ -95,12 +96,6 @@ export function UploadMediaApproval({
   const editVideos = (videos: string[]) => {
     onFieldEdit("youtube_videos", videos)
   }
-  const lineFor = (
-    id: string,
-    label: string,
-    count: number,
-    extra: Partial<ChangeSummaryLine> = {}
-  ): ChangeSummaryLine => ({ count, id, label, ...extra })
   const problemIds = args.images
     .filter((image) => !image.cancelled && image.check?.problem)
     .map((image) => image.id)
@@ -109,12 +104,23 @@ export function UploadMediaApproval({
     <div className="grid min-w-0 gap-3">
       <ChangeSummary
         lines={[
-          lineFor("images", "Upload Images", counts.images - counts.problems, {
+          {
+            count: counts.images - counts.problems,
             detail: "from workspace Files",
-          }),
-          lineFor("videos", "Link YouTube Videos", counts.videos, { detail: "by their links" }),
-          lineFor("attention", "Needs Attention", counts.problems, {
+            id: "images",
+            label: "Upload Images",
+          },
+          {
+            count: counts.videos,
+            detail: "by their links",
+            id: "videos",
+            label: "Link YouTube Videos",
+          },
+          {
+            count: counts.problems,
             detail: "too large or a format Google doesn't take",
+            id: "attention",
+            label: "Needs Attention",
             tone: "danger",
             onSelect: () => {
               setTab("attention")
@@ -133,7 +139,7 @@ export function UploadMediaApproval({
                 Cancel These {String(counts.problems)}
               </Button>
             ),
-          }),
+          },
         ]}
       />
       <AttentionLine
@@ -214,7 +220,7 @@ export function UploadMediaApproval({
           toolName="google_ads_upload_media"
         />
       ) : null}
-      {args.needsReview && counts.images > 0 ? (
+      {args.needsReview ? (
         <CheckChanges
           canCheck
           disabled={disabled}
@@ -227,7 +233,7 @@ export function UploadMediaApproval({
       <VideoFields disabled={disabled} onChange={editVideos} videos={args.videos} />
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          disabled={disabled}
+          disabled={disabled || (!adding && counts.images >= MAX_IMAGES)}
           onClick={() => {
             setAdding(!adding)
           }}

@@ -1,11 +1,25 @@
 // apps/web/src/integrations/google_ads/lib/update-assets-result.ts
 
-import type { DataTableTab } from "@/components/ui/data-table"
-import type { AssetTargetKind, AssetType } from "@/integrations/google_ads/lib/update-assets"
+import {
+  countsText,
+  EDIT_OUTCOME_LABELS,
+  outcomeTabs,
+} from "@/integrations/google_ads/lib/edit-outcomes"
+import type { AssetType } from "@/integrations/google_ads/lib/new-assets"
+import type { AssetTargetKind } from "@/integrations/google_ads/lib/update-assets"
 import { isRecord } from "@/lib/guards"
 
-export type AssetOutcome =
-  "added" | "removed" | "changed" | "already_set" | "not_found" | "failed" | "unverified"
+const OUTCOMES = [
+  "added",
+  "removed",
+  "changed",
+  "already_set",
+  "not_found",
+  "failed",
+  "unverified",
+] as const
+
+export type AssetOutcome = (typeof OUTCOMES)[number]
 
 export type AssetOutcomeRow = {
   action: "add" | "remove" | "change"
@@ -20,7 +34,7 @@ export type AssetOutcomeRow = {
 
 export type UpdateAssetsResult = { accountId: string; rows: AssetOutcomeRow[] }
 
-export const ASSET_OUTCOME_LABELS: Record<AssetOutcome, string> = {
+const ASSET_OUTCOME_LABELS: Record<AssetOutcome, string> = {
   added: "Added",
   already_set: "Already Linked",
   changed: "Changed",
@@ -73,34 +87,20 @@ export function parseUpdateAssetsResult(value: unknown): UpdateAssetsResult | nu
   return { accountId: value["account_id"], rows: rows.filter((row) => row !== null) }
 }
 
+/** The label of a row's outcome; a content change that's already in place isn't a link. */
+export function assetOutcomeLabel(row: AssetOutcomeRow): string {
+  return row.action === "change" && row.outcome === "already_set"
+    ? EDIT_OUTCOME_LABELS.already_set
+    : ASSET_OUTCOME_LABELS[row.outcome]
+}
+
 export function assetOutcomeSummary(rows: readonly AssetOutcomeRow[]): string {
-  const totals = new Map<AssetOutcome, number>()
-  for (const row of rows) totals.set(row.outcome, (totals.get(row.outcome) ?? 0) + 1)
-  return [...totals]
-    .map(
-      ([outcome, total]) =>
-        `${total.toLocaleString("en-GB")} ${ASSET_OUTCOME_LABELS[outcome].toLowerCase()}`
-    )
-    .join(" · ")
+  return countsText(
+    OUTCOMES.map((outcome) => [
+      rows.filter((row) => row.outcome === outcome).length,
+      ASSET_OUTCOME_LABELS[outcome].toLowerCase(),
+    ])
+  )
 }
 
-function tab(id: AssetOutcome | "all", hideWhenEmpty = true): DataTableTab {
-  return {
-    hideWhenEmpty,
-    id,
-    label: id === "all" ? "All" : ASSET_OUTCOME_LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
-}
-
-// Result tables put each row's outcome in `token`.
-export const ASSET_OUTCOME_TABS: DataTableTab[] = [
-  tab("all", false),
-  tab("added"),
-  tab("removed"),
-  tab("changed"),
-  tab("already_set"),
-  tab("not_found"),
-  tab("failed"),
-  tab("unverified"),
-]
+export const ASSET_OUTCOME_TABS = outcomeTabs(ASSET_OUTCOME_LABELS, OUTCOMES)

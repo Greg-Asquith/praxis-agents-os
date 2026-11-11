@@ -29,7 +29,7 @@ const goal = {
   customer_id: CUSTOMER,
   category: "PHONE_CALL_LEAD",
   origin: "CALL_FROM_ADS",
-  label: "Phone call lead from call from ads",
+  label: "Purchases",
 }
 
 function raw(over: Record<string, unknown> = {}) {
@@ -50,6 +50,7 @@ function raw(over: Record<string, unknown> = {}) {
       },
       [GOAL]: {
         unavailable: false,
+        name: "Phone call lead from call from ads",
         conversions: 96,
         current: { biddable: true },
         requested: { biddable: false },
@@ -70,6 +71,11 @@ describe("approval", () => {
   it("cancels an account goal out of its own field, and Undo brings it back", () => {
     const args = parsed()
     expect(conversionsBlock(args, args)).toBeNull()
+    // A goal is named by the server, or from its category and origin, never by the agent's label.
+    expect(conversionRows(args, args).at(-1)?.name).toBe("Phone call lead from call from ads")
+    expect(conversionRows(args, parsed({ ...raw(), _checks: {} })).at(-1)?.name).toBe(
+      "Phone Call Lead · Call From Ads"
+    )
 
     const cancelled = editedConversions(args, new Set([`${GOAL}|biddable`]), () => undefined)
     expect(cancelled).toEqual({ account_goals: [], changes: raw().changes })
@@ -85,7 +91,14 @@ describe("approval", () => {
     )
 
     const undone = restoredConversions(next, [
-      { key: GOAL, kind: "goal", reference: goal, setting: "biddable", value: false },
+      {
+        key: GOAL,
+        kind: "goal",
+        label: "Phone call lead from call from ads",
+        reference: goal,
+        setting: "biddable",
+        value: false,
+      },
     ])
     expect(undone.account_goals).toEqual([{ goal, biddable: false }])
   })
@@ -160,6 +173,7 @@ describe("presenters", () => {
                       resource_name: ACTION,
                       kind: "conversion_action",
                       name: "Newsletter Sign-Up",
+                      value_currency: "USD",
                       read_back: true,
                       settings: [
                         {
@@ -167,6 +181,21 @@ describe("presenters", () => {
                           before: true,
                           requested: false,
                           after: false,
+                          outcome: "updated",
+                        },
+                        // A live window outside what a request may ask for still renders.
+                        {
+                          setting: "click_through_days",
+                          before: 0,
+                          requested: 30,
+                          after: 30,
+                          outcome: "updated",
+                        },
+                        {
+                          setting: "default_value",
+                          before: "10",
+                          requested: "20",
+                          after: "20",
                           outcome: "updated",
                         },
                       ],
@@ -180,5 +209,7 @@ describe("presenters", () => {
       )
     )
     expect(result).toContain("Secondary")
+    // The value is in the action's own currency, not the account's pounds.
+    expect(result).toContain("$20")
   })
 })

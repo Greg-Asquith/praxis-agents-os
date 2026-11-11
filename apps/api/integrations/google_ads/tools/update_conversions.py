@@ -38,6 +38,7 @@ from ..operations.conversion_settings import (
     LiveConversionAction,
     api_value,
     card_value,
+    goal_name,
     list_conversion_actions,
     read_account_goals,
     read_conversions_last_30_days,
@@ -67,7 +68,7 @@ _OTHER_OWNER = (
     "Google Ads account {owner} owns this conversion action and tracks conversions for this "
     "account, so change it in that account."
 )
-_NO_GOAL = "This account has no {category} goal from {origin}."
+_NO_GOAL = "This account has no goal for {name}."
 _NOT_SELECTED = (
     "Google Ads account {customer} isn't in the active context or can't be changed here. Ask "
     "the user to choose it again."
@@ -101,24 +102,20 @@ class _Live:
         )
 
 
-async def _read_live(
-    client: GoogleAdsClient, entry: ResolvedContextEntry, *, with_conversions: bool
-) -> _Live:
-    """Reads every conversion action and account goal; accounts hold a handful of each."""
+async def _read_live(client: GoogleAdsClient, entry: ResolvedContextEntry) -> _Live:
+    """Reads the account's conversion actions, account goals, and last 30 days of conversions."""
     customer, login = entry.external_id, login_customer_id(entry)
     actions = await list_conversion_actions(
         client, customer_id=customer, login_customer_id=login, include_removed=True
     )
     goals = await read_account_goals(client, customer_id=customer, login_customer_id=login)
-    conversions = None
-    if with_conversions:
-        # The card shows recent conversions as context, so a failed read leaves them out.
-        try:
-            conversions = await read_conversions_last_30_days(
-                client, customer_id=customer, login_customer_id=login
-            )
-        except IntegrationError:
-            conversions = None
+    # The card shows recent conversions as context, so a failed read leaves them out.
+    try:
+        conversions = await read_conversions_last_30_days(
+            client, customer_id=customer, login_customer_id=login
+        )
+    except IntegrationError:
+        conversions = None
     return _Live({action.resource_name: action for action in actions}, goals, conversions)
 
 
@@ -131,24 +128,24 @@ def _edit(item: _Item) -> FieldChange:
         resource, paths = "conversionAction", ACTION_PATHS
     else:
         resource, paths = "customerConversionGoal", GOAL_PATHS
+    requested = item.requested
+    # A default value is an amount in the action's currency, so a new currency makes it stale.
+    lone_value = "default_value" in requested and "currency" not in requested
     return FieldChange(
         resource=resource,
         resource_name=item.resource_name,
         requested={
-            paths[setting]: api_value(setting, value) for setting, value in item.requested.items()
+            paths[setting]: api_value(setting, value) for setting, value in requested.items()
         },
+        compared=(ACTION_PATHS["currency"],) if lone_value else (),
     )
-
-
-def _token(value: str) -> str:
-    return value.replace("_", " ").lower()
 
 
 def _problem(item: _Item, live: _Live, customer_id: str) -> str | None:
     if isinstance(item, GoogleAdsAccountGoalUpdate):
         if item.resource_name in live.goals:
             return None
-        return _NO_GOAL.format(category=_token(item.goal.category), origin=_token(item.goal.origin))
+        return _NO_GOAL.format(name=goal_name(item.goal.category, item.goal.origin).lower())
     action = live.actions.get(item.resource_name)
     if action is None:
         return _MISSING
@@ -231,21 +228,33 @@ def _reader(
     client: GoogleAdsClient, entry: ResolvedContextEntry
 ) -> Callable[[Sequence[Edit]], Awaitable[Mapping[str, Mapping[str, Any]]]]:
     async def read(edits: Sequence[Edit]) -> Mapping[str, Mapping[str, Any]]:
-        live = await _read_live(client, entry, with_conversions=False)
-        return {edit.key: values for edit in edits if (values := live.values(edit.key))}
+        customer, login = entry.external_id, login_customer_id(entry)
+        live: dict[str, Mapping[str, Any]] = {}
+        # Read by ID, so an account with more actions than one read returns still finds these.
+        ids = [edit.key.rsplit("/", 1)[-1] for edit in edits if "/conversionActions/" in edit.key]
+        if ids:
+            actions = await list_conversion_actions(
+                client,
+                customer_id=customer,
+                login_customer_id=login,
+                conversion_action_ids=ids,
+                include_removed=True,
+            )
+            live.update({action.resource_name: action.values for action in actions})
+        if len(ids) < len(edits):
+            goals = await read_account_goals(client, customer_id=customer, login_customer_id=login)
+            live.update({name: goal.values for name, goal in goals.items()})
+        return live
 
     return read
 
 
-def _text(check: Any, key: str) -> str | None:
-    value = check.get(key) if isinstance(check, Mapping) else None
-    return str(value) if value else None
-
-
 def _name(item: _Item, check: Any) -> str:
+    """The name the approver saw; a goal's comes from its category and origin, never its label."""
     if isinstance(item, GoogleAdsAccountGoalUpdate):
-        return item.goal.label
-    return _text(check, "name") or item.conversion_action.label
+        return goal_name(item.goal.category, item.goal.origin)
+    shown_name = check.get("name") if isinstance(check, Mapping) else None
+    return str(shown_name or item.conversion_action.label)
 
 
 def _pending_detail(
@@ -313,8 +322,11 @@ def _result(
                 "resource_name": name,
                 "kind": "account_goal" if goal else "conversion_action",
                 "name": _name(item, check),
-                "category": item.goal.category if goal else _text(check, "category"),
-                "origin": item.goal.origin if goal else _text(check, "origin"),
+                "value_currency": (
+                    item.requested.get("currency")
+                    or after_settings.get("currency")
+                    or current.get("currency")
+                ),
                 "read_back": skipped or after is not None,
                 "settings": [
                     {
@@ -360,7 +372,7 @@ async def _account_checks(
         client = await google_ads_client_for_principal(
             deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
         )
-        live = await _read_live(client, entry, with_conversions=True)
+        live = await _read_live(client, entry)
         problems = {item.resource_name: _problem(item, live, entry.external_id) for item in items}
         rejected = await _dry_run(client, entry, items, live, problems)
     except (IntegrationError, LookupError):
@@ -412,17 +424,17 @@ def _check(item: _Item, live: _Live, problem: str | None) -> dict[str, Any]:
     }
     if isinstance(item, GoogleAdsAccountGoalUpdate):
         goal = live.goals.get(item.resource_name)
-        return {**base, "conversions": live.goal_conversions(goal) if goal else None}
+        return {
+            **base,
+            "name": _name(item, None),
+            "conversions": live.goal_conversions(goal) if goal else None,
+        }
     action = live.actions.get(item.resource_name)
     if action is None:
         return {**base, "name": item.conversion_action.label, "conversions": None}
     return {
         **base,
         "name": action.name,
-        "type": action.action_type,
-        "category": action.category,
-        "origin": action.origin,
-        "status": action.status,
         "conversions": (
             live.conversions.get(action.resource_name, 0.0)
             if live.conversions is not None
@@ -438,7 +450,8 @@ DEFINITION = RuntimeToolDefinition(
         "Change settings on existing Google Ads conversion actions, and which account goals "
         "count for bidding, in one Google Ads account per call and one approval. Each "
         "`changes` entry names one conversion action (a google_ads_conversion_action "
-        "reference) and only the settings that change: status, ENABLED or HIDDEN; primary, "
+        "reference) and only the settings that change: status, ENABLED or HIDDEN, where a "
+        "hidden action stops recording conversions; primary, "
         "true to make it a primary action that counts in Conversions and bidding, false for "
         "secondary, which only counts in All Conversions; default_value as a decimal string "
         "(zero allowed) with an optional currency code; always_use_default_value; counting, "

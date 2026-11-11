@@ -70,7 +70,8 @@ def store(monkeypatch, content: bytes) -> SimpleNamespace:
     seam = importlib.import_module("services.integrations.files.stream_file_source")
     monkeypatch.setattr(seam, "get_storage_provider", Storage)
     monkeypatch.setattr(seam, "file_revision_ref", lambda revision: revision)
-    monkeypatch.setattr(media_source, "read_file_source", AsyncMock(return_value=content))
+    reader = importlib.import_module("services.integrations.files.read_pinned_file_source")
+    monkeypatch.setattr(reader, "read_file_source", AsyncMock(return_value=content))
     return streams
 
 

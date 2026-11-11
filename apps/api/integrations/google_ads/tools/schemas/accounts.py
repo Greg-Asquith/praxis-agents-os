@@ -32,7 +32,7 @@ class GoogleAdsSpendingLimit(GoogleAdsStrictModel):
 
 class GoogleAdsPendingLimitChange(GoogleAdsStrictModel):
     account_budget: GoogleAdsAccountBudgetReference
-    kind: Literal["create", "update", "end", "remove", "unknown", "unspecified"]
+    kind: Literal["create", "update", "end", "remove", "unknown"]
     # For create and update, null means no ceiling.
     limit: GoogleAdsMoney | None
     starts: GoogleAdsDateTime | None
@@ -41,7 +41,7 @@ class GoogleAdsPendingLimitChange(GoogleAdsStrictModel):
 
 
 class GoogleAdsAccountBilling(GoogleAdsStrictModel):
-    # Google Ads reports billing only for accounts paid by monthly invoice.
+    # Google Ads reports spending limits only for accounts paid by monthly invoice.
     monthly_invoicing: bool
     state: Literal[
         "not_monthly_invoicing",
@@ -74,6 +74,7 @@ class GoogleAdsAccountData(GoogleAdsStrictModel):
     # Manager accounts have no cost or billing of their own, so these are null for them.
     cost_today: GoogleAdsMoney | None
     cost_this_month: GoogleAdsMoney | None
+    # Also null when Google refused the billing read, such as for a sign-in with no billing access.
     billing: GoogleAdsAccountBilling | None
 
 

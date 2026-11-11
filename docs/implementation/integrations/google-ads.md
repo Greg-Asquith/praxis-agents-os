@@ -26,19 +26,23 @@ returns null costs and billing.
 
 For every other account, `data.billing` comes from
 `operations/account_billing.py`, which reads `billing_setup` and then, when
-the account has a setup that isn't cancelled, `account_budget` (approved and
-pending only). Google reports billing only for accounts paid by monthly
-invoice. An account with no billing setup returns `monthly_invoicing:
-false` and state `not_monthly_invoicing`, and its card says **Managed in
-Google Ads**; this isn't an error. The fields are as follows:
+the account has a setup that isn't cancelled, `account_budget`. Each read
+takes the newest 200 rows. Only accounts paid by monthly invoice have
+spending limits. An account with no billing setup, or with an approved setup
+and no spending limit of any status, returns `monthly_invoicing: false` and
+state `not_monthly_invoicing`, and its card says **Managed in Google Ads**;
+this isn't an error. When Google refuses the billing read, such as for a
+sign-in with no billing access, the account still returns its settings and
+costs with `billing: null`, and the card says **Not available**. The fields
+are as follows:
 
 | Field | Content |
 | --- | --- |
 | `state` | `not_monthly_invoicing`, `setup_pending` (no approved setup), `no_active_limit` (ads don't run), `active`, `running_low`, or `limit_reached`. |
-| `billing_setup` and `payments_*` | The approved setup, or the newest one waiting for Google, as a `GoogleAdsBillingSetupReference` (`references/billing.py`), with the payments account and profile that pay. |
+| `billing_setup` and `payments_*` | The approved setup that has started, or the newest one waiting for Google, as a `GoogleAdsBillingSetupReference` (`references/billing.py`), with the payments account and profile that pay. |
 | `active_limit` | The account spending limit in force, with its `GoogleAdsAccountBudgetReference`, the adjusted limit (null for no ceiling), served spend, the amount left, its dates, and the purchase order number. |
 | `queued_limits` and `last_ended_limit` | Approved limits that start later, soonest first, and the latest one that ended. |
-| `pending_changes` | Each budget's `pending_proposal`: the kind (`create`, `update`, `end`, or `remove`), the proposed limit, dates, and when it was submitted. A new limit waiting for review is a pending budget with a `create` change. |
+| `pending_changes` | Each budget's `pending_proposal`: the kind (`create`, `update`, `end`, `remove`, or `unknown` for one Google adds later), the proposed limit, dates, and when it was submitted. A new limit waiting for review is a pending budget with a `create` change. |
 
 The amount left is the adjusted limit, which Google enforces, minus
 `amount_served_micros`. Served spend can differ from invoiced spend, and the
@@ -50,7 +54,7 @@ average daily cost is left; `limit_reached` means nothing is left. The card
 adds **Limit Left** and **Billing** columns and a **Needs Attention** tab
 for those two states, `no_active_limit`, `setup_pending`, and suspended
 accounts. Raw payments, setup, and limit IDs are hidden columns. Listing
-payments accounts is pending, with billing setup changes (314 D).
+payments accounts is pending, with billing setup changes.
 
 ## Backend writes
 
@@ -128,7 +132,10 @@ Every tool on the edit seam runs an account's approved edits through
 plan (the edits and one audit intent per edit, keyed by `object`), the read,
 and the result; the runner applies the edits inside one audited operation. A
 run cancelled after the edits are sent, such as during a follow-up read for
-the result, keeps their outcomes in the audit record.
+the result, keeps their outcomes in the audit record. A tool that also
+creates objects, such as Update Ad Assets and Update Negative Keywords, uses
+`run_approved_edits_then_build` in the same file: the edits go first, then
+one atomic build, and one ledger records both.
 
 Both seams return the shared mutation ledger, so `terminal_operation_detail`
 records them like any other write. A request Google never received or
@@ -947,22 +954,33 @@ account only through references and there's no account reference yet.
 `GoogleAdsAssetReference` (`references/asset.py`) carries the asset ID and type, and the
 `google_ads_asset` resolver searches sitelinks and callouts by their text.
 `operations/assets.py` reads each target, its sitelink and callout links, the named
-assets with their `source`, and the campaigns and ad groups each named asset is linked
-to. An asset Google made (`AUTOMATICALLY_CREATED`) can't be edited or linked.
+assets with their `source`, the live campaigns and ad groups each named asset is linked
+to, and whether it's linked to the whole account. An asset Google made
+(`AUTOMATICALLY_CREATED`) can't be edited or linked.
 
 A new asset is named by its content (`new_asset_key`), so the same sitelink added to 30
 campaigns is created once and linked to each. A target that already links an asset with
-the same content reports `already_set` without a write. Every new asset in an account,
+the same content reports `already_set` without a write, unless the same request
+removes that asset. The row is refused as changed since approval when the link has gone
+by the time the change is sent. An addition that would leave a target with more than 20
+sitelinks or 20 callouts, after the request's removals, is a problem on the card. Every
+new asset in an account,
 with its links, goes through the build seam in one atomic request. Links to existing
 assets and removals go through the edit seam as `campaignAsset` and `adGroupAsset`
 criterion changes, and content changes as `asset` field changes with an update mask.
+`run_approved_edits_then_build` in `tools/utils/edit_runs.py` sends the edits, then the
+build, and records both in one audit record. Update Negative Keywords uses it too.
 Removing a link leaves the asset in the account, because Google Ads has no asset
 removal.
 
 The trusted `_checks` display argument holds, per target, its name, status, problem,
 its sitelink and callout counts now, and one row per link with its live link, state,
 and problem. `_changes` holds, per edited asset, its live content, the campaigns and ad
-groups it's used in (the first 50, with the total), and its problem. The tool declares
+groups it's used in (the first 50 in `used_in`, with the total in `use_count`),
+`account_level` when it's linked to the whole account, and its problem. When the assets
+are used in more places than one read returns, the check fails and asks for fewer
+changed assets, so the card never shows a low count. `content` replaces the whole
+asset, so a field left out is cleared. The tool declares
 `entries` and `change` in `approval_review_fields`. Approval plans against what the
 operator saw: a link or change with no check is refused, and an asset whose content
 changed since is refused as changed since approval.
@@ -998,13 +1016,16 @@ shape when its ratio is within 1% of the shape's and it meets the minimum size:
 An image with a shape's ratio but under its minimum is listed in `too_small`. Fit doesn't
 block an upload; Google checks the field type when an asset is linked.
 
-The trusted `_account` display argument pins the customer ID and integration resource,
+The trusted `_accounts` display argument pins the account, as on the other write cards,
 and `_files` pins each File's revision and content hash with its name, size, width,
 height, `fits`, `too_small`, and `problem`. A File Google won't take carries a problem
 on the card instead of a retry for the agent. The tool declares `files` in
 `approval_review_fields`, so an edited File list is checked and pinned again. Execution
-refuses the whole request before any upload when a File has a problem, the account
-changed, or a File's revision isn't the one pinned.
+refuses the whole request before any upload when a File has the wrong type or size, the
+account changed, or a File's revision isn't the one pinned. The stored type is only
+declared, so each image's bytes are read as that format before they're sent; a File that
+isn't a readable image fails on its own and the rest still upload. The pin check and the
+verified read are shared with Meta's upload, in `services/integrations/files`.
 
 `operations/upload_media.py` sends one `assets:mutate` request per item, in order. An
 image is `{name, type: IMAGE, imageAsset: {data}}`, with the name built from the File
@@ -1025,11 +1046,11 @@ image's size, dimensions, and fits.
 `google_ads_update_conversions` changes existing conversion actions and which account
 goals count for bidding, in one account per call and one approval. It's approval only:
 these settings change what Smart Bidding optimises for. Creating or removing actions,
-tag setup, and campaign goals (305 C) are out of scope.
+tag setup, and campaign goals are out of scope.
 
 | Argument | Entry |
 | --- | --- |
-| `changes` | One `GoogleAdsConversionActionReference` (`google_ads_conversion_action`) and only what changes: `status` (`ENABLED` or `HIDDEN`), `primary`, `default_value` (a decimal string, zero allowed), `currency`, `always_use_default_value`, `counting` (`ONE_PER_CLICK` or `MANY_PER_CLICK`), `click_through_days` (1 to 90), and `view_through_days` (1 to 30). |
+| `changes` | One `GoogleAdsConversionActionReference` (`google_ads_conversion_action`) and only what changes: `status` (`ENABLED` or `HIDDEN`, which stops recording conversions), `primary`, `default_value` (a decimal string, zero allowed), `currency`, `always_use_default_value`, `counting` (`ONE_PER_CLICK` or `MANY_PER_CLICK`), `click_through_days` (1 to 90), and `view_through_days` (1 to 30). |
 | `account_goals` | One `GoogleAdsConversionGoalReference` (`google_ads_conversion_goal`: customer, category, and origin) and `biddable`. |
 
 Every entry must be in the same account, because the entries are checked and sent as one
@@ -1047,8 +1068,16 @@ of its live actions. A failed metrics read leaves the counts out rather than blo
 It refuses a removed action, an action another account owns under cross-account
 conversion tracking (`owner_customer`), and a goal the account doesn't have. Google's
 dry run reports any setting an action's type doesn't allow, such as values on imported
-actions, as a problem on the card. After approval the edit seam refuses an action
-changed since the card was shown and reads every item back.
+actions, as a problem on the card. The card and the result name a goal from its
+category and origin, never from the reference's label, which the agent writes. The card
+warns that bidding will change when an entry changes the status, the goal type, the
+value, or an account goal.
+
+After approval the edit seam refuses an action changed since the card was shown and
+reads every item back, reading the named actions by ID. A `default_value` sent without
+a `currency` is an amount in the action's own currency, so the tool also refuses it
+when that currency changed. Each result item has `value_currency`, the action's own
+currency when it has one, and the card shows values in it instead of the account's.
 
 The resolvers are in `entity_resolvers/conversion_action.py`. Conversion actions page
 by ID and search by name; account goals list every goal of each selected account,
@@ -1058,15 +1087,16 @@ filtered by words in their label, on one page.
 
 `google_ads_research_keywords` is a read with auto approval. It calls Keyword Planner
 (`KeywordPlanIdeaService`) in one account: the ad groups' account when the agent passes
-`ad_groups`, or else the first selected account. Bids are in that account's currency.
+`ad_groups`, or else the first selected account that isn't a manager account. Bids are
+in that account's currency.
 The developer token needs Basic access, which the deployment's token has.
 
 The arguments are as follows:
 
 | Argument | What it does |
 | --- | --- |
-| `seeds`, `url` | Up to 20 words or phrases, a page, or both, for `GenerateKeywordIdeas`. Seeds alone send a keyword seed, both send a keyword and URL seed, and a home page with no path sends a site seed for the whole site. |
-| `keywords` | Up to 1,000 exact keywords for `GenerateKeywordHistoricalMetrics`, with no ideas added. |
+| `seeds`, `url` | Up to 20 words or phrases, a page, or both, for `GenerateKeywordIdeas`. Seeds alone send a keyword seed, both send a keyword and URL seed, and a home page with no path sends a site seed for the whole site. The tool only sends the address to Google; it never fetches it, and it refuses one with no site name. |
+| `keywords` | Up to 1,000 exact keywords for `GenerateKeywordHistoricalMetrics`, with no ideas added. Seeds and keywords have their spaces collapsed and take at most 10 words, as keywords do elsewhere. |
 | `locations`, `language` | Up to 10 location keys and one language key from `google_ads_search_targeting`. The tool reads them back first and refuses an unknown key. Without them Google counts every location and language. |
 | `ad_groups` | Up to 20 existing ad groups for `GenerateAdGroupThemes`, which needs existing ad groups; it doesn't invent new ones. Each row then has the suggested ad group and match type, and an ad group Google can't use is marked unusable. |
 | `limit` | Rows to return, 200 by default and 1,000 at most. |
@@ -1077,7 +1107,8 @@ in no volume order, so the tool asks for one page of 2,000 (`IDEA_PAGE_SIZE`), r
 average monthly searches, and keeps the top rows. Requested keywords are always kept.
 `truncated` is true when Google has more ideas than the rows returned, and
 `total_ideas` is Google's count. Each row has the 12 monthly volumes oldest first, the
-competition level, and the top-of-page bid range as decimal strings. The audit record
+competition level, the top-of-page bid range as decimal strings, and up to 10 close
+variants. Text from Google is cut to 200 characters. The audit record
 holds counts only, not the agent's search text. Large results are previewed for the
 model and saved in full, like reports.
 
@@ -1287,10 +1318,11 @@ below, in `SettingRows`: Name, Keywords, Ads, Negatives, Sitelinks and Callouts,
 A row turns red when one of its problems is about it, including an ad group with no
 keyword or no ad. Sitelinks and callouts use `NewAssetsEditor`
 (`components/new-assets-editor.tsx`, rules in `lib/new-assets.ts`): a table per type with
-character counts, **Add Sitelink** and **Add Callout**, and a note when there's only one
-sitelink, since Google shows them in pairs or more. `AssetFieldInput` is shared with Update
-Assets. Google's rejection of a new asset shows while an asset with the same content
-(`newAssetKey`) is still there. Keywords and
+character counts, **Add Sitelink** and **Add Callout**, a read-only Shows column when an
+asset has dates, and a note when there are fewer than four sitelinks (`sitelinkAdvice`).
+`NewAssetTable` and `AssetFieldInput` are shared with Update Assets. Google's rejection
+of a new asset shows wherever an asset with the same content (`newAssetKey`) is still
+there, on the campaign and on every ad group, since the asset is created once. Keywords and
 negatives use the shared `KeywordPaste` (one per line: `[exact]`, `"phrase"`, or
 plain text for broad; parsing is in `integrations/ads/lib/keyword-notation.ts`).
 Review opens a table for match types, click bids, and final URLs. A pasted keyword
@@ -1458,28 +1490,40 @@ Failed when that table has a failure.
 ### Update Ad Assets card
 
 `lib/update-assets.ts` parses `entries` and `change` with `_accounts`, `_checks`, and
-`_changes`, and keeps each entry as received. `newAssetKey` names a new asset the same
-way the server does, so the card matches each link to its check. Field problems
-(`fieldProblem`) are checked on the card: a field over its limit, a missing link text or
-URL, and one description line without the other. Any problem, and any edit Google
-hasn't checked, blocks approval.
+`_changes`, and keeps each entry as received. `newAssetKey` (`lib/new-assets.ts`) names a
+new asset the same way the server does, so the card matches each link to its check. A
+link or content change with no answer in the last check shows as not checked and asks
+for **Check Again**. Field problems (`fieldProblem`) are checked on the card: a field
+over its limit, a missing link text or URL, and one description line without the other.
+So are the request's limits (`assetLimitProblems`): an asset listed twice in a target,
+more than 20 in a target, 100 targets, and 1,000 links. These block **Check Changes**
+(`canCheckAssets`) and approval. Any other problem, and any edit Google hasn't checked,
+blocks approval.
 
 The card (`components/update-assets-approval.tsx`) shows **New Sitelinks** and **New
 Callouts** first, each asset once however many targets it's added to, with every field
-editable in the row and its character count. An edit changes the asset in every
-target. **Add Campaign** and **Add Ad Group** add a target with every new asset in the
-request. The `ParentTable` of campaigns and ad groups (`assetParents`) has Sitelinks
-Now, Callouts Now, To Add, To Remove, and Problems, and notes a campaign left with fewer
-than four sitelinks. Below it, one row per link (new, existing, or removed) with
-**Cancel This Change** and **Undo**; a click on a parent filters it. **Edit Assets**
-lists each content change with what each field says now and where the asset is used.
+editable in the row, its character count, and its dates read-only. An edit changes the
+asset in every target and in its cancelled links; an edit that makes two new assets the
+same leaves one. **Add Campaign** and **Add Ad Group** add a target with the new assets
+in the request, up to 20. The `ParentTable` of campaigns and ad groups (`assetParents`)
+has Sitelinks Now, Callouts Now, To Add, To Remove, and Problems, and notes a campaign
+left with fewer than four sitelinks. Below it, one row per link (new, existing, or
+removed) with **Cancel This Change** and **Undo**; a click on a parent filters it, and
+the Where column shows while none is selected. From 10 links, a `ChangeSummary` and
+`AttentionLine` filter the table to links already in place, not there, or needing
+attention, with **Cancel These N**, and the table gains search, tabs, and a bulk bar.
+**Edit Assets** lists each content change with what each field says now, its dates now
+and after, where the asset is used, whether it's used across the whole account, and its
+own **Cancel This Change** and **Undo**. Cancelled links, targets, and content changes
+are kept beside the request through `integrations/ads/lib/cancelled-rows.ts`, which the
+negative keywords card shares.
 
 The result (`components/update-assets-outcome.tsx`) is one `DataTable` with a row per
 asset and target, tabs per outcome, opening on Failed when anything failed.
 
 ### Upload Media card
 
-`lib/upload-media.ts` parses `files`, `youtube_videos`, `_account_name`, and `_files`.
+`lib/upload-media.ts` parses `files`, `youtube_videos`, `_accounts`, and `_files`.
 `youtubeVideoId` reads a link the same way the server does. The card blocks approval for
 an image with a problem, a File list the server hasn't checked, an unreadable video link,
 and a repeated video.
@@ -1502,8 +1546,9 @@ Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed
 Setting, the live value then an inline editor in Change, Last 30 Days, and Cancel.
 Account goals sit in the same table, marked Account goal. There is no parent table:
 conversion actions and goals belong to the account, not to campaigns. The banner reads
-**Bidding will optimise for different conversions** when a sent change touches the goal
-type, value, or account goals, with a note beside the table. **Add a Change** offers an
+**Bidding will optimise for different conversions** when a sent change touches the status,
+goal type, value, or account goals, with a note beside the table. A change to Hidden
+says it stops recording conversions. **Add a Change** offers an
 action's other settings at their live values. Each control edits one item, so only one of
 the two request fields changes at a time; cancelled settings live in `retained` for Undo.
 From ten rows the table gets search and a Needs Attention tab.
@@ -1522,10 +1567,14 @@ Bid, High Bid, and Fits Ad Group when the agent passed ad groups. A note under t
 says searches and bids are Google's estimates.
 
 **Build Ad Group From N Selected** sends the selected keywords as the operator's own
-governed turn (`buildAdGroupInstruction`), through `ConversationActionsContext` in
-`components/tool-ui/conversation-actions-context.ts`. The agent then prepares
-`google_ads_create_ad_groups`, which asks for approval as usual. The button is
-unavailable where the conversation can't take a turn, such as a shared transcript.
+governed turn (`buildAdGroupInstruction`), through `useInstructionAction` in
+`components/tool-ui/conversation-actions-context.ts`, which any card that sends a turn
+uses. The turn carries each keyword's text and Google's suggested match type, and no
+name the agent supplied. The agent then prepares `google_ads_create_ad_groups`, which
+asks for approval as usual. The button takes up to 100 keywords, one ad group's worth.
+It is unavailable where the conversation can't take a turn, such as a shared
+transcript, and the card has no selection while only the preview of a large result
+has loaded.
 
 ### Optimise Search Terms card
 

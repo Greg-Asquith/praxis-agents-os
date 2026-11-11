@@ -15,6 +15,7 @@ from integrations.google_ads.tools.schemas.negative_keywords import (
     GoogleAdsUpdateNegativeKeywordsOutput,
     GoogleAdsUpdateNegativeKeywordsRequest,
 )
+from integrations.google_ads.tools.utils import edit_runs
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import (
     KeywordsAccount as _Account,
@@ -63,7 +64,7 @@ async def _run(
     args: dict[str, Any],
     display: dict[str, Any],
 ):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(

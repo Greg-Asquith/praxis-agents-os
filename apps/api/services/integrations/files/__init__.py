@@ -6,14 +6,26 @@ from services.agents.runtime.entity_references.domain import FileReference
 from services.storage.errors import StorageNotFoundError, StoragePreconditionError
 
 from .read_file_source import read_file_source
+from .read_pinned_file_source import read_pinned_file_source
 from .resolve_workspace_file_source import resolve_workspace_file_source
 from .stream_file_source import stream_file_source
+from .utils import (
+    pinned_files,
+    require_pinned_file,
+    source_changed_error,
+    source_unavailable_error,
+)
 
 __all__ = [
     "FileReference",
     "StorageNotFoundError",
     "StoragePreconditionError",
+    "pinned_files",
     "read_file_source",
+    "read_pinned_file_source",
+    "require_pinned_file",
     "resolve_workspace_file_source",
+    "source_changed_error",
+    "source_unavailable_error",
     "stream_file_source",
 ]

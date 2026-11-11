@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/negative-keywords-result.ts
 
-import type { DataTableTab } from "@/components/ui/data-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
+import { outcomeTabs } from "@/integrations/google_ads/lib/edit-outcomes"
 import {
   MATCH_TYPES,
   type NegativeTargetKind,
@@ -96,23 +96,12 @@ export function negativeOutcomeSummary(rows: readonly NegativeOutcomeRow[]): str
     .join(" · ")
 }
 
-function tab(id: NegativeOutcome | "all", hideWhenEmpty = true): DataTableTab {
-  return {
-    hideWhenEmpty,
-    id,
-    label: id === "all" ? "All" : NEGATIVE_OUTCOME_LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
-}
-
-// Result tables put each row's outcome in `token`.
-export const NEGATIVE_OUTCOME_TABS: DataTableTab[] = [
-  tab("all", false),
-  tab("added"),
-  tab("removed"),
-  tab("created"),
-  tab("already_set"),
-  tab("not_found"),
-  tab("failed"),
-  tab("unverified"),
-]
+export const NEGATIVE_OUTCOME_TABS = outcomeTabs(NEGATIVE_OUTCOME_LABELS, [
+  "added",
+  "removed",
+  "created",
+  "already_set",
+  "not_found",
+  "failed",
+  "unverified",
+])

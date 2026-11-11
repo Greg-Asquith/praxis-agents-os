@@ -126,10 +126,10 @@ class GoogleAdsConversionSettingOutcome(GoogleAdsStrictModel):
 class GoogleAdsConversionUpdateOutcome(GoogleAdsStrictModel):
     resource_name: str
     kind: Literal["conversion_action", "account_goal"]
-    # The action's name, or for an account goal its category and origin tokens.
+    # The action's name, or an account goal's category and origin in words.
     name: str
-    category: str | None = None
-    origin: str | None = None
+    # The currency of the action's default value, when it has one of its own.
+    value_currency: str | None = None
     read_back: bool
     settings: list[GoogleAdsConversionSettingOutcome] = Field(max_length=8)
     error_code: str | None = None

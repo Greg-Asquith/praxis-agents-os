@@ -85,6 +85,10 @@ class LiveAssets:
     assets: Mapping[str, LiveAsset] = field(default_factory=dict)
     # The campaigns and ad groups each named asset is linked to, by asset resource name.
     used_in: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # The named assets linked to the whole account, by resource name.
+    account_level: frozenset[str] = frozenset()
+    # The uses read reached its row limit, so `used_in` is incomplete.
+    uses_truncated: bool = False
 
     def link(self, target: str, asset: str) -> str | None:
         return next(
@@ -214,8 +218,12 @@ async def read_assets(
     campaign_ids: Sequence[str],
     ad_group_ids: Sequence[str],
     asset_ids: Sequence[str],
+    with_uses: bool = True,
 ) -> LiveAssets:
     """Reads the targets, their sitelink and callout links, and the named assets with their uses.
+
+    Args:
+        with_uses: False skips where the named assets are used, which only the card shows.
 
     Raises:
         IntegrationValidationError: When the targets hold too many links to read at once.
@@ -232,16 +240,19 @@ async def read_assets(
         read.links("campaign", campaigns),
         read.links("ad_group", ad_groups),
         read.assets(assets),
-        read.uses(assets),
+        read.uses(assets if with_uses else ()),
     )
     campaign_targets, ad_group_targets, campaign_links, ad_group_links, named, uses = results
+    used_in, account_level, uses_truncated = uses
     links: dict[str, tuple[LiveLink, ...]] = {**campaign_links, **ad_group_links}
     linked = {item.asset.resource_name: item.asset for items in links.values() for item in items}
     return LiveAssets(
         targets={**campaign_targets, **ad_group_targets},
         links=links,
         assets={**linked, **named},
-        used_in=uses,
+        used_in=used_in,
+        account_level=account_level,
+        uses_truncated=uses_truncated,
     )
 
 
@@ -336,29 +347,53 @@ class _Reader:
             if (asset := _live_asset(self.customer, row)) is not None
         }
 
-    async def uses(self, ids: Sequence[str]) -> dict[str, tuple[str, ...]]:
-        """Names each campaign and ad group the assets are linked to."""
+    async def uses(
+        self, ids: Sequence[str]
+    ) -> tuple[dict[str, tuple[str, ...]], frozenset[str], bool]:
+        """Reads where the assets are linked.
+
+        Returns:
+            The live campaigns and ad groups each asset is linked to, the assets linked to the
+            whole account, and whether a read reached its row limit.
+        """
         if not ids:
-            return {}
-        results = await asyncio.gather(
+            return {}, frozenset(), False
+        asset_filter = f"asset.id IN ({', '.join(ids)})"
+        live_owner = {
+            "campaign": "campaign.status != 'REMOVED'",
+            "ad_group": "ad_group.status != 'REMOVED' AND campaign.status != 'REMOVED'",
+        }
+        campaigns, ad_groups, account = await asyncio.gather(
             *(
                 self._rows(
                     f"SELECT asset.id, {resource}.name FROM {resource}_asset "  # noqa: S608 -- fixed resources and digit-only ids
-                    f"WHERE asset.id IN ({', '.join(ids)}) "
-                    f"AND {resource}_asset.status != 'REMOVED'",
+                    f"WHERE {asset_filter} AND {resource}_asset.status != 'REMOVED' "
+                    f"AND {live_owner[resource]}",
                     f"read_{resource}_asset_uses",
                     _MAX_USES,
-                    # The card names the first uses only.
                     strict=False,
                 )
                 for resource in ("campaign", "ad_group")
-            )
+            ),
+            self._rows(
+                f"SELECT asset.id FROM customer_asset WHERE {asset_filter} "  # noqa: S608 -- digit-only ids
+                "AND customer_asset.status != 'REMOVED'",
+                "read_customer_asset_uses",
+                _MAX_USES,
+                strict=False,
+            ),
         )
         uses: dict[str, list[str]] = defaultdict(list)
-        for key, rows in zip(("campaign", "adGroup"), results, strict=True):
+        for key, rows in (("campaign", campaigns), ("adGroup", ad_groups)):
             for row in rows:
                 asset_id = (row.get("asset") or {}).get("id")
                 name = (row.get(key) or {}).get("name")
                 if asset_id and name:
                     uses[self._name("assets", asset_id)].append(str(name))
-        return {asset: tuple(names) for asset, names in uses.items()}
+        account_level = frozenset(
+            self._name("assets", asset_id)
+            for row in account
+            if (asset_id := (row.get("asset") or {}).get("id"))
+        )
+        truncated = len(campaigns) >= _MAX_USES or len(ad_groups) >= _MAX_USES
+        return {asset: tuple(names) for asset, names in uses.items()}, account_level, truncated

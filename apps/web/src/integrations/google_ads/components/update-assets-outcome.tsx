@@ -5,11 +5,12 @@ import { useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
 import { cellText } from "@/integrations/ads/lib/cell-text"
-import { ASSET_TYPE_LABELS, TARGET_KIND_LABELS } from "@/integrations/google_ads/lib/update-assets"
+import { ASSET_TYPE_LABELS } from "@/integrations/google_ads/lib/new-assets"
+import { TARGET_KIND_LABELS } from "@/integrations/google_ads/lib/update-assets"
 import {
   ASSET_OUTCOME_BADGES,
-  ASSET_OUTCOME_LABELS,
   ASSET_OUTCOME_TABS,
+  assetOutcomeLabel,
   assetOutcomeSummary,
   type AssetOutcome,
   type UpdateAssetsResult,
@@ -39,7 +40,7 @@ export function UpdateAssetsOutcome({ result }: { result: UpdateAssetsResult }) 
         details: [row.message, row.errorCode ? googleAdsTokenLabel(row.errorCode) : null]
           .filter(Boolean)
           .join(" · "),
-        outcome: ASSET_OUTCOME_LABELS[row.outcome],
+        outcome: assetOutcomeLabel(row),
         target:
           row.targetName && row.targetKind
             ? `${row.targetName} · ${TARGET_KIND_LABELS[row.targetKind]}`

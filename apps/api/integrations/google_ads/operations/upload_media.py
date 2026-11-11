@@ -10,17 +10,18 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from services.integrations.files import read_pinned_file_source
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .media import ImageSource, image_fits, image_size, read_image
+from .media import ImageSource, image_fits, image_size
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationOutcome,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
 )
-from .utils import escape_gaql_string_literal, stream_rows
+from .utils import escape_gaql_string_literal, nonnegative_int, stream_rows
 
 _OPERATION = "upload_media"
 _UNCONFIRMED = (
@@ -92,7 +93,11 @@ async def upload_media(
                 later.outcome = ("failed", None, "CANCELLED", _INTERRUPTED)
             exc.ledger = media_ledger(items)
             raise
-    await _read_back(client, customer, login_customer_id, items)
+    try:
+        await _read_back(client, customer, login_customer_id, items)
+    except (asyncio.CancelledError, Exception) as exc:
+        exc.ledger = media_ledger(items)
+        raise
     return media_ledger(items)
 
 
@@ -116,13 +121,20 @@ async def _create(
 ) -> None:
     if item.image is not None:
         try:
-            data = await read_image(item.image)
+            data = await read_pinned_file_source(
+                item.image.revision, provider_key="google_ads", operation=_OPERATION
+            )
         except IntegrationError as exc:
             item.outcome = _failed(exc)
             return
-        if size := image_size(data, item.image.revision.content_type):
-            item.width, item.height = size
-            item.fits = image_fits(*size)[0]
+        size = image_size(data, item.image.revision.content_type)
+        if size is None:
+            # The stored type is only declared, so bytes that aren't that image stay here.
+            message = f"{item.image.file.name[:500]} isn't a readable image."
+            item.outcome = ("failed", None, "unsupported_image", message)
+            return
+        item.width, item.height = size
+        item.fits = image_fits(*size)[0]
         body: dict[str, Any] = {
             "name": item.image.asset_name,
             "type": "IMAGE",
@@ -202,7 +214,11 @@ async def _read_back(
     client: GoogleAdsClient, customer: str, login_customer_id: str, items: Sequence[MediaItem]
 ) -> None:
     """Fills in Google's dimensions and video titles; a failed read keeps what was sent."""
-    created = {item.asset_id: item for item in items if item.asset_id}
+    # Google returns one asset for Files with the same content.
+    created: dict[str, list[MediaItem]] = {}
+    for item in items:
+        if item.asset_id:
+            created.setdefault(item.asset_id, []).append(item)
     if not created:
         return
     try:
@@ -220,25 +236,16 @@ async def _read_back(
         return
     for row in stream_rows(payload, max_rows=len(created) + 1):
         asset = row.get("asset") or {}
-        item = created.get(str(asset.get("id") or ""))
-        if item is None:
-            continue
         size = (asset.get("imageAsset") or {}).get("fullSize") or {}
-        width, height = _pixels(size.get("widthPixels")), _pixels(size.get("heightPixels"))
-        if width and height:
-            item.width, item.height = width, height
-            item.fits = image_fits(width, height)[0]
+        width = nonnegative_int(size.get("widthPixels"))
+        height = nonnegative_int(size.get("heightPixels"))
         title = (asset.get("youtubeVideoAsset") or {}).get("youtubeVideoTitle")
-        if isinstance(title, str) and title.strip():
-            item.title = title.strip()[:500]
-
-
-def _pixels(value: Any) -> int | None:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
+        for item in created.get(str(asset.get("id") or ""), ()):
+            if width and height:
+                item.width, item.height = width, height
+                item.fits = image_fits(width, height)[0]
+            if isinstance(title, str) and title.strip():
+                item.title = title.strip()[:500]
 
 
 def _failed(exc: IntegrationError) -> GoogleAdsMutationOutcome:

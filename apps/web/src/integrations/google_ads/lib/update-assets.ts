@@ -2,6 +2,7 @@
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
+import type { CancelCard } from "@/integrations/ads/lib/cancelled-rows"
 import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
 import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
@@ -14,37 +15,33 @@ import {
   approvalCountLine,
   changesBlock,
 } from "@/integrations/google_ads/lib/copy"
-import { characterCount } from "@/integrations/google_ads/lib/create-ads"
-import { googleAdsId, isGoogleAdsUrl, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import {
+  ASSET_TYPE_LABELS,
+  assetListProblems,
+  blankIsNull,
+  fieldProblem,
+  MAX_ASSETS_PER_TARGET,
+  newAssetKey,
+  sitelinkAdvice,
+  type AssetType,
+} from "@/integrations/google_ads/lib/new-assets"
 import { isRecord } from "@/lib/guards"
 
-export type AssetType = "SITELINK" | "CALLOUT"
 export type AssetTargetKind = "campaign" | "ad_group"
 type LinkAction = "add" | "remove"
-type LinkState = "change" | "already_set" | "not_found" | "unchecked"
-
-export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
-  CALLOUT: "Callout",
-  SITELINK: "Sitelink",
-}
+// `unchecked` waits for a check of an edit; `unavailable` is a check that gave no answer.
+type CheckState = "unchecked" | "unavailable"
+type LinkState = "change" | "already_set" | "not_found" | CheckState
 
 export const TARGET_KIND_LABELS: Record<AssetTargetKind, string> = {
   ad_group: "Ad Group",
   campaign: "Campaign",
 }
 
-// Each editable field's argument name, label, and character limit.
-export const SITELINK_FIELDS = [
-  { key: "link_text", label: "Link Text", limit: 25 },
-  { key: "description1", label: "Description 1", limit: 35 },
-  { key: "description2", label: "Description 2", limit: 35 },
-  { key: "final_url", label: "Final URL", limit: 2048 },
-] as const
-export const CALLOUT_FIELDS = [{ key: "text", label: "Text", limit: 25 }] as const
-export type AssetField = (typeof SITELINK_FIELDS)[number] | (typeof CALLOUT_FIELDS)[number]
-
-// Google shows sitelinks in pairs or more, and best with four.
-const SITELINKS_ADVISED = 4
+// The most targets and links one request takes.
+const MAX_TARGETS = 100
+const MAX_LINKS = 1_000
 
 const UNAVAILABLE =
   "Google Ads couldn't check this. Check again, or ask the agent to prepare the change again."
@@ -94,7 +91,7 @@ type CheckRow = {
   label: string | null
   problem: string | null
   row: string
-  state: Exclude<LinkState, "unchecked">
+  state: Exclude<LinkState, CheckState>
 }
 
 type TargetCheck =
@@ -112,6 +109,8 @@ type ChangeCheck =
   | { unavailable: true }
   | {
       unavailable: false
+      // Linked to the whole account, so it shows on every campaign without its own.
+      accountLevel: boolean
       before: Record<string, unknown> | null
       problem: string | null
       state: "change" | "already_set"
@@ -148,21 +147,6 @@ function parseRef(value: unknown): AssetRef | null {
 
 function text(value: unknown): string {
   return typeof value === "string" ? collapseSpaces(value) : ""
-}
-
-/** The server's name for a new asset: its content as plain text, in a fixed order. */
-export function newAssetKey(asset: Record<string, unknown>): string {
-  const dates = [text(asset["start_date"]), text(asset["end_date"])]
-  const parts =
-    asset["type"] === "sitelink"
-      ? [
-          text(asset["link_text"]),
-          text(asset["description1"]),
-          text(asset["description2"]),
-          typeof asset["final_url"] === "string" ? asset["final_url"].trim() : "",
-        ]
-      : [text(asset["text"])]
-  return ["new", String(asset["type"]), ...parts, ...dates].join("|")
 }
 
 function parseAddition(value: unknown): Addition | null {
@@ -276,6 +260,7 @@ function parseChangeCheck(value: unknown): ChangeCheck {
     : []
   return {
     unavailable: false,
+    accountLevel: value["account_level"] === true,
     before: isRecord(value["before"]) ? value["before"] : null,
     problem: textOrNull(value["problem"]),
     state: value["state"] === "already_set" ? "already_set" : "change",
@@ -310,24 +295,6 @@ export function serializeArgs(args: Pick<UpdateAssetsArgs, "changes" | "entries"
   }
 }
 
-/** Why a new or edited asset's fields can't be sent, or null. */
-export function fieldProblem(asset: Record<string, unknown>): string | null {
-  const fields = asset["type"] === "sitelink" ? SITELINK_FIELDS : CALLOUT_FIELDS
-  for (const field of fields) {
-    const value = field.key === "final_url" ? text(asset[field.key]).trim() : text(asset[field.key])
-    const length = characterCount(value)
-    const optional = field.key === "description1" || field.key === "description2"
-    if (length === 0 && !optional) return `${field.label} is required.`
-    if (length > field.limit)
-      return `${field.label} is ${String(length)} of ${String(field.limit)} characters.`
-    if (field.key === "final_url" && !isGoogleAdsUrl(value))
-      return "Enter a complete web address, starting with https://."
-  }
-  if (asset["type"] === "sitelink" && !text(asset["description1"]) !== !text(asset["description2"]))
-    return "Add both description lines, or neither."
-  return null
-}
-
 export type LinkRow = {
   action: LinkAction
   assetType: AssetType
@@ -351,8 +318,13 @@ function targetName(args: UpdateAssetsArgs, entry: AssetTarget): string {
   return check && !check.unavailable && check.name ? check.name : entry.label
 }
 
-function entryRows(entry: AssetTarget, name: string, check: TargetCheck | undefined): LinkRow[] {
-  const shown = new Map(
+function linkId(targetKey: string, action: LinkAction, assetKey: string): string {
+  return `${targetKey}|${action}|${assetKey}`
+}
+
+// A null check is an edited target, which waits for a new one.
+function entryRows(entry: AssetTarget, name: string, check: TargetCheck | null): LinkRow[] {
+  const answers = new Map(
     check && !check.unavailable ? check.rows.map((row) => [`${row.action}|${row.row}`, row]) : []
   )
   const row = (
@@ -364,24 +336,20 @@ function entryRows(entry: AssetTarget, name: string, check: TargetCheck | undefi
     local: string | null,
     value: Record<string, unknown>
   ): LinkRow => {
-    const checked = shown.get(`${action}|${assetKey}`)
-    const problem =
-      local ??
-      (check === undefined
-        ? null
-        : check.unavailable
-          ? UNAVAILABLE
-          : (check.problem ?? checked?.problem ?? null))
+    const answer = answers.get(`${action}|${assetKey}`)
+    const whole = check && !check.unavailable ? check.problem : null
+    // A link Google gave no answer for can't be approved, as the server refuses it.
+    const unavailable = check !== null && (check.unavailable || (whole === null && !answer))
     return {
       action,
       assetKey,
       assetType: type,
       cancelled: false,
-      id: `${entry.key}|${action}|${assetKey}`,
+      id: linkId(entry.key, action, assetKey),
       isNew,
-      label: checked?.label ?? label,
-      problem,
-      state: checked?.state ?? "unchecked",
+      label: answer?.label ?? label,
+      problem: local ?? (unavailable ? UNAVAILABLE : (whole ?? answer?.problem ?? null)),
+      state: unavailable ? "unavailable" : (answer?.state ?? "unchecked"),
       targetKey: entry.key,
       targetKind: entry.kind,
       targetName: name,
@@ -422,8 +390,8 @@ export function linkRows(
   const live = args.entries.flatMap((entry) => {
     // An edited target waits for a new check, so its old answers don't apply.
     const check = sameEntry(answered.get(entry.key), entry)
-      ? checked.checks.get(entry.key)
-      : undefined
+      ? (checked.checks.get(entry.key) ?? { unavailable: true as const })
+      : null
     return entryRows(entry, targetName(checked, entry), check)
   })
   const held = new Set(live.map((row) => row.id))
@@ -433,6 +401,14 @@ export function linkRows(
       .filter((row) => !held.has(row.id))
       .map((row) => ({ ...row, cancelled: true, problem: null })),
   ]
+}
+
+/** Every new asset in the request once, by its key. */
+function newAssets(args: UpdateAssetsArgs): Map<string, Record<string, unknown>> {
+  const values = new Map<string, Record<string, unknown>>()
+  for (const entry of args.entries)
+    for (const item of entry.add) if (item.kind === "new") values.set(item.key, item.value)
+  return values
 }
 
 export type NewAssetRow = {
@@ -445,9 +421,7 @@ export type NewAssetRow = {
 
 /** Each new asset once, however many targets it's added to, with the first problem any of them has. */
 export function newAssetRows(rows: readonly LinkRow[], args: UpdateAssetsArgs): NewAssetRow[] {
-  const values = new Map<string, Record<string, unknown>>()
-  for (const entry of args.entries)
-    for (const item of entry.add) if (item.kind === "new") values.set(item.key, item.value)
+  const values = newAssets(args)
   const byKey = new Map<string, NewAssetRow>()
   for (const row of rows) {
     const value = values.get(row.assetKey)
@@ -465,48 +439,90 @@ export function newAssetRows(rows: readonly LinkRow[], args: UpdateAssetsArgs): 
 }
 
 export type ChangeRow = AssetChange & {
+  accountLevel: boolean
   before: Record<string, unknown> | null
+  cancelled: boolean
   problem: string | null
-  state: "change" | "already_set" | "unchecked"
+  state: "change" | "already_set" | CheckState
   useCount: number
   usedIn: string[]
 }
 
-export function changeRows(args: UpdateAssetsArgs, checked: UpdateAssetsArgs): ChangeRow[] {
+function changeFieldProblem(change: AssetChange): string | null {
+  return fieldProblem({
+    ...change.content,
+    type: change.assetType === "SITELINK" ? "sitelink" : "callout",
+  })
+}
+
+/** Every content change, checked against what Google last answered for, then cancelled ones. */
+export function changeRows(
+  args: UpdateAssetsArgs,
+  checked: UpdateAssetsArgs,
+  cancelled: readonly AssetChange[] = []
+): ChangeRow[] {
   const answered = new Map(checked.changes.map((change) => [change.key, change]))
-  return args.changes.map((change) => {
+  const live = args.changes.map((change): ChangeRow => {
     const same = JSON.stringify(answered.get(change.key)?.value) === JSON.stringify(change.value)
     const check = same ? checked.changeChecks.get(change.key) : undefined
     const known = check && !check.unavailable ? check : null
+    // An edited change waits for a new check; one Google gave no answer for can't be approved.
+    const state = same ? (known?.state ?? "unavailable") : "unchecked"
     return {
       ...change,
+      accountLevel: known?.accountLevel ?? false,
       before: known?.before ?? null,
+      cancelled: false,
       problem:
-        fieldProblem({
-          ...change.content,
-          type: change.assetType === "SITELINK" ? "sitelink" : "callout",
-        }) ?? (check?.unavailable ? UNAVAILABLE : (known?.problem ?? null)),
-      state: known?.state ?? "unchecked",
+        changeFieldProblem(change) ??
+        (state === "unavailable" ? UNAVAILABLE : (known?.problem ?? null)),
+      state,
       useCount: known?.useCount ?? 0,
       usedIn: known?.usedIn ?? [],
     }
   })
+  const held = new Set(live.map((row) => row.key))
+  return [
+    ...live,
+    ...cancelled
+      .filter((change) => !held.has(change.key))
+      .map((change) => ({
+        ...change,
+        accountLevel: false,
+        before: null,
+        cancelled: true,
+        problem: null,
+        state: "unchecked" as const,
+        useCount: 0,
+        usedIn: [],
+      })),
+  ]
 }
 
 export type AssetCounts = { apply: number; problems: number; total: number }
 
 export function assetCounts(rows: readonly LinkRow[], changes: readonly ChangeRow[]): AssetCounts {
   const live = rows.filter((row) => !row.cancelled)
+  const edits = changes.filter((row) => !row.cancelled)
   const settled = (state: string) => state === "already_set" || state === "not_found"
   return {
     apply:
       live.filter((row) => row.problem === null && !settled(row.state)).length +
-      changes.filter((row) => row.problem === null && row.state !== "already_set").length,
+      edits.filter((row) => row.problem === null && row.state !== "already_set").length,
     problems:
       live.filter((row) => row.problem !== null).length +
-      changes.filter((row) => row.problem !== null).length,
-    total: live.length + changes.length,
+      edits.filter((row) => row.problem !== null).length,
+    total: live.length + edits.length,
   }
+}
+
+/** A target's sitelinks once its live rows apply; links already in place or not there change nothing. */
+export function sitelinksAfter(now: number, rows: readonly LinkRow[]): number {
+  return rows
+    .filter(
+      (row) => row.assetType === "SITELINK" && (row.state === "change" || row.state === "unchecked")
+    )
+    .reduce((total, row) => total + (row.action === "add" ? 1 : -1), now)
 }
 
 /** One row per campaign or ad group, with its sitelinks and callouts now and what changes. */
@@ -518,20 +534,12 @@ export function assetParents(
   return groupedByParent(rows, (row) => row.targetKey).map(({ items, key, live }) => {
     const check = args.checks.get(key)
     const known = check && !check.unavailable ? check : null
-    // Links already in place or not there change nothing.
-    const delta = (type: AssetType) =>
-      live
-        .filter(
-          (row) => row.assetType === type && (row.state === "change" || row.state === "unchecked")
-        )
-        .reduce((total, row) => total + (row.action === "add" ? 1 : -1), 0)
-    const sitelinks = known ? known.now.SITELINK + delta("SITELINK") : null
-    const few =
-      sitelinks !== null &&
-      sitelinks < SITELINKS_ADVISED &&
-      live.some((row) => row.assetType === "SITELINK")
-        ? `${approvalCountLine(sitelinks, "sitelink")} after. Google shows sitelinks best with 4 or more.`
+    const sitelinks = known ? sitelinksAfter(known.now.SITELINK, live) : null
+    const advice =
+      sitelinks !== null && live.some((row) => row.assetType === "SITELINK")
+        ? sitelinkAdvice(sitelinks)
         : null
+    const few = advice ? `${approvalCountLine(sitelinks ?? 0, "sitelink")} after. ${advice}` : null
     const account = showAccount ? (args.accounts.get(key.split("/")[1] ?? "")?.label ?? null) : null
     return {
       cancelled: live.length === 0,
@@ -558,9 +566,7 @@ function withLists(entry: AssetTarget, add: Addition[], remove: AssetRef[]): Ass
   return parseTarget(fields)
 }
 
-export type CancelledChanges = { entries: AssetTarget[]; rows: LinkRow[] }
-
-/** Takes link rows out of the request; a target left with nothing leaves too, kept for Undo. */
+/** Takes link rows out of the request; a target left with nothing leaves too, kept empty for Undo. */
 export function cancelLinks(
   args: UpdateAssetsArgs,
   rows: readonly LinkRow[],
@@ -571,81 +577,76 @@ export function cancelLinks(
   const entries = args.entries.flatMap((entry) => {
     const gone = new Set(dropped.filter((row) => row.targetKey === entry.key).map((row) => row.id))
     if (gone.size === 0) return [entry]
-    const id = (action: LinkAction, key: string) => `${entry.key}|${action}|${key}`
-    const add = entry.add.filter((item) => !gone.has(id("add", item.key)))
-    const remove = entry.remove.filter((ref) => !gone.has(id("remove", `asset:${ref.assetId}`)))
-    const next = add.length + remove.length > 0 ? withLists(entry, add, remove) : null
-    if (next) return [next]
-    departed.push(entry)
+    const add = entry.add.filter((item) => !gone.has(linkId(entry.key, "add", item.key)))
+    const remove = entry.remove.filter(
+      (ref) => !gone.has(linkId(entry.key, "remove", `asset:${ref.assetId}`))
+    )
+    const next = withLists(entry, add, remove)
+    if (next && add.length + remove.length > 0) return [next]
+    if (next) departed.push(next)
     return []
   })
   return { departed, dropped, entries }
 }
 
-/** Puts a cancelled link back, or its whole target when the target left the request. */
-export function restoreLink(
-  args: UpdateAssetsArgs,
-  departed: readonly AssetTarget[],
-  row: LinkRow
-): AssetTarget[] {
-  const entry = args.entries.find((item) => item.key === row.targetKey)
-  if (!entry) {
-    const whole = departed.find((item) => item.key === row.targetKey)
-    return whole ? [...args.entries, whole] : args.entries
-  }
+/** The target with a cancelled link back in it. */
+function withLink(entry: AssetTarget, row: LinkRow): AssetTarget | null {
   const added = row.action === "add" ? parseAddition(row.value) : null
   const removed = row.action === "remove" ? parseRef(row.value) : null
-  const next =
-    added && !entry.add.some((item) => item.key === added.key)
-      ? withLists(entry, [...entry.add, added], entry.remove)
-      : removed && !entry.remove.some((ref) => ref.assetId === removed.assetId)
-        ? withLists(entry, entry.add, [...entry.remove, removed])
-        : null
-  return args.entries.map((item) => (item === entry && next ? next : item))
+  if (added && !entry.add.some((item) => item.key === added.key))
+    return withLists(entry, [...entry.add, added], entry.remove)
+  if (removed && !entry.remove.some((ref) => ref.assetId === removed.assetId))
+    return withLists(entry, entry.add, [...entry.remove, removed])
+  return null
 }
 
-/** Puts back every cancelled link of one target, bringing the target back if it left. */
-export function restoreTarget(
-  args: UpdateAssetsArgs,
-  departed: readonly AssetTarget[],
-  rows: readonly LinkRow[],
-  targetKey: string
-): AssetTarget[] {
-  return rows
-    .filter((row) => row.cancelled && row.targetKey === targetKey)
-    .reduce((entries, row) => restoreLink({ ...args, entries }, departed, row), args.entries)
-}
-
-/** Adds a campaign or ad group the operator found, with every new asset in the request. */
+/** Adds a campaign or ad group the operator found, with the new assets in the request, up to the limit. */
 export function addTarget(
   args: UpdateAssetsArgs,
   kind: AssetTargetKind,
   value: Record<string, unknown>
 ): AssetTarget[] {
-  const assets = new Map<string, Record<string, unknown>>()
-  for (const entry of args.entries)
-    for (const item of entry.add) if (item.kind === "new") assets.set(item.key, item.value)
-  const entry = parseTarget({ add: [...assets.values()], kind, [TARGET_FIELDS[kind].field]: value })
+  const add = [...newAssets(args).values()].slice(0, MAX_ASSETS_PER_TARGET)
+  const entry = parseTarget({ add, kind, [TARGET_FIELDS[kind].field]: value })
   const held = args.entries.some((item) => item.key === entry?.key)
   return entry && !held && entry.add.length > 0 ? [...args.entries, entry] : args.entries
 }
 
-/** Sets one field of a new asset wherever the request adds it. */
+/** Sets one field of a new asset wherever the request adds it, and in its cancelled links. */
 export function editNewAsset(
   args: UpdateAssetsArgs,
+  cancelled: readonly LinkRow[],
   key: string,
   field: string,
   value: string
-): AssetTarget[] {
-  return args.entries.map((entry) => {
+): { entries: AssetTarget[]; rows: LinkRow[] } {
+  const edited = (asset: Record<string, unknown>) =>
+    parseAddition({ ...asset, [field]: blankIsNull(value) })
+  const entries = args.entries.map((entry) => {
     if (!entry.add.some((item) => item.key === key)) return entry
-    const add = entry.add.map((item) => {
-      if (item.key !== key) return item
-      const next = { ...item.value, [field]: value.trim() === "" ? null : value }
-      return parseAddition(next) ?? item
+    const seen = new Set<string>()
+    const add = entry.add.flatMap((item) => {
+      const next = item.key === key ? (edited(item.value) ?? item) : item
+      // An edit that makes two assets the same leaves one, since a target takes each once.
+      if (seen.has(next.key)) return []
+      seen.add(next.key)
+      return [next]
     })
     return withLists(entry, add, entry.remove) ?? entry
   })
+  const rows = cancelled.map((row) => {
+    const next = row.action === "add" && row.assetKey === key ? edited(row.value) : null
+    return next?.kind === "new"
+      ? {
+          ...row,
+          assetKey: next.key,
+          id: linkId(row.targetKey, "add", next.key),
+          label: next.label,
+          value: next.value,
+        }
+      : row
+  })
+  return { entries, rows }
 }
 
 export function editChange(
@@ -656,16 +657,60 @@ export function editChange(
 ): AssetChange[] {
   return args.changes.map((change) => {
     if (change.key !== key) return change
-    const content = { ...change.content, [field]: value.trim() === "" ? null : value }
+    const content = { ...change.content, [field]: blankIsNull(value) }
     return parseChange({ ...change.value, content }) ?? change
   })
 }
 
+/** What the server refuses whatever Google answers: repeats and the request's size. */
+export function assetLimitProblems(args: UpdateAssetsArgs): string[] {
+  const links = args.entries.reduce(
+    (total, entry) => total + entry.add.length + entry.remove.length,
+    0
+  )
+  return [
+    ...args.entries.flatMap((entry) =>
+      assetListProblems(`${targetName(args, entry)} sitelinks and callouts`, [
+        entry.add.map((item) => item.key),
+        entry.remove.map((ref) => `asset:${ref.assetId}`),
+      ])
+    ),
+    ...(args.entries.length > MAX_TARGETS
+      ? [`One request can change at most ${String(MAX_TARGETS)} campaigns and ad groups.`]
+      : []),
+    ...(links > MAX_LINKS
+      ? [`One request can add or remove at most ${MAX_LINKS.toLocaleString("en-GB")} assets.`]
+      : []),
+  ]
+}
+
+/** How many changes have a field the server refuses, counting a new asset once per target. */
+function fieldProblemCount(args: UpdateAssetsArgs): number {
+  return (
+    args.entries
+      .flatMap((entry) => entry.add)
+      .filter((item) => item.kind === "new" && fieldProblem(item.value) !== null).length +
+    args.changes.filter((change) => changeFieldProblem(change) !== null).length
+  )
+}
+
+/** Whether Google can check the request; the server refuses one the card knows is wrong. */
+export function canCheckAssets(args: UpdateAssetsArgs): boolean {
+  return assetLimitProblems(args).length === 0 && fieldProblemCount(args) === 0
+}
+
+/** True when the last check left a link or change without an answer. */
+export function checkIncomplete(checked: UpdateAssetsArgs): boolean {
+  return (
+    linkRows(checked, checked).some((row) => row.state === "unavailable") ||
+    changeRows(checked, checked).some((row) => row.state === "unavailable")
+  )
+}
+
 export function needsCheck(args: UpdateAssetsArgs, checked: UpdateAssetsArgs): boolean {
   return (
-    [...checked.checks.values(), ...checked.changeChecks.values()].some(
-      (check) => check.unavailable
-    ) || JSON.stringify(serializeArgs(args)) !== JSON.stringify(serializeArgs(checked))
+    checkIncomplete(checked) ||
+    JSON.stringify(serializeArgs(args)) !== JSON.stringify(serializeArgs(checked))
   )
 }
 
@@ -675,6 +720,11 @@ export function assetsBlock(
   checked: UpdateAssetsArgs
 ): string | null {
   if (args === null) return null
+  // What the card knows is wrong comes first, since a check can't pass until it's fixed.
+  const [limit] = assetLimitProblems(args)
+  if (limit) return limit
+  const fields = fieldProblemCount(args)
+  if (fields > 0) return `Fix or cancel ${approvalCountLine(fields, "change")} to continue.`
   return changesBlock(
     assetCounts(linkRows(args, checked), changeRows(args, checked)),
     needsCheck(args, checked),
@@ -712,11 +762,11 @@ export function assetsPrompt(args: UpdateAssetsArgs): string {
     ...args.entries.map((entry) => entry.customerId),
     ...args.changes.map((change) => change.key.split("/")[1] ?? ""),
   ])
+  const sitelinks = newCount(args, "SITELINK")
+  const callouts = newCount(args, "CALLOUT")
   const added = [
-    newCount(args, "SITELINK") > 0
-      ? approvalCountLine(newCount(args, "SITELINK"), "sitelink")
-      : null,
-    newCount(args, "CALLOUT") > 0 ? approvalCountLine(newCount(args, "CALLOUT"), "callout") : null,
+    sitelinks > 0 ? approvalCountLine(sitelinks, "sitelink") : null,
+    callouts > 0 ? approvalCountLine(callouts, "callout") : null,
   ].filter(Boolean)
   const parts = [
     added.length > 0 ? `Add ${added.join(" and ")}` : null,
@@ -746,14 +796,15 @@ function isRow(value: unknown): value is LinkRow {
   )
 }
 
-/** The card's own record of cancelled rows and targets, which survives a check's redraw. */
-export function parseCancelled(value: unknown): CancelledChanges {
-  if (!isRecord(value)) return { entries: [], rows: [] }
-  const entries = Array.isArray(value["entries"]) ? value["entries"] : []
-  const rows = Array.isArray(value["rows"]) ? value["rows"] : []
-  return { entries: entries.flatMap((entry) => parseTarget(entry) ?? []), rows: rows.filter(isRow) }
+// How the shared cancelled-rows helpers read and restore this card's links.
+export const ASSET_CANCEL_CARD: CancelCard<AssetTarget, LinkRow> = {
+  isRow,
+  parseEntry: parseTarget,
+  serializeEntries: (entries) => entries.map((entry) => entry.entry),
+  withRow: withLink,
 }
 
-export function serializeCancelled(cancelled: CancelledChanges): Record<string, unknown> {
-  return { entries: cancelled.entries.map((entry) => entry.entry), rows: cancelled.rows }
+/** The cancelled content changes the card keeps beside its cancelled links. */
+export function parseCancelledChanges(value: unknown): AssetChange[] {
+  return isRecord(value) ? (parseList(value["changes"], parseChange) ?? []) : []
 }

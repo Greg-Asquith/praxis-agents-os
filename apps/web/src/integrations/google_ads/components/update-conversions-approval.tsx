@@ -27,16 +27,18 @@ import {
   conversionsBannerDetail,
   type ConversionSetting,
   conversionsNeedCheck,
+  conversionValue,
   type ConversionValue,
   conversionValueText,
   COUNTING_LABELS,
   COUNTINGS,
   editedConversions,
+  HIDDEN_NOTE,
   parseCancelledConversionSettings,
   restoredConversions,
+  STATUS_LABELS,
   STATUSES,
   type UpdateConversionsArgs,
-  WINDOW_DAYS,
 } from "@/integrations/google_ads/lib/update-conversions"
 
 // Below this many changes the table tools only add noise.
@@ -64,7 +66,7 @@ const CHOICES: Partial<Record<ConversionSetting, readonly { value: string; label
     { value: "true", label: "Primary" },
     { value: "false", label: "Secondary" },
   ],
-  status: STATUSES.map((value) => ({ value, label: value === "ENABLED" ? "Enabled" : "Hidden" })),
+  status: STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] })),
 }
 
 type Edit = (value: ConversionValue) => void
@@ -94,8 +96,7 @@ export function UpdateConversionsApproval({
   const counts = conversionCounts(rows)
   const tools = rows.length >= TOOLS_FROM
 
-  // A review redraws the card, so cancelled settings live beside the request for Undo. Each
-  // action edits one item, so only one of the two fields changes.
+  // Cancelled settings live beside the request for Undo; each action changes one of the two fields.
   const save = (next: Fields, nextCancelled: readonly CancelledConversionSetting[]) => {
     if (nextCancelled !== cancelled) controls.onRetain?.(nextCancelled)
     const current = editedConversions(args, new Set(), () => undefined)
@@ -114,6 +115,7 @@ export function UpdateConversionsApproval({
         {
           key: row.key,
           kind: row.kind,
+          label: row.name,
           reference: reference as Record<string, unknown>,
           setting: row.setting,
           value: row.value,
@@ -314,6 +316,9 @@ function ChangeCell({
         row={row}
       />
       {row.unchanged ? <Badge variant="secondary">Already Set</Badge> : null}
+      {row.setting === "status" && row.value === "HIDDEN" && !row.unchanged ? (
+        <span className="text-muted-foreground">{HIDDEN_NOTE}</span>
+      ) : null}
     </div>
   )
 }
@@ -344,8 +349,7 @@ function SettingEditor({
         value={String(value)}
       />
     )
-  if (setting === "click_through_days" || setting === "view_through_days") {
-    const [low, high] = WINDOW_DAYS[setting]
+  if (setting === "click_through_days" || setting === "view_through_days")
     return (
       <span className="flex items-center gap-1.5">
         <CommittedInput
@@ -353,15 +357,14 @@ function SettingEditor({
           className="h-7 w-20 text-sm tabular-nums"
           disabled={disabled}
           onCommit={(next) => {
-            const days = Number(next.trim())
-            if (Number.isInteger(days) && days >= low && days <= high) onChange(days)
+            const days = conversionValue(setting, Number(next.trim()))
+            if (typeof days === "number") onChange(days)
           }}
           value={typeof value === "number" ? String(value) : ""}
         />
         <span className="text-muted-foreground">days</span>
       </span>
     )
-  }
   return (
     <CommittedInput
       ariaLabel={label}
@@ -371,9 +374,11 @@ function SettingEditor({
       disabled={disabled}
       onCommit={(next) => {
         const trimmed = next.trim()
-        if (setting === "currency") {
-          if (/^[a-z]{3}$/i.test(trimmed)) onChange(trimmed.toUpperCase())
-        } else if (/^\d{1,12}(\.\d{1,6})?$/.test(trimmed)) onChange(String(Number(trimmed)))
+        const parsed = conversionValue(
+          setting,
+          setting === "currency" ? trimmed.toUpperCase() : trimmed
+        )
+        if (typeof parsed === "string") onChange(parsed)
       }}
       value={typeof value === "string" ? value : ""}
     />

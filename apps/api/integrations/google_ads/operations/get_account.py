@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationError, IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient
@@ -66,15 +66,19 @@ async def get_account(
         today_micros, month_micros = _costs(cost_rows, local_now)
         cost_today = _money(today_micros) if local_now is not None else None
         cost_this_month = _money(month_micros)
-        billing = await read_account_billing(
-            client,
-            customer_id=customer_id,
-            account_name=name or customer_id,
-            login_customer_id=login_customer_id,
-            max_response_bytes=max_response_bytes,
-            local_now=local_now or (now or datetime.now(UTC)),
-            cost_this_month_micros=month_micros,
-        )
+        try:
+            billing = await read_account_billing(
+                client,
+                customer_id=customer_id,
+                account_name=name or customer_id,
+                login_customer_id=login_customer_id,
+                max_response_bytes=max_response_bytes,
+                local_now=local_now or (now or datetime.now(UTC)),
+                cost_this_month_micros=month_micros,
+            )
+        except IntegrationError:
+            # The account's settings and costs are still worth returning without billing.
+            billing = None
     auto_tagging = customer.get("autoTaggingEnabled")
     return {
         "customer_id": customer_id,

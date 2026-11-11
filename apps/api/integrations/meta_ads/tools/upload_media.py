@@ -3,7 +3,7 @@
 """Uploads workspace images and videos to one ad account's media library after approval."""
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -30,7 +30,7 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_scope
-from services.integrations.files import FileReference
+from services.integrations.files import FileReference, pinned_files
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
@@ -79,7 +79,7 @@ async def meta_ads_upload_media(ctx: RunContext[RuntimeDeps], files: MediaFiles)
             ensure_account_available(entry.external_id, operation=_OPERATION)
             sources = await _sources(ctx.deps, files)
             if reviewed is not None:
-                pinned = _pinned_files(reviewed)
+                pinned = pinned_files(reviewed)
                 for source in sources:
                     require_pinned(source, pinned.get(str(source.file.id)))
             client = await meta_ads_client(ctx, entry)
@@ -176,13 +176,6 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
         "_account_name": entry.display_name[:500],
         "_files": [source.approval_details() for source in sources],
     }
-
-
-def _pinned_files(reviewed: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
-    files = reviewed.get("_files")
-    if not isinstance(files, list):
-        return {}
-    return {str(item.get("file_id")): item for item in files if isinstance(item, Mapping)}
 
 
 def _pending_operation_detail(

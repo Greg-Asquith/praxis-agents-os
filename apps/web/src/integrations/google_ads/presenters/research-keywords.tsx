@@ -31,11 +31,11 @@ export const googleAdsResearchKeywordsPresenter = defineIntegrationReadPresenter
         listDetail(args, "keywords", "Keywords"),
       ]),
     parseResult: parseKeywordResearch,
-    render: (result) =>
+    render: (result, _entry, _args, preview) =>
       result.ideas.length === 0 ? (
         <EmptyResult>Google has no keyword ideas for this. Try broader seeds.</EmptyResult>
       ) : (
-        <ResearchKeywordsTable result={result} />
+        <ResearchKeywordsTable preview={preview} result={result} />
       ),
   }
 )

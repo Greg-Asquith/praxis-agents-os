@@ -1,8 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/upload-media-result.ts
 
-import type { DataTableTab } from "@/components/ui/data-table"
-import type { ImageFieldType } from "@/integrations/google_ads/lib/upload-media"
-import { FIELD_TYPE_LABELS } from "@/integrations/google_ads/lib/upload-media"
+import { outcomeTabs } from "@/integrations/google_ads/lib/edit-outcomes"
+import { FIELD_TYPES, type ImageFieldType } from "@/integrations/google_ads/lib/upload-media"
 import { isNonEmptyString, isNonNegativeInteger, isOneOf, isRecord } from "@/lib/guards"
 
 export type MediaOutcome = "uploaded" | "linked" | "failed" | "unverified"
@@ -39,9 +38,6 @@ export const MEDIA_OUTCOME_BADGES = {
 } as const
 
 const OUTCOMES: ReadonlySet<MediaOutcome> = new Set(["uploaded", "linked", "failed", "unverified"])
-const FIELD_TYPES: ReadonlySet<ImageFieldType> = new Set(
-  Object.keys(FIELD_TYPE_LABELS) as ImageFieldType[]
-)
 
 function text(value: unknown): string | null {
   return isNonEmptyString(value) ? value : null
@@ -96,20 +92,9 @@ export function mediaOutcomeSummary(uploads: readonly MediaUploadRow[]): string 
     .join(" · ")
 }
 
-function tab(id: MediaOutcome | "all"): DataTableTab {
-  return {
-    hideWhenEmpty: id !== "all",
-    id,
-    label: id === "all" ? "All" : MEDIA_OUTCOME_LABELS[id],
-    match: (row) => id === "all" || row["token"] === id,
-  }
-}
-
-// Result tables put each row's outcome in `token`.
-export const MEDIA_OUTCOME_TABS: DataTableTab[] = [
-  tab("all"),
-  tab("uploaded"),
-  tab("linked"),
-  tab("failed"),
-  tab("unverified"),
-]
+export const MEDIA_OUTCOME_TABS = outcomeTabs(MEDIA_OUTCOME_LABELS, [
+  "uploaded",
+  "linked",
+  "failed",
+  "unverified",
+])

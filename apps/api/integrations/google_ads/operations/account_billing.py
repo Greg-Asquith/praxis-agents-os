@@ -23,32 +23,31 @@ type BillingState = Literal[
 ]
 
 _OPERATION = "get_account_billing"
-# Accounts hold a handful of each; this only stops an unbounded read.
+# Accounts hold a handful of each; the newest are kept when there are more.
 _MAX_ROWS = 200
 # Google's billing date-times are "YYYY-MM-DD HH:MM:SS" in the account time zone.
 _DATE_TIME_LENGTH = 19
 # A limit is running low when less than this many days of this month's average cost is left.
 _LOW_LIMIT_DAYS = 7
+_PROPOSAL_KINDS = {"CREATE": "create", "UPDATE": "update", "END": "end", "REMOVE": "remove"}
 _SETUP_QUERY = """
 SELECT
   billing_setup.id,
   billing_setup.status,
   billing_setup.start_date_time,
-  billing_setup.end_date_time,
-  billing_setup.end_time_type,
   billing_setup.payments_account_info.payments_account_id,
   billing_setup.payments_account_info.payments_account_name,
   billing_setup.payments_account_info.payments_profile_id,
   billing_setup.payments_account_info.payments_profile_name
 FROM billing_setup
+ORDER BY billing_setup.id DESC
+LIMIT 200
 """.strip()
-# Pending budgets are new limits waiting for Google; cancelled ones never served.
 _BUDGET_QUERY = """
 SELECT
   account_budget.id,
   account_budget.name,
   account_budget.status,
-  account_budget.billing_setup,
   account_budget.adjusted_spending_limit_micros,
   account_budget.adjusted_spending_limit_type,
   account_budget.approved_spending_limit_micros,
@@ -68,7 +67,8 @@ SELECT
   account_budget.pending_proposal.end_time_type,
   account_budget.pending_proposal.creation_date_time
 FROM account_budget
-WHERE account_budget.status IN ('APPROVED', 'PENDING')
+ORDER BY account_budget.id DESC
+LIMIT 200
 """.strip()
 
 
@@ -84,8 +84,9 @@ async def read_account_billing(
 ) -> dict[str, Any]:
     """Returns the payer, the spending limits, and any change waiting for Google's review.
 
-    `local_now` is in the account time zone. Only accounts on monthly invoicing have billing
-    that the API reads; for the rest this makes one request and reports that.
+    `local_now` is in the account time zone. Only accounts on monthly invoicing have spending
+    limits; an account with no billing setup, or with a setup and no limit of any status, is
+    reported as paid another way.
     """
 
     async def search(query: str) -> list[dict[str, Any]]:
@@ -107,13 +108,22 @@ async def read_account_billing(
     )
     if not setups:
         return _billing("not_monthly_invoicing", monthly_invoicing=False)
-    setup = next((item for item in setups if item.get("status") == "APPROVED"), setups[0])
-    budgets = _newest_first(
+    now = local_now.strftime("%Y-%m-%d %H:%M:%S")
+    approved_setups = [item for item in setups if item.get("status") == "APPROVED"]
+    # A payer switch is approved before it starts, so the setup that has started pays now.
+    setup = next(
+        (item for item in approved_setups if (_date_time(item.get("startDateTime")) or "") <= now),
+        (approved_setups or setups)[0],
+    )
+    all_budgets = _newest_first(
         row["accountBudget"]
         for row in await search(_BUDGET_QUERY)
         if isinstance(row.get("accountBudget"), Mapping)
     )
-    now = local_now.strftime("%Y-%m-%d %H:%M:%S")
+    if not all_budgets and setup.get("status") == "APPROVED":
+        return _billing("not_monthly_invoicing", monthly_invoicing=False)
+    # Pending budgets are new limits waiting for Google; cancelled ones never served.
+    budgets = [item for item in all_budgets if item.get("status") in ("APPROVED", "PENDING")]
 
     def reference(budget: Mapping[str, Any]) -> dict[str, Any]:
         name = str(budget.get("name") or "").strip()
@@ -224,7 +234,7 @@ def _pending_change(budget: Mapping[str, Any], reference: dict[str, Any]) -> dic
     )
     return {
         "account_budget": reference,
-        "kind": str(proposal.get("proposalType") or "UNKNOWN").lower(),
+        "kind": _PROPOSAL_KINDS.get(str(proposal.get("proposalType")), "unknown"),
         "limit": _money(limit),
         "starts": _date_time(proposal.get("startDateTime")),
         "ends": _end(proposal, "endDateTime", "endTimeType"),

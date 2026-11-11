@@ -3,7 +3,7 @@
 import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import {
   CONVERSION_SETTINGS,
-  conversionValue,
+  liveConversionValue,
   type ConversionSetting,
   type ConversionValue,
 } from "@/integrations/google_ads/lib/update-conversions"
@@ -12,7 +12,10 @@ import { isNonEmptyString, isRecord } from "@/lib/guards"
 export type ConversionOutcomeRow = {
   after: ConversionValue
   before: ConversionValue
+  // The currency of the action's own default value; null means the account's.
+  currency: string | null
   errorCode: string | null
+  kind: "action" | "goal"
   message: string | null
   name: string
   outcome: EditOutcome
@@ -42,13 +45,15 @@ function parseItem(raw: unknown): ConversionOutcomeRow[] | null {
     const setting = CONVERSION_SETTINGS.find((name) => name === item["setting"])
     const outcome = item["outcome"]
     if (!setting || !isEditOutcome(outcome)) return null
-    const before = conversionValue(setting, item["before"])
-    const after = conversionValue(setting, item["after"])
+    const before = liveConversionValue(setting, item["before"])
+    const after = liveConversionValue(setting, item["after"])
     if (before === undefined || after === undefined) return null
     rows.push({
       after,
       before,
+      currency: text("value_currency"),
       errorCode: text("error_code"),
+      kind: raw["kind"] === "account_goal" ? "goal" : "action",
       message: text("message"),
       name: raw["name"],
       outcome,

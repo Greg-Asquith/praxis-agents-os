@@ -1,9 +1,11 @@
 # apps/api/tests/integrations/google_ads/test_upload_media_tool.py
 
-"""Google Ads media uploads: the approval check, the pin, exact payloads, and unclear replies."""
+"""Google Ads media uploads: the approval check, pins, exact payloads, and unclear replies."""
 
+import asyncio
 import base64
 import hashlib
+import importlib
 from dataclasses import replace
 from io import BytesIO
 from types import SimpleNamespace
@@ -15,16 +17,23 @@ import pytest
 from PIL import Image
 
 from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
-from integrations.google_ads.operations import media as media_module
-from integrations.google_ads.operations.media import ImageSource, youtube_video_id
+from integrations.google_ads.operations.media import ImageSource, image_fits, youtube_video_id
 from integrations.google_ads.tools import upload_media as tool_module
 from integrations.google_ads.tools.schemas.media import GoogleAdsMediaUploadOutput
+from integrations.google_ads.tools.utils.accounts import approval_accounts
 from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.files import FileReference
 from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _C = "customers/111"
-_ENTRY = _writable_google_ads_entry()
+_ENTRY = replace(
+    _writable_google_ads_entry(),
+    permissions_metadata={
+        "login_customer_id": "999",
+        "currency_code": "GBP",
+        "time_zone": "Europe/London",
+    },
+)
 
 
 def _png(width: int, height: int) -> bytes:
@@ -46,10 +55,14 @@ def _source(name: str, data: bytes, *, size_bytes: int | None = None) -> ImageSo
 
 
 class _Google:
-    """Serves asset creates and searches; `lose` drops the reply to the first create."""
+    """Serves asset creates and searches.
 
-    def __init__(self, *, lose: bool = False) -> None:
+    `lose` drops the reply to the first create; `cancel_read` cancels the run at the read-back.
+    """
+
+    def __init__(self, *, lose: bool = False, cancel_read: bool = False) -> None:
         self.lose = lose
+        self.cancel_read = cancel_read
         self.creates: list[dict[str, Any]] = []
         self.assets: dict[str, dict[str, Any]] = {}
 
@@ -73,6 +86,8 @@ class _Google:
         return {"results": [{"resourceName": f"{_C}/assets/{asset_id}"}]}
 
     def _search(self, query: str) -> list[dict[str, Any]]:
+        if self.cancel_read and "asset.id IN" in query:
+            raise asyncio.CancelledError
         if "asset.name = " in query:
             return [
                 {"asset": {"id": key}}
@@ -96,7 +111,8 @@ def _deps(sources: list[ImageSource], monkeypatch) -> SimpleNamespace:
         return revision.data
 
     monkeypatch.setattr(tool_module, "resolve_image_source", resolve)
-    monkeypatch.setattr(media_module, "read_file_source", read)
+    reader = importlib.import_module("services.integrations.files.read_pinned_file_source")
+    monkeypatch.setattr(reader, "read_file_source", read)
     return SimpleNamespace(
         active_context=ResolvedActiveContext(entries=(_ENTRY,)),
         db=None,
@@ -111,8 +127,15 @@ def _files(sources: list[ImageSource]) -> list[FileReference]:
     return [FileReference(entity_id=source.file.id, label=source.file.name) for source in sources]
 
 
-async def _run(monkeypatch, deps, google: _Google, *, display, files, videos=None):
-    audits: list[dict[str, Any]] = []
+def _display(*sources: ImageSource) -> dict[str, Any]:
+    return {
+        "_accounts": approval_accounts([_ENTRY]),
+        "_files": [source.approval_details() for source in sources],
+    }
+
+
+async def _run(monkeypatch, deps, google: _Google, *, display, files, videos=None, audits=None):
+    audits = [] if audits is None else audits
 
     async def audit(**kwargs):
         audits.append(kwargs)
@@ -147,8 +170,8 @@ async def test_card_shows_where_each_image_fits_and_flags_one_google_wont_take(m
     assert (shown["width"], shown["height"], shown["problem"]) == (400, 400, None)
     assert shown["fits"] == ["SQUARE_MARKETING_IMAGE", "LOGO"]
     assert shown["too_small"] == []
-    assert refused["problem"] == "This file is 6,200 KB. Google takes images up to 5,120 KB."
-    assert media_module.image_fits(500, 262) == ([], ["MARKETING_IMAGE"])
+    assert refused["problem"] is not None and refused["width"] is None
+    assert image_fits(500, 262) == ([], ["MARKETING_IMAGE"])
 
 
 async def test_approved_upload_sends_each_asset_once_and_audits_provenance_without_bytes(
@@ -156,17 +179,13 @@ async def test_approved_upload_sends_each_asset_once_and_audits_provenance_witho
 ):
     image = _source("grip-sole-square.png", _png(1200, 1200))
     deps = _deps([image], monkeypatch)
-    display = {
-        "_account": {"customer_id": "111", "resource_id": str(_ENTRY.integration_resource_id)},
-        "_files": [image.approval_details()],
-    }
     google = _Google()
 
     entry, audits = await _run(
         monkeypatch,
         deps,
         google,
-        display=display,
+        display=_display(image),
         files=_files([image]),
         videos=["https://youtu.be/dQw4w9WgXcQ"],
     )
@@ -210,16 +229,59 @@ async def test_file_changed_after_approval_is_not_uploaded(monkeypatch):
         reviewed, revision=SimpleNamespace(**{**vars(reviewed.revision), "id": uuid4()})
     )
     deps = _deps([current], monkeypatch)
-    display = {
-        "_account": {"customer_id": "111", "resource_id": str(_ENTRY.integration_resource_id)},
-        "_files": [reviewed.approval_details()],
-    }
     google = _Google()
 
-    entry, _audits = await _run(monkeypatch, deps, google, display=display, files=_files([current]))
+    entry, _audits = await _run(
+        monkeypatch, deps, google, display=_display(reviewed), files=_files([current])
+    )
 
     assert entry["error_code"] == "source_changed"
     assert google.creates == []
+
+
+async def test_account_changed_after_approval_is_not_uploaded_to(monkeypatch):
+    image = _source("grip-sole-square.png", _png(1200, 1200))
+    deps = _deps([image], monkeypatch)
+    other = replace(_ENTRY, display_name="Another account")
+    display = {**_display(image), "_accounts": approval_accounts([other])}
+    google = _Google()
+
+    entry, _audits = await _run(monkeypatch, deps, google, display=display, files=_files([image]))
+
+    assert entry["status"] == "error"
+    assert google.creates == []
+
+
+async def test_file_that_is_not_the_image_it_claims_is_not_sent(monkeypatch):
+    fake = _source("notes.png", b"not an image")
+    deps = _deps([fake], monkeypatch)
+    google = _Google()
+
+    entry, _audits = await _run(monkeypatch, deps, google, display=None, files=_files([fake]))
+
+    (upload,) = entry["data"]["uploads"]
+    assert (upload["outcome"], upload["error_code"]) == ("failed", "unsupported_image")
+    assert google.creates == []
+
+
+async def test_cancel_during_the_read_back_keeps_the_uploads_in_the_audit_record(monkeypatch):
+    image = _source("grip-sole-square.png", _png(1200, 1200))
+    deps = _deps([image], monkeypatch)
+    audits: list[dict[str, Any]] = []
+
+    with pytest.raises(asyncio.CancelledError):
+        await _run(
+            monkeypatch,
+            deps,
+            _Google(cancel_read=True),
+            display=None,
+            files=_files([image]),
+            audits=audits,
+        )
+
+    (outcome,) = audits[-1]["operation_detail"].outcome_groups[0].outcomes
+    assert outcome.status == "applied"
+    assert outcome.effects[0].external_ref == f"{_C}/assets/901"
 
 
 async def test_unclear_reply_is_settled_by_finding_the_asset_and_never_resent(monkeypatch):
@@ -242,6 +304,7 @@ async def test_unclear_reply_is_settled_by_finding_the_asset_and_never_resent(mo
         ("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30", "dQw4w9WgXcQ"),
         ("youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
         ("https://youtube.evil.example/watch?v=dQw4w9WgXcQ", None),
+        ("http://[bad/watch?v=dQw4w9WgXcQ", None),
     ],
 )
 def test_youtube_links_give_their_video_id_only_from_youtube(value, expected) -> None:

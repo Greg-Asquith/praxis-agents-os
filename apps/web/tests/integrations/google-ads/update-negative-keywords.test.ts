@@ -5,15 +5,16 @@ import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
+import { restoreParent } from "@/integrations/ads/lib/cancelled-rows"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   addKeywords,
   cancelRows,
+  NEGATIVE_CANCEL_CARD,
   negativeBlock,
   negativeParents,
   negativeRows,
   parseNegativeKeywordsArgs,
-  restoreTarget,
   serializeEntries,
   setMatchType,
   targetEntry,
@@ -115,7 +116,13 @@ describe("negative keyword changes", () => {
       ["Competitor Brands", 0, true],
     ])
     const departed = args.entries.filter((entry) => entry.kind === "new_list")
-    const restored = restoreTarget(left, departed, cancelled, salomon.targetKey)
+    const restored = restoreParent(
+      NEGATIVE_CANCEL_CARD,
+      left.entries,
+      departed,
+      cancelled,
+      salomon.targetKey
+    )
     expect(serializeEntries(restored)).toEqual(serializeEntries(args.entries))
   })
 

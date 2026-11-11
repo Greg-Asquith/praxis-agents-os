@@ -396,7 +396,7 @@ function campaignCardProblems(args: CreateCampaignArgs): string[] {
 function googleCampaignProblems(args: CreateCampaignArgs): string[] {
   if (args.checks.unavailable) return []
   const { campaign } = args
-  return args.checks.campaignProblems.flatMap((problem) => {
+  const own = args.checks.campaignProblems.flatMap((problem) => {
     if (problem.kind === "location" || problem.kind === "excluded_location") {
       const list = problem.kind === "location" ? campaign.locations : campaign.excludedLocations
       const location = list.find((item) => item.key === problem.key)
@@ -414,17 +414,39 @@ function googleCampaignProblems(args: CreateCampaignArgs): string[] {
       ])
     return [problem.message]
   })
+  // A new asset is made once for every place that links it, so an ad group's rejection applies here.
+  const shared = args.checks.itemProblems
+    .filter((problem) => problem.kind === "asset")
+    .map((problem) => ({ key: problem.assetKey ?? "", message: problem.message }))
+  return [...new Set([...own, ...googleAssetProblems(campaign.assets, shared)])]
 }
 
 export function campaignProblems(args: CreateCampaignArgs): string[] {
   return [...campaignCardProblems(args), ...googleCampaignProblems(args)]
 }
 
+/** Google's item problems, with the campaign's rejected new assets for the ad groups that link them. */
+function adGroupGoogleProblems(checks: CampaignChecks & { unavailable: false }): ItemProblem[] {
+  const shared = checks.campaignProblems
+    .filter((problem) => problem.kind === "asset")
+    .map((problem) => ({
+      adCopy: null,
+      adGroup: "",
+      assetKey: problem.key,
+      kind: problem.kind,
+      matchType: null,
+      message: problem.message,
+      text: null,
+    }))
+  return [...checks.itemProblems, ...shared]
+}
+
 function adGroupContext(args: CreateCampaignArgs, withGoogle: boolean): AdGroupContext {
   return {
     currency: currencyOf(args),
     existing: null,
-    googleProblems: withGoogle && !args.checks.unavailable ? args.checks.itemProblems : [],
+    googleProblems:
+      withGoogle && !args.checks.unavailable ? adGroupGoogleProblems(args.checks) : [],
     requireServing: true,
     rules: biddingRules(args.campaign.bidding),
   }

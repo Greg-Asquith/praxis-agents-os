@@ -11,12 +11,15 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from pydantic_ai import ModelRetry
 
+from integrations.google_ads.operations import assets as assets_operations
 from integrations.google_ads.tools import update_assets as tool_module
 from integrations.google_ads.tools.schemas.assets import (
     GoogleAdsUpdateAssetsOutput,
     GoogleAdsUpdateAssetsRequest,
 )
+from integrations.google_ads.tools.utils import edit_runs
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
 
@@ -59,6 +62,10 @@ class _Account:
             ("campaigns", "10", "71", "CALLOUT"),
             ("adGroups", "40", "72", "CALLOUT"),
         }
+        # Assets linked to the whole account.
+        self.account_assets: set[str] = set()
+        # A new callout with this text is rejected by Google.
+        self.rejected_callout: str | None = None
         self.mutates: list[dict[str, Any]] = []
         self.next_id = 900
 
@@ -94,6 +101,8 @@ class _Account:
             ]
         if resource == "asset":
             return [{"asset": self._asset(key)} for key in self.assets if key in ids]
+        if resource == "customer_asset":
+            return [{"asset": {"id": key}} for key in sorted(self.account_assets & ids)]
         collection, owner_key, names = {
             "campaign_asset": ("campaigns", "campaign", self.campaigns),
             "ad_group_asset": ("adGroups", "adGroup", {k: v[0] for k, v in self.ad_groups.items()}),
@@ -115,12 +124,31 @@ class _Account:
 
     def _mutate(self, body: dict[str, Any]) -> dict[str, Any]:
         created: dict[str, str] = {}
-        responses = []
-        for operation in body["mutateOperations"]:
+        responses: list[dict[str, Any]] = []
+        errors = []
+        for index, operation in enumerate(body["mutateOperations"]):
             ((key, value),) = operation.items()
+            callout = value.get("create", {}).get("calloutAsset", {}).get("calloutText")
+            if callout is not None and callout == self.rejected_callout:
+                responses.append({})
+                errors.append(
+                    {
+                        "message": "This text breaks a policy.",
+                        "errorCode": {"policyFindingError": "POLICY_FINDING"},
+                        "location": {
+                            "fieldPathElements": [
+                                {"fieldName": "mutate_operations", "index": index}
+                            ]
+                        },
+                    }
+                )
+                continue
             name = self._apply(key.removesuffix("Operation"), value, created, body["validateOnly"])
             responses.append({key.replace("Operation", "Result"): {"resourceName": name}})
-        return {"mutateOperationResponses": responses}
+        reply: dict[str, Any] = {"mutateOperationResponses": responses}
+        if errors:
+            reply["partialFailureError"] = {"details": [{"errors": errors}]}
+        return reply
 
     def _apply(self, resource: str, value: dict, created: dict, dry: bool) -> str:
         if "remove" in value:
@@ -215,7 +243,7 @@ async def _display(monkeypatch, account: _Account, args: dict[str, Any]) -> dict
 
 
 async def _run(monkeypatch, account: _Account, args: dict[str, Any], display: dict[str, Any]):
-    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event",
@@ -249,6 +277,7 @@ async def test_one_approval_adds_new_assets_once_links_removes_and_edits_where_u
     monkeypatch,
 ) -> None:
     account = _Account()
+    account.account_assets = {"70"}
     args = _args(
         [
             {
@@ -265,7 +294,8 @@ async def test_one_approval_adds_new_assets_once_links_removes_and_edits_where_u
                 "kind": "ad_group",
                 "ad_group": _ad_group("40"),
                 "add": [{"type": "existing", "asset": _asset("71")}],
-                "remove": [_asset("72")],
+                # The reference's type is wrong; the card and result take the live asset's.
+                "remove": [_asset("72", "SITELINK")],
             },
         ],
         [
@@ -288,7 +318,10 @@ async def test_one_approval_adds_new_assets_once_links_removes_and_edits_where_u
         ("Free Returns", "already_set"),
     }
     assert trail["now"] == {"SITELINK": 1, "CALLOUT": 1}
-    assert display["_changes"][f"{_C}/assets/70"]["used_in"] == ["Trail", "Road"]
+    edited = display["_changes"][f"{_C}/assets/70"]
+    assert (edited["used_in"], edited["account_level"]) == (["Trail", "Road"], True)
+    removal = display["_checks"][f"{_C}/adGroups/40"]["rows"][0]
+    assert (removal["action"], removal["asset_type"]) == ("remove", "CALLOUT")
     assert [body["validateOnly"] for body in account.mutates] == [True, True]
 
     result = await _run(monkeypatch, account, args, display)
@@ -428,3 +461,227 @@ def test_a_target_cannot_use_an_asset_from_another_account() -> None:
     foreign = {**_asset("71"), "customer_id": "222"}
     with pytest.raises(ValidationError, match="its own account"):
         _args([{"kind": "campaign", "campaign": _campaign("10"), "remove": [foreign]}])
+
+
+async def test_many_links_with_long_urls_fit_the_audit_record(monkeypatch) -> None:
+    account = _Account()
+    account.campaigns = {str(100 + index): f"Campaign {index}" for index in range(50)}
+    sitelinks = [
+        {
+            "type": "sitelink",
+            "link_text": f"Page {index}",
+            "final_url": f"https://shop.example/{'p' * 2000}/{index}",
+        }
+        for index in range(20)
+    ]
+    args = _args(
+        [
+            {"kind": "campaign", "campaign": _campaign(campaign_id), "add": sitelinks}
+            for campaign_id in account.campaigns
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    result = await _run(monkeypatch, account, args, display)
+
+    assert result["results"][0]["data"]["counts"]["added"] == 1000
+
+
+async def test_assets_used_in_more_places_than_one_read_holds_are_not_shown_with_a_low_count(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(assets_operations, "_MAX_USES", 2)
+    args = _args(
+        [],
+        [
+            {
+                "asset": _asset("70", "SITELINK"),
+                "content": {
+                    "type": "sitelink",
+                    "link_text": "Winter Sale",
+                    "final_url": "https://shop.example/sale",
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(ModelRetry):
+        await _display(monkeypatch, _Account(), args)
+
+
+async def test_additions_that_would_pass_twenty_of_a_type_are_refused_after_counting_removals(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    for index in range(20):
+        account.assets[str(200 + index)] = {
+            "type": "CALLOUT",
+            "source": "ADVERTISER",
+            "calloutAsset": {"calloutText": f"Perk {index}"},
+        }
+        account.links.add(("campaigns", "20", str(200 + index), "CALLOUT"))
+    swap = {
+        "kind": "campaign",
+        "campaign": _campaign("20"),
+        "add": [{"type": "callout", "text": "New Perk"}],
+        "remove": [_asset("200")],
+    }
+
+    display = await _display(monkeypatch, account, _args([swap]))
+    assert [row["problem"] for row in display["_checks"][f"{_C}/campaigns/20"]["rows"]] == [
+        None,
+        None,
+    ]
+
+    over = {**swap, "add": [*swap["add"], {"type": "callout", "text": "Second Perk"}]}
+    args = _args([over])
+    display = await _display(monkeypatch, account, args)
+    rows = display["_checks"][f"{_C}/campaigns/20"]["rows"]
+    assert [(row["action"], row["problem"] is None) for row in rows] == [
+        ("remove", True),
+        ("add", False),
+        ("add", False),
+    ]
+
+    result = await _run(monkeypatch, account, args, display)
+
+    assert _outcomes(result) == {
+        ("Road", "remove", "Perk 0", "removed"),
+        ("Road", "add", "New Perk", "failed"),
+        ("Road", "add", "Second Perk", "failed"),
+    }
+
+
+async def test_a_new_asset_matching_one_being_removed_is_created_rather_than_left_out(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("10"),
+                "add": [_FREE_RETURNS],
+                "remove": [_asset("71")],
+            }
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    result = await _run(monkeypatch, account, args, display)
+
+    assert _outcomes(result) == {
+        ("Trail", "remove", "Free Returns", "removed"),
+        ("Trail", "add", "Free Returns", "added"),
+    }
+    callouts = {
+        asset
+        for kind, owner, asset, _type in account.links
+        if (kind, owner) == ("campaigns", "10") and _type == "CALLOUT"
+    }
+    assert callouts and "71" not in callouts
+
+
+async def test_an_asset_shown_as_already_linked_is_refused_when_the_link_has_gone(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args([{"kind": "campaign", "campaign": _campaign("10"), "add": [_FREE_RETURNS]}])
+    display = await _display(monkeypatch, account, args)
+    account.links.discard(("campaigns", "10", "71", "CALLOUT"))
+
+    result = await _run(monkeypatch, account, args, display)
+
+    assert all(body["validateOnly"] for body in account.mutates)
+    (row,) = result["results"][0]["data"]["outcomes"]
+    assert (row["outcome"], row["error_code"]) == ("failed", "CHANGED_SINCE_APPROVAL")
+
+
+async def test_changes_the_approver_was_not_shown_are_refused_and_never_sent(monkeypatch) -> None:
+    account = _Account()
+    shown = {
+        "kind": "campaign",
+        "campaign": _campaign("10"),
+        "add": [{"type": "existing", "asset": _asset("72")}],
+    }
+    display = await _display(monkeypatch, account, _args([shown]))
+    checked = len(account.mutates)
+    args = _args(
+        [
+            # A row added to a target that was shown, and a target that wasn't shown at all.
+            {**shown, "remove": [_asset("71")]},
+            {"kind": "campaign", "campaign": _campaign("20"), "add": [_NEW_SITELINK]},
+        ],
+        [{"asset": _asset("71"), "content": {"type": "callout", "text": "Free 60-Day Returns"}}],
+    )
+
+    result = await _run(monkeypatch, account, args, display)
+
+    (sent,) = account.mutates[checked:]
+    assert sent["mutateOperations"] == [
+        {
+            "campaignAssetOperation": {
+                "create": {
+                    "campaign": f"{_C}/campaigns/10",
+                    "asset": f"{_C}/assets/72",
+                    "fieldType": "CALLOUT",
+                }
+            }
+        }
+    ]
+    rows = result["results"][0]["data"]["outcomes"]
+    assert {(row["action"], row["asset_label"], row["outcome"]) for row in rows} == {
+        ("add", "Next-Day Delivery", "added"),
+        ("remove", "Asset", "failed"),
+        ("add", "Size Guide", "failed"),
+        ("change", "Free 60-Day Returns", "failed"),
+    }
+    assert {row["message"] for row in rows if row["outcome"] == "failed"} == {tool_module.NOT_SHOWN}
+
+
+async def test_a_new_asset_google_rejected_in_the_dry_run_is_left_out_of_the_build(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    account.rejected_callout = "Best In The World"
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [{"type": "callout", "text": "Best In The World"}, _FREE_RETURNS],
+            }
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    checked = len(account.mutates)
+    result = await _run(monkeypatch, account, args, display)
+
+    (build,) = account.mutates[checked:]
+    assert [
+        operation["assetOperation"]["create"]["calloutAsset"]["calloutText"]
+        for operation in build["mutateOperations"]
+        if "assetOperation" in operation
+    ] == ["Free Returns"]
+    assert _outcomes(result) == {
+        ("Road", "add", "Best In The World", "failed"),
+        ("Road", "add", "Free Returns", "added"),
+    }
+
+
+def test_image_and_video_assets_are_refused_wherever_a_reference_is_taken() -> None:
+    with pytest.raises(ValidationError, match="Only sitelinks and callouts"):
+        _args(
+            [{"kind": "campaign", "campaign": _campaign("10"), "remove": [_asset("71", "IMAGE")]}]
+        )
+    with pytest.raises(ValidationError, match="same type"):
+        _args(
+            [],
+            [
+                {
+                    "asset": _asset("71", "YOUTUBE_VIDEO"),
+                    "content": {"type": "callout", "text": "Watch Now"},
+                }
+            ],
+        )

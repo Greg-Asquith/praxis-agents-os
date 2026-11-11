@@ -3,7 +3,6 @@
 """Applies Google's image asset rules to workspace Files and reads YouTube video IDs."""
 
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -16,21 +15,13 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from core.exceptions.integration import IntegrationValidationError
 from models.files import File, FileRevision
 from services.files.contract import require_matching_pair
-from services.integrations.files import (
-    StorageNotFoundError,
-    StoragePreconditionError,
-    read_file_source,
-    resolve_workspace_file_source,
-)
+from services.integrations.files import resolve_workspace_file_source
 
 _OPERATION = "upload_media"
 MAX_IMAGE_BYTES = 5_120 * 1024
 _FORMATS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/gif": "GIF"}
-_PINNED_FIELDS = ("file_id", "revision_id", "content_hash")
 # Google takes an image for a shape when its ratio is within 1% of the shape's.
 _RATIO_TOLERANCE = 0.01
-_CHANGED = "The File changed after it was approved. Ask the agent to prepare the upload again."
-_UNAVAILABLE = "The File's content is unavailable. Choose another File or upload it again."
 _YOUTUBE_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
 _YOUTUBE_PATHS = {"shorts", "embed", "live", "v"}
@@ -54,7 +45,8 @@ IMAGE_SHAPES = (
 )
 
 
-def _media_error(message: str, code: str) -> IntegrationValidationError:
+def media_error(message: str, code: str) -> IntegrationValidationError:
+    """Builds a refusal for a File Google won't take as an image asset."""
     return IntegrationValidationError(
         message, provider_key="google_ads", operation=_OPERATION, error_code=code
     )
@@ -109,34 +101,10 @@ async def resolve_image_source(db, *, workspace_id: UUID, file_id: UUID) -> Imag
             db, workspace_id=workspace_id, file_id=file_id
         )
     except NotFoundError:
-        raise _media_error(
+        raise media_error(
             "Choose a File that is available in this workspace.", "source_unavailable"
         ) from None
     return ImageSource(file, revision)
-
-
-def require_uploadable(source: ImageSource, pinned: Mapping[str, Any] | None) -> None:
-    """Fails for a File Google won't take, or one that isn't the revision the approver saw.
-
-    `pinned` is None for an unattended run, which has no approval to match.
-    """
-    if (problem := source.problem) is not None:
-        raise _media_error(problem, "unsupported_image")
-    if pinned is None:
-        return
-    details = source.approval_details()
-    if any(pinned.get(key) != details[key] for key in _PINNED_FIELDS):
-        raise _media_error(_CHANGED, "source_changed")
-
-
-async def read_image(source: ImageSource) -> bytes:
-    """Reads a whole image, verifying its size and SHA-256 against the revision."""
-    try:
-        return await read_file_source(source.revision)
-    except StorageNotFoundError:
-        raise _media_error(_UNAVAILABLE, "source_unavailable") from None
-    except StoragePreconditionError:
-        raise _media_error(_CHANGED, "source_changed") from None
 
 
 def image_size(data: bytes, content_type: str) -> tuple[int, int] | None:
@@ -171,7 +139,10 @@ def youtube_video_id(value: str) -> str | None:
     text = value.strip()
     if _YOUTUBE_ID.fullmatch(text):
         return text
-    url = urlsplit(text if "://" in text else f"https://{text}")
+    try:
+        url = urlsplit(text if "://" in text else f"https://{text}")
+    except ValueError:
+        return None
     host = (url.hostname or "").lower()
     parts = [part for part in url.path.split("/") if part]
     candidate = ""

@@ -383,7 +383,10 @@ function adProblems(group: DraftAdGroup): string[] {
 /** Google's rejections for this ad group, while the item it rejected is still in it. */
 function googleProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
   const name = group.name.trim()
-  return context.googleProblems.flatMap((problem) => {
+  const problems = context.googleProblems.flatMap((problem) => {
+    const asset = [{ key: problem.assetKey ?? "", message: problem.message }]
+    // A new asset is made once for every place that links it, so its rejection applies in each.
+    if (problem.kind === "asset") return googleAssetProblems(group.assets, asset)
     if (problem.adGroup !== name) return []
     const matches = (keyword: PastedKeyword) =>
       keyword.text === problem.text && keyword.matchType === problem.matchType
@@ -397,12 +400,10 @@ function googleProblems(group: DraftAdGroup, context: AdGroupContext): string[] 
       const position = group.ads.findIndex((ad) => copyKey(ad) === problem.adCopy)
       return position >= 0 ? [`Ad ${String(position + 1)}: ${problem.message}`] : []
     }
-    if (problem.kind === "asset" || problem.kind === "asset_link")
-      return googleAssetProblems(group.assets, [
-        { key: problem.assetKey ?? "", message: problem.message },
-      ])
+    if (problem.kind === "asset_link") return googleAssetProblems(group.assets, asset)
     return [problem.message]
   })
+  return [...new Set(problems)]
 }
 
 export const NEEDS_KEYWORD = "Needs at least 1 keyword to serve."

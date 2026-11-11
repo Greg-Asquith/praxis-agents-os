@@ -8,6 +8,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
+from pydantic_ai import ModelRetry
+
 from integrations.google_ads.references import (
     GoogleAdsConversionActionReference,
     GoogleAdsConversionGoalReference,
@@ -115,7 +118,7 @@ def _request(*changes: dict[str, Any], goals: tuple[dict[str, Any], ...] = ()) -
                         customer_id="111",
                         category=goal["category"],
                         origin=goal["origin"],
-                        label="Phone call lead from call from ads",
+                        label="Purchases",
                     ),
                     "biddable": goal["biddable"],
                 }
@@ -144,7 +147,9 @@ async def _display(monkeypatch, account: _Account, request: Any) -> dict[str, An
     return await tool_module._approval_display_args(deps, request.model_dump(mode="json"))
 
 
-async def _run(monkeypatch, account: _Account, request: Any, display: dict[str, Any]):
+async def _run(
+    monkeypatch, account: _Account, request: Any, display: dict[str, Any], *, selected: bool = True
+):
     monkeypatch.setattr(edit_runs, "google_ads_client", AsyncMock(return_value=account))
     monkeypatch.setattr(tool_module, "approved_display_args", lambda _ctx: display)
     audit = AsyncMock(return_value=uuid4())
@@ -153,7 +158,7 @@ async def _run(monkeypatch, account: _Account, request: Any, display: dict[str, 
     )
     ctx = SimpleNamespace(
         deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(_entry(),)),
+            active_context=ResolvedActiveContext(entries=(_entry(),) if selected else ()),
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
@@ -227,6 +232,8 @@ async def test_one_request_masks_each_setting_group_and_an_account_goal(monkeypa
         "1",
         "12.5",
     )
+    # A goal is named from its category and origin, not the label the model gave it.
+    assert display["_checks"][_GOAL]["name"] == goal.name == "Phone call lead from call from ads"
     assert (goal.kind, goal.settings[0].after, goal.settings[0].outcome) == (
         "account_goal",
         False,
@@ -246,3 +253,47 @@ async def test_an_action_another_account_owns_is_refused_before_any_request(monk
     assert account.mutates == []
     assert data.items[0].settings[0].outcome == "failed"
     assert account.actions[_action_name("1")]["countingType"] == "MANY_PER_CLICK"
+
+
+def _sent(account: _Account) -> list[dict[str, Any]]:
+    return [body for body in account.mutates if not body["validateOnly"]]
+
+
+async def test_a_request_other_than_the_one_checked_is_refused(monkeypatch) -> None:
+    account = _Account(_action("1"))
+    display = await _display(
+        monkeypatch, account, _request({"conversion_action": "1", "click_through_days": 60})
+    )
+
+    request = _request({"conversion_action": "1", "click_through_days": 90})
+    data, _audit = await _run(monkeypatch, account, request, display)
+
+    assert _sent(account) == []
+    assert data.items[0].settings[0].outcome == "failed"
+
+
+async def test_a_value_is_refused_when_its_currency_changed_after_the_check(monkeypatch) -> None:
+    account = _Account(_action("1"))
+    account.actions[_action_name("1")]["valueSettings"]["defaultCurrencyCode"] = "GBP"
+    request = _request({"conversion_action": "1", "default_value": "20"})
+    display = await _display(monkeypatch, account, request)
+    account.actions[_action_name("1")]["valueSettings"]["defaultCurrencyCode"] = "JPY"
+
+    data, _audit = await _run(monkeypatch, account, request, display)
+
+    assert _sent(account) == []
+    assert (data.items[0].settings[0].outcome, data.items[0].error_code) == (
+        "failed",
+        "CHANGED_SINCE_APPROVAL",
+    )
+
+
+async def test_an_account_outside_the_active_context_is_refused(monkeypatch) -> None:
+    account = _Account(_action("1"))
+    request = _request({"conversion_action": "1", "counting": "ONE_PER_CLICK"})
+    display = await _display(monkeypatch, account, request)
+
+    with pytest.raises(ModelRetry):
+        await _run(monkeypatch, account, request, display, selected=False)
+
+    assert _sent(account) == []

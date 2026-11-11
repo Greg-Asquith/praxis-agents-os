@@ -14,11 +14,14 @@ import {
 } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import {
+  editedSettingChanges,
   parseSettingMap,
+  restoredSettingChanges,
   settingsNeedCheck,
   soleRow,
   withoutKey,
 } from "@/integrations/google_ads/lib/setting-changes"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -54,10 +57,12 @@ export const CONVERSION_SETTING_TITLES: Record<ConversionSetting, string> = {
   view_through_days: "View-Through Window",
 }
 
-const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
+export const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
   ENABLED: "Enabled",
   HIDDEN: "Hidden",
 }
+
+export const HIDDEN_NOTE = "Hidden. Stops recording conversions."
 
 export const COUNTING_LABELS: Record<(typeof COUNTINGS)[number], string> = {
   MANY_PER_CLICK: "Every",
@@ -65,13 +70,14 @@ export const COUNTING_LABELS: Record<(typeof COUNTINGS)[number], string> = {
 }
 
 // Each window's range in days, as Google allows it.
-export const WINDOW_DAYS: Record<"click_through_days" | "view_through_days", [number, number]> = {
+const WINDOW_DAYS: Record<"click_through_days" | "view_through_days", [number, number]> = {
   click_through_days: [1, 90],
   view_through_days: [1, 30],
 }
 
 // Changes to these alter what Smart Bidding optimises for.
 const BIDDING_SETTINGS = new Set<ConversionSetting>([
+  "status",
   "primary",
   "default_value",
   "currency",
@@ -111,6 +117,8 @@ export type UpdateConversionsArgs = {
 export type CancelledConversionSetting = {
   key: string
   kind: "action" | "goal"
+  // The row's name when it was cancelled.
+  label: string
   // The `conversion_action` or `goal` reference.
   reference: Record<string, unknown>
   setting: ConversionSetting
@@ -153,7 +161,29 @@ function windowDays(setting: "click_through_days" | "view_through_days", value: 
     : undefined
 }
 
-/** Reads one setting's value in card terms; undefined when it isn't one. */
+/** Reads a value Google holds by its type alone, since it can be one no request may ask for. */
+export function liveConversionValue(
+  setting: ConversionSetting,
+  value: unknown
+): ConversionValue | undefined {
+  if (value === null) return null
+  switch (setting) {
+    case "primary":
+    case "always_use_default_value":
+    case "biddable":
+      return typeof value === "boolean" ? value : undefined
+    case "click_through_days":
+    case "view_through_days":
+      return typeof value === "number" && Number.isInteger(value) ? value : undefined
+    case "status":
+    case "counting":
+    case "default_value":
+    case "currency":
+      return typeof value === "string" && value !== "" ? value : undefined
+  }
+}
+
+/** Reads one setting's requested value in card terms; undefined when a request can't ask for it. */
 export function conversionValue(
   setting: ConversionSetting,
   value: unknown
@@ -199,24 +229,21 @@ function parseItem(kind: "action" | "goal", value: unknown): ConversionItem | nu
   const customerId = googleAdsId(reference["customer_id"])
   if (customerId === null) return null
   let key: string
+  let label: string
   if (kind === "action") {
     const id = googleAdsId(reference["conversion_action_id"])
     if (id === null) return null
     key = `customers/${customerId}/conversionActions/${id}`
+    label = textOrNull(reference["label"]) ?? key
   } else {
     const category = textOrNull(reference["category"])
     const origin = textOrNull(reference["origin"])
     if (category === null || origin === null) return null
     key = `customers/${customerId}/customerConversionGoals/${category}~${origin}`
+    // The reference's label is the agent's wording, so the goal is named from what it targets.
+    label = `${googleAdsTokenLabel(category)} · ${googleAdsTokenLabel(origin)}`
   }
-  return {
-    customerId,
-    entry: value,
-    key,
-    kind,
-    label: textOrNull(reference["label"]) ?? key,
-    requested: requestedOf(kind, value),
-  }
+  return { customerId, entry: value, key, kind, label, requested: requestedOf(kind, value) }
 }
 
 function parseCheck(value: unknown): ConversionCheck {
@@ -226,7 +253,7 @@ function parseCheck(value: unknown): ConversionCheck {
     unavailable: false,
     conversions:
       typeof conversions === "number" && Number.isFinite(conversions) ? conversions : null,
-    current: parseSettingMap(CONVERSION_SETTINGS, conversionValue, value["current"]),
+    current: parseSettingMap(CONVERSION_SETTINGS, liveConversionValue, value["current"]),
     name: textOrNull(value["name"]),
     problem: textOrNull(value["problem"]),
     requested: parseSettingMap(CONVERSION_SETTINGS, conversionValue, value["requested"]),
@@ -278,7 +305,7 @@ function rowOf(
     item,
     key,
     kind: item?.kind ?? cancelled?.kind ?? "action",
-    name: live?.name ?? item?.label ?? textOrNull(reference["label"]) ?? key,
+    name: live?.name ?? item?.label ?? cancelled?.label ?? key,
     problem: live === null ? UNAVAILABLE_PROBLEM : checked ? live.problem : null,
     setting,
     unchanged: was !== undefined && was === value,
@@ -325,24 +352,28 @@ export function changesBidding(rows: readonly ConversionRow[]): boolean {
   return rows.some((row) => !row.cancelled && !row.unchanged && BIDDING_SETTINGS.has(row.setting))
 }
 
-type EditedFields = { account_goals: Record<string, unknown>[]; changes: Record<string, unknown>[] }
+type Kind = ConversionItem["kind"]
+type Entry = Record<string, unknown>
+type EditedFields = { account_goals: Entry[]; changes: Entry[] }
 
-/** Writes a setting into an entry; undefined cancels it, and an entry left changing nothing goes. */
-function withSetting(
-  item: Pick<ConversionItem, "entry" | "kind">,
-  setting: ConversionSetting,
-  value: ConversionValue | undefined
-): Record<string, unknown> | null {
-  const entry =
-    value === undefined ? withoutKey(item.entry, setting) : { ...item.entry, [setting]: value }
-  return Object.keys(requestedOf(item.kind, entry)).length > 0 ? entry : null
-}
+const settingCard = (kind: Kind) => ({
+  requestedOf: (entry: Entry) => requestedOf(kind, entry),
+  settings: CONVERSION_SETTINGS,
+  withSetting: (entry: Entry, setting: ConversionSetting, value: ConversionValue | undefined) =>
+    value === undefined ? withoutKey(entry, setting) : { ...entry, [setting]: value },
+})
 
-function fields(items: readonly Pick<ConversionItem, "entry" | "kind">[]): EditedFields {
-  return {
-    account_goals: items.filter((item) => item.kind === "goal").map((item) => item.entry),
-    changes: items.filter((item) => item.kind === "action").map((item) => item.entry),
-  }
+/** Builds both request fields, each from the items of its own kind. */
+function bothFields(
+  args: UpdateConversionsArgs,
+  entries: (items: ConversionItem[], kind: Kind) => Entry[]
+): EditedFields {
+  const of = (kind: Kind) =>
+    entries(
+      args.items.filter((item) => item.kind === kind),
+      kind
+    )
+  return { account_goals: of("goal"), changes: of("action") }
 }
 
 /** Both request fields with one setting set on the given rows, or cancelled when undefined. */
@@ -351,16 +382,9 @@ export function editedConversions(
   ids: ReadonlySet<string>,
   value: (row: { key: string; setting: ConversionSetting }) => ConversionValue | undefined
 ): EditedFields {
-  const items = args.items.flatMap((item) => {
-    let entry: Record<string, unknown> | null = item.entry
-    for (const setting of CONVERSION_SETTINGS) {
-      if (entry === null) break
-      if (item.requested[setting] === undefined || !ids.has(`${item.key}|${setting}`)) continue
-      entry = withSetting({ entry, kind: item.kind }, setting, value({ key: item.key, setting }))
-    }
-    return entry === null ? [] : [{ entry, kind: item.kind }]
-  })
-  return fields(items)
+  return bothFields(args, (items, kind) =>
+    editedSettingChanges(settingCard(kind), items, ids, value)
+  )
 }
 
 /** Puts cancelled settings back, adding their entry again when it had left the request. */
@@ -368,18 +392,14 @@ export function restoredConversions(
   args: UpdateConversionsArgs,
   cancelled: readonly CancelledConversionSetting[]
 ): EditedFields {
-  const items = new Map(
-    args.items.map((item) => [item.key, { entry: item.entry, kind: item.kind }])
+  return bothFields(args, (items, kind) =>
+    restoredSettingChanges(
+      settingCard(kind),
+      items,
+      cancelled.filter((item) => item.kind === kind),
+      (item) => ({ [kind === "goal" ? "goal" : "conversion_action"]: item.reference })
+    )
   )
-  for (const item of cancelled) {
-    const field = item.kind === "goal" ? "goal" : "conversion_action"
-    const current = items.get(item.key) ?? { entry: { [field]: item.reference }, kind: item.kind }
-    items.set(item.key, {
-      entry: { ...current.entry, [item.setting]: item.value },
-      kind: item.kind,
-    })
-  }
-  return fields([...items.values()])
 }
 
 /** Settings the request doesn't change on an action yet, each starting at its live value. */
@@ -392,8 +412,8 @@ export function addableConversionSettings(
   if (!check || check.unavailable || key.includes("/customerConversionGoals/")) return []
   const present = new Set(rows.filter((row) => row.key === key).map((row) => row.setting))
   return ACTION_SETTINGS.flatMap((setting) => {
-    const value = check.current[setting]
-    // A setting Google left unset has nothing to start from.
+    // A setting Google left unset, or holds a value no request can ask for, has no start.
+    const value = conversionValue(setting, check.current[setting])
     return present.has(setting) || value === undefined || value === null ? [] : [{ setting, value }]
   })
 }
@@ -405,10 +425,8 @@ export function addedConversionSetting(
   setting: ConversionSetting,
   value: ConversionValue
 ): EditedFields {
-  return fields(
-    args.items.map((item) =>
-      item.key === key ? { entry: { ...item.entry, [setting]: value }, kind: item.kind } : item
-    )
+  return bothFields(args, (items) =>
+    items.map((item) => (item.key === key ? { ...item.entry, [setting]: value } : item.entry))
   )
 }
 
@@ -419,6 +437,7 @@ export function parseCancelledConversionSettings(value: unknown): CancelledConve
       !isRecord(item) ||
       !isRecord(item["reference"]) ||
       typeof item["key"] !== "string" ||
+      typeof item["label"] !== "string" ||
       (item["kind"] !== "action" && item["kind"] !== "goal")
     )
       return []
@@ -429,6 +448,7 @@ export function parseCancelledConversionSettings(value: unknown): CancelledConve
           {
             key: item["key"],
             kind: item["kind"],
+            label: item["label"],
             reference: item["reference"],
             setting,
             value: parsed,
@@ -471,9 +491,10 @@ export function conversionValueText(
   if (typeof value === "boolean") return value ? "Yes" : "No"
   if (typeof value === "number") return value === 1 ? "1 day" : `${String(value)} days`
   const status = STATUSES.find((item) => item === value)
-  if (setting === "status" && status) return STATUS_LABELS[status]
+  if (setting === "status") return status ? STATUS_LABELS[status] : googleAdsTokenLabel(value)
   const counting = COUNTINGS.find((item) => item === value)
-  if (setting === "counting" && counting) return COUNTING_LABELS[counting]
+  if (setting === "counting")
+    return counting ? COUNTING_LABELS[counting] : googleAdsTokenLabel(value)
   if (setting === "default_value" && currency) return formatCurrencyAmount(value, currency)
   return value
 }

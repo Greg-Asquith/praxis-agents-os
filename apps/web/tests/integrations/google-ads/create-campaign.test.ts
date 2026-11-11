@@ -153,6 +153,9 @@ describe("Google Ads create campaign arguments", () => {
       }
     )
     expect(groupProblems(rejected)).toEqual(["Sitelink 1: Google says: Destination not working."])
+    // One asset is made for every place that links it, so the campaign's copy is rejected too.
+    const shared = parsed({ ...rejected, campaign: campaign({ assets: [sitelink] }) })
+    expect(campaignProblems(shared)).toEqual(["Sitelink 1: Google says: Destination not working."])
     const edited = {
       ...rejected,
       ad_groups: [group({ assets: [{ ...sitelink, link_text: "Sale" }] })],

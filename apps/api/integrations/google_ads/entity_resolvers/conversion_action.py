@@ -9,6 +9,7 @@ from integrations.google_ads.operations.conversion_settings import (
     MAX_CONVERSION_ACTION_LOOKUP,
     LiveAccountGoal,
     LiveConversionAction,
+    goal_name,
     list_conversion_actions,
     read_account_goals,
 )
@@ -107,10 +108,6 @@ GOOGLE_ADS_CONVERSION_ACTION_RESOLVER = EntityResolverDefinition(
 )
 
 
-def _words(token: str) -> str:
-    return token.replace("_", " ").capitalize()
-
-
 def _goal_choice(entry, goal: LiveAccountGoal) -> EntityChoice:
     bidding = "Counts for bidding" if goal.values.get("biddable") else "Doesn't count for bidding"
     return EntityChoice.from_reference(
@@ -118,7 +115,7 @@ def _goal_choice(entry, goal: LiveAccountGoal) -> EntityChoice:
             customer_id=entry.external_id,
             category=goal.category,
             origin=goal.origin,
-            label=f"{_words(goal.category)} from {_words(goal.origin).lower()}",
+            label=goal_name(goal.category, goal.origin),
             description=bidding,
             scope_label=entry.display_name,
         ),

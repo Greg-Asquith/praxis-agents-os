@@ -17,7 +17,6 @@ minor release. Patch releases contain backward-compatible fixes only.
   structured output through the Claude API and configured Vertex projects.
   Pydantic AI 2.67 supplies Fable's profile and Gemini 4 Carbon's supported
   thinking levels, reducing the local model overrides.
-
 - Google Ads keyword research: `google_ads_research_keywords` finds keyword
   ideas from words, a page, or a whole site with Keyword Planner, or gets
   metrics for exact keywords. Each row has average monthly searches, a
@@ -25,6 +24,30 @@ minor release. Patch releases contain backward-compatible fixes only.
   currency, and can show which existing ad group Google would put it in. The
   card has theme tabs and a trend line per row, and **Build Ad Group From N
   Selected** asks the agent to prepare the ad group for approval.
+- Google Ads sitelinks and callouts with approval: `google_ads_update_assets`
+  adds new or existing sitelinks and callouts to up to 100 campaigns and ad
+  groups, removes them, and changes a sitelink's or callout's content in one
+  approval. The card lists the campaigns and ad groups first, shows where a
+  changed asset is used before it changes everywhere, and checks each
+  addition with Google first. `google_ads_create_campaign` and
+  `google_ads_create_ad_groups` take sitelinks and callouts too, created
+  once and linked wherever they're listed.
+- Google Ads media uploads: `google_ads_upload_media` uploads up to 20
+  workspace JPEG, PNG, or GIF images and links up to 20 YouTube videos to
+  the selected account as assets. The card previews each image, shows which
+  ad shapes it fits, and refuses a File that changed after the card was
+  shown.
+- Google Ads conversion settings with approval: `google_ads_update_conversions`
+  changes a conversion action's status, primary or secondary use, default
+  value, counting, and click-through and view-through windows, and which
+  account goals bidding uses. The card shows each action's last 30 days of
+  conversions and warns when bidding will optimise for different
+  conversions.
+- Google Ads billing on the accounts read: `google_ads_get_accounts` returns
+  who pays for each account, the spending limit in force with the amount
+  left, queued limits, and changes waiting for Google's review. The card
+  flags accounts whose limit is reached or running low under a **Needs
+  Attention** tab.
 
 - Google Ads keyword additions per ad group: `google_ads_create_keywords` takes
   each ad group with its own keywords, up to 1,000 across 50 ad groups, adds

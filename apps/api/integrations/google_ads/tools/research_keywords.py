@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import AfterValidator, BeforeValidator, Field
 from pydantic_ai import ModelRetry, RunContext
 
 from core.settings import settings
@@ -49,7 +49,11 @@ from .schemas.keyword_research import (
     MAX_RESEARCH_ROWS,
     GoogleAdsKeywordResearchOutput,
 )
-from .schemas.positive_keywords import GoogleAdsFinalUrl
+from .schemas.positive_keywords import (
+    GoogleAdsFinalUrl,
+    normalize_keyword_text,
+    validate_keyword_word_count,
+)
 from .utils.accounts import account_facts
 from .utils.bindings import GOOGLE_ADS_BINDING, RESULTS_FIELD, active_google_ads_entries
 from .utils.client import google_ads_available, google_ads_client
@@ -60,7 +64,13 @@ _TOOL = "google_ads_research_keywords"
 # Google's limit on keywords in one idea seed.
 _MAX_SEEDS = 20
 type _Key = Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
-type _Keyword = Annotated[str, Field(min_length=1, max_length=80)]
+type _Keyword = Annotated[
+    str,
+    BeforeValidator(normalize_keyword_text),
+    Field(min_length=1, max_length=80),
+    AfterValidator(validate_keyword_word_count),
+]
+_NO_SITE = "Give url as a complete web address, such as https://example.com/shoes."
 
 
 async def google_ads_research_keywords(
@@ -106,6 +116,7 @@ async def google_ads_research_keywords(
     if not seeds and url is None and not keywords:
         raise ModelRetry("Give seeds, a url, or keywords to research.")
     entry = _account(ctx, ad_groups)
+    seed = _seed(seeds, url)
 
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> IntegrationAuditOutcome:
@@ -113,7 +124,7 @@ async def google_ads_research_keywords(
             data = await _research(
                 client,
                 entry,
-                seed=_seed(seeds, url),
+                seed=seed,
                 keywords=keywords,
                 locations=locations,
                 language=language,
@@ -144,7 +155,8 @@ async def google_ads_research_keywords(
 def _account(
     ctx: RunContext[RuntimeDeps], ad_groups: Sequence[GoogleAdsAdGroupReference]
 ) -> ResolvedContextEntry:
-    """Picks the ad groups' account, or the first selected one, whose currency prices the bids."""
+    """Picks the ad groups' account, or the first selected client account, whose currency prices
+    the bids."""
     entries = active_google_ads_entries(ctx)
     wanted = {reference.customer_id for reference in ad_groups}
     if len(wanted) > 1:
@@ -152,7 +164,10 @@ def _account(
     match = [entry for entry in entries if not wanted or entry.external_id in wanted]
     if not match:
         raise ModelRetry("Those ad groups' Google Ads account isn't in the selected context.")
-    return match[0]
+    # Keyword Planner runs in an account that serves ads, so a manager account comes last.
+    return next(
+        (entry for entry in match if not entry.permissions_metadata.get("manager")), match[0]
+    )
 
 
 def _seed(seeds: Sequence[str], url: str | None) -> dict[str, Any] | None:
@@ -160,7 +175,12 @@ def _seed(seeds: Sequence[str], url: str | None) -> dict[str, Any] | None:
         return {"keywordSeed": {"keywords": list(seeds)}} if seeds else None
     if seeds:
         return {"keywordAndUrlSeed": {"url": url, "keywords": list(seeds)}}
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise ModelRetry(_NO_SITE) from None
+    if not parts.hostname:
+        raise ModelRetry(_NO_SITE)
     if parts.path in ("", "/") and not parts.query:
         return {"siteSeed": {"site": parts.hostname}}
     return {"urlSeed": {"url": url}}
@@ -267,7 +287,7 @@ def _idea(row: KeywordMetrics, requested: bool, placements: dict[str, Any]) -> d
         "high_bid": _money(row.high_bid_micros),
         "trend": list(row.trend),
         "themes": list(row.themes),
-        "close_variants": list(row.close_variants[:50]),
+        "close_variants": list(row.close_variants),
         "ad_group_id": placement.ad_group_id if placement else None,
         "match_type": placement.match_type if placement else None,
     }
@@ -319,7 +339,7 @@ DEFINITION = RuntimeToolDefinition(
         "To build from the result, pass each chosen row's text with a match type to "
         "google_ads_create_ad_groups or google_ads_create_keywords. Searches and bids are "
         "Google's estimates; present them as estimates, never as commitments. Research runs "
-        "in the ad groups' account, or else the first selected account, and prices bids in "
+        "in the ad groups' account, or else the first selected client account, and prices bids in "
         "its currency."
     ),
     provider="google_ads",

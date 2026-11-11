@@ -12,7 +12,11 @@ from pydantic_ai import (
     ModelRetry,
 )
 
-from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationNotFoundError,
+    IntegrationPermissionError,
+    IntegrationValidationError,
+)
 from integrations.google_ads.operations.get_account import get_account
 from integrations.google_ads.operations.get_report_field import (
     get_report_field,
@@ -587,11 +591,35 @@ async def test_account_billing_runs_low_under_seven_days_of_average_cost() -> No
     assert billing["pending_changes"][0]["limit"] == "5000"
 
 
-async def test_account_billing_reports_accounts_not_on_monthly_invoicing() -> None:
-    client = _AccountClient(_CUSTOMER, [])
+async def test_account_billing_reports_a_setup_with_no_limits_as_not_monthly_invoicing() -> None:
+    # Card accounts can have a billing setup; only invoiced accounts have spending limits.
+    client = _AccountClient(_CUSTOMER, [], setups=[_APPROVED_SETUP])
 
     billing = await _billing(client, datetime(2026, 11, 11, 12, tzinfo=UTC))
 
     assert billing["monthly_invoicing"] is False
     assert billing["state"] == "not_monthly_invoicing"
-    assert not any("FROM account_budget" in query for query in client.queries)
+
+
+async def test_get_account_keeps_settings_and_costs_when_billing_is_refused() -> None:
+    class _NoBillingAccess(_AccountClient):
+        async def post(self, path: str, **kwargs):
+            if "FROM billing_setup" in kwargs["json"]["query"]:
+                raise IntegrationPermissionError(
+                    "No billing access.", provider_key="google_ads", operation="get_account"
+                )
+            return await super().post(path, **kwargs)
+
+    client = _NoBillingAccess(
+        _CUSTOMER, [{"segments": {"date": "2026-11-05"}, "metrics": {"costMicros": "5000000"}}]
+    )
+
+    account = await get_account(
+        client,  # type: ignore[arg-type]
+        customer_id="333",
+        login_customer_id="111",
+        max_response_bytes=100_000,
+    )
+
+    assert account["cost_this_month"] == "5"
+    assert account["billing"] is None

@@ -74,6 +74,12 @@ def writable_entries(active: ResolvedActiveContext | None) -> dict[str, Resolved
     return {entry.external_id: entry for entry in entries if entry.write_allowed}
 
 
+def sole_writable_entry(active: ResolvedActiveContext | None) -> ResolvedContextEntry | None:
+    """Returns the one account this run may write to, or None when there are none or several."""
+    writable = list(writable_entries(active).values())
+    return writable[0] if len(writable) == 1 else None
+
+
 def writable_entry(
     active: ResolvedActiveContext | None, customer_id: str
 ) -> ResolvedContextEntry | None:

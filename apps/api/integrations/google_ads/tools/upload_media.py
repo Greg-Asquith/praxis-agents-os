@@ -3,7 +3,7 @@
 """Uploads workspace images and links YouTube videos as assets in one Google Ads account."""
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -30,7 +30,12 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_scope
-from services.integrations.files import FileReference
+from services.integrations.files import (
+    FileReference,
+    pinned_files,
+    read_pinned_file_source,
+    require_pinned_file,
+)
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
@@ -41,14 +46,14 @@ from ..operations.media import (
     ImageSource,
     image_fits,
     image_size,
-    read_image,
-    require_uploadable,
+    media_error,
     resolve_image_source,
     youtube_video_id,
 )
 from ..operations.upload_media import MediaItem, upload_media
 from ..references import GoogleAdsAssetReference
 from .schemas.media import MAX_MEDIA_FILES, MAX_YOUTUBE_VIDEOS, GoogleAdsMediaUploadOutput
+from .utils.accounts import approval_accounts, sole_writable_entry
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client
 from .utils.mutation_evidence import (
@@ -61,10 +66,7 @@ from .utils.routing import login_customer_id
 
 _OPERATION = "upload_media"
 _IDENTITY = ("object",)
-_ACCOUNT_CHANGED = (
-    "The selected Google Ads account changed after approval. Ask the agent to prepare the "
-    "upload again."
-)
+_ACCOUNT_CHANGED = "The approved Google Ads account is no longer selected. Ask for approval again."
 _BAD_VIDEO = "{value} isn't a YouTube video link or ID."
 
 type ImageFiles = Annotated[
@@ -94,14 +96,20 @@ async def google_ads_upload_media(
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
             nonlocal client, items, pending
-            if reviewed is not None and reviewed.get("_account") != _account_pin(entry):
+            if reviewed is not None and reviewed.get("_accounts") != approval_accounts([entry]):
                 raise ModelRetry(_ACCOUNT_CHANGED)
-            pinned = _pinned_files(reviewed) if reviewed is not None else None
+            pinned = pinned_files(reviewed) if reviewed is not None else None
             sources = await _sources(ctx.deps, files or ())
             for source in sources:
-                require_uploadable(
-                    source, None if pinned is None else pinned.get(str(source.file.id), {})
-                )
+                if (problem := source.problem) is not None:
+                    raise media_error(problem, "unsupported_image")
+                if pinned is not None:
+                    require_pinned_file(
+                        source.approval_details(),
+                        pinned.get(str(source.file.id)),
+                        provider_key="google_ads",
+                        operation=_OPERATION,
+                    )
             items = [
                 *(MediaItem("image", image=source) for source in sources),
                 *(MediaItem("youtube_video", video_id=video_id) for video_id in video_ids),
@@ -154,15 +162,13 @@ async def google_ads_upload_media(
 
 def upload_entry(deps: RuntimeDeps) -> ResolvedContextEntry:
     """Picks the one writable account in Active Context; the agent never names accounts."""
-    active = deps.active_context
-    entries = active.compatible_entries(GOOGLE_ADS_WRITE_BINDING) if active else ()
-    writable = [entry for entry in entries if entry.write_allowed]
-    if len(writable) != 1:
+    entry = sole_writable_entry(deps.active_context)
+    if entry is None:
         raise ModelRetry(
             "Media uploads go to one account. Ask the user to select exactly one writable "
             "Google Ads account in Active Context."
         )
-    return writable[0]
+    return entry
 
 
 def _checked_request(
@@ -184,22 +190,11 @@ def _checked_request(
     return ids
 
 
-def _account_pin(entry: ResolvedContextEntry) -> dict[str, str]:
-    return {"customer_id": entry.external_id, "resource_id": str(entry.integration_resource_id)}
-
-
 async def _sources(deps: RuntimeDeps, files: Sequence[FileReference]) -> list[ImageSource]:
     return [
         await resolve_image_source(deps.db, workspace_id=deps.workspace.id, file_id=ref.entity_id)
         for ref in files
     ]
-
-
-def _pinned_files(reviewed: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
-    files = reviewed.get("_files")
-    if not isinstance(files, list):
-        return {}
-    return {str(item.get("file_id")): item for item in files if isinstance(item, Mapping)}
 
 
 async def _validate_args(
@@ -216,12 +211,10 @@ async def _validate_args(
 
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
     """Pins each File's revision and the account, with each image's size and where it fits."""
-    entry = upload_entry(deps)
     references = [FileReference.model_validate(value) for value in args.get("files") or ()]
     return {
         **args,
-        "_account": _account_pin(entry),
-        "_account_name": entry.display_name[:500],
+        "_accounts": approval_accounts([upload_entry(deps)]),
         "_files": [await _file_check(source) for source in await _sources(deps, references)],
     }
 
@@ -232,9 +225,12 @@ async def _file_check(source: ImageSource) -> dict[str, Any]:
     if details["problem"] is not None:
         return {**details, "fits": [], "too_small": []}
     try:
-        size = image_size(await read_image(source), source.revision.content_type)
+        data = await read_pinned_file_source(
+            source.revision, provider_key="google_ads", operation=_OPERATION
+        )
     except IntegrationValidationError as exc:
         return {**details, "problem": exc.user_message, "fits": [], "too_small": []}
+    size = image_size(data, source.revision.content_type)
     if size is None:
         problem = f"{source.file.name} isn't a readable image."
         return {**details, "problem": problem, "fits": [], "too_small": []}
@@ -308,7 +304,7 @@ def _upload_row(entry: ResolvedContextEntry, item: MediaItem) -> dict[str, Any]:
             asset_type="IMAGE" if image else "YOUTUBE_VIDEO",
             label=name,
             description=_description(item),
-            scope_label=entry.display_name,
+            scope_label=entry.display_name[:500],
         ).model_dump(mode="json")
     return {
         "kind": item.kind,
@@ -373,7 +369,7 @@ DEFINITION = RuntimeToolDefinition(
         completed_label="Uploaded Media to Google Ads",
         failed_label="Couldn't Upload Media to Google Ads",
         approval_title="Upload Media to Google Ads",
-        approval_prompt="The agent wants to upload these images to the Google Ads account {_account_name}.",
+        approval_prompt="The agent wants to upload this media to Google Ads.",
         approve_label="Approve & Upload",
         arg_fields=(
             ToolFieldPresentation(

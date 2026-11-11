@@ -2,7 +2,6 @@
 
 """Approval-only tool that adds and removes negative keywords on campaigns, ad groups, and lists."""
 
-import asyncio
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -23,7 +22,6 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.audit_events import (
-    AuditStatus,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
@@ -32,21 +30,11 @@ from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.operations import (
-    IntegrationAuditOutcome,
-    run_audited_integration_operation,
-)
 
 from ..client import GoogleAdsClient
-from ..operations.build import CampaignBuild, dry_run_build, send_build
-from ..operations.edits import CriterionChange, Edit, apply_edits, prepare_edits
-from ..operations.mutation_outcomes import (
-    GoogleAdsMutationLedger,
-    GoogleAdsMutationProjection,
-    build_mutation_ledger,
-    freeze_fields,
-    joined_ledger,
-)
+from ..operations.build import CampaignBuild, dry_run_build
+from ..operations.edits import CriterionChange, Edit, prepare_edits
+from ..operations.mutation_outcomes import GoogleAdsMutationLedger
 from ..operations.negative_keyword_criteria import (
     BlockedKeywords,
     LiveNegatives,
@@ -64,19 +52,14 @@ from .schemas.negative_keywords import (
 )
 from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
-from .utils.client import google_ads_available, google_ads_client, google_ads_client_for_principal
-from .utils.mutation_evidence import (
-    attach_interrupted_evidence,
-    audit_status,
-    google_ads_account_target,
-    terminal_operation_detail,
-)
+from .utils.client import google_ads_available, google_ads_client_for_principal
+from .utils.edit_runs import EditBuildPlan, run_approved_edits_then_build
+from .utils.mutation_evidence import google_ads_account_target
 from .utils.requests import validated_request
 from .utils.routing import login_customer_id
 
 _OPERATION = "update_negative_keywords"
 _FAMILY = "negative_keywords"
-_IDENTITY = ("object",)
 # Keyword rows and campaign rows for the most a call can change, with room for long names.
 _MAX_PUBLIC_RESULT_CHARS = 1_000_000
 _MAX_MODEL_OUTCOMES = 50
@@ -94,7 +77,6 @@ _BLOCKS = "Blocks “{keyword}”, a keyword you bid on in {ad_group}."
 _LIST_BLOCKS = (
     "The list's “{negative}” would block “{keyword}”, a keyword you bid on in {ad_group}."
 )
-_INTERRUPTED = "This wasn't sent, because the change was interrupted."
 _APPLIED = {"add": "added", "remove": "removed", "create": "created"}
 
 type _Item = Literal["keyword", "campaign", "list"]
@@ -400,44 +382,33 @@ async def google_ads_update_negative_keywords(
 
     async def operation(entry: ResolvedContextEntry, _selected: Sequence[Any]) -> Any:
         changes = by_account[entry.external_id]
-        client: GoogleAdsClient | None = None
         planned: dict[str, list[_Planned]] = {}
-        pending: PendingIntegrationOperationDetail | None = None
 
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, pending
-            client = await google_ads_client(ctx, entry)
+        def plan() -> EditBuildPlan:
             for change in changes:
                 planned[change.target_key] = _approved_plan(change, shown.get(change.target_key))
-            pending = _pending_detail(entry, changes, planned)
-            return pending
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, Any]]:
-            if client is None or pending is None or not planned:
-                raise RuntimeError("Google Ads negative keyword preparation did not complete")
-            try:
-                ledger = await _send(client, entry, changes, planned)
-            except asyncio.CancelledError as exc:
-                attach_interrupted_evidence(exc, pending, identity_keys=_IDENTITY)
-                raise
-            detail = terminal_operation_detail(pending, ledger, identity_keys=_IDENTITY)
-            data = _result(entry, changes, planned, shown, ledger)
-            status = audit_status(detail)
-            return IntegrationAuditOutcome(
-                data,
-                status=status,
-                external_ref=",".join(ledger.external_refs)[:1000] or None,
-                operation_detail=detail,
-                unverified_result=data if status is AuditStatus.UNVERIFIED else None,
+            build, left_out = _list_build(entry.external_id, _new_list_parts(planned))
+            return EditBuildPlan(
+                edits=[
+                    replace(item.edit, refused=item.refused)
+                    for items in planned.values()
+                    for item in items
+                    if item.edit is not None
+                ],
+                build=build,
+                refused={item.key: item.refused or NOT_SHOWN for item in left_out},
+                pending=_pending_detail(entry, changes, planned),
             )
 
-        return await run_audited_integration_operation(
+        return await run_approved_edits_then_build(
             ctx,
             entry,
             tool_name="google_ads_update_negative_keywords",
             operation=_OPERATION,
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
+            family=_FAMILY,
+            plan=plan,
+            read=lambda client: _reader(client, entry, changes),
+            result=lambda ledger: _result(entry, changes, planned, shown, ledger),
         )
 
     # Every reference names its account; a list's campaigns are always in the list's account.
@@ -457,108 +428,6 @@ async def google_ads_update_negative_keywords(
 
 def _target(change: GoogleAdsNegativeKeywordChange) -> Any:
     return getattr(change, {"list": "negative_list"}.get(change.kind, change.kind))
-
-
-async def _send(
-    client: GoogleAdsClient,
-    entry: ResolvedContextEntry,
-    changes: Sequence[GoogleAdsNegativeKeywordChange],
-    planned: Mapping[str, Sequence[_Planned]],
-) -> GoogleAdsMutationLedger:
-    """Sends changes to what exists, then builds new lists, and records both in one ledger."""
-    edits = [
-        replace(item.edit, refused=item.refused)
-        for items in planned.values()
-        for item in items
-        if item.edit is not None
-    ]
-    parts = _new_list_parts(planned)
-    ledgers: list[GoogleAdsMutationLedger] = []
-    if edits:
-        try:
-            result = await apply_edits(
-                client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                edits=edits,
-                read=_reader(client, entry, changes),
-                family=_FAMILY,
-                operation=_OPERATION,
-            )
-        except asyncio.CancelledError as exc:
-            # A change interrupted before anything was sent carries no ledger.
-            sent = getattr(exc, "ledger", None)
-            if parts and sent is not None:
-                exc.ledger = joined_ledger(
-                    [sent, _failed_ledger(parts, "CANCELLED", _INTERRUPTED)], family=_FAMILY
-                )
-            raise
-        ledgers.append(result.ledger)
-    if parts:
-        ledgers.extend(await _send_lists(client, entry, parts, ledgers))
-    return joined_ledger(ledgers, family=_FAMILY)
-
-
-async def _send_lists(
-    client: GoogleAdsClient,
-    entry: ResolvedContextEntry,
-    parts: Sequence[_Planned],
-    earlier: Sequence[GoogleAdsMutationLedger],
-) -> list[GoogleAdsMutationLedger]:
-    build, left_out = _list_build(entry.external_id, parts)
-    ledgers: list[GoogleAdsMutationLedger] = []
-    refused = [replace(item, refused=item.refused or NOT_SHOWN) for item in left_out]
-    if build.steps:
-        keys = [step.source for step in build.steps]
-        try:
-            built = await send_build(
-                client,
-                build,
-                login_customer_id=login_customer_id(entry),
-                family=_FAMILY,
-                operation=_OPERATION,
-            )
-        except asyncio.CancelledError as exc:
-            exc.ledger = joined_ledger(
-                [
-                    *earlier,
-                    _keyed(exc.ledger, keys),
-                    *([_failed_ledger(refused, "REFUSED")] if refused else []),
-                ],
-                family=_FAMILY,
-            )
-            raise
-        ledgers.append(_keyed(built.ledger, keys))
-    if refused:
-        ledgers.append(_failed_ledger(refused, "REFUSED"))
-    return ledgers
-
-
-def _keyed(ledger: GoogleAdsMutationLedger, keys: Sequence[str]) -> GoogleAdsMutationLedger:
-    """Names each build step by its change's key, as the audit record names every change."""
-    parents = []
-    for parent, key in zip(ledger.parents, keys, strict=True):
-        identity = freeze_fields({"object": key, "settings": "create"})
-        effects = tuple(replace(effect, fields=identity) for effect in parent.effects)
-        parents.append(replace(parent, identity=identity, effects=effects))
-    return replace(ledger, parents=tuple(parents))
-
-
-def _failed_ledger(
-    parts: Sequence[_Planned], code: str, message: str | None = None
-) -> GoogleAdsMutationLedger:
-    fields = [{"object": item.key, "settings": "create"} for item in parts]
-    return build_mutation_ledger(
-        family=_FAMILY,
-        action="update",
-        parent_fields=fields,
-        skipped_indices={},
-        submitted=list(enumerate(fields)),
-        outcomes=[("failed", None, code, message or item.refused or NOT_SHOWN) for item in parts],
-        projection=GoogleAdsMutationProjection(
-            applied_key="updated", skipped_key="already_set", errors_key="errors"
-        ),
-    )
 
 
 def _reader(

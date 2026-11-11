@@ -123,14 +123,19 @@ describe("Google Ads keyword research", () => {
     expect(rows.filter((row) => tabs[4]?.match(row))).toHaveLength(1)
   })
 
-  it("asks for one ad group from the chosen keywords, with Google's placement hints", () => {
+  it("asks for one ad group from the chosen keywords, without names the agent supplied", () => {
     const result = parseKeywordResearch(DATA)
     if (!result) throw new Error("expected a result")
 
-    const instruction = buildAdGroupInstruction(result, result.ideas.slice(0, 2))
+    const [first, second] = result.ideas
+    if (!first || !second) throw new Error("expected two ideas")
+    const instruction = buildAdGroupInstruction(result, [
+      { ...first, text: "trail  running\nshoes" },
+      second,
+    ])
 
     expect(instruction.split("\n").slice(1)).toEqual([
-      "- trail running shoes (Google suggests phrase match; fits Trail Shoes)",
+      "- trail running shoes (Google suggests phrase match)",
       "- waterproof trail shoes",
     ])
     expect(instruction).toContain("482-193-0571")

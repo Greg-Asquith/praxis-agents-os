@@ -97,8 +97,10 @@ The following contracts apply in this area:
 bounded revision reads, and copy creation with durable storage reservations.
 Provider packages use these operations and the published `FileReference`
 type instead of importing private File, storage, or core resolver services.
-Providers retain their content policy, approval pins, and audited operation
-scope. Copy creation requires the caller's audited transaction to cover the
+It also checks a File against the revision an approval pinned and reads that
+revision whole (`pinned_files`, `require_pinned_file`,
+`read_pinned_file_source`). Providers retain their content policy and audited
+operation scope. Copy creation requires the caller's audited transaction to cover the
 File, conversation link, and success evidence.
 
 The following contracts apply in this area:

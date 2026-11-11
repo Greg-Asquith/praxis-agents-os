@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/upload-media.ts
 
+import { parseApprovalAccounts } from "@/integrations/google_ads/lib/accounts"
 import { pluralize } from "@/lib/format"
 import { isNonEmptyString, isNonNegativeInteger, isOneOf, isRecord } from "@/lib/guards"
 
@@ -10,7 +11,7 @@ export type ImageFieldType =
   | "LOGO"
   | "LANDSCAPE_LOGO"
 
-export const FIELD_TYPE_LABELS: Record<ImageFieldType, string> = {
+const FIELD_TYPE_LABELS: Record<ImageFieldType, string> = {
   MARKETING_IMAGE: "Landscape",
   SQUARE_MARKETING_IMAGE: "Square",
   PORTRAIT_MARKETING_IMAGE: "Portrait",
@@ -18,7 +19,7 @@ export const FIELD_TYPE_LABELS: Record<ImageFieldType, string> = {
   LANDSCAPE_LOGO: "Landscape Logo",
 }
 
-const FIELD_TYPES: ReadonlySet<ImageFieldType> = new Set(
+export const FIELD_TYPES: ReadonlySet<ImageFieldType> = new Set(
   Object.keys(FIELD_TYPE_LABELS) as ImageFieldType[]
 )
 
@@ -53,6 +54,9 @@ export type UploadMediaArgs = {
   // True when the File list differs from the one the server last checked.
   needsReview: boolean
 }
+
+export const MAX_IMAGES = 20
+export const MAX_VIDEOS = 20
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/
 const YOUTUBE_HOSTS = new Set([
@@ -106,10 +110,11 @@ export function parseUploadMediaArgs(value: unknown, retained?: unknown): Upload
   const live = new Set(images.map((image) => image.id))
   const cancelled = parseCancelled(retained).filter((image) => !live.has(image.id))
   const checkedIds = checks ? [...checks.keys()] : []
+  const [account] = parseApprovalAccounts(value["_accounts"]).values()
   return {
     images: [...images, ...cancelled],
     videos,
-    accountName: isNonEmptyString(value["_account_name"]) ? value["_account_name"] : null,
+    accountName: account?.label ?? null,
     needsReview:
       checkedIds.length !== images.length ||
       images.some((image, index) => checkedIds[index] !== image.id),

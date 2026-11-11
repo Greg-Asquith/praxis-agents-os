@@ -13,8 +13,10 @@ from services.files.contract import require_matching_pair
 from services.integrations.files import (
     StorageNotFoundError,
     StoragePreconditionError,
-    read_file_source,
+    require_pinned_file,
     resolve_workspace_file_source,
+    source_changed_error,
+    source_unavailable_error,
     stream_file_source,
 )
 
@@ -22,7 +24,6 @@ from ..models import MetaAdsMediaType
 from ..settings import meta_ads_settings
 
 _OPERATION = "media_source"
-_PINNED_FIELDS = ("file_id", "revision_id", "content_hash")
 _MEDIA_TYPES: dict[str, MetaAdsMediaType] = {
     "image/jpeg": "image",
     "image/png": "image",
@@ -30,8 +31,7 @@ _MEDIA_TYPES: dict[str, MetaAdsMediaType] = {
     "video/quicktime": "video",
 }
 _BYTES_PER_MB = 1024 * 1024
-_CHANGED = "The File changed after it was approved. Ask the agent to prepare the upload again."
-_UNAVAILABLE = "The File's content is unavailable. Choose another File or upload it again."
+_SEAM = {"provider_key": "meta_ads", "operation": _OPERATION}
 
 
 def _media_error(message: str, code: str) -> IntegrationValidationError:
@@ -100,19 +100,7 @@ def _media_type(revision: FileRevision) -> MetaAdsMediaType | None:
 
 def require_pinned(source: MediaSource, pinned: Mapping[str, Any] | None) -> None:
     """Fails when the File's current revision isn't the one the approver saw."""
-    details = source.approval_details()
-    if pinned is None or any(pinned.get(key) != details[key] for key in _PINNED_FIELDS):
-        raise _media_error(_CHANGED, "source_changed")
-
-
-async def read_image(source: MediaSource) -> bytes:
-    """Reads a whole image, verifying its size and SHA-256 against the revision."""
-    try:
-        return await read_file_source(source.revision)
-    except StorageNotFoundError:
-        raise _media_error(_UNAVAILABLE, "source_unavailable") from None
-    except StoragePreconditionError:
-        raise _media_error(_CHANGED, "source_changed") from None
+    require_pinned_file(source.approval_details(), pinned, **_SEAM)
 
 
 class RevisionStream:
@@ -147,7 +135,7 @@ class RevisionStream:
         while len(self._buffer) < size:
             chunk = await self._next_chunk()
             if chunk is None:
-                raise _media_error(_CHANGED, "source_changed")
+                raise source_changed_error(**_SEAM)
             self._buffer.extend(chunk)
         data = bytes(self._buffer[:size])
         del self._buffer[:size]
@@ -156,7 +144,7 @@ class RevisionStream:
     async def verify(self) -> None:
         """Fails unless every stored byte was read and they match the revision's hash."""
         if self._buffer or await self._next_chunk() is not None:
-            raise _media_error(_CHANGED, "source_changed")
+            raise source_changed_error(**_SEAM)
 
     async def _next_chunk(self) -> bytes | None:
         if self._chunks is None:
@@ -166,6 +154,6 @@ class RevisionStream:
         except StopAsyncIteration:
             return None
         except StorageNotFoundError:
-            raise _media_error(_UNAVAILABLE, "source_unavailable") from None
+            raise source_unavailable_error(**_SEAM) from None
         except StoragePreconditionError:
-            raise _media_error(_CHANGED, "source_changed") from None
+            raise source_changed_error(**_SEAM) from None

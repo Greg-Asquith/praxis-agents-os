@@ -29,6 +29,13 @@ import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/compon
 import { EntityPicker } from "@/integrations/ads/components/entity-picker"
 import { KeywordPaste } from "@/integrations/ads/components/keyword-paste"
 import { ParentTable } from "@/integrations/ads/components/parent-table"
+import {
+  parseCancelled,
+  restoreParent,
+  restoreRow,
+  retainCancelled,
+  serializeCancelled,
+} from "@/integrations/ads/lib/cancelled-rows"
 import type { KeywordMatchType, PastedKeyword } from "@/integrations/ads/lib/keyword-notation"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { NegativeTargetCombobox } from "@/integrations/google_ads/components/negative-target-combobox"
@@ -42,10 +49,7 @@ import {
   negativeCounts,
   negativeParents,
   negativeRows,
-  parseCancelled,
-  restoreRow,
-  restoreTarget,
-  serializeCancelled,
+  NEGATIVE_CANCEL_CARD,
   serializeEntries,
   setMatchType,
   TARGET_KIND_LABELS,
@@ -107,7 +111,10 @@ export function NegativeKeywordsApproval({
 }) {
   const [tabs, setTabs] = useState<Record<Action, string>>({ add: "all", remove: "all" })
   const [adding, setAdding] = useState(false)
-  const cancelled = useMemo(() => parseCancelled(controls.retained), [controls.retained])
+  const cancelled = useMemo(
+    () => parseCancelled(NEGATIVE_CANCEL_CARD, controls.retained),
+    [controls.retained]
+  )
   const rows = useMemo(
     () => negativeRows(args, checked, cancelled.rows),
     [args, checked, cancelled.rows]
@@ -123,18 +130,18 @@ export function NegativeKeywordsApproval({
 
   // A row or target that leaves the request stays beside it, so Undo can restore it.
   const save = (next: readonly NegativeEntry[], dropped: readonly NegativeRow[] = []) => {
-    const kept = new Set(next.map((entry) => entry.key))
-    const live = new Set(
+    const rowIds = new Set(
       negativeRows({ ...args, entries: [...next] }, checked).map((row) => row.id)
     )
     controls.onRetain?.(
-      serializeCancelled({
-        entries: [
-          ...cancelled.entries.filter((entry) => !kept.has(entry.key)),
-          ...args.entries.filter((entry) => !kept.has(entry.key)),
-        ],
-        rows: [...cancelled.rows, ...dropped].filter((row) => !live.has(row.id)),
-      })
+      serializeCancelled(
+        NEGATIVE_CANCEL_CARD,
+        retainCancelled(
+          cancelled,
+          { entries: args.entries, rows: dropped },
+          { entries: next, rowIds }
+        )
+      )
     )
     onFieldEdit("entries", serializeEntries(next))
   }
@@ -149,7 +156,7 @@ export function NegativeKeywordsApproval({
       save(edit.entries, edit.dropped)
     },
     onUndo: (row) => {
-      save(restoreRow(args, cancelled.entries, row))
+      save(restoreRow(NEGATIVE_CANCEL_CARD, args.entries, cancelled.entries, row))
     },
   }
   // A summary line filters whichever tables hold its rows, across every target.
@@ -253,7 +260,7 @@ export function NegativeKeywordsApproval({
           }}
           onSelect={setTarget}
           onUndo={(key) => {
-            save(restoreTarget(args, cancelled.entries, rows, key))
+            save(restoreParent(NEGATIVE_CANCEL_CARD, args.entries, cancelled.entries, rows, key))
           }}
           rowNoun={["target", "targets"]}
           rows={parents}

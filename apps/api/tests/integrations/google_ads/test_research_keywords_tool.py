@@ -194,6 +194,13 @@ async def test_a_home_page_researches_the_whole_site_and_months_come_oldest_firs
     assert waterproof.themes == ["Trail", "Waterproof"]
 
 
+async def test_a_url_with_no_site_is_refused_before_any_request(client) -> None:
+    with pytest.raises(ModelRetry):
+        await tool_module.google_ads_research_keywords(_ctx(_entry()), url="https://?q=shoes")
+
+    assert client.calls == []
+
+
 async def test_ad_groups_get_googles_placements_and_unusable_ones_are_flagged(client) -> None:
     result = await tool_module.google_ads_research_keywords(
         _ctx(_entry()), seeds=["trail shoes"], ad_groups=[_ad_group("20"), _ad_group("21")]

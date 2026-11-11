@@ -43,7 +43,7 @@ _BOOLEANS = frozenset({"primary", "always_use_default_value", "biddable"})
 _DAYS = frozenset({"click_through_days", "view_through_days"})
 _ACTION_FIELDS = (
     "conversion_action.resource_name, conversion_action.id, conversion_action.name, "
-    "conversion_action.status, conversion_action.type, conversion_action.category, "
+    "conversion_action.status, conversion_action.category, "
     "conversion_action.origin, conversion_action.owner_customer, "
     "conversion_action.primary_for_goal, conversion_action.value_settings.default_value, "
     "conversion_action.value_settings.default_currency_code, "
@@ -90,8 +90,9 @@ def card_value(setting: ConversionSetting, value: Any) -> Any:
     return value if isinstance(value, str) and value else None
 
 
-def goal_resource_name(customer_id: str, category: str, origin: str) -> str:
-    return f"customers/{customer_id}/customerConversionGoals/{category}~{origin}"
+def goal_name(category: str, origin: str) -> str:
+    """An account goal in words, such as `Purchase from website`, from Google's tokens."""
+    return f"{category} from {origin}".replace("_", " ").capitalize()
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +101,7 @@ class LiveConversionAction:
     conversion_action_id: str
     name: str
     status: str
-    # Google's type, category, and origin tokens, such as `WEBPAGE`, `PURCHASE`, and `WEBSITE`.
-    action_type: str
+    # Google's category and origin tokens, such as `PURCHASE` and `WEBSITE`.
     category: str
     origin: str
     # The account that owns the action, which isn't this one under cross-account tracking.
@@ -198,7 +198,7 @@ async def read_account_goals(
         category, origin = goal.get("category"), goal.get("origin")
         if not isinstance(category, str) or not isinstance(origin, str):
             continue
-        name = goal_resource_name(customer, category, origin)
+        name = f"customers/{customer}/customerConversionGoals/{category}~{origin}"
         if goal.get("resourceName") != name:
             continue
         goals[name] = LiveAccountGoal(
@@ -252,7 +252,6 @@ def _live_action(customer: str, action: Any) -> LiveConversionAction | None:
         conversion_action_id=action_id,
         name=str(action.get("name") or "")[:500] or f"Conversion action {action_id}",
         status=str(action.get("status") or ""),
-        action_type=str(action.get("type") or ""),
         category=str(action.get("category") or ""),
         origin=str(action.get("origin") or ""),
         owner_customer_id=owner or customer,

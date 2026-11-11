@@ -32,7 +32,7 @@ def _choice(entry, asset: LiveAsset) -> EntityChoice | None:
             asset_type=asset.asset_type,
             label=asset.label[:500],
             description=description,
-            scope_label=entry.display_name,
+            scope_label=entry.display_name[:500],
         ),
         icon="google_ads",
     )

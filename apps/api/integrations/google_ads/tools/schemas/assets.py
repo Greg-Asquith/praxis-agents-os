@@ -23,7 +23,7 @@ MAX_ASSET_CHANGES = 20
 # Links one request adds and removes across its targets.
 MAX_ASSET_LINKS = 1_000
 _MAX_OUTCOMES = MAX_ASSET_LINKS + MAX_ASSET_CHANGES
-# Image and video links are pending (309 B).
+# Image and video links are pending.
 _LINKABLE = frozenset({"SITELINK", "CALLOUT"})
 
 type GoogleAdsAssetTargetKind = Literal["campaign", "ad_group"]
@@ -249,12 +249,6 @@ class GoogleAdsUpdateAssetsRequest(GoogleAdsStrictModel):
                 f"One request can add or remove at most {MAX_ASSET_LINKS:,} asset links."
             )
         return self
-
-    @property
-    def customer_ids(self) -> list[str]:
-        ids = [entry.customer_id for entry in self.entries]
-        ids.extend(item.asset.customer_id for item in self.change)
-        return list(dict.fromkeys(ids))
 
 
 def asset_row_key(item: Any) -> str:
