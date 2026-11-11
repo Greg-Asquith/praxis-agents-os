@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .assets import link_new_asset
 from .build import CampaignBuild
 from .campaign_bidding import AdGroupBid, ad_group_bids_used
 from .responsive_search_ads import ad_group_ad_body
@@ -17,7 +18,9 @@ from .utils import stream_rows
 if TYPE_CHECKING:
     from ..tools.schemas.ad_groups import GoogleAdsNewAdGroup, GoogleAdsNewKeyword
 
-type AdGroupItemKind = Literal["ad_group", "keyword", "negative_keyword", "ad"]
+type AdGroupItemKind = Literal[
+    "ad_group", "keyword", "negative_keyword", "ad", "asset", "asset_link"
+]
 
 # Enough for the card to check names as they're edited; Google refuses any clash past this.
 _MAX_NAMES_READ = 2_000
@@ -74,7 +77,7 @@ def add_search_ad_group(
     campaign: str,
     status: str,
 ) -> None:
-    """Adds one ad group with its keywords, negative keywords, and ads to the build."""
+    """Adds one ad group with its keywords, negative keywords, ads, and assets to the build."""
     body: dict[str, Any] = {
         "name": ad_group.name,
         "status": status,
@@ -114,6 +117,15 @@ def add_search_ad_group(
             ad_group_ad_body(ad, ad_group=name, status=status),
             label=f"{ad_group.name} · Ad {position + 1}",
             source=AdGroupItem(index, "ad", position),
+        )
+    for position, asset in enumerate(ad_group.assets):
+        link_new_asset(
+            build,
+            asset,
+            link="adGroupAsset",
+            owner=name,
+            asset_source=AdGroupItem(index, "asset", position),
+            link_source=AdGroupItem(index, "asset_link", position),
         )
 
 

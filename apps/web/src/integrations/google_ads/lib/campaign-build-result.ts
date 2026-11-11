@@ -11,6 +11,8 @@ type BuildKind =
   | "keyword"
   | "negative_keyword"
   | "ad"
+  | "asset"
+  | "asset_link"
 
 export type BuildKindCount = {
   created: number
@@ -31,6 +33,8 @@ export type CampaignBuildResult = {
 export const BUILD_KIND_LABELS: Record<BuildKind, { one: string; many: string }> = {
   ad: { one: "Ad", many: "Ads" },
   ad_group: { one: "Ad group", many: "Ad groups" },
+  asset: { one: "Sitelink or callout", many: "Sitelinks and callouts" },
+  asset_link: { one: "Sitelink or callout link", many: "Sitelink and callout links" },
   budget: { one: "Budget", many: "Budgets" },
   campaign: { one: "Campaign", many: "Campaigns" },
   excluded_location: { one: "Excluded location", many: "Excluded locations" },

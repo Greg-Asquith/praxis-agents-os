@@ -466,7 +466,9 @@ holds every reference to the active context.
 `google_ads_create_ad_groups` creates 1 to 20 ad groups in one live Search
 campaign, in one approval. Each ad group has a name, optional keywords (text,
 match type, optional click bid and final URL), negative keywords, up to 3 ads
-using the ad model above, and optional bid settings. `status` is `PAUSED`
+using the ad model above, up to 20 new sitelinks and callouts in `assets` (the
+`GoogleAdsSitelink` and `GoogleAdsCallout` models of asset changes, below), and
+optional bid settings. `status` is `PAUSED`
 unless the operator chooses Active. It applies to the ad groups and ads;
 keywords start enabled. One request creates at most 2,500 objects, because one
 audit event holds 2,500 records.
@@ -523,6 +525,7 @@ The `campaign` argument holds the settings, as follows:
 | `start_date`, `end_date` | Dates in the account time zone. A start on or before today, or none, starts the campaign when it's turned on, because Google refuses a start time in the past. The end is the end of that day. |
 | `negative_keywords` | Campaign negative keywords, up to 1,000. |
 | `contains_eu_political_advertising` | Google's required declaration; false unless the operator says the ads are political and aimed at the EU. |
+| `assets` | Up to 20 new sitelinks and callouts, linked to the campaign so every ad group can use them. Each ad group takes its own `assets` too. |
 
 Languages aren't part of a Search campaign, because Google matches each ad's language.
 
@@ -540,6 +543,16 @@ the budget, campaign, and criteria.
 campaign's temporary name. Each step records its `source` (`CampaignItem` or
 `AdGroupItem`), so a rejection names its item.
 
+New sitelinks and callouts go through `link_new_asset` in `operations/assets.py`, which
+creates the asset and links it with `campaignAsset` or `adGroupAsset`. The build creates
+each asset content once (`CampaignBuild.create_once`, keyed by `new_asset_key`), so the
+same sitelink on the campaign and on three ad groups is one asset with four links. The
+asset step's source is kind `asset` and its link's `asset_link`; both name the asset by
+its key in `_checks`. Each asset counts as two objects toward the 2,500 limit. The result
+counts created assets as `asset`; links aren't counted, since they succeed or fail with
+everything else. Existing assets on create are pending; link them afterwards with
+`google_ads_update_assets`.
+
 While preparing the approval, the tool reads Google's names for every location key, then
 dry runs the build. Unknown locations, and ad groups with a problem the card already shows,
 are left out of the dry run. The trusted `_checks` display argument holds the date in the
@@ -553,7 +566,7 @@ After approval, one atomic request creates everything or nothing. The result cou
 kind of object and returns references for the campaign (with its budget) and each ad
 group, for other tools to use. When Google refuses the request, the result gives each
 distinct reason once. Audit intents are grouped by the campaign and each ad group, keyed by
-build step, and record locations by key. Sitelinks and callouts on create are pending.
+build step, and record locations by key.
 
 ### Targeting
 
@@ -1158,7 +1171,14 @@ Undo restores them. The tool takes one campaign, so **Change Campaign** above
 the table opens an `EntityPicker` in place of an Add button. With more than one
 ad group it adds `ChangeSummary`, with counts, Cancel These N, and Restore, and one
 `DataTable` of ad groups with editable names. Clicking a row opens the ad group
-below, in `SettingRows`: Name, Keywords, Ads, Negatives, and Bids. Keywords and
+below, in `SettingRows`: Name, Keywords, Ads, Negatives, Sitelinks and Callouts, and Bids.
+A row turns red when one of its problems is about it, including an ad group with no
+keyword or no ad. Sitelinks and callouts use `NewAssetsEditor`
+(`components/new-assets-editor.tsx`, rules in `lib/new-assets.ts`): a table per type with
+character counts, **Add Sitelink** and **Add Callout**, and a note when there's only one
+sitelink, since Google shows them in pairs or more. `AssetFieldInput` is shared with Update
+Assets. Google's rejection of a new asset shows while an asset with the same content
+(`newAssetKey`) is still there. Keywords and
 negatives use the shared `KeywordPaste` (one per line: `[exact]`, `"phrase"`, or
 plain text for broad; parsing is in `integrations/ads/lib/keyword-notation.ts`).
 Review opens a table for match types, click bids, and final URLs. A pasted keyword
@@ -1196,8 +1216,8 @@ budget and about a month's spend (30.4 days, Google's monthly charging limit), t
 `StatusChoice`, then `SettingRows`: Name, Budget (an amount, or a shared budget from the
 budget lookup), Bidding (`ChoiceCards` and the chosen strategy's fields), Locations (chips
 for shown and excluded places, search or paste with `LocationPaste`, and Who Counts), and
-More Settings (networks, dates, the EU political declaration, and campaign negatives with
-`KeywordPaste`). The ad groups follow with `AdGroupSummary` and `NewAdGroups`, as on Create
+More Settings (networks, dates, the EU political declaration, campaign negatives with
+`KeywordPaste`, and sitelinks and callouts for every ad group with `NewAssetsEditor`). The ad groups follow with `AdGroupSummary` and `NewAdGroups`, as on Create
 Ad Groups, with the same Cancel These N and Restore. The approve button reads **Create
 Campaign**.
 

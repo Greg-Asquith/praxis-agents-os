@@ -11,6 +11,7 @@ from services.integrations.context.results import IntegrationFanOutEntry, Integr
 from ...references import GoogleAdsAdGroupReference, GoogleAdsCampaignReference
 from ..utils.money import money_to_micros
 from .ads import GoogleAdsResponsiveSearchAd
+from .assets import MAX_ASSETS_PER_TARGET, GoogleAdsNewAsset, distinct_new_assets
 from .base import GoogleAdsStrictModel, money_validator
 from .negative_keywords import NegativeKeywordEntry
 from .positive_keywords import (
@@ -102,6 +103,11 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
     ads: list[GoogleAdsResponsiveSearchAd] = Field(
         default_factory=list, max_length=MAX_ADS_PER_AD_GROUP
     )
+    assets: list[GoogleAdsNewAsset] = Field(
+        default_factory=list,
+        max_length=MAX_ASSETS_PER_TARGET,
+        description="New sitelinks and callouts for this ad group alone.",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -118,6 +124,7 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
     def _distinct(self) -> Self:
         distinct_keywords(self.keywords)
         distinct_keywords(self.negative_keywords)
+        distinct_new_assets(self.assets)
         return self
 
     @property
@@ -132,7 +139,14 @@ class GoogleAdsNewAdGroup(GoogleAdsStrictModel):
 
     @property
     def object_count(self) -> int:
-        return 1 + len(self.keywords) + len(self.negative_keywords) + len(self.ads)
+        # Each new asset is created and linked.
+        return (
+            1
+            + len(self.keywords)
+            + len(self.negative_keywords)
+            + len(self.ads)
+            + 2 * len(self.assets)
+        )
 
 
 class GoogleAdsCreateAdGroupsRequest(GoogleAdsStrictModel):
@@ -148,13 +162,14 @@ class GoogleAdsCreateAdGroupsRequest(GoogleAdsStrictModel):
         if len(set(names)) != len(names):
             raise ValueError("Give each new ad group a different name.")
         if sum(ad_group.object_count for ad_group in self.ad_groups) > MAX_OBJECTS:
-            raise ValueError(
-                f"One request can create at most {MAX_OBJECTS} ad groups, keywords, and ads."
-            )
+            raise ValueError(f"One request can create at most {MAX_OBJECTS:,} objects.")
         return self
 
 
-type GoogleAdsBuildKind = Literal["ad_group", "keyword", "negative_keyword", "ad"]
+# An asset is a new sitelink or callout, made once however many places link it.
+type GoogleAdsBuildKind = Literal[
+    "ad_group", "keyword", "negative_keyword", "ad", "asset", "asset_link"
+]
 type GoogleAdsBuildOutcome = Literal["created", "failed", "unverified"]
 
 
@@ -186,7 +201,7 @@ class GoogleAdsCreateAdGroupsData(GoogleAdsStrictModel):
     account_id: str
     campaign_name: str
     requested_status: Literal["PAUSED", "ENABLED"]
-    kinds: list[GoogleAdsBuildKindCount] = Field(max_length=4)
+    kinds: list[GoogleAdsBuildKindCount] = Field(max_length=5)
     ad_groups: list[GoogleAdsCreatedAdGroup] = Field(max_length=MAX_NEW_AD_GROUPS)
     problems: list[GoogleAdsBuildProblemRow] = Field(max_length=MAX_RESULT_PROBLEMS)
 

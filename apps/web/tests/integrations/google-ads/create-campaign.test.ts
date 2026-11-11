@@ -127,6 +127,39 @@ describe("Google Ads create campaign arguments", () => {
     expect(campaignProblems(parsed(removed))).toEqual([])
   })
 
+  it("checks new sitelinks on the card and matches Google's rejections to them by content", () => {
+    const sitelink = {
+      type: "sitelink",
+      link_text: "Boot Sale",
+      final_url: "https://shop.test/sale",
+    }
+    const tooLong = parsed(
+      args({ campaign: campaign({ assets: [{ ...sitelink, link_text: "x".repeat(26) }] }) })
+    )
+    expect(campaignProblems(tooLong)).toEqual(["Sitelink 1: Link Text is 26 of 25 characters."])
+    expect(canCheckCampaign(tooLong)).toBe(false)
+    const rejected = args(
+      { ad_groups: [group({ assets: [sitelink] })] },
+      {
+        problems: [
+          {
+            ad_group: "Waterproof Boots",
+            kind: "asset",
+            // The server's key for the sitelink: its content, in a fixed order.
+            key: "new|sitelink|Boot Sale|||https://shop.test/sale||",
+            message: "Google says: Destination not working.",
+          },
+        ],
+      }
+    )
+    expect(groupProblems(rejected)).toEqual(["Sitelink 1: Google says: Destination not working."])
+    const edited = {
+      ...rejected,
+      ad_groups: [group({ assets: [{ ...sitelink, link_text: "Sale" }] })],
+    }
+    expect(groupProblems(edited)).toEqual([])
+  })
+
   it("makes approval wait on a check after a settings edit, but not after a status edit", () => {
     const checked = parsed(args())
     expect(createCampaignBlock(parsed(args({ status: "ENABLED" })), checked)).toBeNull()

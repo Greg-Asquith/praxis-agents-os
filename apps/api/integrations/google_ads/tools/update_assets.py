@@ -39,7 +39,7 @@ from services.integrations.operations import (
 )
 
 from ..client import GoogleAdsClient
-from ..operations.assets import ASSET_PATHS, LiveAssets, read_assets
+from ..operations.assets import ASSET_PATHS, LiveAssets, new_asset_body, read_assets
 from ..operations.build import CampaignBuild, dry_run_build, send_build
 from ..operations.edits import CriterionChange, Edit, FieldChange, apply_edits, prepare_edits
 from ..operations.mutation_outcomes import (
@@ -124,20 +124,6 @@ def _link_key(target: str, row: str) -> str:
 def _create_key(customer_id: str, content: str) -> str:
     digest = hashlib.sha256(content.encode()).hexdigest()[:16]
     return f"customers/{customer_id}/newAssets/{digest}"
-
-
-def _asset_body(asset: _NewAsset) -> dict[str, Any]:
-    """The create body for a new asset; unset fields are left out."""
-    body: dict[str, Any] = {}
-    for path, value in asset.values().items():
-        if value is None:
-            continue
-        *parents, leaf = path.split(".")
-        node = body
-        for part in parents:
-            node = node.setdefault(part, {})
-        node[leaf] = value
-    return body
 
 
 def _plan_target(entry: GoogleAdsAssetTarget) -> list[_Planned]:
@@ -298,7 +284,7 @@ def _asset_build(
     for item in parts:
         if item.action == "create" and item.new is not None:
             created[item.row] = build.create(
-                "asset", _asset_body(item.new), label=item.label, source=item.key
+                "asset", new_asset_body(item.new), label=item.label, source=item.key
             )
             continue
         name = created.get(item.row)

@@ -29,6 +29,13 @@ import {
   type ItemProblem,
 } from "@/integrations/google_ads/lib/create-ad-groups"
 import { characterCount } from "@/integrations/google_ads/lib/create-ads"
+import {
+  googleAssetProblems,
+  newAssetProblems,
+  parseNewAsset,
+  serializeNewAssets,
+  type DraftAsset,
+} from "@/integrations/google_ads/lib/new-assets"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -97,6 +104,8 @@ export type DraftLocation = { key: string; name: string }
 export type LocationSetting = "PRESENCE" | "PRESENCE_OR_INTEREST"
 
 export type DraftCampaign = {
+  // New sitelinks and callouts for every ad group.
+  assets: DraftAsset[]
   bidding: DraftBidding
   budget: DraftBudget
   displayExpansion: boolean
@@ -205,11 +214,17 @@ function parseDraftCampaign(value: unknown): DraftCampaign | null {
   const locations = parseEach(value["locations"], parseLocation)
   const excluded = parseEach(value["excluded_locations"], parseLocation)
   const negatives = parseEach(value["negative_keywords"], parseNegative)
+  const assets = parseEach(value["assets"], parseNewAsset)
   const setting = value["location_setting"] ?? "PRESENCE"
   if (budget === null || bidding === null || locations === null || excluded === null) return null
-  if (negatives === null || (setting !== "PRESENCE" && setting !== "PRESENCE_OR_INTEREST"))
+  if (
+    assets === null ||
+    negatives === null ||
+    (setting !== "PRESENCE" && setting !== "PRESENCE_OR_INTEREST")
+  )
     return null
   return {
+    assets,
     bidding,
     budget,
     displayExpansion: value["display_expansion"] === true,
@@ -373,6 +388,7 @@ function campaignCardProblems(args: CreateCampaignArgs): string[] {
     ...locationProblems(args),
     ...dateProblems(campaign, args.checks.unavailable ? null : args.checks.today),
     ...listProblems("negative keyword", campaign.negatives, MAX_NEGATIVES, "A campaign"),
+    ...newAssetProblems(campaign.assets),
   ]
 }
 
@@ -392,6 +408,10 @@ function googleCampaignProblems(args: CreateCampaignArgs): string[] {
       )
       return present ? [`${String(problem.text)}: ${problem.message}`] : []
     }
+    if (problem.kind === "asset" || problem.kind === "asset_link")
+      return googleAssetProblems(campaign.assets, [
+        { key: problem.key ?? "", message: problem.message },
+      ])
     return [problem.message]
   })
 }
@@ -419,7 +439,9 @@ function campaignObjectCount(campaign: DraftCampaign): number {
     (campaign.budget.kind === "new" ? 2 : 1) +
     campaign.locations.length +
     campaign.excludedLocations.length +
-    campaign.negatives.length
+    campaign.negatives.length +
+    // Each new asset is created and linked.
+    2 * campaign.assets.length
   )
 }
 
@@ -585,5 +607,6 @@ export function serializeCampaign(campaign: DraftCampaign): Record<string, unkno
       match_type: item.matchType,
     })),
     contains_eu_political_advertising: campaign.political,
+    assets: serializeNewAssets(campaign.assets),
   }
 }

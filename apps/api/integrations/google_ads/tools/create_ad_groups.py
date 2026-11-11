@@ -77,7 +77,7 @@ _OPERATION = "create_ad_groups"
 _IDENTITY = ("step",)
 _MISSING = "This campaign is removed, or no longer exists in Google Ads."
 _NOT_SEARCH = "New ad groups with keywords only go in Search campaigns."
-_KINDS = ("ad_group", "keyword", "negative_keyword", "ad")
+_KINDS = ("ad_group", "keyword", "negative_keyword", "ad", "asset")
 
 
 def _campaign_name(reference: GoogleAdsCampaignReference) -> str:
@@ -415,7 +415,8 @@ DEFINITION = RuntimeToolDefinition(
     description=(
         "Create up to 20 Google Ads ad groups in one live Search campaign, in one approval. Each "
         "has a name unique in the campaign, optional keywords (text, match type, optional click "
-        "bid and final URL), negative keywords, and up to 3 responsive search ads. A default "
+        "bid and final URL), negative keywords, up to 3 responsive search ads, and up to 20 new "
+        "sitelinks and callouts in assets, as google_ads_create_campaign takes them. A default "
         "click bid or keyword click bid is only for campaigns using Manual CPC; a target CPA or "
         "target ROAS override is only for campaigns using that kind of target. Ad groups and ads "
         "are created paused unless status is ENABLED. Google creates everything or nothing. New "

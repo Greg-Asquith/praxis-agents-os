@@ -6,13 +6,12 @@ import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Input } from "@/components/ui/input"
 import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { EntityPicker } from "@/integrations/ads/components/entity-picker"
 import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
-import { characterCount } from "@/integrations/google_ads/lib/create-ads"
+import { AssetFieldInput } from "@/integrations/google_ads/components/new-assets-editor"
 import {
   addTarget,
   ASSET_TYPE_LABELS,
@@ -250,55 +249,6 @@ export function UpdateAssetsApproval({
   )
 }
 
-/** A text field that commits on blur and shows its count against Google's limit. */
-function FieldInput({
-  disabled,
-  field,
-  label,
-  onCommit,
-  value,
-}: {
-  disabled: boolean
-  field: AssetField
-  label: string
-  onCommit: (value: string) => void
-  value: string
-}) {
-  const [draft, setDraft] = useState<string | null>(null)
-  const text = draft ?? value
-  const length = characterCount(text.trim())
-  const over = length > field.limit
-  const showCount = field.limit <= 35
-  return (
-    <span className="grid min-w-0 gap-0.5">
-      <Input
-        aria-invalid={over}
-        aria-label={label}
-        className="h-8 text-sm"
-        disabled={disabled}
-        onBlur={() => {
-          setDraft(null)
-          if (draft !== null && draft !== value) onCommit(draft)
-        }}
-        onChange={(event) => {
-          setDraft(event.currentTarget.value)
-        }}
-        value={text}
-      />
-      {showCount ? (
-        <span
-          className={cn(
-            "text-xs tabular-nums",
-            over ? "text-destructive font-medium" : "text-muted-foreground"
-          )}
-        >
-          {String(length)} of {String(field.limit)}
-        </span>
-      ) : null}
-    </span>
-  )
-}
-
 function fieldValue(value: Record<string, unknown>, key: string): string {
   const field = value[key]
   return typeof field === "string" ? field : ""
@@ -362,7 +312,7 @@ function NewAssetTable({
           const first = field === fields[0]
           return (
             <span className="grid gap-1 whitespace-normal">
-              <FieldInput
+              <AssetFieldInput
                 key={`${asset.key}|${field.key}`}
                 disabled={disabled}
                 field={field}
@@ -515,7 +465,7 @@ function ChangeCard({
                 {field.label}
                 {now !== null ? ` · Now: ${now}` : ""}
               </span>
-              <FieldInput
+              <AssetFieldInput
                 disabled={disabled}
                 field={field}
                 label={`${field.label} for ${change.ref.label}`}

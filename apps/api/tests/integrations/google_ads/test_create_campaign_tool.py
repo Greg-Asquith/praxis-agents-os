@@ -80,6 +80,9 @@ class _Account:
                 "adGroup": f"adGroups/{900 + index}",
                 "adGroupCriterion": f"adGroupCriteria/{900 + index}~{index}",
                 "adGroupAd": f"adGroupAds/{900 + index}~{index}",
+                "asset": f"assets/{500 + index}",
+                "campaignAsset": f"campaignAssets/800~{500 + index}~SITELINK",
+                "adGroupAsset": f"adGroupAssets/{900 + index}~{500 + index}~CALLOUT",
             }[resource]
             responses.append({f"{resource}Result": {"resourceName": f"{_C}/{collection}"}})
         reply: dict[str, Any] = {"mutateOperationResponses": responses}
@@ -257,6 +260,50 @@ async def test_one_atomic_request_builds_the_campaign_parents_first_with_tempora
         ("ad", 1),
     ]
     assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
+
+
+async def test_a_sitelink_on_the_campaign_and_an_ad_group_is_created_once_and_linked_to_both(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    sitelink = {"type": "sitelink", "link_text": "Boot Sale", "final_url": "https://shop.test/sale"}
+    args = {
+        "campaign": _campaign(assets=[sitelink]),
+        "ad_groups": [
+            _ad_group(
+                assets=[
+                    {**sitelink, "link_text": " Boot  Sale"},
+                    {"type": "callout", "text": "Free Returns"},
+                ]
+            )
+        ],
+    }
+
+    result, _audit = await _run(monkeypatch, account, args)
+
+    operations = account.mutates[-1]["mutateOperations"]
+    created = {
+        key.removesuffix("Operation"): [op[key]["create"] for op in operations if key in op]
+        for key in ("assetOperation", "campaignAssetOperation", "adGroupAssetOperation")
+    }
+    sitelink_name, callout_name = f"{_C}/assets/-3", f"{_C}/assets/-5"
+    assert created["asset"] == [
+        {
+            "sitelinkAsset": {"linkText": "Boot Sale"},
+            "finalUrls": ["https://shop.test/sale"],
+            "resourceName": sitelink_name,
+        },
+        {"calloutAsset": {"calloutText": "Free Returns"}, "resourceName": callout_name},
+    ]
+    assert created["campaignAsset"] == [
+        {"campaign": f"{_C}/campaigns/-2", "asset": sitelink_name, "fieldType": "SITELINK"}
+    ]
+    assert created["adGroupAsset"] == [
+        {"adGroup": f"{_C}/adGroups/-4", "asset": sitelink_name, "fieldType": "SITELINK"},
+        {"adGroup": f"{_C}/adGroups/-4", "asset": callout_name, "fieldType": "CALLOUT"},
+    ]
+    data = GoogleAdsCreateCampaignOutput.model_validate(result).results[0].data
+    assert ("asset", 2) in [(row.kind, row.created) for row in data.kinds]
 
 
 async def test_a_rejected_request_records_nothing_created_and_gives_the_reason_once(

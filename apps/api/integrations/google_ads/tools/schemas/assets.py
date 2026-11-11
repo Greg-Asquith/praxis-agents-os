@@ -75,6 +75,10 @@ class GoogleAdsSitelink(_Dated):
     def label(self) -> str:
         return self.link_text
 
+    @property
+    def key(self) -> str:
+        return new_asset_key(self)
+
     def values(self) -> dict[str, Any]:
         """The fields by the edit seam's paths, as Google returns them."""
         return {
@@ -104,6 +108,10 @@ class GoogleAdsCallout(_Dated):
     def label(self) -> str:
         return self.text
 
+    @property
+    def key(self) -> str:
+        return new_asset_key(self)
+
     def values(self) -> dict[str, Any]:
         return {
             "calloutAsset.calloutText": self.text,
@@ -126,6 +134,13 @@ GoogleAdsNewAsset = Annotated[GoogleAdsSitelink | GoogleAdsCallout, Field(discri
 GoogleAdsAssetAddition = Annotated[
     GoogleAdsSitelink | GoogleAdsCallout | GoogleAdsExistingAsset, Field(discriminator="type")
 ]
+
+
+def distinct_new_assets(assets: list[GoogleAdsSitelink | GoogleAdsCallout]) -> None:
+    """Refuses the same sitelink or callout twice in one campaign or ad group."""
+    keys = [asset.key for asset in assets]
+    if len(set(keys)) != len(keys):
+        raise ValueError("List each sitelink and callout once.")
 
 
 class _AssetTarget(GoogleAdsStrictModel):

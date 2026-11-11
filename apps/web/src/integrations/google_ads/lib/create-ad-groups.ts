@@ -25,6 +25,13 @@ import {
   isGoogleAdsUrl,
   parseGoogleAdsMoney,
 } from "@/integrations/google_ads/lib/field-values"
+import {
+  googleAssetProblems,
+  newAssetProblems,
+  parseNewAsset,
+  serializeNewAssets,
+  type DraftAsset,
+} from "@/integrations/google_ads/lib/new-assets"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -43,6 +50,7 @@ export type DraftKeyword = PastedKeyword & { cpcBid: string; finalUrl: string }
 
 export type DraftAdGroup = {
   ads: AdCopy[]
+  assets: DraftAsset[]
   cpcBid: string
   keywords: DraftKeyword[]
   name: string
@@ -72,6 +80,8 @@ type CampaignCheck = BidRules & { key: string; name: string; problem: string | n
 export type ItemProblem = {
   adCopy: string | null
   adGroup: string
+  // A new sitelink or callout's key, for Google's rejection of one.
+  assetKey: string | null
   kind: string
   matchType: string | null
   message: string
@@ -159,9 +169,11 @@ export function parseAdGroup(value: unknown): DraftAdGroup | null {
   const keywords = parseEach(value["keywords"], parseKeyword)
   const negatives = parseEach(value["negative_keywords"], parseKeyword)
   const ads = parseEach(value["ads"], parseCopy)
-  if (keywords === null || negatives === null || ads === null) return null
+  const assets = parseEach(value["assets"], parseNewAsset)
+  if (keywords === null || negatives === null || ads === null || assets === null) return null
   return {
     ads,
+    assets,
     cpcBid: text(value["cpc_bid"]),
     keywords,
     name: value["name"],
@@ -190,6 +202,7 @@ function parseItemProblem(value: unknown): ItemProblem[] {
     {
       adCopy: copy ? copyKey(copy) : null,
       adGroup: text(value["ad_group"]),
+      assetKey: text(value["key"]) || null,
       kind: text(value["kind"]),
       matchType: text(value["match_type"]) || null,
       message: value["message"],
@@ -384,15 +397,22 @@ function googleProblems(group: DraftAdGroup, context: AdGroupContext): string[] 
       const position = group.ads.findIndex((ad) => copyKey(ad) === problem.adCopy)
       return position >= 0 ? [`Ad ${String(position + 1)}: ${problem.message}`] : []
     }
+    if (problem.kind === "asset" || problem.kind === "asset_link")
+      return googleAssetProblems(group.assets, [
+        { key: problem.assetKey ?? "", message: problem.message },
+      ])
     return [problem.message]
   })
 }
 
+export const NEEDS_KEYWORD = "Needs at least 1 keyword to serve."
+export const NEEDS_AD = "Needs at least 1 ad to serve."
+
 function servingProblems(group: DraftAdGroup, context: AdGroupContext): string[] {
   if (!context.requireServing) return []
   return [
-    ...(group.keywords.length === 0 ? ["Needs at least 1 keyword to serve."] : []),
-    ...(group.ads.length === 0 ? ["Needs at least 1 ad to serve."] : []),
+    ...(group.keywords.length === 0 ? [NEEDS_KEYWORD] : []),
+    ...(group.ads.length === 0 ? [NEEDS_AD] : []),
   ]
 }
 
@@ -410,6 +430,7 @@ export function adGroupCardProblems(
     ...listProblems("negative keyword", group.negatives, MAX_NEGATIVES),
     ...keywordUrlProblems(group),
     ...adProblems(group),
+    ...newAssetProblems(group.assets),
   ]
 }
 
@@ -447,7 +468,14 @@ export function adGroupRows(args: CreateAdGroupsArgs): AdGroupRow[] {
 
 export function objectCount(adGroups: readonly DraftAdGroup[]): number {
   return adGroups.reduce(
-    (total, group) => total + 1 + group.keywords.length + group.negatives.length + group.ads.length,
+    (total, group) =>
+      total +
+      1 +
+      group.keywords.length +
+      group.negatives.length +
+      group.ads.length +
+      // Each new asset is created and linked.
+      2 * group.assets.length,
     0
   )
 }
@@ -584,6 +612,7 @@ export function serializeAdGroups(adGroups: readonly DraftAdGroup[]): Record<str
       match_type: keyword.matchType,
     })),
     ads: group.ads.map(serializeCopy),
+    assets: serializeNewAssets(group.assets),
   }))
 }
 
@@ -621,6 +650,7 @@ export function blankAdGroup(adGroups: readonly DraftAdGroup[]): DraftAdGroup | 
   while (names.has(foldName(`Ad Group ${String(number)}`))) number += 1
   return {
     ads: [blankAd(adGroups.find((group) => group.ads[0])?.ads[0])],
+    assets: [],
     cpcBid: "",
     keywords: [],
     name: `Ad Group ${String(number)}`,

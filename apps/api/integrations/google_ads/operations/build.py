@@ -103,6 +103,7 @@ class CampaignBuild:
     customer_id: str
     _steps: list[BuildStep] = field(default_factory=list)
     _next_id: int = -1
+    _once: dict[str, str | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.customer_id = normalize_customer_id(self.customer_id)
@@ -130,6 +131,20 @@ class CampaignBuild:
             body = {**body, "resourceName": temporary_name}
         self._steps.append(BuildStep(resource, label, body, temporary_name, source))
         return temporary_name
+
+    def create_once(
+        self,
+        key: str,
+        resource: BuildResource,
+        body: Mapping[str, Any],
+        *,
+        label: str,
+        source: Any = None,
+    ) -> str | None:
+        """Adds the object the first time `key` is seen; later calls get the same name back."""
+        if key not in self._once:
+            self._once[key] = self.create(resource, body, label=label, source=source)
+        return self._once[key]
 
     @property
     def steps(self) -> list[BuildStep]:

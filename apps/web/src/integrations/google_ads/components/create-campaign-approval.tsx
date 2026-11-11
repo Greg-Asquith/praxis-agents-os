@@ -24,6 +24,7 @@ import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/compone
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { LocationPaste } from "@/integrations/google_ads/components/location-paste"
+import { NewAssetsEditor } from "@/integrations/google_ads/components/new-assets-editor"
 import {
   AdGroupSummary,
   NewAdGroups,
@@ -64,6 +65,7 @@ import {
   type PageLocation,
   type Strategy,
 } from "@/integrations/google_ads/lib/create-campaign"
+import { assetSummary, isAssetProblem } from "@/integrations/google_ads/lib/new-assets"
 
 const TOOL_NAME = "google_ads_create_campaign"
 // Chips shown per list before Show All, so a long paste doesn't fill the card.
@@ -247,7 +249,12 @@ function CampaignSettings({
       >
         <LocationFields args={args} disabled={disabled} onEdit={onEdit} />
       </SettingRow>
-      <SettingRow rowKey="more" summary={moreSummary(campaign)} title="More Settings">
+      <SettingRow
+        rowKey="more"
+        summary={moreSummary(campaign)}
+        title="More Settings"
+        tone={campaignProblems(args).some(isAssetProblem) ? "error" : "neutral"}
+      >
         <MoreFields campaign={campaign} disabled={disabled} onEdit={onEdit} />
       </SettingRow>
     </SettingRows>
@@ -643,6 +650,7 @@ function moreSummary(campaign: DraftCampaign): string {
     `${start}, ${end}`,
     campaign.political ? "EU political ads" : "not political",
     campaign.negatives.length > 0 ? approvalCountLine(campaign.negatives.length, "negative") : null,
+    campaign.assets.length > 0 ? assetSummary(campaign.assets) : null,
   ]
     .filter(Boolean)
     .join(" · ")
@@ -716,6 +724,16 @@ function MoreFields({
           onEdit({ negatives })
         }}
       />
+      <div className="grid min-w-0 gap-1.5">
+        <p className="text-sm font-medium">Sitelinks and Callouts for Every Ad Group</p>
+        <NewAssetsEditor
+          assets={campaign.assets}
+          disabled={disabled}
+          onChange={(assets) => {
+            onEdit({ assets })
+          }}
+        />
+      </div>
     </div>
   )
 }

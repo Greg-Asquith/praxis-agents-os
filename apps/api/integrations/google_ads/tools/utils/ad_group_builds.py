@@ -62,4 +62,6 @@ def ad_group_item_fields(
         fields |= {"text": negative.text, "match_type": negative.match_type}
     elif source.kind == "ad":
         fields["ad"] = ad_group.ads[source.position].model_dump(mode="json")
+    elif source.kind in {"asset", "asset_link"}:
+        fields["key"] = ad_group.assets[source.position].key
     return fields

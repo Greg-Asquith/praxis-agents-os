@@ -19,6 +19,7 @@ from .ad_groups import (
     GoogleAdsNewAdGroup,
     distinct_keywords,
 )
+from .assets import MAX_ASSETS_PER_TARGET, GoogleAdsNewAsset, distinct_new_assets
 from .base import GoogleAdsStrictModel, money_validator
 from .campaign_budgets import GoogleAdsMoneyAmount
 from .negative_keywords import NegativeKeywordEntry
@@ -157,6 +158,11 @@ class GoogleAdsNewSearchCampaign(GoogleAdsStrictModel):
         default_factory=list, max_length=MAX_CAMPAIGN_NEGATIVES
     )
     contains_eu_political_advertising: bool = False
+    assets: list[GoogleAdsNewAsset] = Field(
+        default_factory=list,
+        max_length=MAX_ASSETS_PER_TARGET,
+        description="New sitelinks and callouts for every ad group in the campaign.",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -177,6 +183,7 @@ class GoogleAdsNewSearchCampaign(GoogleAdsStrictModel):
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("The end date must be on or after the start date.")
         distinct_keywords(self.negative_keywords, scope="campaign")
+        distinct_new_assets(self.assets)
         return self
 
     @property
@@ -188,6 +195,7 @@ class GoogleAdsNewSearchCampaign(GoogleAdsStrictModel):
             + len(self.locations)
             + len(self.excluded_locations)
             + len(self.negative_keywords)
+            + 2 * len(self.assets)
         )
 
 
@@ -218,6 +226,8 @@ type GoogleAdsCampaignBuildKind = Literal[
     "keyword",
     "negative_keyword",
     "ad",
+    "asset",
+    "asset_link",
 ]
 
 
@@ -242,7 +252,7 @@ class GoogleAdsCreateCampaignData(GoogleAdsStrictModel):
     outcome: Literal["created", "failed", "unverified"]
     # Set when created, for the agent to pass to other tools.
     campaign: GoogleAdsCampaignReference | None = None
-    kinds: list[GoogleAdsCampaignKindCount] = Field(max_length=8)
+    kinds: list[GoogleAdsCampaignKindCount] = Field(max_length=9)
     ad_groups: list[GoogleAdsCreatedAdGroup] = Field(max_length=MAX_NEW_AD_GROUPS)
     problems: list[GoogleAdsCampaignProblemRow] = Field(max_length=MAX_RESULT_PROBLEMS)
 

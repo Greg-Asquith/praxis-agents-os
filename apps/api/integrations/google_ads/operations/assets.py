@@ -6,13 +6,17 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .build import CampaignBuild
 from .utils import entity_id_boundary_filter, escape_gaql_like_literal, stream_rows
+
+if TYPE_CHECKING:
+    from ..tools.schemas.assets import GoogleAdsCallout, GoogleAdsSitelink
 
 MAX_ASSET_LOOKUP = 101
 # Google allows 20 sitelinks and 20 callouts a target; these only stop an unbounded read.
@@ -103,6 +107,42 @@ def asset_values(asset: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
             value = value.get(part) if isinstance(value, Mapping) else None
         values[path] = list(value) if isinstance(value, list) else value
     return asset_type, values
+
+
+def new_asset_body(asset: "GoogleAdsSitelink | GoogleAdsCallout") -> dict[str, Any]:
+    """The create body for a new asset; unset fields are left out."""
+    body: dict[str, Any] = {}
+    for path, value in asset.values().items():
+        if value is None:
+            continue
+        *parents, leaf = path.split(".")
+        node = body
+        for part in parents:
+            node = node.setdefault(part, {})
+        node[leaf] = value
+    return body
+
+
+def link_new_asset(
+    build: CampaignBuild,
+    asset: "GoogleAdsSitelink | GoogleAdsCallout",
+    *,
+    link: Literal["campaignAsset", "adGroupAsset"],
+    owner: str,
+    asset_source: Any,
+    link_source: Any,
+) -> None:
+    """Links a new asset to a campaign or ad group, creating the asset once per build."""
+    name = build.create_once(
+        asset.key, "asset", new_asset_body(asset), label=asset.label, source=asset_source
+    )
+    owner_field = "campaign" if link == "campaignAsset" else "adGroup"
+    build.create(
+        link,
+        {owner_field: owner, "asset": name, "fieldType": asset.asset_type},
+        label=asset.label,
+        source=link_source,
+    )
 
 
 def _live_asset(customer: str, row: Mapping[str, Any]) -> LiveAsset | None:

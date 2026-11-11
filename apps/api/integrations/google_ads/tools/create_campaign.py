@@ -82,6 +82,7 @@ _KINDS = (
     "keyword",
     "negative_keyword",
     "ad",
+    "asset",
 )
 _ONE_ACCOUNT = (
     "A campaign goes in one account. Ask the user to select exactly one Google Ads account "
@@ -539,6 +540,8 @@ def _campaign_item_fields(
     elif source.kind == "negative_keyword":
         negative = campaign.negative_keywords[source.position]
         fields |= {"text": negative.text, "match_type": negative.match_type}
+    elif source.kind in {"asset", "asset_link"}:
+        fields["key"] = campaign.assets[source.position].key
     return fields
 
 
@@ -564,8 +567,12 @@ DEFINITION = RuntimeToolDefinition(
         "display_expansion are off unless the user asks. Dates are YYYY-MM-DD in the account "
         "time zone; leave start_date out to start when the campaign is turned on. Set "
         "contains_eu_political_advertising true only when the user says the ads are political "
-        "and aimed at the EU. Search campaigns don't take languages. Everything is created "
-        "paused unless status is ENABLED. New ads go through Google's policy review."
+        "and aimed at the EU. Search campaigns don't take languages. assets on the campaign, or "
+        "on one ad group, are up to 20 new sitelinks {type: 'sitelink', link_text (25), "
+        "description1 and description2 (35, both or neither), final_url} and callouts "
+        "{type: 'callout', text (25)}, with optional start_date and end_date; use pages and "
+        "facts from the advertiser's own site. Everything is created paused unless status is "
+        "ENABLED. New ads go through Google's policy review."
     ),
     provider="google_ads",
     label="Create Google Ads Campaign",

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 
+from .assets import link_new_asset
 from .build import CampaignBuild
 from .search_ad_groups import SearchCampaignFacts
 
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
     from ..tools.schemas.campaigns import GoogleAdsNewSearchCampaign
 
 type CampaignItemKind = Literal[
-    "budget", "campaign", "location", "excluded_location", "negative_keyword"
+    "budget", "campaign", "location", "excluded_location", "negative_keyword", "asset", "asset_link"
 ]
 
 # Google's bidding strategy type for each strategy the card offers.
@@ -55,7 +56,7 @@ def add_search_campaign(
     status: str,
     today: date,
 ) -> str:
-    """Adds the budget, campaign, locations, and negative keywords; returns the campaign's name.
+    """Adds the budget, campaign, locations, negative keywords, and assets; returns its name.
 
     Args:
         today: The date in the account time zone. A start on or before it starts the campaign
@@ -132,6 +133,15 @@ def add_search_campaign(
             },
             label=negative.text,
             source=CampaignItem("negative_keyword", position),
+        )
+    for position, asset in enumerate(campaign.assets):
+        link_new_asset(
+            build,
+            asset,
+            link="campaignAsset",
+            owner=name,
+            asset_source=CampaignItem("asset", position),
+            link_source=CampaignItem("asset_link", position),
         )
     return name
 

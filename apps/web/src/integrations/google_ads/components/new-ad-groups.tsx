@@ -28,6 +28,7 @@ import { MoneyField } from "@/integrations/ads/components/money-field"
 import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import { AdCopyEditor } from "@/integrations/google_ads/components/ad-copy-editor"
+import { NewAssetsEditor } from "@/integrations/google_ads/components/new-assets-editor"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   blankAd,
@@ -35,12 +36,15 @@ import {
   keywordMixLine,
   MAX_ADS,
   mergePastedKeywords,
+  NEEDS_AD,
+  NEEDS_KEYWORD,
   type AdGroupRow,
   type BidRules,
   type CreateAdGroupsCounts,
   type DraftAdGroup,
   type DraftKeyword,
 } from "@/integrations/google_ads/lib/create-ad-groups"
+import { assetSummary, isAssetProblem } from "@/integrations/google_ads/lib/new-assets"
 
 // Below this many rows the table's search only adds noise.
 const SEARCH_FROM = 10
@@ -322,7 +326,10 @@ function AdGroupEditor({
   const nameId = useId()
   const check = rules
   const mix = keywordMixLine([row])
-  const adProblems = row.problems.filter((problem) => /^Ad \d/.test(problem))
+  const adProblems = row.problems.filter(
+    (problem) => problem === NEEDS_AD || /^Ad \d/.test(problem)
+  )
+  const assetProblems = row.problems.filter(isAssetProblem)
   return (
     <section
       aria-label={adGroup.name || "Ad group"}
@@ -386,6 +393,7 @@ function AdGroupEditor({
               : `${approvalCountLine(adGroup.keywords.length, "keyword")} · ${mix}`
           }
           title="Keywords"
+          tone={row.problems.includes(NEEDS_KEYWORD) ? "error" : "neutral"}
         >
           <KeywordPaste
             disabled={disabled}
@@ -437,6 +445,20 @@ function AdGroupEditor({
             label="Negative Keywords, One Per Line"
             onChange={(negatives) => {
               onEdit({ negatives })
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          rowKey="assets"
+          summary={assetSummary(adGroup.assets)}
+          title="Sitelinks and Callouts"
+          tone={assetProblems.length > 0 ? "error" : "neutral"}
+        >
+          <NewAssetsEditor
+            assets={adGroup.assets}
+            disabled={disabled}
+            onChange={(assets) => {
+              onEdit({ assets })
             }}
           />
         </SettingRow>
