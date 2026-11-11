@@ -10,9 +10,10 @@ import {
   addKeywords,
   cancelRows,
   negativeBlock,
+  negativeParents,
   negativeRows,
   parseNegativeKeywordsArgs,
-  restoreRow,
+  restoreTarget,
   serializeEntries,
   setMatchType,
   targetEntry,
@@ -91,7 +92,7 @@ function parsed(value: unknown = raw()): UpdateNegativeKeywordsArgs {
 }
 
 describe("negative keyword changes", () => {
-  it("drops a new list left without keywords, and Undo brings it back whole", () => {
+  it("drops a new list left without keywords, and Undo on the target brings it back whole", () => {
     const args = parsed()
     const rows = negativeRows(args, args)
     const salomon = rows.find((row) => row.name === "salomon")
@@ -101,8 +102,20 @@ describe("negative keyword changes", () => {
 
     expect(edit.entries.map((entry) => entry.kind)).toEqual(["campaign"])
     expect(edit.dropped.map((row) => row.name)).toEqual(["salomon", "Road"])
+    const left = { ...args, entries: edit.entries }
+    const cancelled = negativeRows(left, args, edit.dropped)
+    expect(
+      negativeParents(cancelled, args.accounts, false).map((parent) => [
+        parent.name,
+        parent.values["add"],
+        parent.cancelled,
+      ])
+    ).toEqual([
+      ["Trail", 2, false],
+      ["Competitor Brands", 0, true],
+    ])
     const departed = args.entries.filter((entry) => entry.kind === "new_list")
-    const restored = restoreRow({ ...args, entries: edit.entries }, departed, salomon)
+    const restored = restoreTarget(left, departed, cancelled, salomon.targetKey)
     expect(serializeEntries(restored)).toEqual(serializeEntries(args.entries))
   })
 

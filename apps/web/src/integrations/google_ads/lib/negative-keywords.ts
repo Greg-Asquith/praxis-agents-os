@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/negative-keywords.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import type { KeywordMatchType, PastedKeyword } from "@/integrations/ads/lib/keyword-notation"
 import {
   parseApprovalAccounts,
@@ -481,14 +482,73 @@ export function restoreRow(
   const keyword = row.matchType ? { matchType: row.matchType, text: row.name } : null
   const next = withChanges(entry, {
     add: row.action === "add" && keyword ? unique([...entry.add, keyword]) : entry.add,
-    apply: row.action === "add" && row.campaign ? [...entry.apply, row.campaign] : entry.apply,
+    apply:
+      row.action === "add" && row.campaign && !entry.apply.some((c) => c.key === row.campaign?.key)
+        ? [...entry.apply, row.campaign]
+        : entry.apply,
     remove: row.action === "remove" && keyword ? unique([...entry.remove, keyword]) : entry.remove,
     removeFrom:
-      row.action === "remove" && row.campaign
+      row.action === "remove" &&
+      row.campaign &&
+      !entry.removeFrom.some((c) => c.key === row.campaign?.key)
         ? [...entry.removeFrom, row.campaign]
         : entry.removeFrom,
   })
   return args.entries.map((item) => (item === entry && next ? next : item))
+}
+
+/** Puts back every cancelled row of one target, bringing the target back if it left. */
+export function restoreTarget(
+  args: UpdateNegativeKeywordsArgs,
+  departed: readonly NegativeEntry[],
+  rows: readonly NegativeRow[],
+  targetKey: string
+): NegativeEntry[] {
+  return rows
+    .filter((row) => row.cancelled && row.targetKey === targetKey)
+    .reduce((entries, row) => restoreRow({ ...args, entries }, departed, row), args.entries)
+}
+
+function linksText(rows: readonly NegativeRow[]): string | null {
+  const count = (action: RowAction) =>
+    rows.filter((row) => row.item === "campaign" && row.action === action).length
+  const parts = [
+    count("add") > 0 ? `${approvalCountLine(count("add"), "campaign")} start using it` : null,
+    count("remove") > 0 ? `${approvalCountLine(count("remove"), "campaign")} stop using it` : null,
+  ]
+  return parts.filter((part) => part !== null).join(", ") || null
+}
+
+/** One row per campaign, ad group, or list the negatives change, in the order it first appears. */
+export function negativeParents(
+  rows: readonly NegativeRow[],
+  accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
+  showAccount: boolean
+): ParentRow[] {
+  const targets = new Map<string, NegativeRow[]>()
+  for (const row of rows) targets.set(row.targetKey, [...(targets.get(row.targetKey) ?? []), row])
+  return [...targets].map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const problems = live.filter((row) => row.problem !== null).length
+    const keywords = (action: RowAction) =>
+      live.filter((row) => row.item === "keyword" && row.action === action).length
+    const account = showAccount ? (accounts.get(key.split("/")[1] ?? "")?.label ?? null) : null
+    return {
+      cancelled: live.length === 0,
+      context: [linksText(live), account].filter((part) => part !== null).join(" · ") || null,
+      key,
+      name: first?.targetName ?? key,
+      problems,
+      values: {
+        add: keywords("add"),
+        kind: first ? TARGET_KIND_LABELS[first.targetKind] : "",
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+        remove: keywords("remove"),
+      },
+    }
+  })
 }
 
 /** Adds pasted keywords to each chosen target, leaving out ones it already lists. */

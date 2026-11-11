@@ -27,6 +27,7 @@ import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
 import { EntityPicker } from "@/integrations/ads/components/entity-picker"
 import { KeywordPaste } from "@/integrations/ads/components/keyword-paste"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import type { KeywordMatchType, PastedKeyword } from "@/integrations/ads/lib/keyword-notation"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { NegativeTargetCombobox } from "@/integrations/google_ads/components/negative-target-combobox"
@@ -38,9 +39,11 @@ import {
   MATCH_TYPES,
   needsCheck,
   negativeCounts,
+  negativeParents,
   negativeRows,
   parseCancelled,
   restoreRow,
+  restoreTarget,
   serializeCancelled,
   serializeEntries,
   setMatchType,
@@ -58,8 +61,16 @@ const TOOLS_FROM = 10
 const COLUMNS: DataColumn[] = [
   { key: "name", kind: "text", label: "Negative Keyword", width: 220 },
   { key: "match", kind: "text", label: "Match Type", width: 120 },
-  { key: "target", kind: "text", label: "Target", width: 220 },
+  // The targets table above names them, so this column is for search and the export.
+  { key: "target", kind: "text", label: "Target", width: 220, hidden: true },
   { key: "cancel", kind: "text", label: "Cancel", width: 70 },
+]
+
+const PARENT_COLUMNS: DataColumn[] = [
+  { key: "kind", kind: "text", label: "Kind", width: 100 },
+  { key: "add", kind: "number", label: "To Add", width: 90 },
+  { key: "remove", kind: "number", label: "To Remove", width: 100 },
+  { key: "problems", kind: "text", label: "Problems", width: 110 },
 ]
 
 type Action = NegativeRow["action"]
@@ -101,6 +112,13 @@ export function NegativeKeywordsApproval({
     [args, checked, cancelled.rows]
   )
   const counts = negativeCounts(rows)
+  const [target, setTarget] = useState<string | null>(null)
+  const accountCount = new Set(rows.map((row) => row.targetKey.split("/")[1])).size
+  const parents = useMemo(
+    () => negativeParents(rows, args.accounts, accountCount > 1),
+    [accountCount, args.accounts, rows]
+  )
+  const shown = target === null ? rows : rows.filter((row) => row.targetKey === target)
 
   // A row or target that leaves the request stays beside it, so Undo can restore it.
   const save = (next: readonly NegativeEntry[], dropped: readonly NegativeRow[] = []) => {
@@ -133,8 +151,9 @@ export function NegativeKeywordsApproval({
       save(restoreRow(args, cancelled.entries, row))
     },
   }
-  // A summary line filters whichever tables hold its rows.
+  // A summary line filters whichever tables hold its rows, across every target.
   const show = (id: string, match: (row: NegativeRow) => boolean) => {
+    setTarget(null)
     const has = (action: Action) =>
       rows.some((row) => row.action === action && !row.cancelled && match(row))
     setTabs({ add: has("add") ? id : "all", remove: has("remove") ? id : "all" })
@@ -221,11 +240,30 @@ export function NegativeKeywordsApproval({
           />
         </>
       ) : null}
+      {parents.length > 1 ? (
+        <ParentTable
+          columns={PARENT_COLUMNS}
+          disabled={disabled}
+          label="Targets"
+          onCancel={(key) => {
+            editing.onCancel(
+              rows.filter((row) => row.targetKey === key && !row.cancelled).map((row) => row.id)
+            )
+          }}
+          onSelect={setTarget}
+          onUndo={(key) => {
+            save(restoreTarget(args, cancelled.entries, rows, key))
+          }}
+          rowNoun={["target", "targets"]}
+          rows={parents}
+          selected={target}
+        />
+      ) : null}
       {rows.length === 1 && rows[0] ? (
         <SingleChange editing={editing} row={rows[0]} />
       ) : (
         SECTIONS.map((section) => {
-          const sectionRows = rows.filter((row) => row.action === section.action)
+          const sectionRows = shown.filter((row) => row.action === section.action)
           if (sectionRows.length === 0) return null
           const live = sectionRows.filter((row) => !row.cancelled).length
           return (
@@ -431,17 +469,8 @@ function negativeTabs(byId: ReadonlyMap<string, NegativeRow>): DataTableTab[] {
     const change = byId.get(String(row["key"]))
     return change !== undefined && !change.cancelled && match(change)
   }
-  const targets = new Map([...byId.values()].map((row) => [row.targetKey, row.targetName]))
   return [
     { id: "all", label: "All", match: () => true },
-    ...(targets.size > 1
-      ? [...targets].map(([key, name]) => ({
-          hideWhenEmpty: true,
-          id: `target:${key}`,
-          label: name,
-          match: (row: DataRow) => live(row, (change) => change.targetKey === key),
-        }))
-      : []),
     {
       hideWhenEmpty: true,
       id: "already_set",

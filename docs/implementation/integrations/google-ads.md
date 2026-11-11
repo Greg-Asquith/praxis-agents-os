@@ -1124,13 +1124,18 @@ problem blocks approval.
 
 The card (`components/negative-keywords-approval.tsx`) has two tables: **Add Negative
 Keywords** (Added To) and **Remove Negative Keywords** (Removed From), each with one row
-per change: the keyword or campaign, its match type, and its target. A campaign starting
+per change: the keyword or campaign and its match type. The target column is hidden and
+kept for search and the export. When the changes reach more than one target, a
+`ParentTable` of targets comes first (`negativeParents`): one row per campaign, ad group,
+or list, with Kind, To Add, To Remove, and Problems, and the campaigns starting or
+stopping a list under its name. A click filters both tables to that target, and Cancel or
+Undo acts on all of its changes (`restoreTarget`). A campaign starting
 or stopping a list sits in the matching table, and an Already in Place or Not There row
 says it's skipped. One change reads as a sentence instead of a table. Tables show 10 rows
 a page. From ten changes the card adds `ChangeSummary` (Already in Place, Not There to
 Remove, and Needs Attention with **Cancel These**), and `AttentionLine`; selecting a line
-filters whichever table holds its rows. From ten rows a table adds search, filter tabs
-(per target when there's more than one), and a bulk bar that sets the match type or
+filters whichever table holds its rows, across every target. From ten rows a table adds
+search, filter tabs, and a bulk bar that sets the match type or
 cancels the selected rows. Match type edits in the row, and each row has **Cancel This
 Change**. A new list left without keywords or campaigns leaves the request whole;
 cancelled rows and targets stay in the approval controls' retained state, so **Undo**
@@ -1154,8 +1159,12 @@ answered for; once edited, it waits for **Check Changes**, keeping the term's fi
 Any problem blocks approval.
 
 The card (`components/search-terms-approval.tsx`) has a `ChangeBanner` with the cost of
-the terms being blocked, and one `DataTable` sorted by cost: Search Term, Matched In,
-Clicks, Cost, Conv., then Action, Match Type, and Target as inline selects. A negative's
+the terms being blocked, and one `DataTable` sorted by cost: Search Term, Matched In
+(hidden, for search and the export), Clicks, Cost, Conv., then Action, Match Type, and
+Target as inline selects. When the terms matched in more than one ad group, a
+`ParentTable` of ad groups comes first (`searchTermParents`), the costliest first, with
+Campaign, Terms, Cost, and Problems. A click shows only that ad group's terms, and Cancel
+or Undo acts on all of them. Without it, each term names its campaign and ad group. A negative's
 target is its ad group, its campaign, or a list in the request; a keyword's is any ad
 group in the request in the same account. From ten rows the card adds `ChangeSummary`
 (Block as Negatives, Add as Keywords, Already Set, and Needs Attention with **Cancel
@@ -1436,7 +1445,8 @@ the caller's columns, and Cancel or Undo for all of its changes. A click
 selects the parent and the card filters the changes to it. From ten rows it
 gets search and a Needs Attention tab. A caller can draw its own cells with
 `renderCell`. Add Keywords, Update Keywords, Update Targeting, Update
-Status, the create and edit cards, Update Budgets, and Remove Items use it.
+Status, the create and edit cards, Update Budgets, Remove Items, Update Negative
+Keywords, and Optimise Search Terms use it.
 
 ## Live QA record
 

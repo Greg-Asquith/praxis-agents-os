@@ -340,6 +340,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Google Ads Update Negative Keywords and Optimise Search Terms cards list
+  their parents first. Update Negative Keywords lists its campaigns, ad
+  groups, and lists with the count to add and to remove, and Optimise Search
+  Terms lists the ad groups the terms matched in with their cost. A click
+  shows only that parent's changes, and Cancel acts on all of them.
 - Google Ads Update Budgets and Remove Items cards list their campaigns first.
   A shared budget's row names the campaigns it funds, and shared budgets,
   labels, and lists being removed sit under Not in a Campaign. A click on a

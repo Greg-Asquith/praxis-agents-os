@@ -8,8 +8,10 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   parseSearchTermsArgs,
-  restoreDecision,
+  cancelDecisions,
+  restoreDecisions,
   searchedTarget,
+  searchTermParents,
   searchTermRows,
   searchTermsBlock,
   setDecisionAction,
@@ -137,9 +139,46 @@ describe("search term decisions", () => {
     const edit = setDecisionTarget(clash, new Set([salomon]), brands)
     expect(edit.decisions).toHaveLength(3)
     expect(edit.dropped).toHaveLength(1)
-    expect(restoreDecision(edited(edit.decisions), edit.dropped[0] ?? {}).dropped).toEqual(
-      edit.dropped
-    )
+    expect(restoreDecisions(edited(edit.decisions), edit.dropped).dropped).toEqual(edit.dropped)
+  })
+
+  it("lists ad groups by the cost of their terms, counting only terms still in the request", () => {
+    const value = raw()
+    const road = { ...TRAIL, ad_group_id: "41", label: "Road Shoes" }
+    const args = parsed({
+      ...value,
+      decisions: [
+        ...value.decisions,
+        {
+          search_term: "road shoe jobs",
+          ad_group: road,
+          action: "add_negative",
+          match_type: "BROAD",
+        },
+      ],
+      _checks: {
+        ...value._checks,
+        [`${C}/adGroups/41/add_negative/road shoe jobs`]: {
+          ...check("20"),
+          ad_group_name: "Road Shoes",
+        },
+      },
+    })
+    const fell = `${C}/adGroups/40/add_keyword/fell shoes`
+    const edit = cancelDecisions(args, new Set([fell]))
+    const rows = searchTermRows(edited(edit.decisions), args, edit.dropped)
+
+    // Trail Shoes spent 43.70 in all, so it stays first with its live terms' 12.50.
+    expect(
+      searchTermParents(rows, args.accounts, false).map((parent) => [
+        parent.name,
+        parent.values["terms"],
+        parent.values["cost"],
+      ])
+    ).toEqual([
+      ["Trail Shoes", 2, 12.5],
+      ["Road Shoes", 1, 20],
+    ])
   })
 })
 

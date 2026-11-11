@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/search-terms.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import {
   parseApprovalAccounts,
@@ -78,6 +79,8 @@ export type OptimiseSearchTermsArgs = {
 
 export type SearchTermRow = Figures & {
   action: SearchTermAction
+  // The ad group the term matched in, which an edit never changes.
+  adGroupKey: string
   adGroupName: string
   campaignName: string
   cancelled: boolean
@@ -334,6 +337,7 @@ function decisionRow(
           : adGroupName
   return {
     action: decision.action,
+    adGroupKey: `customers/${decision.customerId}/adGroups/${decision.adGroup.id}`,
     adGroupName,
     campaignName,
     cancelled,
@@ -522,12 +526,45 @@ export function setDecisionTarget(
   })
 }
 
-/** Puts a cancelled decision back, unless another decision now adds the same thing. */
-export function restoreDecision(
+/** Puts cancelled decisions back, unless another decision now adds the same thing. */
+export function restoreDecisions(
   args: OptimiseSearchTermsArgs,
-  value: Record<string, unknown>
+  values: readonly Record<string, unknown>[]
 ): SearchTermEdit {
-  return deduplicated([...args.decisions.map((decision) => decision.value), value])
+  return deduplicated([...args.decisions.map((decision) => decision.value), ...values])
+}
+
+/** One row per ad group the terms matched in, the costliest first. */
+export function searchTermParents(
+  rows: readonly SearchTermRow[],
+  accounts: ReadonlyMap<string, GoogleAdsApprovalAccount>,
+  showAccount: boolean
+): ParentRow[] {
+  const groups = new Map<string, SearchTermRow[]>()
+  for (const row of rows) groups.set(row.adGroupKey, [...(groups.get(row.adGroupKey) ?? []), row])
+  const spend = (items: readonly SearchTermRow[]) =>
+    items.reduce((total, row) => total + (row.cost ?? 0), 0)
+  // Sorted on every term's cost, so cancelling an ad group doesn't move its row.
+  const sorted = [...groups].sort(([, a], [, b]) => spend(b) - spend(a))
+  return sorted.map(([key, items]) => {
+    const live = items.filter((row) => !row.cancelled)
+    const first = items[0]
+    const problems = live.filter((row) => row.problem !== null).length
+    return {
+      cancelled: live.length === 0,
+      context: showAccount && first ? (accounts.get(first.customerId)?.label ?? null) : null,
+      key,
+      name: first?.adGroupName ?? key,
+      problems,
+      values: {
+        campaign: first?.campaignName ?? "",
+        cost: spend(live),
+        problems:
+          live.length === 0 ? "Cancelled" : problems > 0 ? `${String(problems)} to fix` : "None",
+        terms: live.length,
+      },
+    }
+  })
 }
 
 function serializeDecisions(args: OptimiseSearchTermsArgs): Record<string, unknown>[] {

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
 import { ChangeSummary, type ChangeSummaryLine } from "@/integrations/ads/components/change-summary"
+import { ParentTable } from "@/integrations/ads/components/parent-table"
 import type { KeywordMatchType } from "@/integrations/ads/lib/keyword-notation"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { SearchTermTargetCombobox } from "@/integrations/google_ads/components/search-term-target-combobox"
@@ -38,8 +39,9 @@ import {
   dateRangeText,
   needsCheck,
   parseCancelled,
-  restoreDecision,
+  restoreDecisions,
   searchTermCounts,
+  searchTermParents,
   searchTermRows,
   setDecisionAction,
   setDecisionMatchType,
@@ -76,14 +78,23 @@ export function SearchTermsApproval({
   const rows = useMemo(() => searchTermRows(args, checked, cancelled), [args, checked, cancelled])
   const counts = searchTermCounts(rows)
   const currency = accountCurrency(checked)
+  const [adGroup, setAdGroup] = useState<string | null>(null)
+  const accountCount = new Set(rows.map((row) => row.customerId)).size
+  const parents = useMemo(
+    () => searchTermParents(rows, checked.accounts, accountCount > 1),
+    [accountCount, checked.accounts, rows]
+  )
+  const grouped = parents.length > 1
+  const shown = adGroup === null ? rows : rows.filter((row) => row.adGroupKey === adGroup)
 
   // A decision that leaves the request stays beside it, so Undo can restore it.
-  const save = (edit: SearchTermEdit, restored?: Record<string, unknown>) => {
+  const save = (edit: SearchTermEdit, restored: readonly Record<string, unknown>[] = []) => {
     const live = new Set(edit.decisions.map((value) => JSON.stringify(value)))
     controls.onRetain?.({
-      decisions: [...cancelled.filter((value) => value !== restored), ...edit.dropped].filter(
-        (value) => !live.has(JSON.stringify(value))
-      ),
+      decisions: [
+        ...cancelled.filter((value) => !restored.includes(value)),
+        ...edit.dropped,
+      ].filter((value) => !live.has(JSON.stringify(value))),
     })
     onFieldEdit("decisions", edit.decisions)
   }
@@ -103,7 +114,7 @@ export function SearchTermsApproval({
       save(setDecisionTarget(args, new Set(ids), target))
     },
     onUndo: (row) => {
-      save(restoreDecision(args, row.value), row.value)
+      save(restoreDecisions(args, [row.value]), [row.value])
     },
   }
   const line = (
@@ -116,6 +127,7 @@ export function SearchTermsApproval({
     id,
     label,
     onSelect: () => {
+      setAdGroup(null)
       setTab(id)
     },
     selected: tab === id,
@@ -175,16 +187,40 @@ export function SearchTermsApproval({
           <AttentionLine
             count={counts.problems}
             onShow={() => {
+              setAdGroup(null)
               setTab("attention")
             }}
           />
         </>
       ) : null}
+      {grouped ? (
+        <ParentTable
+          columns={parentColumns(currency)}
+          disabled={disabled}
+          label="Ad Groups"
+          onCancel={(key) => {
+            editing.onCancel(
+              rows.filter((row) => row.adGroupKey === key && !row.cancelled).map((row) => row.id)
+            )
+          }}
+          onSelect={setAdGroup}
+          onUndo={(key) => {
+            const values = rows
+              .filter((row) => row.adGroupKey === key && row.cancelled)
+              .map((row) => row.value)
+            save(restoreDecisions(args, values), values)
+          }}
+          rowNoun={["ad group", "ad groups"]}
+          rows={parents}
+          selected={adGroup}
+        />
+      ) : null}
       <ChangeTable
         currency={currency}
         editing={editing}
+        grouped={grouped}
         onTabChange={setTab}
-        rows={rows}
+        rows={shown}
         tab={tab}
       />
       {needsCheck(args, checked) && args.decisions.length > 0 ? (
@@ -219,22 +255,35 @@ function countText(count: number, one: string, many: string): string | null {
   return count > 0 ? `${count.toLocaleString("en-GB")} ${count === 1 ? one : many}` : null
 }
 
+function costColumn(currency: string | null): DataColumn {
+  return {
+    key: "cost",
+    kind: "currency",
+    label: "Cost",
+    align: "right",
+    isMetric: true,
+    unit: "currency-units",
+    width: 96,
+    ...(currency ? { currencyCode: currency } : {}),
+  }
+}
+
+function parentColumns(currency: string | null): DataColumn[] {
+  return [
+    { key: "campaign", kind: "text", label: "Campaign", width: 200 },
+    { key: "terms", kind: "number", label: "Terms", width: 80 },
+    costColumn(currency),
+    { key: "problems", kind: "text", label: "Problems", width: 110 },
+  ]
+}
+
 function columns(currency: string | null): DataColumn[] {
   return [
     { key: "term", kind: "text", label: "Search Term", width: 240 },
     // Shown under each term; kept as a column for search and the CSV.
     { key: "matched", kind: "text", label: "Matched In", hidden: true },
     { key: "clicks", kind: "number", label: "Clicks", align: "right", isMetric: true, width: 72 },
-    {
-      key: "cost",
-      kind: "currency",
-      label: "Cost",
-      align: "right",
-      isMetric: true,
-      unit: "currency-units",
-      width: 96,
-      ...(currency ? { currencyCode: currency } : {}),
-    },
+    costColumn(currency),
     {
       key: "conversions",
       kind: "number",
@@ -253,12 +302,15 @@ function columns(currency: string | null): DataColumn[] {
 function ChangeTable({
   currency,
   editing,
+  grouped,
   onTabChange,
   rows,
   tab,
 }: {
   currency: string | null
   editing: RowEditing
+  // The ad groups table above names where each term matched.
+  grouped: boolean
   onTabChange: (id: string) => void
   rows: readonly SearchTermRow[]
   tab: string
@@ -286,7 +338,7 @@ function ChangeTable({
       renderCell={(column, row) => {
         const change = byId.get(String(row["key"]))
         if (!change) return null
-        if (column.key === "term") return <TermCell row={change} />
+        if (column.key === "term") return <TermCell grouped={grouped} row={change} />
         if (column.key === "action")
           return (
             <ChoiceCell
@@ -446,15 +498,17 @@ function searchTermTabs(byId: ReadonlyMap<string, SearchTermRow>): DataTableTab[
   ]
 }
 
-function TermCell({ row }: { row: SearchTermRow }) {
+function TermCell({ grouped, row }: { grouped: boolean; row: SearchTermRow }) {
   return (
     <div className="grid min-w-0 gap-0.5 text-sm whitespace-normal">
       <span className={cn("font-medium wrap-anywhere", row.cancelled && "line-through")}>
         {row.term}
       </span>
-      <span className="text-muted-foreground text-xs wrap-anywhere">
-        {row.campaignName} › {row.adGroupName}
-      </span>
+      {grouped ? null : (
+        <span className="text-muted-foreground text-xs wrap-anywhere">
+          {row.campaignName} › {row.adGroupName}
+        </span>
+      )}
       {!row.cancelled && row.state !== "already_set" && termStatusText(row.termStatus) ? (
         <span className="text-muted-foreground text-xs">{termStatusText(row.termStatus)}</span>
       ) : null}
