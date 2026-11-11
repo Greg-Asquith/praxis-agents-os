@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 from services.integrations.entity_references import ScopedEntityReference
 
 # The asset types the asset tools take, in Google's names.
-type GoogleAdsAssetType = Literal["SITELINK", "CALLOUT"]
+type GoogleAdsAssetType = Literal["SITELINK", "CALLOUT", "IMAGE", "YOUTUBE_VIDEO"]
 
 
 class GoogleAdsAssetReference(ScopedEntityReference):

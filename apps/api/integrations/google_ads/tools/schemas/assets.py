@@ -23,6 +23,8 @@ MAX_ASSET_CHANGES = 20
 # Links one request adds and removes across its targets.
 MAX_ASSET_LINKS = 1_000
 _MAX_OUTCOMES = MAX_ASSET_LINKS + MAX_ASSET_CHANGES
+# Image and video links are pending (309 B).
+_LINKABLE = frozenset({"SITELINK", "CALLOUT"})
 
 type GoogleAdsAssetTargetKind = Literal["campaign", "ad_group"]
 
@@ -174,11 +176,11 @@ class _AssetTarget(GoogleAdsStrictModel):
         keys = [asset_row_key(item) for item in (*self.add, *self.remove)]
         if len(set(keys)) != len(keys):
             raise ValueError("List each asset once per target.")
-        if any(
-            reference.customer_id != self.customer_id
-            for reference in (*self.remove, *(i.asset for i in self.add if i.type == "existing"))
-        ):
+        existing = (*self.remove, *(i.asset for i in self.add if i.type == "existing"))
+        if any(reference.customer_id != self.customer_id for reference in existing):
             raise ValueError("A target can only use assets in its own account.")
+        if any(reference.asset_type not in _LINKABLE for reference in existing):
+            raise ValueError("Only sitelinks and callouts can be added or removed here.")
         return self
 
 

@@ -941,6 +941,56 @@ changed since is refused as changed since approval.
 
 The display result has one row per link and per content change with its outcome. The
 agent gets the counts and only the rows that failed or are unconfirmed, up to 50.
+`GoogleAdsAssetReference` also carries `IMAGE` and `YOUTUBE_VIDEO` for uploaded media,
+but this tool refuses them: image and video links are pending.
+
+### Media uploads
+
+`google_ads_upload_media` uploads up to 20 workspace image Files as `IMAGE` assets and
+links up to 20 YouTube videos as `YOUTUBE_VIDEO` assets, in the one writable account in
+Active Context. It needs exactly one, because tool arguments name an account only through
+references. `files` takes File references; `youtube_videos` takes links or 11-character
+IDs, read by `youtube_video_id` from `youtube.com` and `youtu.be` addresses only. Video
+Files aren't uploaded to YouTube. Like Meta's upload, the tool may run unattended,
+because it sets up no spend.
+
+`operations/media.py` applies Google's rules: JPEG, PNG, or GIF whose MIME type and
+extension agree, and at most 5,120 KB. It also reads the image's width and height from
+its header with Pillow, and `image_fits` names the field types it fits. An image fits a
+shape when its ratio is within 1% of the shape's and it meets the minimum size:
+
+| Field type | Card label | Ratio | Minimum |
+| --- | --- | --- | --- |
+| `MARKETING_IMAGE` | Landscape | 1.91:1 | 600 × 314 |
+| `SQUARE_MARKETING_IMAGE` | Square | 1:1 | 300 × 300 |
+| `PORTRAIT_MARKETING_IMAGE` | Portrait | 4:5 | 480 × 600 |
+| `LOGO` | Logo | 1:1 | 128 × 128 |
+| `LANDSCAPE_LOGO` | Landscape Logo | 4:1 | 512 × 128 |
+
+An image with a shape's ratio but under its minimum is listed in `too_small`. Fit doesn't
+block an upload; Google checks the field type when an asset is linked.
+
+The trusted `_account` display argument pins the customer ID and integration resource,
+and `_files` pins each File's revision and content hash with its name, size, width,
+height, `fits`, `too_small`, and `problem`. A File Google won't take carries a problem
+on the card instead of a retry for the agent. The tool declares `files` in
+`approval_review_fields`, so an edited File list is checked and pinned again. Execution
+refuses the whole request before any upload when a File has a problem, the account
+changed, or a File's revision isn't the one pinned.
+
+`operations/upload_media.py` sends one `assets:mutate` request per item, in order. An
+image is `{name, type: IMAGE, imageAsset: {data}}`, with the name built from the File
+name and the first eight characters of its content hash, so two versions of one File
+stay apart. A video is `{type: YOUTUBE_VIDEO, youtubeVideoAsset: {youtubeVideoId}}`.
+After an unclear reply, the tool looks the asset up by that name or video ID and marks it
+recovered when found, or unconfirmed otherwise, and never sends it again. Google returns
+the existing asset for content it already has. A read-back fills in Google's dimensions
+and each video's title.
+
+The audit record holds each image's File, revision, content hash, MIME type, and size,
+and each video ID, never image bytes. Each result row has the item's outcome
+(`uploaded`, `linked`, `failed`, or `unverified`), its `GoogleAdsAssetReference`, and an
+image's size, dimensions, and fits.
 
 ### Keyword research
 
@@ -1364,6 +1414,23 @@ lists each content change with what each field says now and where the asset is u
 
 The result (`components/update-assets-outcome.tsx`) is one `DataTable` with a row per
 asset and target, tabs per outcome, opening on Failed when anything failed.
+
+### Upload Media card
+
+`lib/upload-media.ts` parses `files`, `youtube_videos`, `_account_name`, and `_files`.
+`youtubeVideoId` reads a link the same way the server does. The card blocks approval for
+an image with a problem, a File list the server hasn't checked, an unreadable video link,
+and a repeated video.
+
+The card (`components/upload-media-approval.tsx`) has a `ChangeSummary` (images,
+videos, and Needs Attention with **Cancel These N**), then one `DataTable` row per image
+with its thumbnail, size, dimensions, and fits. Tabs filter by Landscape, Square,
+Portrait, Logo, and Needs Attention. **Cancel This Change** removes an image from
+`files`, and the card keeps it in `retained` so **Undo** survives the **Check Files**
+review. **Add Images** searches workspace Files, and each YouTube link is its own field.
+
+The result (`components/upload-media-outcome.tsx`) is one `DataTable` with Name, Kind,
+Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed.
 
 ### Research Keywords card
 
