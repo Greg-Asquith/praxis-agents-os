@@ -68,7 +68,18 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
-    # Anthropic (Vertex IDs follow the Model Garden cards, checked 2026-09-04).
+    # https://platform.claude.com/docs/en/models/fable-5-2/overview (2026-11-11).
+    ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
+        model="claude-fable-5-2",
+        vertex_model="claude-fable-5-2",
+        display_name="Claude Fable 5.2",
+        context_window=1_000_000,
+        model_type="max",
+        supports_thinking=True,
+        supports_vision=True,
+        default_settings={"anthropic_thinking": {"type": "adaptive", "display": "summarized"}},
+    ),
     # Model Garden: Claude Fable 5.1 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,

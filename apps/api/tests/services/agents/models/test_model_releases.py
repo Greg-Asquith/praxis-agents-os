@@ -8,7 +8,7 @@ import httpx2 as httpx
 import pytest
 from anthropic import AsyncAnthropicVertex
 from pydantic import BaseModel, SecretStr
-from pydantic_ai import Agent, NativeOutput, models
+from pydantic_ai import Agent, NativeOutput, UserError, models
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicStaleThinkingBlockWarning
@@ -197,16 +197,18 @@ async def test_gpt_6_1_sol_sends_lowest_effort_when_thinking_is_disabled(monkeyp
 
 
 @pytest.fixture(params=[False, True], ids=["direct", "vertex"])
-def opus_transport(request, monkeypatch):
+def fable_transport(request, monkeypatch):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", request.param)
-    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_MODELS", ["claude-opus-5-5"])
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_MODELS", ["claude-fable-5-2"])
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     return request.param
 
 
-async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatch, opus_transport):
+async def test_fable_tool_loop_preserves_thinking_and_recovers_binding(
+    monkeypatch, fable_transport
+):
     requests = []
     tool_calls = []
     thinking = {"type": "thinking", "thinking": "Checking the record.", "signature": "signed-block"}
@@ -239,7 +241,7 @@ async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatc
                 "id": f"msg_{len(requests)}",
                 "type": "message",
                 "role": "assistant",
-                "model": "claude-opus-5-5",
+                "model": "claude-fable-5-2",
                 "content": content,
                 "stop_reason": "tool_use" if len(requests) == 1 else "end_turn",
                 "usage": {"input_tokens": 3, "output_tokens": 2},
@@ -257,7 +259,7 @@ async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatc
         monkeypatch.setattr(factory, "get_anthropic_vertex_client", lambda: vertex)
         model = factory.build_model(
             resolve_catalog_model(
-                "anthropic", "claude-opus-5-5", settings_overrides={"max_tokens": 1024}
+                "anthropic", "claude-fable-5-2", settings_overrides={"max_tokens": 1024}
             )
         )
         with pytest.warns(
@@ -272,6 +274,60 @@ async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatc
     assert requests[1]["messages"][1]["content"][0] == thinking
     assert requests[2]["messages"] == requests[1]["messages"]
     assert requests[2]["thinking"]["block_binding"]["prefix_mismatch_behavior"] == "drop_block"
+
+
+async def test_fable_structured_output_avoids_forcing_tools(monkeypatch):
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
+    bodies = []
+
+    class Answer(BaseModel):
+        answer: str
+
+    def lookup() -> str:
+        return "Record found"
+
+    def respond(request):
+        bodies.append(json.loads(request.content))
+        return anthropic_message_response(
+            request,
+            {
+                "id": "msg_fable",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-fable-5-2",
+                "content": [{"type": "text", "text": '{"answer":"Record found"}'}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
+        model = factory.build_model(
+            resolve_catalog_model(
+                "anthropic",
+                "claude-fable-5-2",
+                settings_overrides={
+                    "max_tokens": 1024,
+                    "thinking": False,
+                    "anthropic_speed": "fast",
+                },
+            )
+        )
+        agent = Agent(model, tools=[lookup], output_type=Answer)
+        result = await agent.run("Summarise the record.")
+        with pytest.raises(UserError, match="tool_choice"):
+            await agent.run("Summarise the record.", model_settings={"tool_choice": "required"})
+
+    assert result.output.answer == "Record found"
+    [body] = bodies
+    assert body["model"] == "claude-fable-5-2"
+    assert body["speed"] == "fast"
+    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert body["output_config"]["format"]["type"] == "json_schema"
+    assert body.get("tool_choice", {}).get("type") not in {"any", "tool"}
 
 
 async def test_haiku_5_5_sends_adaptive_effort_without_sampling(monkeypatch):

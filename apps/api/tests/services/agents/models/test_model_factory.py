@@ -75,7 +75,7 @@ def test_build_anthropic_model_rejects_thinking_the_profile_disallows(monkeypatc
     budget = {"anthropic_thinking": {"type": "enabled", "budget_tokens": 2048}}
 
     with pytest.raises(ModelConfigurationError, match="requires adaptive thinking"):
-        build_model(_spec("anthropic", "claude-opus-5-5", settings=disabled))
+        build_model(_spec("anthropic", "claude-fable-5-2", settings=disabled))
     with pytest.raises(ModelConfigurationError, match="requires adaptive thinking"):
         build_model(_spec("anthropic", "claude-haiku-5-5", settings=budget))
     assert isinstance(

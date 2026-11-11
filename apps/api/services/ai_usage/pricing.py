@@ -104,6 +104,8 @@ _OPENAI_PRICES = (
 # distinguishable in the usage ledger.
 # https://platform.claude.com/docs/en/about-claude/pricing
 _ANTHROPIC_PRICES = (
+    # https://platform.claude.com/docs/en/models/fable-5-2/overview (2026-11-11).
+    _price("anthropic", "claude-fable-5-2", date(2026, 11, 9), "8", "0.2", "10", "40"),
     # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-29).
     _price("anthropic", "claude-opus-5-5", date(2026, 9, 22), "4", "0.2", "5", "20"),
     _price("anthropic", "claude-sonnet-5-5", date(2026, 9, 28), "2", "0.2", "2.5", "10"),

@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from pydantic_ai import models
 from pydantic_ai.exceptions import (
     ContentFilterError,
+    ModelAPIError,
     ModelHTTPError,
     ModelQuotaExceededError,
     ModelRateLimitError,
@@ -31,28 +32,42 @@ from tests.support.scenario import (
 )
 
 
+def _http_error(category: type[ModelAPIError]) -> ModelAPIError:
+    return ModelHTTPError.for_category(
+        category,
+        status_code=429,
+        model_name="test-model",
+        body={"message": "private project quota detail"},
+    )
+
+
 @pytest.mark.parametrize(
-    ("category", "status", "code", "advice"),
+    ("make_error", "code", "advice"),
     [
-        (ModelRateLimitError, 429, "model_rate_limited", "Try again later"),
-        (ModelQuotaExceededError, 429, "model_quota_exceeded", "check billing"),
+        (lambda: _http_error(ModelRateLimitError), "model_rate_limited", "Try again later"),
+        (lambda: _http_error(ModelQuotaExceededError), "model_quota_exceeded", "check billing"),
+        (
+            lambda: ModelAPIError(
+                "test-model",
+                "Invalid prompt: private prompt detail was flagged",
+                provider_error_code="invalid_prompt",
+                in_stream=True,
+            ),
+            "model_content_blocked",
+            "Rephrase the request",
+        ),
     ],
 )
 async def test_provider_error_persists_and_emits_safe_error(
-    committed_db_session_factory: async_sessionmaker[AsyncSession], category, status, code, advice
+    committed_db_session_factory: async_sessionmaker[AsyncSession], make_error, code, advice
 ) -> None:
     async def fail_request(_messages, _info):
         yield "Starting"
-        raise ModelHTTPError.for_category(
-            category,
-            status_code=status,
-            model_name="test-model",
-            body={"message": "private project quota detail"},
-        )
+        raise make_error()
 
     context = await build_scenario_agent(committed_db_session_factory)
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
-    with pytest.raises(ModelHTTPError):
+    with pytest.raises(ModelAPIError):
         await run_scenario(
             committed_db_session_factory,
             context,
@@ -142,8 +157,8 @@ async def test_azure_filtered_stream_settles_safely_without_retry(
         await set_session_tenant_context(db, workspace_id=context.workspace_id)
         run = await db.get(AgentRun, context.run_id)
         assert run.status == "failed"
-        assert run.error_code == "agent_run_failed"
-        assert run.error_message == "The agent run failed unexpectedly."
+        assert run.error_code == "model_content_blocked"
+        assert "private" not in run.error_message
         error = next(event for event in sink.events if event.event == "error")
         assert error.data["message"] == run.error_message
         assert error.data["code"] == run.error_code

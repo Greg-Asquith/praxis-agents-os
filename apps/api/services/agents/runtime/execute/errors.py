@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic_ai import UsageLimitExceeded
 from pydantic_ai.exceptions import (
+    ContentFilterError,
     ModelAPIError,
     ModelAuthenticationError,
     ModelContextWindowExceededError,
@@ -72,6 +73,17 @@ def public_run_error(exc: Exception) -> PublicRunError:
         return PublicRunError(
             code=str(getattr(exc, "error_code", "model_configuration_error")),
             message=str(exc),
+        )
+    # OpenAI streams `invalid_prompt` when its classifier flags a prompt; Pydantic AI leaves it uncategorised.
+    if isinstance(exc, ContentFilterError) or (
+        isinstance(exc, ModelAPIError) and exc.provider_error_code == "invalid_prompt"
+    ):
+        return PublicRunError(
+            code="model_content_blocked",
+            message=(
+                "The model provider's safety filter blocked this request. "
+                "Rephrase the request, or try a different model for this agent."
+            ),
         )
     if isinstance(exc, ModelAPIError) and (provider_error := _provider_error(exc)) is not None:
         return provider_error
