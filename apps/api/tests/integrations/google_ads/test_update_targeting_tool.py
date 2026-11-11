@@ -46,6 +46,22 @@ def _location(
 
 
 _C_CRITERIA = "customers/111/campaignCriteria/"
+_AG_CRITERIA = "customers/111/adGroupCriteria/"
+_AD_GROUP = "customers/111/adGroups/20"
+
+
+def _demographic(
+    dimension: str, value: str, criterion_id: str, *, negative: bool = False, modifier=None
+) -> dict[str, Any]:
+    field = {"AGE_RANGE": "ageRange", "GENDER": "gender"}[dimension]
+    row: dict[str, Any] = {
+        "resourceName": f"{_AG_CRITERIA}20~{criterion_id}",
+        "criterionId": criterion_id,
+        "type": dimension,
+        "negative": negative,
+        field: {"type": value},
+    }
+    return row if modifier is None else {**row, "bidModifier": modifier}
 
 
 def _language(key: str) -> dict[str, Any]:
@@ -106,6 +122,10 @@ class _Account:
         self.status = status
         self.strategy = strategy
         self.setting = "PRESENCE_OR_INTEREST"
+        # The campaign's target restrictions, and ad group 20's criteria and restrictions.
+        self.restrictions: list[dict[str, Any]] = []
+        self.ad_group_criteria: list[dict[str, Any]] = []
+        self.ad_group_restrictions: list[dict[str, Any]] = []
         self.mutates: list[dict[str, Any]] = []
         self.next_id = 500
 
@@ -134,6 +154,33 @@ class _Account:
                 {"campaign": {"id": _owner_id(row["resourceName"])}, "campaignCriterion": row}
                 for row in self.criteria
             ]
+        if "FROM ad_group_criterion" in query:
+            return [
+                {"adGroup": {"id": _owner_id(row["resourceName"])}, "adGroupCriterion": row}
+                for row in self.ad_group_criteria
+            ]
+        if "FROM ad_group " in query:
+            return [
+                {
+                    "adGroup": {
+                        "id": "20",
+                        "name": "Men's Trail Shoes",
+                        "status": "ENABLED",
+                        "targetingSetting": {"targetRestrictions": self.ad_group_restrictions},
+                    },
+                    "campaign": {
+                        "id": "10",
+                        "name": "Trail",
+                        "status": self.status,
+                        "advertisingChannelType": "SEARCH",
+                        "biddingStrategyType": self.strategy,
+                    },
+                }
+            ]
+        if "FROM user_interest" in query:
+            return [{"userInterest": {"userInterestId": "80432", "name": "Running Shoes"}}]
+        if "FROM user_list" in query or "_audience" in query:
+            return []
         ids = re.search(r"IN \(([^)]*)\)", query).group(1).split(", ")
         return [
             {
@@ -144,6 +191,7 @@ class _Account:
                     "advertisingChannelType": self.channel,
                     "biddingStrategyType": self.strategy,
                     "geoTargetTypeSetting": {"positiveGeoTargetType": self.setting},
+                    "targetingSetting": {"targetRestrictions": self.restrictions},
                 }
             }
             for campaign_id in ids
@@ -193,32 +241,43 @@ class _Account:
         if "remove" in value:
             if apply:
                 self.criteria = [r for r in self.criteria if r["resourceName"] != value["remove"]]
+                self.ad_group_criteria = [
+                    r for r in self.ad_group_criteria if r["resourceName"] != value["remove"]
+                ]
             return value["remove"]
         if "update" in value:
             update = value["update"]
             if apply and "geoTargetTypeSetting" in update:
                 self.setting = update["geoTargetTypeSetting"]["positiveGeoTargetType"]
-            for row in self.criteria if apply else ():
+            if apply and "targetingSetting" in update:
+                self.restrictions = update["targetingSetting"]["targetRestrictions"]
+            for row in [*self.criteria, *self.ad_group_criteria] if apply else ():
                 if row["resourceName"] == update["resourceName"]:
                     row["bidModifier"] = update["bidModifier"]
             return update["resourceName"]
         self.next_id += 1
         create = value["create"]
-        name = f"{_C_CRITERIA}{create['campaign'].rsplit('/', 1)[1]}~{self.next_id}"
+        owner = "adGroup" if "adGroup" in create else "campaign"
+        prefix = _AG_CRITERIA if owner == "adGroup" else _C_CRITERIA
+        name = f"{prefix}{create[owner].rsplit('/', 1)[1]}~{self.next_id}"
         if apply:
             kinds = {
                 "location": "LOCATION",
                 "proximity": "PROXIMITY",
                 "device": "DEVICE",
                 "adSchedule": "AD_SCHEDULE",
+                "userInterest": "USER_INTEREST",
+                "ageRange": "AGE_RANGE",
+                "gender": "GENDER",
             }
             kind = next((kinds[key] for key in create if key in kinds), "LANGUAGE")
-            self.criteria.append(
+            rows = self.ad_group_criteria if owner == "adGroup" else self.criteria
+            rows.append(
                 {
                     "resourceName": name,
                     "criterionId": str(self.next_id),
                     "type": kind,
-                    **{key: item for key, item in create.items() if key != "campaign"},
+                    **{key: item for key, item in create.items() if key != owner},
                 }
             )
         return name
@@ -284,7 +343,7 @@ def _rows(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _check(display: dict[str, Any]) -> dict[str, Any]:
-    return display["_checks"]["campaigns"][_CAMPAIGN]
+    return display["_checks"]["entries"][_CAMPAIGN]
 
 
 async def test_one_approval_adds_cities_moves_a_region_to_excluded_and_removes_a_language(
@@ -545,7 +604,7 @@ async def test_a_location_changed_since_approval_refuses_its_whole_swap(monkeypa
 async def test_a_campaign_google_couldnt_check_is_never_sent(monkeypatch) -> None:
     account = _Account([_location("2826")])
     args = _args(add_locations=[{"key": "1006"}])
-    display = {"_checks": {"campaigns": {_CAMPAIGN: {"unavailable": True}}, "names": {}}}
+    display = {"_checks": {"entries": {_CAMPAIGN: {"unavailable": True}}, "names": {}}}
 
     result, _audit = await _run(monkeypatch, account, args, display)
 
@@ -821,3 +880,164 @@ def test_overlapping_schedule_windows_are_refused() -> None:
                 {"day": "MONDAY", "start": "12:00", "end": "22:00"},
             ]
         )
+
+
+async def test_an_observed_audience_and_an_age_exclusion_go_in_one_approval(monkeypatch) -> None:
+    account = _Account([_location("2826")])
+    account.restrictions = [{"targetingDimension": "TOPIC", "bidOnly": False}]
+    account.ad_group_criteria = [
+        _demographic("AGE_RANGE", "AGE_RANGE_18_24", "701", modifier=1.1),
+        _demographic("GENDER", "FEMALE", "702", negative=True),
+    ]
+    ad_group = {"customer_id": "111", "campaign_id": "10", "ad_group_id": "20", "label": "Shoes"}
+    args = GoogleAdsUpdateTargetingRequest.model_validate(
+        {
+            "changes": [
+                {
+                    "campaign": _campaign(),
+                    "add_audiences": [
+                        {"kind": "user_interest", "key": "80432", "bid_adjustment": 20}
+                    ],
+                    "audience_mode": "OBSERVATION",
+                },
+                {
+                    "ad_group": ad_group,
+                    "demographics": [
+                        {"dimension": "AGE_RANGE", "value": "AGE_RANGE_18_24", "excluded": True},
+                        # 0 on an excluded value includes it again.
+                        {"dimension": "GENDER", "value": "FEMALE", "bid_adjustment": 0},
+                    ],
+                },
+            ]
+        }
+    ).model_dump(mode="json")
+
+    display = await _display(monkeypatch, account, args)
+    entries = display["_checks"]["entries"]
+    assert entries[_CAMPAIGN]["item_problems"] == [] and entries[_AD_GROUP]["problem"] is None
+    assert display["_checks"]["names"]["audiences"] == {"user_interest:80432": "Running Shoes"}
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    shared, age_move = account.mutates[-2:]
+    assert shared["mutateOperations"] == [
+        {
+            "campaignCriterionOperation": {
+                "create": {
+                    "campaign": _CAMPAIGN,
+                    "userInterest": {"userInterestCategory": "customers/111/userInterests/80432"},
+                    "bidModifier": 1.2,
+                }
+            }
+        },
+        # Audience mode is merged into the live list, so the topic restriction is kept.
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": _CAMPAIGN,
+                    "targetingSetting": {
+                        "targetRestrictions": [
+                            {"targetingDimension": "AUDIENCE", "bidOnly": True},
+                            {"targetingDimension": "TOPIC", "bidOnly": False},
+                        ]
+                    },
+                },
+                "updateMask": "targetingSetting.targetRestrictions",
+            }
+        },
+        {"adGroupCriterionOperation": {"remove": f"{_AG_CRITERIA}20~702"}},
+    ]
+    # Google can't flip a criterion to excluded, so the age range moves in one atomic request.
+    assert age_move["partialFailure"] is False
+    assert age_move["mutateOperations"] == [
+        {"adGroupCriterionOperation": {"remove": f"{_AG_CRITERIA}20~701"}},
+        {
+            "adGroupCriterionOperation": {
+                "create": {
+                    "adGroup": _AD_GROUP,
+                    "negative": True,
+                    "ageRange": {"type": "AGE_RANGE_18_24"},
+                }
+            }
+        },
+    ]
+    rows = {(row["setting"], row["action"], row["outcome"]): row for row in _rows(result)}
+    assert set(rows) == {
+        ("audiences", "add", "updated"),
+        ("audience_mode", "set", "updated"),
+        ("demographics", "set", "updated"),
+    }
+    demographics = rows["demographics", "set", "updated"]
+    assert demographics["ad_group_name"] == "Men's Trail Shoes"
+    assert [
+        (item["name"], item["previous_bid_adjustment"], item["bid_adjustment"])
+        for item in demographics["items"]
+    ] == [("Age 18\u201324", 10, -100), ("Gender Female", -100, 0)]
+
+
+async def test_an_audience_google_doesnt_know_never_reaches_google(monkeypatch) -> None:
+    account = _Account([_location("2826")])
+    args = _args(add_audiences=[{"kind": "user_list", "key": "999"}])
+
+    display = await _display(monkeypatch, account, args)
+
+    assert _check(display)["item_problems"] == [
+        {
+            "field": "add_audiences",
+            "key": "user_list:999",
+            "message": "Google Ads doesn't recognise this audience in this account.",
+        }
+    ]
+    assert account.mutates == []
+
+
+def test_an_ad_group_entry_cant_change_campaign_settings() -> None:
+    ad_group = {"customer_id": "111", "campaign_id": "10", "ad_group_id": "20", "label": "Shoes"}
+    with pytest.raises(ValueError, match="add_locations can only change on a campaign"):
+        GoogleAdsUpdateTargetingRequest.model_validate(
+            {"changes": [{"ad_group": ad_group, "add_locations": [{"key": "1006"}]}]}
+        )
+
+
+class _AudienceSearchClient:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def post(self, path: str, **kwargs: Any) -> Any:
+        query = kwargs["json"]["query"]
+        self.queries.append(query)
+        if "FROM user_interest" in query:
+            row = {"userInterestId": "80432", "name": "Running Shoes", "taxonomyType": "IN_MARKET"}
+            return [{"results": [{"userInterest": row}]}]
+        if "FROM user_list" in query:
+            return [{"results": [{"userList": {"id": "7", "name": "Mum's Running Club"}}]}]
+        return [{"results": []}]
+
+
+async def test_an_audience_search_matches_any_case_and_escapes_the_name(monkeypatch) -> None:
+    client = _AudienceSearchClient()
+    monkeypatch.setattr(search_module, "google_ads_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(_entry(),)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name="google_ads_search_targeting",
+        tool_call_id="search-call",
+    )
+
+    result = await search_module.google_ads_search_targeting(ctx, "audience", ["Mum's (run)"])
+
+    # The quote can't end the GAQL string, and the brackets can't group the pattern.
+    assert "REGEXP_MATCH '(?i).*Mum\\'s \\\\(run\\\\).*'" in client.queries[0]
+    options = GoogleAdsTargetingSearchOutput.model_validate(result).results[0].data.options
+    assert [(option.kind, option.key, option.category) for option in options] == [
+        ("user_list", "7", "Your Data"),
+        ("user_interest", "80432", "In-Market"),
+    ]

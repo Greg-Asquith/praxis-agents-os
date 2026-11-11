@@ -93,6 +93,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   with no location. Search campaigns can't add languages, because Google doesn't
   support it. It also sets device bid adjustments and exclusions and a
   campaign's whole weekly ad schedule, which changes whole or not at all.
+- Google Ads audiences and demographics: `google_ads_search_targeting` finds the
+  account's lists and Google's in-market, affinity, custom, and combined
+  audiences by name, and `google_ads_update_targeting` adds and removes
+  audiences with bid adjustments, sets Observation or Targeting, and excludes or
+  adjusts ages, genders, parental status, and household income, on campaigns or
+  ad groups, in one approval. Audience mode keeps every other targeting
+  restriction as it is.
 - `cut_video_clips` can zoom in on every other jump cut that removing pauses
   makes, which hides the jump, and push in slowly across a segment, up to
   150%. Zooms stay inside the framed picture and follow the face when framing

@@ -1,7 +1,8 @@
 # apps/api/integrations/google_ads/operations/search_targeting.py
 
-"""Finds Google's location and language constants by name, and reads them back by key."""
+"""Finds Google's locations, languages, and audiences by name, and reads them back by key."""
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .utils import stream_rows
+from .utils import escape_gaql_string_literal, stream_rows
 
 # Google's limit on names in one suggestion request.
 MAX_LOCATION_NAMES = 25
@@ -153,3 +154,132 @@ def matching_languages(languages: Sequence[LanguageOption], text: str) -> list[L
         for language in languages
         if needle in language.name.casefold() or needle == (language.code or "").casefold()
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class AudienceOption:
+    # `user_list`, `user_interest`, `custom_audience`, or `combined_audience`.
+    kind: str
+    key: str
+    name: str
+    # Google's grouping, such as In-Market or Your Data.
+    category: str | None
+
+
+# Each kind's resource, ID field, and the filter that keeps audiences a campaign can use.
+_AUDIENCE_SOURCES = {
+    "user_list": ("user_list", "id", "user_list.membership_status = 'OPEN'"),
+    "user_interest": (
+        "user_interest",
+        "user_interest_id",
+        "user_interest.taxonomy_type IN ('AFFINITY', 'IN_MARKET')",
+    ),
+    "custom_audience": ("custom_audience", "id", "custom_audience.status = 'ENABLED'"),
+    "combined_audience": ("combined_audience", "id", "combined_audience.status = 'ENABLED'"),
+}
+_CATEGORIES = {
+    "user_list": "Your Data",
+    "custom_audience": "Custom",
+    "combined_audience": "Combined",
+    "AFFINITY": "Affinity",
+    "IN_MARKET": "In-Market",
+}
+_RE2_OPERATORS = re.compile(r"([\\.+*?()|\[\]{}^$])")
+# Google holds thousands of interests, so one search returns at most this many per kind.
+_MAX_AUDIENCES_PER_KIND = 50
+
+
+def _audience_option(kind: str, row: Mapping[str, Any]) -> AudienceOption | None:
+    resource, id_field, _filter = _AUDIENCE_SOURCES[kind]
+    item = row.get(_camel(resource)) or {}
+    key, name = str(item.get(_camel(id_field), "")), item.get("name")
+    if not key.isdigit() or not isinstance(name, str) or not name:
+        return None
+    category = _CATEGORIES.get(str(item.get("taxonomyType")) if kind == "user_interest" else kind)
+    return AudienceOption(kind=kind, key=key, name=name, category=category)
+
+
+def _camel(name: str) -> str:
+    first, *rest = name.split("_")
+    return first + "".join(part.title() for part in rest)
+
+
+async def _audience_query(
+    client: GoogleAdsClient,
+    customer_id: str,
+    login_customer_id: str,
+    kind: str,
+    condition: str,
+    *,
+    max_rows: int,
+) -> list[AudienceOption]:
+    resource, id_field, available = _AUDIENCE_SOURCES[kind]
+    extra = ", user_interest.taxonomy_type" if kind == "user_interest" else ""
+    payload = await client.post(
+        f"customers/{normalize_customer_id(customer_id)}/googleAds:searchStream",
+        operation="read_audiences",
+        policy=IntegrationRequestPolicy.READ,
+        login_customer_id=login_customer_id,
+        json={
+            "query": (
+                f"SELECT {resource}.{id_field}, {resource}.name{extra} FROM {resource} "  # noqa: S608 -- fixed fields; condition is escaped or digit-only
+                f"WHERE {available} AND {condition} LIMIT {max_rows}"
+            )
+        },
+    )
+    return [
+        option
+        for row in stream_rows(payload, max_rows=max_rows)
+        if (option := _audience_option(kind, row)) is not None
+    ]
+
+
+async def search_audiences(
+    client: GoogleAdsClient, *, customer_id: str, login_customer_id: str, name: str
+) -> list[AudienceOption]:
+    """Finds the account's lists and Google's interests and custom audiences whose names contain
+    `name`, ignoring case."""
+    # RE2 rejects some of Python's escapes, such as a space's, so only its operators are escaped.
+    literal = _RE2_OPERATORS.sub(r"\\\1", name.strip())
+    pattern = escape_gaql_string_literal(f"(?i).*{literal}.*", max_length=200)
+    found: list[AudienceOption] = []
+    for kind, (resource, _id_field, _available) in _AUDIENCE_SOURCES.items():
+        found.extend(
+            await _audience_query(
+                client,
+                customer_id,
+                login_customer_id,
+                kind,
+                f"{resource}.name REGEXP_MATCH '{pattern}'",
+                max_rows=_MAX_AUDIENCES_PER_KIND,
+            )
+        )
+    return found
+
+
+async def read_audiences(
+    client: GoogleAdsClient,
+    *,
+    customer_id: str,
+    login_customer_id: str,
+    keys: Mapping[str, Sequence[str]],
+) -> dict[tuple[str, str], AudienceOption]:
+    """Returns the audiences that exist among the keys of each kind, by kind and key."""
+    found: dict[tuple[str, str], AudienceOption] = {}
+    for kind, kind_keys in keys.items():
+        if any(not key.isdigit() for key in kind_keys):
+            raise ValueError("Google Ads audience keys must contain only digits")
+        resource, id_field, _available = _AUDIENCE_SOURCES[kind]
+        unique = sorted(set(kind_keys))
+        for start in range(0, len(unique), _MAX_IDS_PER_QUERY):
+            batch = unique[start : start + _MAX_IDS_PER_QUERY]
+            for option in await _audience_query(
+                client,
+                customer_id,
+                login_customer_id,
+                kind,
+                f"{resource}.{id_field} IN ({', '.join(batch)})",
+                max_rows=len(batch),
+            ):
+                found[option.kind, option.key] = option
+    return found

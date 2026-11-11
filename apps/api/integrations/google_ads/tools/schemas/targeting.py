@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from ...references import GoogleAdsCampaignReference
+from ...references import GoogleAdsAdGroupReference, GoogleAdsCampaignReference
 from .base import GoogleAdsStrictModel
 
 MAX_TARGETING_CHANGES = 20
@@ -19,7 +19,7 @@ MAX_TARGETING_RESULTS = 100
 _MAX_OUTCOME_ROWS = 1_600
 _MAX_OUTCOME_ITEMS = 10
 
-type GoogleAdsTargetingKind = Literal["location", "language"]
+type GoogleAdsTargetingKind = Literal["location", "language", "audience"]
 type GoogleAdsLocationSetting = Literal["PRESENCE_OR_INTEREST", "PRESENCE"]
 type GoogleAdsRadiusUnits = Literal["MILES", "KILOMETERS"]
 type GoogleAdsTargetingSetting = Literal[
@@ -30,6 +30,9 @@ type GoogleAdsTargetingSetting = Literal[
     "location_setting",
     "devices",
     "ad_schedule",
+    "audiences",
+    "audience_mode",
+    "demographics",
 ]
 type GoogleAdsDevice = Literal["MOBILE", "DESKTOP", "TABLET"]
 type GoogleAdsDay = Literal[
@@ -44,9 +47,41 @@ type _End = Annotated[str, Field(pattern=r"^(([01][0-9]|2[0-3]):(00|15|30|45)|24
 # Google allows six windows a day.
 MAX_WINDOWS_PER_DAY = 6
 
+type GoogleAdsAudienceKind = Literal[
+    "user_list", "user_interest", "custom_audience", "combined_audience"
+]
+# Observation only adjusts bids; targeting shows ads only to the audiences added.
+type GoogleAdsAudienceMode = Literal["OBSERVATION", "TARGETING"]
+type GoogleAdsDemographicDimension = Literal[
+    "AGE_RANGE", "GENDER", "PARENTAL_STATUS", "INCOME_RANGE"
+]
+# Google's values for each dimension, in the order the card lists them.
+DEMOGRAPHIC_VALUES: dict[str, tuple[str, ...]] = {
+    "AGE_RANGE": (
+        "AGE_RANGE_18_24",
+        "AGE_RANGE_25_34",
+        "AGE_RANGE_35_44",
+        "AGE_RANGE_45_54",
+        "AGE_RANGE_55_64",
+        "AGE_RANGE_65_UP",
+        "AGE_RANGE_UNDETERMINED",
+    ),
+    "GENDER": ("FEMALE", "MALE", "UNDETERMINED"),
+    "PARENTAL_STATUS": ("PARENT", "NOT_A_PARENT", "UNDETERMINED"),
+    "INCOME_RANGE": (
+        "INCOME_RANGE_0_50",
+        "INCOME_RANGE_50_60",
+        "INCOME_RANGE_60_70",
+        "INCOME_RANGE_70_80",
+        "INCOME_RANGE_80_90",
+        "INCOME_RANGE_90_UP",
+        "INCOME_RANGE_UNDETERMINED",
+    ),
+}
+
 
 class GoogleAdsTargetingOption(GoogleAdsStrictModel):
-    kind: GoogleAdsTargetingKind
+    kind: Literal["location", "language"]
     # What google_ads_update_targeting takes; the name is for display only.
     key: _Key
     name: str = Field(min_length=1, max_length=500)
@@ -57,8 +92,20 @@ class GoogleAdsTargetingOption(GoogleAdsStrictModel):
     search_term: str | None = Field(default=None, max_length=500)
 
 
+class GoogleAdsAudienceOption(GoogleAdsStrictModel):
+    """One audience found by name, with the kind and key google_ads_update_targeting takes."""
+
+    kind: GoogleAdsAudienceKind
+    key: _Key
+    name: str = Field(min_length=1, max_length=500)
+    # Google's grouping, such as In-Market, Affinity, or Your Data.
+    category: str | None = Field(default=None, max_length=64)
+
+
 class GoogleAdsTargetingSearchData(GoogleAdsStrictModel):
-    options: list[GoogleAdsTargetingOption] = Field(max_length=MAX_TARGETING_RESULTS)
+    options: list[GoogleAdsTargetingOption | GoogleAdsAudienceOption] = Field(
+        max_length=MAX_TARGETING_RESULTS
+    )
     truncated: bool
 
 
@@ -90,6 +137,36 @@ class GoogleAdsRadiusTarget(GoogleAdsStrictModel):
     # Names the place on the card; Google doesn't read it.
     label: str | None = Field(default=None, max_length=200)
     bid_adjustment: GoogleAdsBidAdjustment | None = None
+
+
+class GoogleAdsAudience(GoogleAdsStrictModel):
+    kind: GoogleAdsAudienceKind
+    key: _Key
+    # For display until Google's own name is read back.
+    name: str | None = Field(default=None, max_length=500)
+
+
+class GoogleAdsAudienceTarget(GoogleAdsAudience):
+    # Leaves an audience already added at its current adjustment when null.
+    bid_adjustment: GoogleAdsBidAdjustment | None = None
+
+
+class GoogleAdsDemographicTarget(GoogleAdsStrictModel):
+    dimension: GoogleAdsDemographicDimension
+    value: str = Field(max_length=32)
+    # 0 clears the adjustment, and includes the value again if it was excluded.
+    bid_adjustment: GoogleAdsBidAdjustment | None = None
+    excluded: bool = False
+
+    @model_validator(mode="after")
+    def _known_value(self) -> Self:
+        if self.value not in DEMOGRAPHIC_VALUES[self.dimension]:
+            raise ValueError(
+                f"{self.dimension} takes one of {', '.join(DEMOGRAPHIC_VALUES[self.dimension])}."
+            )
+        if self.excluded == (self.bid_adjustment is not None):
+            raise ValueError("Give each demographic a bid_adjustment, or set excluded, not both.")
+        return self
 
 
 class GoogleAdsDeviceTarget(GoogleAdsStrictModel):
@@ -138,10 +215,17 @@ def _check_windows(windows: list[GoogleAdsScheduleWindow]) -> None:
                 )
 
 
-class GoogleAdsTargetingChange(GoogleAdsStrictModel):
-    """What changes on one campaign, as additions and removals."""
+# What an ad group entry can change; everything else is set on the campaign.
+_AD_GROUP_FIELDS = frozenset(
+    {"ad_group", "add_audiences", "remove_audiences", "audience_mode", "demographics"}
+)
 
-    campaign: GoogleAdsCampaignReference
+
+class GoogleAdsTargetingChange(GoogleAdsStrictModel):
+    """What changes on one campaign or ad group, as additions and removals."""
+
+    campaign: GoogleAdsCampaignReference | None = None
+    ad_group: GoogleAdsAdGroupReference | None = None
     add_locations: list[GoogleAdsLocationTarget] = Field(default_factory=list)
     exclude_locations: list[GoogleAdsTarget] = Field(default_factory=list)
     remove_locations: list[GoogleAdsTarget] = Field(default_factory=list)
@@ -157,6 +241,25 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
     )
     # Removes every window, so ads can show at any time.
     clear_ad_schedule: bool = False
+    add_audiences: list[GoogleAdsAudienceTarget] = Field(default_factory=list)
+    remove_audiences: list[GoogleAdsAudience] = Field(default_factory=list)
+    audience_mode: GoogleAdsAudienceMode | None = None
+    demographics: list[GoogleAdsDemographicTarget] = Field(default_factory=list, max_length=20)
+
+    @property
+    def reference(self) -> GoogleAdsCampaignReference | GoogleAdsAdGroupReference:
+        reference = self.ad_group or self.campaign
+        if reference is None:
+            raise ValueError("A targeting change names a campaign or an ad group")
+        return reference
+
+    @property
+    def owner(self) -> str:
+        """The campaign or ad group's resource name."""
+        if self.ad_group is not None:
+            return f"customers/{self.ad_group.customer_id}/adGroups/{self.ad_group.ad_group_id}"
+        reference = self.reference
+        return f"customers/{reference.customer_id}/campaigns/{reference.campaign_id}"
 
     @property
     def item_count(self) -> int:
@@ -172,12 +275,29 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
             + len(self.devices)
             + len(self.ad_schedule or ())
             + int(self.clear_ad_schedule)
+            + len(self.add_audiences)
+            + len(self.remove_audiences)
+            + int(self.audience_mode is not None)
+            + len(self.demographics)
         )
 
     @model_validator(mode="after")
     def _each_item_once(self) -> Self:
+        if (self.campaign is None) == (self.ad_group is None):
+            raise ValueError("Name a campaign or an ad group in each change, not both.")
+        if self.ad_group is not None:
+            outside = sorted(
+                name
+                for name in self.model_fields_set - _AD_GROUP_FIELDS
+                if getattr(self, name) not in (None, False, [])
+            )
+            if outside:
+                raise ValueError(
+                    f"{', '.join(outside)} can only change on a campaign. An ad group entry "
+                    "takes add_audiences, remove_audiences, audience_mode, and demographics."
+                )
         if self.item_count == 0:
-            raise ValueError("Each campaign needs at least one targeting change.")
+            raise ValueError("Each campaign or ad group needs at least one targeting change.")
         locations = [
             item.key
             for items in (self.add_locations, self.exclude_locations, self.remove_locations)
@@ -195,6 +315,14 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
         devices = [item.device for item in self.devices]
         if len(set(devices)) != len(devices):
             raise ValueError("List each device once per campaign.")
+        audiences = [
+            (item.kind, item.key)
+            for items in (self.add_audiences, self.remove_audiences)
+            for item in items
+        ]
+        demographics = [(item.dimension, item.value) for item in self.demographics]
+        if len(set(audiences)) != len(audiences) or len(set(demographics)) != len(demographics):
+            raise ValueError("List each audience and demographic once per campaign or ad group.")
         if self.ad_schedule is not None and self.clear_ad_schedule:
             raise ValueError("Set ad_schedule or clear_ad_schedule, not both.")
         _check_windows(self.ad_schedule or [])
@@ -208,11 +336,9 @@ class GoogleAdsUpdateTargetingRequest(GoogleAdsStrictModel):
 
     @model_validator(mode="after")
     def _within_limits(self) -> Self:
-        campaigns = [
-            (change.campaign.customer_id, change.campaign.campaign_id) for change in self.changes
-        ]
-        if len(set(campaigns)) != len(campaigns):
-            raise ValueError("List each campaign once.")
+        owners = [change.owner for change in self.changes]
+        if len(set(owners)) != len(owners):
+            raise ValueError("List each campaign and ad group once.")
         if sum(change.item_count for change in self.changes) > MAX_TARGETING_ITEMS:
             raise ValueError(f"One request can make at most {MAX_TARGETING_ITEMS:,} changes.")
         return self
@@ -228,6 +354,9 @@ class GoogleAdsTargetingOutcomeItem(GoogleAdsStrictModel):
 class GoogleAdsTargetingOutcome(GoogleAdsStrictModel):
     campaign_id: str
     campaign_name: str
+    # Set when the change was on one of the campaign's ad groups.
+    ad_group_id: str | None = None
+    ad_group_name: str | None = None
     setting: GoogleAdsTargetingSetting
     action: Literal["add", "remove", "change_bid", "set"]
     outcome: Literal["updated", "already_set", "failed", "unverified"]

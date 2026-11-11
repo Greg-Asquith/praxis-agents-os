@@ -12,6 +12,9 @@ export type TargetingSetting =
   | "location_setting"
   | "devices"
   | "ad_schedule"
+  | "audiences"
+  | "audience_mode"
+  | "demographics"
 type TargetingAction = "add" | "remove" | "change_bid" | "set"
 
 type OutcomeItem = {
@@ -22,6 +25,8 @@ type OutcomeItem = {
 
 export type TargetingOutcomeRow = {
   action: TargetingAction
+  // Set when the change was on one of the campaign's ad groups.
+  adGroupName: string | null
   campaignName: string
   count: number
   errorCode: string | null
@@ -41,11 +46,17 @@ const SETTINGS = [
   "location_setting",
   "devices",
   "ad_schedule",
+  "audiences",
+  "audience_mode",
+  "demographics",
 ]
 const ACTIONS = ["add", "remove", "change_bid", "set"]
 
 export const SETTING_TITLES: Record<TargetingSetting, string> = {
   ad_schedule: "Ad Schedule",
+  audience_mode: "Audience Use",
+  audiences: "Audiences",
+  demographics: "Demographics",
   devices: "Devices",
   excluded_locations: "Excluded",
   languages: "Languages",
@@ -57,6 +68,12 @@ export const SETTING_TITLES: Record<TargetingSetting, string> = {
 export const LOCATION_SETTING_LABELS: Record<string, string> = {
   PRESENCE: "People in or regularly in",
   PRESENCE_OR_INTEREST: "People in, or interested in",
+}
+
+const SET_LABELS: Record<string, string> = {
+  ...LOCATION_SETTING_LABELS,
+  OBSERVATION: "Observation",
+  TARGETING: "Targeting",
 }
 
 function parseItem(value: unknown): OutcomeItem | null {
@@ -87,6 +104,7 @@ function parseRow(value: unknown): TargetingOutcomeRow | null {
   const text = (key: string) => (typeof value[key] === "string" ? value[key] : null)
   return {
     action: action as TargetingAction,
+    adGroupName: text("ad_group_name"),
     campaignName: text("campaign_name") ?? "",
     count,
     errorCode: text("error_code"),
@@ -129,11 +147,11 @@ function devicesText(row: TargetingOutcomeRow, previous: boolean): string {
 
 /** The row's Before and After, in the words the card uses. */
 export function rowChange(row: TargetingOutcomeRow): { after: string; before: string } {
-  if (row.setting === "devices")
+  if (row.setting === "devices" || row.setting === "demographics")
     return { after: devicesText(row, false), before: devicesText(row, true) }
   if (row.action === "set") {
     const name = row.items[0]?.name ?? ""
-    return { after: LOCATION_SETTING_LABELS[name] ?? name, before: "—" }
+    return { after: SET_LABELS[name] ?? name, before: "—" }
   }
   if (row.action === "remove") return { after: "Removed", before: itemsText(row) }
   if (row.action === "change_bid") {

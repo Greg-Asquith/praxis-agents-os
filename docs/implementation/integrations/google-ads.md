@@ -557,18 +557,29 @@ build step, and record locations by key. Sitelinks and callouts on create are pe
 
 ### Targeting
 
-`google_ads_search_targeting` finds locations and languages by name and returns
-the keys `google_ads_update_targeting` takes. It takes up to 25 names per call,
-which is Google's limit for `geoTargetConstants:suggest`, and one selected account
-runs it, because the keys are the same for every account. A location option has its
-key, name, type, region, and Google's estimated reach. Audit records the kind and
-count, never the search text. Audience search is pending.
+`google_ads_search_targeting` finds locations, languages, and audiences by name and
+returns the keys `google_ads_update_targeting` takes. It takes up to 25 location or
+language names per call, which is Google's limit for `geoTargetConstants:suggest`, and
+one selected account runs it, because those keys are the same for every account. A
+location option has its key, name, type, region, and Google's estimated reach. Audit
+records the kind and count, never the search text.
 
-`google_ads_update_targeting` changes up to 20 campaigns per call in one approval,
-with at most 2,400 items across them.
-Each entry names one campaign and only what changes. Ad group entries are pending,
-because no setting in this tool applies to an ad group yet. Audiences and exclusions
-are also pending. The fields are as follows:
+`kind: audience` takes up to 5 names and needs exactly one selected account, because
+lists belong to an account. Each name searches four sources with
+`REGEXP_MATCH '(?i).*name.*'`, at most 50 matches each: the account's open lists
+(`user_list`), Google's in-market and affinity audiences (`user_interest`), and enabled
+custom and combined audiences. Only RE2's operators are escaped in the name, then the
+GAQL string, so a quote or bracket can't change the query. Each option has its `kind`,
+`key`, name, and `category` (Your Data, In-Market, Affinity, Custom, or Combined). The
+card's audience picker (`google_ads_audience` resolver) searches the same way and
+returns nothing when more than one account is selected.
+
+`google_ads_update_targeting` changes up to 20 campaigns and ad groups per call in one
+approval, with at most 2,400 items across them. Each entry names one `campaign` or one
+`ad_group` and only what changes. An ad group entry takes `add_audiences`,
+`remove_audiences`, `audience_mode`, and `demographics` only; the schema refuses any
+other field on it. Placement and brand exclusions are pending. The fields are as
+follows:
 
 | Field | What it does |
 | --- | --- |
@@ -582,6 +593,10 @@ are also pending. The fields are as follows:
 | `devices` | Sets `MOBILE`, `DESKTOP`, or `TABLET` to a `bid_adjustment` percent (0 clears it) or `excluded`. |
 | `ad_schedule` | The campaign's whole week after the change: windows of `day`, `start`, and `end` (HH:MM in quarter hours, in the account's time zone; `end` may be `24:00`), each with an optional bid adjustment; a window without one has no adjustment. At most 6 a day, none overlapping. |
 | `clear_ad_schedule` | Removes every window, so ads can show at any time. |
+| `add_audiences` | Adds an audience by `kind` and `key`, with an optional bid adjustment. Naming one already added changes its adjustment. Campaign or ad group. |
+| `remove_audiences` | Removes an audience. Campaign or ad group. |
+| `audience_mode` | `OBSERVATION` (bids only; who sees the ads doesn't change) or `TARGETING` (ads show only to the audiences). Campaign or ad group. |
+| `demographics` | Sets a `dimension` (`AGE_RANGE`, `GENDER`, `PARENTAL_STATUS`, `INCOME_RANGE`) and Google's `value` to a `bid_adjustment` percent (0 clears it, and includes an excluded value again) or `excluded`. Campaign or ad group. |
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
 between the included and excluded lists sends a removal and an add, in that order, in
@@ -604,9 +619,31 @@ The check counts the schedule as one change, already set only when no window cha
 which includes clearing a schedule the campaign doesn't have. The week is approved
 whole, so after approval a window added or removed since the check refuses the
 campaign's schedule as `CHANGED_SINCE_APPROVAL`.
-Smart Bidding ignores time adjustments, and Target ROAS, Maximize Conversion Value, and
-Maximize Conversions without a target CPA ignore device adjustments other than
-excluding. The check adds a `note` saying so; it doesn't block approval.
+Smart Bidding ignores time, audience, and demographic adjustments, and Target ROAS,
+Maximize Conversion Value, and Maximize Conversions without a target CPA ignore device
+adjustments other than excluding. The check adds a `note` saying so; it doesn't block
+approval.
+
+An audience is a `userList`, `userInterest`, `customAudience`, or `combinedAudience`
+criterion on the campaign or ad group, keyed by `kind:key`. Excluded audiences aren't
+read or changed here. `audience_mode` sets the `AUDIENCE` entry of the campaign's or ad
+group's `targetingSetting.targetRestrictions`. Google takes the whole list, so the tool
+reads the live list, replaces only `AUDIENCE`, and sends the merged list under that
+mask; the other dimensions keep their values. With no `AUDIENCE` entry, Google's
+default applies, and the card says so. When an entry changes both the location setting
+and the audience mode, one campaign update carries both.
+
+A demographic is an `ageRange`, `gender`, `parentalStatus`, or `incomeRange`
+criterion, included with a bid modifier or excluded with `negative`. The excluded flag
+can't change, so excluding a value with an adjustment, or adjusting an excluded one,
+removes the old criterion and creates the new one in one atomic request; the result
+lists the value once. An adjustment of 0 on an excluded value only removes the
+exclusion. Which levels and channels take which demographic isn't checked before the dry
+run: Google's documentation allows campaign-level demographics only as exclusions for
+parental status, and Search usually sets them on ad groups, so Google's dry run decides
+and its reason shows on the card. Mixing campaign-level and ad group audiences in one
+campaign is left to the dry run the same way; whether v24 refuses it is a pending live
+check.
 
 The tool refuses these before Google's dry run:
 
@@ -617,19 +654,25 @@ The tool refuses these before Google's dry run:
   could then show anywhere. An add Google rejects or doesn't recognise doesn't count as
   a location left. This also covers Google's rule for Local Services Performance Max
   campaigns.
-- A location or language key Google doesn't recognise.
+- A location or language key Google doesn't recognise, and an audience the account
+  can't read.
+- An ad group, or an ad group whose campaign, has been removed.
 
 Radius targets take coordinates, not an address. Google computes a point from an
 address, so the read-back can't be matched to the request until that's confirmed
 against a live account (pending).
 
-`operations/criteria.py` reads each campaign's criteria by type
-(`read_campaign_targeting`) and returns them by edit key. An included and an excluded
-place have different keys, so the edit seam sees a move as two changes.
+`operations/criteria.py` reads each campaign's and ad group's criteria by type
+(`read_targeting`), with its target restrictions, and returns them by owner resource
+name and edit key. Ad groups read only audience and demographic types, with their
+campaign's name, status, channel, and bidding strategy. An included and an excluded
+place or demographic have different keys, so the edit seam sees a move as two changes.
 
-While preparing the approval, the tool reads each campaign, reads Google's names, and
-dry runs the rest through the edit seam. The trusted `_checks` display argument holds,
-per campaign, what it targets now (up to 100 locations by name, with the total), the
+While preparing the approval, the tool reads each campaign and ad group, reads Google's
+names, and dry runs the rest through the edit seam. The trusted `_checks` display
+argument holds `entries`, by campaign or ad group resource name, and `names`. Each
+entry has its level, what it targets now (up to 100 locations by name, with the total,
+and its audiences, audience mode, and demographics), the live target restrictions, the
 problem that stops it, each item's problem, what's already set, and the live criteria
 the request touches. The tool declares `changes` in `approval_review_fields`, so any
 edit needs a new check. Approval plans against the criteria the operator saw, so the
@@ -638,9 +681,10 @@ reads each campaign again and applies the rules above to the live state, with no
 sent for a campaign that fails them. One request makes at most 2,500 edits, because one
 audit event holds 2,500 records.
 
-The result has one row per campaign, setting, action, and outcome, with up to 10 item
-names and a count, so it stays small at any request size. Audit records each change by
-key, never the names of places.
+The result has one row per campaign or ad group, setting, action, and outcome, with up
+to 10 item names and a count, so it stays small at any request size. A row for an ad
+group names it and its campaign. Audit records each change by key, never the names of
+places or audiences.
 
 ### Negative keywords
 
@@ -1133,11 +1177,26 @@ The card (`components/targeting-approval.tsx`) shows each change once:
   asks the operator to choose a campaign first.
 - **Devices** lists mobile phones, computers, and tablets, each with its adjustment now,
   a `BidAdjustment`, and **Exclude**.
-- Sections the request doesn't change sit in **More Settings**: Devices, Ad Schedule
-  (**Change the Schedule** starts from the live week, or every hour when none is set),
-  and, for a request that only changes devices or the schedule, Locations. **Who Counts**
-  holds the location setting when locations show. A bidding `note` from the check shows
-  as a warning, naming its campaigns when there are several.
+- **Audiences** lists each audience added (with its `BidAdjustment`) or removed, the
+  ones left alone, **Add an Audience** (search through the `google_ads_audience`
+  resolver), and Observation or Targeting as `ChoiceCards` in plain words, set once for
+  the entries shown. The choice shows only when audiences stay after the change; with
+  removals alone, a mode the agent asked for shows as one line with Cancel This Change,
+  saying it has no effect. The heading's Cancel This Change takes out every audience change.
+- **Demographics** shows one section per dimension the request changes (Age, Gender,
+  Parental Status, Household Income), each listing every value with its adjustment now,
+  a `BidAdjustment`, and **Exclude** (`components/targeting-audiences.tsx`).
+- Sections the request doesn't change sit in **More Settings**: Audiences, Demographics
+  (a choice of dimension, then its values), Devices, Ad Schedule (**Change the
+  Schedule** starts from the live week, or every hour when none is set), and, for a
+  request that changes none of them, Locations. **Who Counts** holds the location
+  setting when locations show. A bidding `note` from the check shows as a warning,
+  naming its campaigns when there are several.
+- Ad group entries take audiences and demographics only. Places, devices, and the
+  schedule show only when a campaign is shown, and `withEntry` drops any other field
+  from an ad group entry, so a change applied to every entry never sends one there. The
+  parent table is titled Campaigns, Ad Groups, or Campaigns and Ad Groups, and an ad
+  group's row names its campaign.
 
 Cancelling a campaign's last change moves it out of the request and into the approval
 controls' retained state, so **Undo** restores it through a check's redraw. A selected
@@ -1149,10 +1208,11 @@ The approve label names one location on one campaign ("Add France"), counts seve
 ("Add 2 Locations"), and otherwise counts campaigns, leaving out blocked ones.
 
 The result (`components/targeting-outcome.tsx`) is the standard `DataTable` result card,
-as on Update Status: Campaign, Setting, Before, After, and Outcome, with tabs for All,
+as on Update Status: Campaign (an ad group's row reads "Ad Group · Campaign"), Setting,
+Before, After, and Outcome, with tabs for All,
 Changed, Already Set, Failed, and Unconfirmed when any, opening on Failed when anything
 failed. The search result (`components/targeting-search-table.tsx`) has columns that
-follow the kind.
+follow the kind; audiences show Audience and Type.
 
 A device line whose campaigns ask for different values is read-only until a
 campaign is selected, and Change the Schedule asks for a campaign when the

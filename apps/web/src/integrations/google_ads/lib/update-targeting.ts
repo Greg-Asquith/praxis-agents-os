@@ -16,11 +16,15 @@ import {
 } from "@/integrations/google_ads/lib/ad-schedule"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import { demographicName } from "@/integrations/google_ads/lib/demographics"
 import { isRecord } from "@/lib/guards"
 
 export type TargetField =
   "add_locations" | "exclude_locations" | "remove_locations" | "add_languages" | "remove_languages"
 export type LocationSetting = "PRESENCE_OR_INTEREST" | "PRESENCE"
+export type AudienceKind = "user_list" | "user_interest" | "custom_audience" | "combined_audience"
+export type AudienceMode = "OBSERVATION" | "TARGETING"
+export type DemographicDimension = "AGE_RANGE" | "GENDER" | "PARENTAL_STATUS" | "INCOME_RANGE"
 export type RadiusUnits = "MILES" | "KILOMETERS"
 export type Device = "MOBILE" | "DESKTOP" | "TABLET"
 
@@ -64,16 +68,39 @@ export type RadiusTarget = {
 // 0 clears the adjustment; excluded stops ads showing on the device.
 export type DeviceTarget = { bidAdjustment: number; device: Device; excluded: boolean }
 
+export type AudienceTarget = {
+  bidAdjustment: number | null
+  key: string
+  kind: AudienceKind
+  name: string | null
+}
+
+// 0 clears the adjustment and includes an excluded value again.
+export type DemographicTarget = {
+  bidAdjustment: number
+  dimension: DemographicDimension
+  excluded: boolean
+  value: string
+}
+
 export type TargetingChange = {
+  addAudiences: AudienceTarget[]
+  // Null leaves the mode as it is.
+  audienceMode: AudienceMode | null
   campaignId: string
   // Removes every window, so ads can show at any time.
   clearSchedule: boolean
   devices: DeviceTarget[]
   // The change as received, so an edit keeps every field.
   entry: Record<string, unknown>
+  demographics: DemographicTarget[]
+  // The campaign's or ad group's resource name.
   key: string
   label: string
+  // Ad groups take audiences and demographics only.
+  level: "campaign" | "ad_group"
   radius: RadiusTarget[]
+  removeAudiences: AudienceTarget[]
   removeRadius: string[]
   // The whole week after the change, or null when the schedule doesn't change.
   schedule: ScheduleWindow[] | null
@@ -84,13 +111,25 @@ export type TargetingChange = {
 type LiveRadius = { criterionId: string; radius: number; units: RadiusUnits }
 type ShownLocation = { bidAdjustment: number; excluded: boolean; key: string; name: string }
 type ItemProblem = { field: string; key: string; message: string }
+type LiveAudience = { bidAdjustment: number; key: string; kind: AudienceKind; name: string }
+type LiveDemographic = {
+  bidAdjustment: number
+  dimension: DemographicDimension
+  excluded: boolean
+  value: string
+}
 
 export type TargetingCheck =
   | { unavailable: true }
   | {
       unavailable: false
       alreadySet: number
+      audienceMode: AudienceMode | null
+      audiences: LiveAudience[]
+      // The ad group's campaign; null for a campaign.
+      campaignName: string | null
       channel: string | null
+      demographics: LiveDemographic[]
       // Live adjustments by device, as percents; EXCLUDED means excluded.
       devices: Map<Device, number>
       itemProblems: ItemProblem[]
@@ -111,7 +150,11 @@ export type UpdateTargetingArgs = {
   accounts: Map<string, GoogleAdsApprovalAccount>
   changes: TargetingChange[]
   checks: Map<string, TargetingCheck>
-  names: { languages: Map<string, string>; locations: Map<string, string> }
+  names: {
+    audiences: Map<string, string>
+    languages: Map<string, string>
+    locations: Map<string, string>
+  }
 }
 
 export type CampaignRow = {
@@ -189,6 +232,80 @@ function parseRadius(value: unknown): RadiusTarget[] {
   })
 }
 
+const AUDIENCE_KINDS: readonly AudienceKind[] = [
+  "user_list",
+  "user_interest",
+  "custom_audience",
+  "combined_audience",
+]
+const DIMENSIONS: readonly DemographicDimension[] = [
+  "AGE_RANGE",
+  "GENDER",
+  "PARENTAL_STATUS",
+  "INCOME_RANGE",
+]
+
+function isAudienceKind(value: unknown): value is AudienceKind {
+  return AUDIENCE_KINDS.includes(value as AudienceKind)
+}
+
+function isDimension(value: unknown): value is DemographicDimension {
+  return DIMENSIONS.includes(value as DemographicDimension)
+}
+
+function parseMode(value: unknown): AudienceMode | null {
+  return value === "OBSERVATION" || value === "TARGETING" ? value : null
+}
+
+function parseAudiences(value: unknown): AudienceTarget[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isRecord(item) || !isAudienceKind(item["kind"])) return []
+    const key = googleAdsId(item["key"])
+    return key === null
+      ? []
+      : [
+          {
+            bidAdjustment: wholeNumber(item["bid_adjustment"]),
+            key,
+            kind: item["kind"],
+            name: textOrNull(item["name"]),
+          },
+        ]
+  })
+}
+
+function parseDemographic(item: unknown): (DemographicTarget & { live: number }) | null {
+  if (!isRecord(item) || !isDimension(item["dimension"])) return null
+  const value = textOrNull(item["value"])
+  if (value === null) return null
+  const excluded = item["excluded"] === true
+  const bid = wholeNumber(item["bid_adjustment"]) ?? 0
+  return {
+    bidAdjustment: excluded ? 0 : bid,
+    dimension: item["dimension"],
+    excluded,
+    // The live adjustment as Google reports it, kept for a check's values.
+    live: bid,
+    value,
+  }
+}
+
+function parseDemographics(value: unknown): DemographicTarget[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    const parsed = parseDemographic(item)
+    if (parsed === null) return []
+    const { live: _live, ...target } = parsed
+    return [target]
+  })
+}
+
+/** Names one audience across the request, as `kind:key`. */
+export function audienceId(target: Pick<AudienceTarget, "key" | "kind">): string {
+  return `${target.kind}:${target.key}`
+}
+
 function isDevice(value: unknown): value is Device {
   return value === "MOBILE" || value === "DESKTOP" || value === "TABLET"
 }
@@ -208,20 +325,46 @@ function parseDevices(value: unknown): DeviceTarget[] {
   })
 }
 
-function parseChange(value: unknown): TargetingChange | null {
-  if (!isRecord(value) || !isRecord(value["campaign"])) return null
-  const customerId = googleAdsId(value["campaign"]["customer_id"])
-  const campaignId = googleAdsId(value["campaign"]["campaign_id"])
+function parseOwner(
+  value: Record<string, unknown>
+): Pick<TargetingChange, "campaignId" | "key" | "label" | "level"> | null {
+  const adGroup = value["ad_group"]
+  const reference = isRecord(adGroup) ? adGroup : value["campaign"]
+  if (!isRecord(reference)) return null
+  const customerId = googleAdsId(reference["customer_id"])
+  const campaignId = googleAdsId(reference["campaign_id"])
   if (customerId === null || campaignId === null) return null
-  const key = `customers/${customerId}/campaigns/${campaignId}`
+  if (!isRecord(adGroup))
+    return {
+      campaignId,
+      key: `customers/${customerId}/campaigns/${campaignId}`,
+      label: textOrNull(reference["label"]) ?? `Campaign ${campaignId}`,
+      level: "campaign",
+    }
+  const adGroupId = googleAdsId(adGroup["ad_group_id"])
+  if (adGroupId === null) return null
   return {
     campaignId,
+    key: `customers/${customerId}/adGroups/${adGroupId}`,
+    label: textOrNull(adGroup["label"]) ?? `Ad group ${adGroupId}`,
+    level: "ad_group",
+  }
+}
+
+function parseChange(value: unknown): TargetingChange | null {
+  if (!isRecord(value)) return null
+  const owner = parseOwner(value)
+  if (owner === null) return null
+  return {
+    ...owner,
+    addAudiences: parseAudiences(value["add_audiences"]),
+    audienceMode: parseMode(value["audience_mode"]),
     clearSchedule: value["clear_ad_schedule"] === true,
+    demographics: parseDemographics(value["demographics"]),
     devices: parseDevices(value["devices"]),
     entry: value,
-    key,
-    label: textOrNull(value["campaign"]["label"]) ?? `Campaign ${campaignId}`,
     radius: parseRadius(value["add_radius"]),
+    removeAudiences: parseAudiences(value["remove_audiences"]),
     removeRadius: Array.isArray(value["remove_radius"])
       ? value["remove_radius"].flatMap((id) => googleAdsId(id) ?? [])
       : [],
@@ -246,7 +389,20 @@ function parseCheck(value: unknown): TargetingCheck {
   return {
     unavailable: false,
     alreadySet: Array.isArray(value["already_set"]) ? value["already_set"].length : 0,
+    audienceMode: parseMode(value["audience_mode"]),
+    audiences: parseAudiences(value["audiences"]).flatMap((item) =>
+      item.name ? [{ ...item, bidAdjustment: item.bidAdjustment ?? 0, name: item.name }] : []
+    ),
+    campaignName: textOrNull(value["campaign_name"]),
     channel: textOrNull(value["channel"]),
+    demographics: (Array.isArray(value["demographics"]) ? value["demographics"] : []).flatMap(
+      (item) => {
+        const parsed = parseDemographic(item)
+        if (parsed === null) return []
+        const { live, ...rest } = parsed
+        return [{ ...rest, bidAdjustment: live }]
+      }
+    ),
     devices: new Map(
       (Array.isArray(value["devices"]) ? value["devices"] : []).flatMap((item) => {
         if (!isRecord(item) || !isDevice(item["device"])) return []
@@ -319,13 +475,17 @@ export function parseUpdateTargetingArgs(value: unknown): UpdateTargetingArgs | 
     changes.push(change)
   }
   const raw = isRecord(value["_checks"]) ? value["_checks"] : {}
-  const campaigns = isRecord(raw["campaigns"]) ? raw["campaigns"] : {}
+  const entries = isRecord(raw["entries"]) ? raw["entries"] : {}
   const names = isRecord(raw["names"]) ? raw["names"] : {}
   return {
     accounts: parseApprovalAccounts(value["_accounts"]),
     changes,
-    checks: new Map(Object.entries(campaigns).map(([key, check]) => [key, parseCheck(check)])),
-    names: { languages: nameMap(names["languages"]), locations: nameMap(names["locations"]) },
+    checks: new Map(Object.entries(entries).map(([key, check]) => [key, parseCheck(check)])),
+    names: {
+      audiences: nameMap(names["audiences"]),
+      languages: nameMap(names["languages"]),
+      locations: nameMap(names["locations"]),
+    },
   }
 }
 
@@ -386,7 +546,11 @@ export function itemCount(change: TargetingChange): number {
     (change.setting === null ? 0 : 1) +
     change.devices.length +
     // The schedule is one change however many windows it has.
-    (change.schedule !== null || change.clearSchedule ? 1 : 0)
+    (change.schedule !== null || change.clearSchedule ? 1 : 0) +
+    change.addAudiences.length +
+    change.removeAudiences.length +
+    (change.audienceMode === null ? 0 : 1) +
+    change.demographics.length
   )
 }
 
@@ -400,9 +564,17 @@ function itemProblemText(change: TargetingChange, item: ItemProblem): string {
   const target = (TARGET_FIELDS as readonly string[]).includes(item.field)
     ? change.targets[item.field as TargetField].find((entry) => entry.key === item.key)
     : undefined
+  const audience = [...change.addAudiences, ...change.removeAudiences].find(
+    (entry) => item.field.endsWith("audiences") && audienceId(entry) === item.key
+  )
+  const [dimension, value] = item.key.split(":")
   const name =
     target?.name ??
+    audience?.name ??
     (item.field === "devices" && isDevice(item.key) ? DEVICE_NAMES[item.key] : null) ??
+    (item.field === "demographics" && isDimension(dimension) && value
+      ? demographicName(dimension, value)
+      : null) ??
     (item.field === "ad_schedule" ? "Ad schedule" : null)
   return name ? `${name}: ${item.message}` : item.message
 }
@@ -542,15 +714,28 @@ function targetEntry(target: Target, keepsBid: boolean): Record<string, unknown>
   }
 }
 
-function withEntry(
+// What an ad group entry can change; everything else is set on the campaign.
+const AD_GROUP_FIELDS = new Set([
+  "add_audiences",
+  "remove_audiences",
+  "audience_mode",
+  "demographics",
+])
+
+/** The change with these fields replaced; an ad group keeps only the fields it can take. */
+export function withEntry(
   change: TargetingChange,
   fields: Partial<Record<string, unknown>>
 ): TargetingChange {
-  const next = parseChange({ ...change.entry, ...fields })
+  const allowed =
+    change.level === "campaign"
+      ? fields
+      : Object.fromEntries(Object.entries(fields).filter(([key]) => AD_GROUP_FIELDS.has(key)))
+  const next = parseChange({ ...change.entry, ...allowed })
   return next ?? change
 }
 
-function isEmpty(change: TargetingChange): boolean {
+export function isEmpty(change: TargetingChange): boolean {
   return itemCount(change) === 0
 }
 
@@ -748,8 +933,20 @@ export function whatChanges(change: TargetingChange): string {
     excluded > 0 ? `excludes ${String(excluded)}` : null,
     removed > 0 ? `removes ${String(removed)}` : null,
   ].filter((part) => part !== null)
-  const text = [...parts, ...whenAndDevices(change)].join(", ")
-  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "No location change"
+  const text = [...parts, ...whenAndDevices(change), ...whoText(change)].join(", ")
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "No change"
+}
+
+function whoText(change: TargetingChange): string[] {
+  const audiences = change.addAudiences.length + change.removeAudiences.length
+  const excluded = change.demographics.filter((target) => target.excluded).length
+  const adjusted = change.demographics.length - excluded
+  return [
+    audiences > 0 ? `${String(audiences)} ${audiences === 1 ? "audience" : "audiences"}` : null,
+    change.audienceMode === null ? null : `${change.audienceMode.toLowerCase()} mode`,
+    excluded > 0 ? `excludes ${String(excluded)} ${excluded === 1 ? "group" : "groups"}` : null,
+    adjusted > 0 ? `${String(adjusted)} demographic ${adjusted === 1 ? "bid" : "bids"}` : null,
+  ].filter((part) => part !== null)
 }
 
 function whenAndDevices(change: TargetingChange): string[] {
@@ -817,8 +1014,9 @@ export function targetingBlock(
   if (needsCheck(args, checked))
     return "Click Check Changes so Google can check your edits, then approve."
   if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "campaign")} to continue.`
-  if (counts.apply === 0) return "These campaigns already have these settings."
+    return `Fix or cancel ${approvalCountLine(counts.problems, entryNoun(args))} to continue.`
+  if (counts.apply === 0)
+    return `These ${entryPlural(entryNoun(args))} already have these settings.`
   return null
 }
 
@@ -828,7 +1026,7 @@ const LONGEST_NAME_IN_BUTTON = 24
 function soleField(args: UpdateTargetingArgs): { field: TargetField; names: string[] } | null {
   if (args.changes.some((c) => c.radius.length + c.removeRadius.length > 0 || c.setting))
     return null
-  if (args.changes.some((c) => whenAndDevices(c).length > 0)) return null
+  if (args.changes.some((c) => whenAndDevices(c).length + whoText(c).length > 0)) return null
   const lines = targetLines(args)
   const [first] = lines
   if (!first || lines.some((line) => line.field !== first.field)) return null
@@ -846,8 +1044,11 @@ function nameList(names: readonly string[]): string {
 export function targetingApproveLabel(args: UpdateTargetingArgs): string {
   const { apply } = targetingCounts(campaignRows(args, args))
   if (apply === 0) return "Apply Changes"
-  if (args.changes.length > 1)
-    return `Apply to ${String(apply)} ${apply === 1 ? "Campaign" : "Campaigns"}`
+  if (args.changes.length > 1) {
+    const noun = entryNoun(args)
+    const title = noun === "ad group" ? "Ad Group" : noun === "campaign" ? "Campaign" : "Item"
+    return `Apply to ${String(apply)} ${title}${apply === 1 ? "" : "s"}`
+  }
   const sole = soleField(args)
   if (sole?.field === "add_locations" || sole?.field === "exclude_locations") {
     const verb = sole.field === "add_locations" ? "Add" : "Exclude"
@@ -874,7 +1075,18 @@ export function targetingPrompt(args: UpdateTargetingArgs): string {
       ? `Add ${nameList(sole.names)} to ${campaign} in ${where}.`
       : `Exclude ${nameList(sole.names)} from ${campaign} in ${where}.`
   }
-  return `Change ${changedKinds(args)} for ${approvalCountLine(args.changes.length, "campaign")} in ${where}.`
+  return `Change ${changedKinds(args)} for ${approvalCountLine(args.changes.length, entryNoun(args))} in ${where}.`
+}
+
+export function entryPlural(noun: string): string {
+  return noun === "item" ? "campaigns and ad groups" : `${noun}s`
+}
+
+/** What the request's entries are: campaigns, ad groups, or a mix of both. */
+export function entryNoun(args: Pick<UpdateTargetingArgs, "changes">): string {
+  const levels = new Set(args.changes.map((change) => change.level))
+  if (levels.size > 1) return "item"
+  return levels.has("ad_group") ? "ad group" : "campaign"
 }
 
 /** Places, the schedule, and device bids, named as the request changes them. */
@@ -883,6 +1095,10 @@ function changedKinds(args: UpdateTargetingArgs): string {
     args.changes.some(changesPlaces) ? "locations and languages" : null,
     args.changes.some((c) => c.schedule !== null || c.clearSchedule) ? "the ad schedule" : null,
     args.changes.some((c) => c.devices.length > 0) ? "device bids" : null,
+    args.changes.some((c) => c.addAudiences.length + c.removeAudiences.length > 0 || c.audienceMode)
+      ? "audiences"
+      : null,
+    args.changes.some((c) => c.demographics.length > 0) ? "demographics" : null,
   ].filter((kind) => kind !== null)
   const last = kinds.pop() ?? "locations and languages"
   return kinds.length > 0 ? `${kinds.join(", ")}, and ${last}` : last
@@ -911,6 +1127,10 @@ export function clearedChange(change: TargetingChange): TargetingChange {
     devices: [],
     ad_schedule: null,
     clear_ad_schedule: false,
+    add_audiences: [],
+    remove_audiences: [],
+    audience_mode: null,
+    demographics: [],
   })
 }
 
@@ -1043,7 +1263,13 @@ export function targetingNotes(args: UpdateTargetingArgs): string[] {
 }
 
 export function targetingDetails(args: UpdateTargetingArgs | null): FanOutDetail[] {
-  return args ? [{ label: "Campaigns", value: String(args.changes.length) }] : []
+  if (!args) return []
+  const adGroups = args.changes.filter((change) => change.level === "ad_group").length
+  const campaigns = args.changes.length - adGroups
+  return [
+    ...(campaigns > 0 ? [{ label: "Campaigns", value: String(campaigns) }] : []),
+    ...(adGroups > 0 ? [{ label: "Ad Groups", value: String(adGroups) }] : []),
+  ]
 }
 
 export function parseCancelled(value: unknown): TargetingChange[] {

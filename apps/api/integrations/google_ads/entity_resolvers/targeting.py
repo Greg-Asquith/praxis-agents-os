@@ -1,6 +1,7 @@
 # apps/api/integrations/google_ads/entity_resolvers/targeting.py
 
-"""Location and language lookup, so an approval card can add targeting Google itself returned."""
+"""Location, language, and audience lookup, so an approval card adds only targeting Google
+returned."""
 
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, ClassVar, Literal
@@ -9,11 +10,14 @@ from pydantic import Field
 
 from integrations.google_ads.operations.search_targeting import (
     MAX_LOCATION_NAMES,
+    AudienceOption,
     LanguageOption,
     LocationOption,
     matching_languages,
+    read_audiences,
     read_languages,
     read_locations,
+    search_audiences,
     search_locations,
 )
 from integrations.google_ads.tools.utils import (
@@ -67,6 +71,16 @@ class GoogleAdsLanguageOption(_TargetOption):
     entity_kind: Literal["google_ads_language"] = "google_ads_language"
 
 
+class GoogleAdsAudienceOption(_TargetOption):
+    """An audience for the card: copy kind, key, and name into an audience change."""
+
+    entity_kind: Literal["google_ads_audience"] = "google_ads_audience"
+    kind: Literal["user_list", "user_interest", "custom_audience", "combined_audience"]
+    category: str | None = Field(default=None, max_length=64)
+
+    identity_fields: ClassVar[tuple[str, ...]] = (*_TargetOption.identity_fields, "kind")
+
+
 def _location_choice(customer_id: str, option: LocationOption) -> EntityChoice:
     place = [
         option.target_type.replace("_", " ").title() if option.target_type else None,
@@ -87,6 +101,19 @@ def _location_choice(customer_id: str, option: LocationOption) -> EntityChoice:
 def _language_choice(customer_id: str, option: LanguageOption) -> EntityChoice:
     reference = GoogleAdsLanguageOption(
         customer_id=customer_id, key=option.key, name=option.name[:500], label=option.name[:500]
+    )
+    return EntityChoice.from_reference(reference, icon="google_ads")
+
+
+def _audience_choice(customer_id: str, option: AudienceOption) -> EntityChoice:
+    reference = GoogleAdsAudienceOption(
+        customer_id=customer_id,
+        kind=option.kind,
+        key=option.key,
+        name=option.name[:500],
+        label=option.name[:500],
+        description=option.category,
+        category=option.category,
     )
     return EntityChoice.from_reference(reference, icon="google_ads")
 
@@ -181,6 +208,53 @@ async def resolve_language_options(
     )
 
 
+async def _audience_client(ctx: EntityResolverContext) -> tuple[Any, Any] | None:
+    """Audience lists belong to one account, so only one selected account can be searched."""
+    entries = ctx.active_context.compatible_entries(GOOGLE_ADS_BINDING)
+    if len(entries) != 1:
+        return None
+    return await _first_client(ctx)
+
+
+async def search_audience_options(
+    ctx: EntityResolverContext, search: str, _dependent_args, page_size: int, _cursor
+) -> EntityResolverPage:
+    found = await _audience_client(ctx) if search.strip() else None
+    if found is None:
+        return EntityResolverPage(choices=())
+    client, entry = found
+    options = await search_audiences(
+        client,
+        customer_id=entry.external_id,
+        login_customer_id=login_customer_id(entry),
+        name=search,
+    )
+    return EntityResolverPage(
+        choices=tuple(_audience_choice(entry.external_id, option) for option in options[:page_size])
+    )
+
+
+async def resolve_audience_options(
+    ctx: EntityResolverContext, values: Sequence[Any], _dependent_args: Mapping[str, Any]
+) -> tuple[EntityChoice, ...]:
+    keys: dict[str, list[str]] = {}
+    for value in values:
+        reference = _validated(GoogleAdsAudienceOption, value)
+        if reference is not None:
+            keys.setdefault(reference.kind, []).append(reference.key)
+    found = await _audience_client(ctx) if keys else None
+    if found is None:
+        return ()
+    client, entry = found
+    options = await read_audiences(
+        client,
+        customer_id=entry.external_id,
+        login_customer_id=login_customer_id(entry),
+        keys=keys,
+    )
+    return tuple(_audience_choice(entry.external_id, option) for option in options.values())
+
+
 def _validated[T: _TargetOption](model: type[T], value: Any) -> T | None:
     try:
         return model.model_validate(value)
@@ -202,6 +276,15 @@ GOOGLE_ADS_LANGUAGE_RESOLVER = EntityResolverDefinition(
     reference_type=GoogleAdsLanguageOption,
     search=search_language_options,
     resolve=resolve_language_options,
+    max_page_size=50,
+    requires_active_context=True,
+    provider_key="google_ads",
+)
+GOOGLE_ADS_AUDIENCE_RESOLVER = EntityResolverDefinition(
+    entity_kind="google_ads_audience",
+    reference_type=GoogleAdsAudienceOption,
+    search=search_audience_options,
+    resolve=resolve_audience_options,
     max_page_size=50,
     requires_active_context=True,
     provider_key="google_ads",

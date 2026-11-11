@@ -1,6 +1,7 @@
 # apps/api/integrations/google_ads/tools/search_targeting.py
 
-"""Finds Google Ads locations and languages by name and returns the keys other tools take."""
+"""Finds Google Ads locations, languages, and audiences by name and returns the keys other tools
+take."""
 
 from dataclasses import asdict
 from typing import Annotated, Any
@@ -37,6 +38,7 @@ from ..operations.search_targeting import (
     MAX_LOCATION_NAMES,
     matching_languages,
     read_languages,
+    search_audiences,
     search_locations,
 )
 from .schemas.targeting import (
@@ -49,6 +51,8 @@ from .utils.client import google_ads_available, google_ads_client
 from .utils.routing import login_customer_id
 
 _OPERATION = "search_targeting"
+# Each audience name searches four lists, so a call takes fewer of them.
+_MAX_AUDIENCE_NAMES = 5
 
 
 async def google_ads_search_targeting(
@@ -59,7 +63,9 @@ async def google_ads_search_targeting(
         Field(
             min_length=1,
             max_length=MAX_LOCATION_NAMES,
-            description="Up to 25 place or language names to find in one call.",
+            description=(
+                "Up to 25 place or language names, or 5 audience names, to find in one call."
+            ),
         ),
     ],
     country_code: Annotated[
@@ -69,6 +75,11 @@ async def google_ads_search_targeting(
     limit: Annotated[int, Field(ge=1, le=MAX_TARGETING_RESULTS)] = 25,
 ) -> dict[str, Any]:
     entries = active_google_ads_entries(ctx)
+    if kind == "audience" and len(entries) != 1:
+        raise ModelRetry(
+            "Audience lists belong to one account. Ask the user to select only the account "
+            "whose audiences you need."
+        )
 
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> IntegrationAuditOutcome:
@@ -87,7 +98,8 @@ async def google_ads_search_targeting(
             execute=execute,
         )
 
-    # Google's constants are the same for every account, so one account searches.
+    # Google's constants are the same for every account, so one account searches; audiences
+    # are searched in the only selected account.
     results = await run_context_scope(
         ctx,
         binding=GOOGLE_ADS_BINDING,
@@ -109,6 +121,20 @@ async def _options(
         return [{"kind": kind, **asdict(option)} for option in locations]
     if country_code is not None:
         raise ModelRetry("country_code only applies to locations.")
+    if kind == "audience":
+        if len(names) > _MAX_AUDIENCE_NAMES:
+            raise ModelRetry(f"Search for at most {_MAX_AUDIENCE_NAMES} audience names at once.")
+        audiences = {
+            (option.kind, option.key): option
+            for name in names
+            for option in await search_audiences(
+                client,
+                customer_id=entry.external_id,
+                login_customer_id=login_customer_id(entry),
+                name=name,
+            )
+        }
+        return [asdict(option) for option in audiences.values()]
     languages = await read_languages(
         client, customer_id=entry.external_id, login_customer_id=login_customer_id(entry)
     )
@@ -141,13 +167,17 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_search_targeting",
     function=google_ads_search_targeting,
     description=(
-        "Find Google Ads locations and languages by name and get the keys "
-        "google_ads_update_targeting takes. kind is location or language. names takes up to 25 "
-        "names, so look up every place in one call. Use country_code to limit locations to one "
-        "country. Each option has its key, a name for display, and, for locations, its type, "
-        "region, and Google's estimated reach. A name can match several places, so compare "
-        "region before choosing. Never invent keys. Keys don't depend on the account, so one "
-        "selected account runs the search."
+        "Find Google Ads locations, languages, and audiences by name and get the keys "
+        "google_ads_update_targeting takes. kind is location, language, or audience. names "
+        "takes up to 25 names, so look up every place in one call, or up to 5 audience names. "
+        "Use country_code to limit locations to one country. Each option has its key, a name "
+        "for display, and, for locations, its type, region, and Google's estimated reach. A "
+        "name can match several places, so compare region before choosing. Audiences match "
+        "any part of the name, ignoring case, across the account's own lists (user_list), "
+        "Google's in-market and affinity audiences (user_interest), and custom and combined "
+        "audiences; each has its kind, key, and category. Audiences belong to one account, so "
+        "only one may be selected. Never invent keys. Location and language keys don't depend "
+        "on the account, so one selected account runs those searches."
     ),
     provider="google_ads",
     label="Search Google Ads Targeting",

@@ -8,7 +8,11 @@ import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 import { compactDetails, stringArg, stringDetail } from "@/integrations/tool-details"
 import { isRecord } from "@/lib/guards"
 
-const KIND_LABELS: Record<string, string> = { language: "Languages", location: "Locations" }
+const KIND_LABELS: Record<string, string> = {
+  audience: "Audiences",
+  language: "Languages",
+  location: "Locations",
+}
 
 function searchedNames(args: unknown): string {
   const names = isRecord(args) ? args["names"] : null
@@ -33,7 +37,7 @@ export const googleAdsSearchTargetingPresenter = defineIntegrationReadPresenter(
   parseResult: parseTargetingSearch,
   render: (result, entry, args) => {
     if (result.options.length === 0) {
-      const kind = stringArg(args, "kind") === "language" ? "languages" : "locations"
+      const kind = `${stringArg(args, "kind") ?? "location"}s`
       return (
         <EmptyResult>
           No {kind} match {searchedNames(args)}. Try a broader term.

@@ -28,7 +28,7 @@ const COLUMNS: DataColumn[] = [
   { key: "details", kind: "text", label: "Details", hidden: true },
 ]
 
-/** One row per campaign and setting, opening on the failures when there are any. */
+/** One row per campaign or ad group and setting, opening on the failures when there are any. */
 export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResult }) {
   const [tab, setTab] = useState(
     result.rows.some((row) => row.outcome === "failed") ? "failed" : "all"
@@ -40,7 +40,9 @@ export function TargetingOutcomeTable({ result }: { result: UpdateTargetingResul
         return {
           after: row.outcome === "failed" ? "—" : after,
           before,
-          campaign: row.campaignName || "—",
+          campaign: row.adGroupName
+            ? `${row.adGroupName} · ${row.campaignName}`
+            : row.campaignName || "—",
           details: [row.message, row.errorCode ? googleAdsTokenLabel(row.errorCode) : null]
             .filter(Boolean)
             .join(" · "),

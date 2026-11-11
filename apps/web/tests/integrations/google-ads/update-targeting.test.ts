@@ -30,6 +30,7 @@ import {
   pasteBatches,
   removeTarget,
   serializeChanges,
+  EXCLUDED,
   setDevice,
   setSchedule,
   targetingApproveLabel,
@@ -39,6 +40,13 @@ import {
   type Target,
   type UpdateTargetingArgs,
 } from "@/integrations/google_ads/lib/update-targeting"
+import {
+  addAudience,
+  cancelAudience,
+  demographicLines,
+  setAudienceMode,
+  setDemographic,
+} from "@/integrations/google_ads/lib/targeting-audiences"
 import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/presenters/search-targeting"
 import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
 
@@ -82,7 +90,7 @@ function raw(over: Record<string, unknown> = {}) {
       { customer_id: CUSTOMER, name: "Northwind", currency: "GBP", time_zone: "Europe/London" },
     ],
     _checks: {
-      campaigns: { [key("10")]: check() },
+      entries: { [key("10")]: check() },
       names: { locations: { "1006": "Manchester" }, languages: {} },
     },
     ...over,
@@ -122,7 +130,7 @@ describe("targeting edits", () => {
         { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
       ],
       _checks: {
-        campaigns: { [key("10")]: check({ channel: "SEARCH" }), [key("11")]: check() },
+        entries: { [key("10")]: check({ channel: "SEARCH" }), [key("11")]: check() },
         names: {},
       },
     })
@@ -167,7 +175,7 @@ describe("approval", () => {
   it("blocks on a problem until the campaign is edited, then waits for a new check", () => {
     const value = raw({
       _checks: {
-        campaigns: { [key("10")]: check({ problem: "This would leave no location." }) },
+        entries: { [key("10")]: check({ problem: "This would leave no location." }) },
         names: {},
       },
     })
@@ -189,7 +197,7 @@ describe("approval", () => {
   })
 
   it("blocks and asks for a new check when Google couldn't be reached", () => {
-    const args = parsed(raw({ _checks: { campaigns: { [key("10")]: { unavailable: true } } } }))
+    const args = parsed(raw({ _checks: { entries: { [key("10")]: { unavailable: true } } } }))
 
     expect(needsCheck(args, args)).toBe(true)
     expect(targetingBlock(args, args)).not.toBeNull()
@@ -199,7 +207,7 @@ describe("approval", () => {
     const args = parsed(
       raw({
         _checks: {
-          campaigns: {
+          entries: {
             [key("10")]: check({ already_set: [{ field: "add_locations", key: "1006" }] }),
           },
           names: {},
@@ -215,7 +223,7 @@ describe("approval", () => {
     const args = parsed(
       raw({
         _checks: {
-          campaigns: {
+          entries: {
             [key("10")]: check({
               item_problems: [
                 { field: "add_locations", key: "1006", message: "Google says: Not allowed." },
@@ -256,7 +264,7 @@ describe("wording", () => {
           { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
         ],
         _checks: {
-          campaigns: {
+          entries: {
             [key("10")]: check(),
             // A blocked campaign doesn't count towards what applies.
             [key("11")]: check({ problem: "Would leave no location." }),
@@ -278,7 +286,7 @@ describe("what the card lists", () => {
           { campaign: campaign("11"), add_locations: [{ key: "1006" }] },
         ],
         _checks: {
-          campaigns: {
+          entries: {
             [key("10")]: check({
               locations: [
                 { key: "2826", name: "United Kingdom", excluded: false, bid_adjustment: 0 },
@@ -308,7 +316,7 @@ describe("what the card lists", () => {
           { campaign: campaign("13"), ...same },
         ],
         _checks: {
-          campaigns: {
+          entries: {
             [key("10")]: check(),
             [key("11")]: check(),
             [key("12")]: check(),
@@ -463,6 +471,90 @@ describe("devices and ad schedule", () => {
   })
 })
 
+const adGroupKey = (id: string) => `customers/${CUSTOMER}/adGroups/${id}`
+
+function adGroupArgs(): Record<string, unknown> {
+  return raw({
+    changes: [
+      {
+        campaign: campaign("10"),
+        add_locations: [{ key: "1006", name: "Manchester" }],
+      },
+      {
+        ad_group: { customer_id: CUSTOMER, campaign_id: "10", ad_group_id: "20", label: "Shoes" },
+        demographics: [{ dimension: "AGE_RANGE", value: "AGE_RANGE_18_24", excluded: true }],
+      },
+    ],
+    _checks: {
+      entries: {
+        [key("10")]: check(),
+        [adGroupKey("20")]: check({
+          campaign_name: "Trail",
+          demographics: [
+            { dimension: "AGE_RANGE", value: "AGE_RANGE_65_UP", excluded: true, bid_adjustment: 0 },
+          ],
+          locations: [],
+          languages: [],
+        }),
+      },
+      names: { locations: { "1006": "Manchester" }, languages: {}, audiences: {} },
+    },
+  })
+}
+
+describe("audiences and demographics", () => {
+  it("keeps campaign settings off ad group entries", () => {
+    const args = parsed(adGroupArgs())
+
+    const next = setDevice(args.changes, "MOBILE", { bidAdjustment: -30, excluded: false })
+
+    // The server refuses devices on an ad group, so the card never sends them there.
+    const [campaignEntry, adGroupEntry] = serializeChanges(next)
+    expect(campaignEntry?.["devices"]).toEqual([{ device: "MOBILE", bid_adjustment: -30 }])
+    expect(adGroupEntry?.["devices"]).toBeUndefined()
+  })
+
+  it("moves an audience out of the removals, and drops an entry left with nothing", () => {
+    const args = parsed(adGroupArgs())
+    const shoes = { bidAdjustment: 20, key: "80432", kind: "user_interest" as const, name: "Shoes" }
+    const [, adGroup] = args.changes
+    if (!adGroup) throw new Error("Expected the ad group")
+    const removing = parsed({
+      ...adGroupArgs(),
+      changes: [{ ...adGroup.entry, remove_audiences: [{ kind: "user_interest", key: "80432" }] }],
+    })
+
+    const added = addAudience(removing.changes, shoes)
+
+    expect(added[0]?.removeAudiences).toEqual([])
+    expect(serializeChanges(added)[0]?.["add_audiences"]).toEqual([
+      { kind: "user_interest", key: "80432", name: "Shoes", bid_adjustment: 20 },
+    ])
+    const onlyMode = cancelAudience(
+      setDemographic(setAudienceMode(added, "OBSERVATION"), "AGE_RANGE", "AGE_RANGE_18_24", null),
+      "add_audiences",
+      "user_interest:80432"
+    )
+    expect(onlyMode).toHaveLength(1)
+    expect(setAudienceMode(onlyMode, null)).toEqual([])
+  })
+
+  it("reads an excluded value as excluded now, and what the request asks for", () => {
+    const args = parsed(adGroupArgs())
+    const shown = { ...args, changes: args.changes.slice(1) }
+
+    const lines = demographicLines(shown, "AGE_RANGE")
+
+    expect(lines.find((line) => line.value === "AGE_RANGE_65_UP")?.now).toBe(EXCLUDED)
+    expect(lines.find((line) => line.value === "AGE_RANGE_18_24")?.requested).toEqual({
+      bidAdjustment: 0,
+      dimension: "AGE_RANGE",
+      excluded: true,
+      value: "AGE_RANGE_18_24",
+    })
+  })
+})
+
 describe("presenters", () => {
   const html = (node: ReactNode) =>
     renderToStaticMarkup(
@@ -534,6 +626,22 @@ describe("presenters", () => {
       )
     )
     expect(schedule).toContain('role="img"')
+
+    const audiences = html(
+      googleAdsUpdateTargetingPresenter.render(
+        props(
+          {
+            id: "targeting-4",
+            kind: "approval",
+            name: "google_ads_update_targeting",
+            status: "awaiting_approval",
+            args: adGroupArgs(),
+          },
+          true
+        )
+      )
+    )
+    expect(audiences).toContain('aria-label="Age"')
 
     const result = html(
       googleAdsUpdateTargetingPresenter.render(

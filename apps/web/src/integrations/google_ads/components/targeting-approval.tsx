@@ -24,6 +24,23 @@ import {
 import { BidAdjustment } from "@/integrations/google_ads/components/bid-adjustment"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { DeviceAdjustments } from "@/integrations/google_ads/components/device-adjustments"
+import {
+  AudienceRows,
+  DemographicAdjustments,
+} from "@/integrations/google_ads/components/targeting-audiences"
+import { DIMENSION_NAMES } from "@/integrations/google_ads/lib/demographics"
+import {
+  addAudience,
+  cancelAudience,
+  changedDimensions,
+  changesAudiences,
+  clearAudiences,
+  clearDemographics,
+  demographicLines,
+  setAudienceBid,
+  setAudienceMode,
+  setDemographic,
+} from "@/integrations/google_ads/lib/targeting-audiences"
 import { ALL_WEEK, type ScheduleWindow } from "@/integrations/google_ads/lib/ad-schedule"
 import { LocationPaste } from "@/integrations/google_ads/components/location-paste"
 import { LOCATION_SETTING_LABELS } from "@/integrations/google_ads/lib/update-targeting-result"
@@ -39,6 +56,8 @@ import {
   deviceLines,
   editInScope,
   editRadius,
+  entryNoun,
+  entryPlural,
   itemCount,
   keepRadius,
   languagesText,
@@ -67,7 +86,10 @@ import {
   unchangedPlaces,
   unchangedRadius,
   whatChanges,
+  type AudienceKind,
+  type AudienceMode,
   type CampaignRow,
+  type DemographicDimension,
   type LocationSetting,
   type RadiusTarget,
   type RadiusUnits,
@@ -122,6 +144,22 @@ function targetOf(choice: EntityChoice): Target | null {
   }
 }
 
+const DIMENSION_OPTIONS = (Object.keys(DIMENSION_NAMES) as DemographicDimension[]).map((value) => ({
+  label: DIMENSION_NAMES[value],
+  value,
+}))
+
+function audienceOf(choice: EntityChoice) {
+  const { key, kind, name } = choice.value
+  if (typeof key !== "string" || typeof kind !== "string") return null
+  return {
+    bidAdjustment: null,
+    key,
+    kind: kind as AudienceKind,
+    name: typeof name === "string" ? name : choice.label,
+  }
+}
+
 function typeNoun(targetType: string | null): string {
   return targetType === "Postal Code" ? "Postcode" : (targetType ?? "Location")
 }
@@ -152,6 +190,8 @@ export function TargetingApproval({
   const [chosen, setChosen] = useState<string | null>(null)
   // Places stay behind More Settings when the request only changes devices or the schedule.
   const [showPlaces, setShowPlaces] = useState(false)
+  const [showAudiences, setShowAudiences] = useState(false)
+  const [dimension, setDimension] = useState<DemographicDimension>("AGE_RANGE")
   const cancelled = useMemo(() => parseCancelled(controls.retained), [controls.retained])
   const rows = useMemo(() => campaignRows(args, checked, cancelled), [args, checked, cancelled])
   const counts = targetingCounts(rows)
@@ -165,9 +205,22 @@ export function TargetingApproval({
   // With one campaign there's no table, so its problems show without a click.
   const problemRow = open ?? (many ? null : rows[0])
   const schedule = requestedSchedule(shown)
+  const noun = entryNoun(args.changes.length > 0 ? args : { changes: cancelled })
+  // Ad groups take audiences and demographics only, so campaign settings show for campaigns.
+  const campaignsShown = shown.changes.some((change) => change.level === "campaign")
   const devicesOn = shown.changes.some((change) => change.devices.length > 0)
+  const audiencesOn = showAudiences || shown.changes.some(changesAudiences)
+  const dimensions = changedDimensions(shown)
+  // More Settings offers the dimensions the request doesn't change yet.
+  const otherDimensions = DIMENSION_OPTIONS.filter((option) => !dimensions.includes(option.value))
+  const other = dimensions.includes(dimension)
+    ? (otherDimensions[0]?.value ?? dimension)
+    : dimension
   const placesOn =
-    showPlaces || shown.changes.some(changesPlaces) || (!devicesOn && schedule.kind === "none")
+    campaignsShown &&
+    (showPlaces ||
+      shown.changes.some(changesPlaces) ||
+      (!devicesOn && schedule.kind === "none" && !audiencesOn && dimensions.length === 0))
   const notes = targetingNotes(shown)
   // Campaigns in different time zones have no single zone the times can be read in.
   const timeZones = new Set(
@@ -213,6 +266,15 @@ export function TargetingApproval({
       })
     )
   }
+  const setDemographicValue = (
+    dimension: DemographicDimension,
+    value: string,
+    next: Parameters<typeof setDemographic>[3]
+  ) => {
+    save(
+      editInScope(addable(), scope, (changes) => setDemographic(changes, dimension, value, next))
+    )
+  }
   const removeMany = (field: TargetField, keys: readonly string[]) => {
     edit((changes) => {
       let next: TargetingChange[] = [...changes]
@@ -223,7 +285,7 @@ export function TargetingApproval({
 
   return (
     <div className="grid min-w-0 gap-3">
-      <StatusNote args={args} />
+      <StatusNote args={args} noun={noun} />
       {many ? (
         <AttentionLine
           count={counts.problems}
@@ -241,7 +303,13 @@ export function TargetingApproval({
               : PARENT_COLUMNS.filter((column) => column.key !== "languages")
           }
           disabled={disabled}
-          label="Campaigns"
+          label={
+            noun === "item"
+              ? "Campaigns and Ad Groups"
+              : noun === "ad group"
+                ? "Ad Groups"
+                : "Campaigns"
+          }
           onCancel={cancelCampaign}
           onSelect={setChosen}
           onUndo={undo}
@@ -251,7 +319,7 @@ export function TargetingApproval({
               <span className="text-sm wrap-anywhere whitespace-normal">{value}</span>
             ) : null
           }}
-          rowNoun={["campaign", "campaigns"]}
+          rowNoun={[noun, entryPlural(noun)]}
           rows={parents}
           selected={scope}
         />
@@ -327,6 +395,59 @@ export function TargetingApproval({
               />
             </section>
           ) : null}
+          {audiencesOn ? (
+            <section aria-label="Audiences" className="overflow-hidden rounded-lg border">
+              <SectionHeading
+                disabled={disabled}
+                onCancel={() => {
+                  setShowAudiences(false)
+                  edit(clearAudiences)
+                }}
+                title="Audiences"
+              />
+              <AudienceRows
+                args={shown}
+                disabled={disabled}
+                noun={noun}
+                onAdd={(choice) => {
+                  const target = audienceOf(choice)
+                  if (target)
+                    save(editInScope(addable(), scope, (changes) => addAudience(changes, target)))
+                }}
+                onBid={(id, bid) => {
+                  edit((changes) => setAudienceBid(changes, id, bid))
+                }}
+                onCancel={(field, id) => {
+                  edit((changes) => cancelAudience(changes, field, id))
+                }}
+                onMode={(mode: AudienceMode | null) => {
+                  save(editInScope(addable(), scope, (changes) => setAudienceMode(changes, mode)))
+                }}
+              />
+            </section>
+          ) : null}
+          {dimensions.map((item) => (
+            <section
+              key={item}
+              aria-label={DIMENSION_NAMES[item]}
+              className="overflow-hidden rounded-lg border"
+            >
+              <SectionHeading
+                disabled={disabled}
+                onCancel={() => {
+                  edit((changes) => clearDemographics(changes, item))
+                }}
+                title={DIMENSION_NAMES[item]}
+              />
+              <DemographicAdjustments
+                disabled={disabled}
+                lines={demographicLines(shown, item)}
+                onChange={(value, next) => {
+                  setDemographicValue(item, value, next)
+                }}
+              />
+            </section>
+          ))}
           {placesOn ? (
             <>
               <section
@@ -399,7 +520,45 @@ export function TargetingApproval({
             </>
           ) : null}
           <SettingRows ariaLabel="More settings" defaultOpen={null}>
-            {placesOn ? null : (
+            {audiencesOn ? null : (
+              <SettingRow rowKey="audiences" summary="No change" title="Audiences">
+                <Button
+                  className="w-fit"
+                  disabled={disabled}
+                  onClick={() => {
+                    setShowAudiences(true)
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Change Audiences
+                </Button>
+              </SettingRow>
+            )}
+            {otherDimensions.length === 0 ? null : (
+              <SettingRow
+                rowKey="demographics"
+                summary={dimensions.length > 0 ? "Other groups: no change" : "No change"}
+                title="Demographics"
+              >
+                <SegmentedChoice
+                  ariaLabel="Which demographic to change"
+                  disabled={disabled}
+                  onChange={setDimension}
+                  options={otherDimensions}
+                  value={other}
+                />
+                <DemographicAdjustments
+                  disabled={disabled}
+                  lines={demographicLines(shown, other)}
+                  onChange={(value, next) => {
+                    setDemographicValue(other, value, next)
+                  }}
+                />
+              </SettingRow>
+            )}
+            {placesOn || !campaignsShown ? null : (
               <SettingRow rowKey="places" summary="No change" title="Locations">
                 <Button
                   className="w-fit"
@@ -415,7 +574,7 @@ export function TargetingApproval({
                 </Button>
               </SettingRow>
             )}
-            {schedule.kind === "none" ? (
+            {schedule.kind === "none" && campaignsShown ? (
               <SettingRow rowKey="schedule" summary={liveScheduleText(shown)} title="Ad Schedule">
                 {live === null && shown.changes.length > 1 ? (
                   // A shared starting week would replace each campaign's own schedule.
@@ -440,7 +599,7 @@ export function TargetingApproval({
                 )}
               </SettingRow>
             ) : null}
-            {devicesOn ? null : (
+            {devicesOn || !campaignsShown ? null : (
               <SettingRow rowKey="devices" summary="No change" title="Devices">
                 <DeviceAdjustments
                   disabled={disabled}
@@ -614,8 +773,10 @@ function ScheduleBody({
 }
 
 function parentRow(row: CampaignRow): ParentRow {
+  const check = row.check && !row.check.unavailable ? row.check : null
   return {
     cancelled: row.cancelled,
+    context: check?.campaignName ?? null,
     key: row.key,
     name: row.name,
     problems: row.problems.length,
@@ -637,25 +798,26 @@ function settingSummary(args: UpdateTargetingArgs): string {
 }
 
 /** States what approving does now: a paused campaign shows no ads until someone turns it on. */
-function StatusNote({ args }: { args: UpdateTargetingArgs }) {
+function StatusNote({ args, noun }: { args: UpdateTargetingArgs; noun: string }) {
   const total = args.changes.length
   if (total === 0) return null
   const on = campaignsOn(args)
+  const many = entryPlural(noun)
   if (on === 0)
     return (
       <p className="bg-muted text-foreground/80 flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm">
         <InfoIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         {total === 1
-          ? "This campaign is paused, so these changes won't affect its ads until it's turned on."
-          : "These campaigns are paused, so these changes won't affect their ads until they're turned on."}
+          ? `This ${noun} is paused, so these changes won't affect its ads until it's turned on.`
+          : `These ${many} are paused, so these changes won't affect their ads until they're turned on.`}
       </p>
     )
   const detail =
     on === null
-      ? `${String(total)} ${total === 1 ? "campaign" : "campaigns"}`
+      ? `${String(total)} ${total === 1 ? noun : many}`
       : total === 1
-        ? "This campaign is on."
-        : `${String(on)} of ${String(total)} campaigns are on.`
+        ? `This ${noun} is on.`
+        : `${String(on)} of ${String(total)} ${many} are on.`
   return <ChangeBanner detail={detail} />
 }
 

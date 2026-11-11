@@ -2,9 +2,13 @@
 
 import { isRecord } from "@/lib/guards"
 
+const AUDIENCE_KINDS = ["user_list", "user_interest", "custom_audience", "combined_audience"]
+
 type TargetingOption = {
+  // Google's grouping for an audience, such as In-Market or Your Data.
+  category: string | null
   key: string
-  kind: "location" | "language"
+  kind: "location" | "language" | "audience"
   name: string
   reach: number | null
   region: string | null
@@ -15,16 +19,18 @@ export type TargetingSearchResult = { options: TargetingOption[]; truncated: boo
 
 function parseOption(value: unknown): TargetingOption | null {
   if (!isRecord(value)) return null
-  const { key, kind, name, reach, region, target_type: targetType } = value
+  const { category, key, kind, name, reach, region, target_type: targetType } = value
+  const audience = typeof kind === "string" && AUDIENCE_KINDS.includes(kind)
   if (
     typeof key !== "string" ||
     typeof name !== "string" ||
-    (kind !== "location" && kind !== "language")
+    (kind !== "location" && kind !== "language" && !audience)
   )
     return null
   return {
+    category: typeof category === "string" ? category : null,
     key,
-    kind,
+    kind: audience ? "audience" : (kind as "location" | "language"),
     name,
     reach: typeof reach === "number" ? reach : null,
     region: typeof region === "string" ? region : null,

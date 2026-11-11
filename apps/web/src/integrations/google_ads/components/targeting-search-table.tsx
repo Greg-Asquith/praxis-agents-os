@@ -19,6 +19,12 @@ const LANGUAGE_COLUMNS: DataColumn[] = [
   { key: "key", label: "Key", kind: "id", hidden: true },
 ]
 
+const AUDIENCE_COLUMNS: DataColumn[] = [
+  { key: "name", label: "Audience", kind: "text" },
+  { key: "type", label: "Type", kind: "text" },
+  { key: "key", label: "Key", kind: "id", hidden: true },
+]
+
 /** One table of what the search found, with columns that follow the kind. */
 export function TargetingSearchTable({
   accountId,
@@ -27,10 +33,16 @@ export function TargetingSearchTable({
   accountId: string
   result: TargetingSearchResult
 }) {
-  const languages = result.options.every((option) => option.kind === "language")
+  const [first] = result.options
+  const columns =
+    first?.kind === "audience"
+      ? AUDIENCE_COLUMNS
+      : result.options.every((option) => option.kind === "language")
+        ? LANGUAGE_COLUMNS
+        : LOCATION_COLUMNS
   return (
     <DataTable
-      columns={languages ? LANGUAGE_COLUMNS : LOCATION_COLUMNS}
+      columns={columns}
       exportFilename={`google-ads-${accountId}-targeting.csv`}
       pageSize={25}
       rows={result.options.map((option) => ({
@@ -38,7 +50,7 @@ export function TargetingSearchTable({
         name: option.name,
         reach: reachText(option.reach),
         region: option.region ?? "—",
-        type: option.targetType ?? "—",
+        type: option.category ?? option.targetType ?? "—",
       }))}
       truncationNote={result.truncated ? "Google has more matches. Search more precisely." : null}
     />
