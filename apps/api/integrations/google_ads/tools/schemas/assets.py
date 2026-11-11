@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/schemas/assets.py
 
-"""Arguments and result contract for adding, removing, and editing Google Ads sitelinks and callouts."""
+"""Arguments and result contract for adding, removing, and editing Google Ads ad assets."""
 
 from datetime import date
 from typing import Annotated, Any, Literal, Self
@@ -9,12 +9,14 @@ from pydantic import Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ...operations.assets import price_offering_value
 from ...references import (
     GoogleAdsAdGroupReference,
     GoogleAdsAssetReference,
     GoogleAdsCampaignReference,
 )
-from .base import GoogleAdsStrictModel
+from ..utils.money import money_to_micros
+from .base import GoogleAdsStrictModel, money_validator
 from .positive_keywords import GoogleAdsFinalUrl
 
 MAX_ASSET_TARGETS = 100
@@ -23,10 +25,43 @@ MAX_ASSET_CHANGES = 20
 # Links one request adds and removes across its targets.
 MAX_ASSET_LINKS = 1_000
 _MAX_OUTCOMES = MAX_ASSET_LINKS + MAX_ASSET_CHANGES
-# Image and video links are pending.
-_LINKABLE = frozenset({"SITELINK", "CALLOUT"})
+# YouTube video links are pending.
+_LINKABLE = frozenset({"SITELINK", "CALLOUT", "STRUCTURED_SNIPPET", "CALL", "PRICE", "IMAGE"})
+# Google's English structured snippet headers, which v24 takes as text.
+STRUCTURED_SNIPPET_HEADERS = (
+    "Amenities",
+    "Brands",
+    "Courses",
+    "Degree programs",
+    "Destinations",
+    "Featured hotels",
+    "Insurance coverage",
+    "Models",
+    "Neighborhoods",
+    "Service catalog",
+    "Shows",
+    "Styles",
+    "Types",
+)
+_HEADERS = {header.casefold(): header for header in STRUCTURED_SNIPPET_HEADERS}
 
 type GoogleAdsAssetTargetKind = Literal["campaign", "ad_group"]
+type GoogleAdsImageFieldType = Literal["AD_IMAGE", "BUSINESS_LOGO"]
+type GoogleAdsPriceType = Literal[
+    "BRANDS",
+    "EVENTS",
+    "LOCATIONS",
+    "NEIGHBORHOODS",
+    "PRODUCT_CATEGORIES",
+    "PRODUCT_TIERS",
+    "SERVICES",
+    "SERVICE_CATEGORIES",
+    "SERVICE_TIERS",
+]
+type GoogleAdsPriceQualifier = Literal["FROM", "UP_TO", "AVERAGE"]
+type GoogleAdsPriceUnit = Literal[
+    "PER_HOUR", "PER_DAY", "PER_WEEK", "PER_MONTH", "PER_YEAR", "PER_NIGHT"
+]
 
 
 def _blank_is_none(value: object) -> object:
@@ -81,7 +116,7 @@ class GoogleAdsSitelink(_Dated):
     def key(self) -> str:
         return new_asset_key(self)
 
-    def values(self) -> dict[str, Any]:
+    def values_by_path(self) -> dict[str, Any]:
         """The fields by the edit seam's paths, as Google returns them."""
         return {
             "sitelinkAsset.linkText": self.link_text,
@@ -114,7 +149,7 @@ class GoogleAdsCallout(_Dated):
     def key(self) -> str:
         return new_asset_key(self)
 
-    def values(self) -> dict[str, Any]:
+    def values_by_path(self) -> dict[str, Any]:
         return {
             "calloutAsset.calloutText": self.text,
             "calloutAsset.startDate": _date(self.start_date),
@@ -126,15 +161,230 @@ def _date(value: date | None) -> str | None:
     return value.isoformat() if value else None
 
 
+class GoogleAdsStructuredSnippet(GoogleAdsStrictModel):
+    type: Literal["structured_snippet"]
+    header: str = Field(description=f"One of: {', '.join(STRUCTURED_SNIPPET_HEADERS)}.")
+    values: list[Annotated[str, Field(min_length=1, max_length=25)]] = Field(
+        min_length=3, max_length=10
+    )
+
+    @field_validator("header", mode="before")
+    @classmethod
+    def _known_header(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        header = _HEADERS.get(" ".join(value.split()).casefold())
+        if header is None:
+            raise ValueError(f"The header must be one of: {', '.join(STRUCTURED_SNIPPET_HEADERS)}.")
+        return header
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _single_spaced(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+        return [_blank_is_none(item) or "" for item in value]
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        if len({value.casefold() for value in self.values}) != len(self.values):
+            raise ValueError("List each structured snippet value once.")
+        return self
+
+    @property
+    def asset_type(self) -> str:
+        return "STRUCTURED_SNIPPET"
+
+    @property
+    def label(self) -> str:
+        return f"{self.header}: {', '.join(self.values)}"
+
+    @property
+    def key(self) -> str:
+        return new_asset_key(self)
+
+    def values_by_path(self) -> dict[str, Any]:
+        return {
+            "structuredSnippetAsset.header": self.header,
+            "structuredSnippetAsset.values": list(self.values),
+        }
+
+
+class GoogleAdsCall(GoogleAdsStrictModel):
+    type: Literal["call"]
+    country_code: str = Field(
+        min_length=2, max_length=2, description="Two-letter country code, such as GB."
+    )
+    phone_number: str = Field(
+        min_length=1, max_length=32, description="The advertiser's own phone number."
+    )
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def _upper(cls, value: object) -> object:
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def _plain_number(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        text = "".join(value.split())
+        digits = "".join(char for char in text if char.isdigit())
+        if not 6 <= len(digits) <= 16 or any(
+            char not in "+-()." for char in text if not char.isdigit()
+        ):
+            raise ValueError("Enter a phone number of 6 to 16 digits.")
+        # Google parses the number with the country code, so only a leading + is kept.
+        return f"+{digits}" if text.startswith("+") else digits
+
+    @property
+    def asset_type(self) -> str:
+        return "CALL"
+
+    @property
+    def label(self) -> str:
+        return self.phone_number
+
+    @property
+    def key(self) -> str:
+        return new_asset_key(self)
+
+    def values_by_path(self) -> dict[str, Any]:
+        return {
+            "callAsset.countryCode": self.country_code,
+            "callAsset.phoneNumber": self.phone_number,
+        }
+
+
+class GoogleAdsPriceOffering(GoogleAdsStrictModel):
+    header: str = Field(min_length=1, max_length=25)
+    description: str = Field(min_length=1, max_length=25)
+    price: Annotated[str, Field(max_length=32), money_validator("price")] = Field(
+        description="The price in the account currency, such as 49.99."
+    )
+    unit: GoogleAdsPriceUnit | None = None
+    final_url: GoogleAdsFinalUrl = Field(
+        description="A page on the advertiser's own site. Never guess a domain."
+    )
+
+    @field_validator("header", "description", mode="before")
+    @classmethod
+    def _single_spaced(cls, value: object) -> object:
+        return _blank_is_none(value)
+
+
+class GoogleAdsPrice(GoogleAdsStrictModel):
+    type: Literal["price"]
+    price_type: GoogleAdsPriceType
+    price_qualifier: GoogleAdsPriceQualifier | None = None
+    language_code: str = Field(
+        default="en", pattern=r"^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$", description="Such as en."
+    )
+    currency_code: str = Field(
+        pattern=r"^[A-Z]{3}$", description="The account's currency, such as GBP."
+    )
+    offerings: list[GoogleAdsPriceOffering] = Field(min_length=3, max_length=8)
+
+    @field_validator("currency_code", mode="before")
+    @classmethod
+    def _upper(cls, value: object) -> object:
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _distinct_headers(self) -> Self:
+        headers = [offering.header.casefold() for offering in self.offerings]
+        if len(set(headers)) != len(headers):
+            raise ValueError("Give each price a different header.")
+        return self
+
+    @property
+    def asset_type(self) -> str:
+        return "PRICE"
+
+    @property
+    def label(self) -> str:
+        return ", ".join(offering.header for offering in self.offerings)
+
+    @property
+    def key(self) -> str:
+        return new_asset_key(self)
+
+    def values_by_path(self) -> dict[str, Any]:
+        return {
+            "priceAsset.type": self.price_type,
+            "priceAsset.priceQualifier": self.price_qualifier,
+            "priceAsset.languageCode": self.language_code,
+            "priceAsset.priceOfferings": [
+                price_offering_value(
+                    {
+                        "header": offering.header,
+                        "description": offering.description,
+                        "price": {
+                            "currencyCode": self.currency_code,
+                            "amountMicros": str(money_to_micros(offering.price)),
+                        },
+                        "unit": offering.unit,
+                        "finalUrl": offering.final_url,
+                    }
+                )
+                for offering in self.offerings
+            ],
+        }
+
+
 class GoogleAdsExistingAsset(GoogleAdsStrictModel):
     type: Literal["existing"]
     asset: GoogleAdsAssetReference
+    field_type: GoogleAdsImageFieldType | None = Field(
+        default=None,
+        description=(
+            "For an image only: AD_IMAGE (the default) shows it beside ads; BUSINESS_LOGO, on "
+            "campaigns only, shows it as the business logo."
+        ),
+    )
 
+    @model_validator(mode="after")
+    def _image_field_type(self) -> Self:
+        if self.field_type is not None and self.asset.asset_type != "IMAGE":
+            raise ValueError("Only an image takes a field_type.")
+        return self
+
+    @property
+    def link_field_type(self) -> str:
+        """The field type the link is made with, which for every other asset is its type."""
+        if self.asset.asset_type == "IMAGE":
+            return self.field_type or "AD_IMAGE"
+        return self.asset.asset_type
+
+
+type NewAsset = (
+    GoogleAdsSitelink
+    | GoogleAdsCallout
+    | GoogleAdsStructuredSnippet
+    | GoogleAdsCall
+    | GoogleAdsPrice
+)
 
 # Plain aliases, since the reference-type walker doesn't unwrap `type` statements.
+# The create tools take sitelinks and callouts; Update Ad Assets takes every new type.
 GoogleAdsNewAsset = Annotated[GoogleAdsSitelink | GoogleAdsCallout, Field(discriminator="type")]
+GoogleAdsAssetContent = Annotated[
+    GoogleAdsSitelink
+    | GoogleAdsCallout
+    | GoogleAdsStructuredSnippet
+    | GoogleAdsCall
+    | GoogleAdsPrice,
+    Field(discriminator="type"),
+]
 GoogleAdsAssetAddition = Annotated[
-    GoogleAdsSitelink | GoogleAdsCallout | GoogleAdsExistingAsset, Field(discriminator="type")
+    GoogleAdsSitelink
+    | GoogleAdsCallout
+    | GoogleAdsStructuredSnippet
+    | GoogleAdsCall
+    | GoogleAdsPrice
+    | GoogleAdsExistingAsset,
+    Field(discriminator="type"),
 ]
 
 
@@ -149,7 +399,7 @@ class _AssetTarget(GoogleAdsStrictModel):
     add: list[GoogleAdsAssetAddition] = Field(
         default_factory=list,
         max_length=MAX_ASSETS_PER_TARGET,
-        description="New sitelinks and callouts, or existing assets, to link here.",
+        description="New assets, or existing ones, to link here.",
     )
     remove: list[GoogleAdsAssetReference] = Field(
         default_factory=list,
@@ -180,7 +430,7 @@ class _AssetTarget(GoogleAdsStrictModel):
         if any(reference.customer_id != self.customer_id for reference in existing):
             raise ValueError("A target can only use assets in its own account.")
         if any(reference.asset_type not in _LINKABLE for reference in existing):
-            raise ValueError("Only sitelinks and callouts can be added or removed here.")
+            raise ValueError("YouTube videos can't be added or removed here.")
         return self
 
 
@@ -209,6 +459,12 @@ class GoogleAdsAdGroupAssets(_AssetTarget):
     def target_key(self) -> str:
         return f"customers/{self.customer_id}/adGroups/{self.ad_group.ad_group_id}"
 
+    @model_validator(mode="after")
+    def _no_business_logo(self) -> Self:
+        if any(item.type == "existing" and item.field_type == "BUSINESS_LOGO" for item in self.add):
+            raise ValueError("A business logo can only be added to a campaign.")
+        return self
+
 
 GoogleAdsAssetTarget = Annotated[
     GoogleAdsCampaignAssets | GoogleAdsAdGroupAssets, Field(discriminator="kind")
@@ -216,10 +472,10 @@ GoogleAdsAssetTarget = Annotated[
 
 
 class GoogleAdsAssetChange(GoogleAdsStrictModel):
-    """New content for one sitelink or callout, wherever it's used."""
+    """New content for one existing asset, wherever it's used."""
 
     asset: GoogleAdsAssetReference
-    content: GoogleAdsNewAsset
+    content: GoogleAdsAssetContent
 
     @model_validator(mode="after")
     def _same_type(self) -> Self:
@@ -260,16 +516,35 @@ def asset_row_key(item: Any) -> str:
     return new_asset_key(item)
 
 
-def new_asset_key(asset: GoogleAdsSitelink | GoogleAdsCallout) -> str:
+def new_asset_key(asset: NewAsset) -> str:
     """Names a new asset by its content, so the same one added to many targets is made once.
 
     The card builds the same key from the arguments, so the parts are plain text in a fixed order.
     """
-    if isinstance(asset, GoogleAdsSitelink):
-        parts = [asset.link_text, asset.description1, asset.description2, asset.final_url]
-    else:
-        parts = [asset.text]
-    parts.extend([_date(asset.start_date), _date(asset.end_date)])
+    parts: list[str | None]
+    match asset:
+        case GoogleAdsSitelink():
+            parts = [asset.link_text, asset.description1, asset.description2, asset.final_url]
+            parts.extend([_date(asset.start_date), _date(asset.end_date)])
+        case GoogleAdsCallout():
+            parts = [asset.text, _date(asset.start_date), _date(asset.end_date)]
+        case GoogleAdsStructuredSnippet():
+            parts = [asset.header, *asset.values]
+        case GoogleAdsCall():
+            parts = [asset.country_code, asset.phone_number]
+        case GoogleAdsPrice():
+            parts = [asset.price_type, asset.price_qualifier, asset.language_code]
+            parts.append(asset.currency_code)
+            for offering in asset.offerings:
+                parts.extend(
+                    [
+                        offering.header,
+                        offering.description,
+                        offering.price,
+                        offering.unit,
+                        offering.final_url,
+                    ]
+                )
     return "|".join(["new", asset.type, *(part or "" for part in parts)])
 
 
@@ -278,7 +553,7 @@ class GoogleAdsAssetOutcome(GoogleAdsStrictModel):
     target_kind: GoogleAdsAssetTargetKind | None = None
     target_name: str | None = None
     action: Literal["add", "remove", "change"]
-    asset_type: Literal["SITELINK", "CALLOUT"]
+    asset_type: Literal["SITELINK", "CALLOUT", "STRUCTURED_SNIPPET", "CALL", "PRICE", "IMAGE"]
     asset_label: str
     outcome: Literal[
         "added", "removed", "changed", "already_set", "not_found", "failed", "unverified"

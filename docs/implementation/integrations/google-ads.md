@@ -63,7 +63,7 @@ writes for recommendations (`google_ads_apply_recommendations` and
 `google_ads_dismiss_recommendations`), negative keywords, search terms, positive-keyword creation and
 bid, URL, and match type changes,
 Search campaign, ad group, and responsive search ad creation, status changes, campaign settings, location, language, device, and ad schedule targeting, budget
-changes, sitelinks and callouts on campaigns and ad groups, conversion action settings and account goals, and permanent removal of any supported kind. Label creation, apply,
+changes, sitelinks, callouts, structured snippets, calls, prices, and images on campaigns and ad groups, conversion action settings and account goals, and permanent removal of any supported kind. Label creation, apply,
 and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
@@ -940,30 +940,49 @@ didn't change.
 
 ### Assets
 
-`google_ads_update_assets` adds, removes, and edits sitelinks and callouts in one
-approval. `entries` names one campaign or ad group each by `kind`, with `add` and
-`remove`. `add` takes new assets (`{type: sitelink, link_text, description1,
-description2, final_url}` or `{type: callout, text}`, each with optional `start_date` and
-`end_date`) or existing ones (`{type: existing, asset}`), and `remove` takes asset
-references. `change` gives existing assets new content, wherever they're used. Limits
-follow Google: link text and callout text 25 characters, description lines 35 each and
-both or neither. One call holds up to 100 targets, 20 assets a target, 1,000 links, and
-20 content changes. Account-level assets are pending, because tool arguments name an
-account only through references and there's no account reference yet.
+`google_ads_update_assets` adds, removes, and edits ad assets in one approval.
+`entries` names one campaign or ad group each by `kind`, with `add` and `remove`. `add`
+takes new assets or existing ones (`{type: existing, asset}`), and `remove` takes asset
+references. `change` gives existing assets new content, wherever they're used. One call
+holds up to 100 targets, 20 assets a target, 1,000 links, and 20 content changes.
+Account-level assets are pending, because tool arguments name an account only through
+references and there's no account reference yet. The new asset types and Google's
+limits are as follows:
+
+| Type | Fields |
+| --- | --- |
+| `sitelink` | `link_text` (25 characters), `description1` and `description2` (35 each, both or neither), `final_url`, optional `start_date` and `end_date` |
+| `callout` | `text` (25 characters), optional `start_date` and `end_date` |
+| `structured_snippet` | `header` from Google's 13 English headers, matched in any case, and 3 to 10 distinct `values` of 25 characters |
+| `call` | `country_code` (two letters) and `phone_number` (6 to 16 digits, sent as digits after an optional leading `+`); call reporting and its conversion action stay at the account's setting |
+| `price` | `price_type`, optional `price_qualifier`, `language_code` (default `en`), `currency_code`, and 3 to 8 `offerings` with distinct `header`s, each with `header` and `description` (25 each), `price` in the account currency, optional `unit`, and `final_url` |
+
+Images come from `google_ads_upload_media` and are linked as existing assets. Their
+`field_type` is `AD_IMAGE` (the default), shown beside ads, or `BUSINESS_LOGO`, which
+only campaigns take. An image must fit its field type: square (at least 300 by 300) or
+landscape (at least 600 by 314) for `AD_IMAGE`, and square at least 128 by 128 for
+`BUSINESS_LOGO`, using `image_fits` from `operations/media.py`. A price whose
+`currency_code` isn't the account's currency is a problem on the card. YouTube video
+links are pending.
 
 `GoogleAdsAssetReference` (`references/asset.py`) carries the asset ID and type, and the
-`google_ads_asset` resolver searches sitelinks and callouts by their text.
-`operations/assets.py` reads each target, its sitelink and callout links, the named
-assets with their `source`, the live campaigns and ad groups each named asset is linked
-to, and whether it's linked to the whole account. An asset Google made
-(`AUTOMATICALLY_CREATED`) can't be edited or linked.
+`google_ads_asset` resolver searches linkable assets: sitelinks, callouts, and snippet
+headers by their text, calls by number, and images by name. GAQL has no `OR`, so a
+text search runs one query per field and merges the results in ID order.
+`operations/assets.py` reads each target, its asset links with their field types, the
+named assets with their `source` and image size, the live campaigns and ad groups each
+named asset is linked to, and whether it's linked to the whole account. An asset Google
+made (`AUTOMATICALLY_CREATED`) can't be edited or linked. Google returns a price's items
+without an unset unit and with micros as text; `price_offering_value` puts the request
+and the read in one shape, so an unchanged price reports `already_set`.
 
 A new asset is named by its content (`new_asset_key`), so the same sitelink added to 30
 campaigns is created once and linked to each. A target that already links an asset with
 the same content reports `already_set` without a write, unless the same request
-removes that asset. The row is refused as changed since approval when the link has gone
+removes that asset. An image matches only a link of the field type asked for, so an
+image beside ads can also become the campaign's logo. The row is refused as changed since approval when the link has gone
 by the time the change is sent. An addition that would leave a target with more than 20
-sitelinks or 20 callouts, after the request's removals, is a problem on the card. Every
+of one field type, after the request's removals, is a problem on the card. Every
 new asset in an account,
 with its links, goes through the build seam in one atomic request. Links to existing
 assets and removals go through the edit seam as `campaignAsset` and `adGroupAsset`
@@ -974,8 +993,8 @@ Removing a link leaves the asset in the account, because Google Ads has no asset
 removal.
 
 The trusted `_checks` display argument holds, per target, its name, status, problem,
-its sitelink and callout counts now, and one row per link with its live link, state,
-and problem. `_changes` holds, per edited asset, its live content, the campaigns and ad
+its asset counts by type now, and one row per link with its field type, live link,
+state, and problem. `_changes` holds, per edited asset, its live content, the campaigns and ad
 groups it's used in (the first 50 in `used_in`, with the total in `use_count`),
 `account_level` when it's linked to the whole account, and its problem. When the assets
 are used in more places than one read returns, the check fails and asks for fewer
@@ -987,8 +1006,8 @@ changed since is refused as changed since approval.
 
 The display result has one row per link and per content change with its outcome. The
 agent gets the counts and only the rows that failed or are unconfirmed, up to 50.
-`GoogleAdsAssetReference` also carries `IMAGE` and `YOUTUBE_VIDEO` for uploaded media,
-but this tool refuses them: image and video links are pending.
+`GoogleAdsAssetReference` also carries `YOUTUBE_VIDEO` for uploaded videos, which this
+tool refuses until video links are built.
 
 ### Media uploads
 

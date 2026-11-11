@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/assets.py
 
-"""Reads sitelink and callout assets, where they're linked, and the campaigns and ad groups they serve in."""
+"""Reads ad assets, where they're linked, and the campaigns and ad groups they serve in."""
 
 import asyncio
 from collections import defaultdict
@@ -16,20 +16,43 @@ from .build import CampaignBuild
 from .utils import entity_id_boundary_filter, escape_gaql_like_literal, stream_rows
 
 if TYPE_CHECKING:
-    from ..tools.schemas.assets import GoogleAdsCallout, GoogleAdsSitelink
+    from ..tools.schemas.assets import NewAsset
 
 MAX_ASSET_LOOKUP = 101
 # Google allows 20 sitelinks and 20 callouts a target; these only stop an unbounded read.
 _MAX_LINKS = 20_000
 _MAX_USES = 1_000
 _TOO_MANY = "These campaigns use too many assets to check at once. Change fewer campaigns."
-_TYPES = ("SITELINK", "CALLOUT")
+_TYPES = ("SITELINK", "CALLOUT", "STRUCTURED_SNIPPET", "CALL", "PRICE", "IMAGE")
+# The field types assets of those types are linked with; an image shows as one of two.
+_FIELD_TYPES = (
+    "SITELINK",
+    "CALLOUT",
+    "STRUCTURED_SNIPPET",
+    "CALL",
+    "PRICE",
+    "AD_IMAGE",
+    "BUSINESS_LOGO",
+)
 _ASSET_FIELDS = (
-    "asset.id, asset.type, asset.source, asset.final_urls, "
+    "asset.id, asset.type, asset.source, asset.name, asset.final_urls, "
     "asset.sitelink_asset.link_text, asset.sitelink_asset.description1, "
     "asset.sitelink_asset.description2, asset.sitelink_asset.start_date, "
     "asset.sitelink_asset.end_date, asset.callout_asset.callout_text, "
-    "asset.callout_asset.start_date, asset.callout_asset.end_date"
+    "asset.callout_asset.start_date, asset.callout_asset.end_date, "
+    "asset.structured_snippet_asset.header, asset.structured_snippet_asset.values, "
+    "asset.call_asset.country_code, asset.call_asset.phone_number, "
+    "asset.price_asset.type, asset.price_asset.price_qualifier, "
+    "asset.price_asset.language_code, asset.price_asset.price_offerings, "
+    "asset.image_asset.full_size.width_pixels, asset.image_asset.full_size.height_pixels"
+)
+# GAQL has no OR, so a text search runs one query per searchable field.
+_SEARCH_FIELDS = (
+    ("SITELINK", "asset.sitelink_asset.link_text"),
+    ("CALLOUT", "asset.callout_asset.callout_text"),
+    ("STRUCTURED_SNIPPET", "asset.structured_snippet_asset.header"),
+    ("CALL", "asset.call_asset.phone_number"),
+    ("IMAGE", "asset.name"),
 )
 # Each asset type's editable fields, as edit seam paths, in the order the card shows them.
 ASSET_PATHS: Mapping[str, tuple[str, ...]] = {
@@ -42,8 +65,18 @@ ASSET_PATHS: Mapping[str, tuple[str, ...]] = {
         "sitelinkAsset.endDate",
     ),
     "CALLOUT": ("calloutAsset.calloutText", "calloutAsset.startDate", "calloutAsset.endDate"),
+    "STRUCTURED_SNIPPET": ("structuredSnippetAsset.header", "structuredSnippetAsset.values"),
+    "CALL": ("callAsset.countryCode", "callAsset.phoneNumber"),
+    "PRICE": (
+        "priceAsset.type",
+        "priceAsset.priceQualifier",
+        "priceAsset.languageCode",
+        "priceAsset.priceOfferings",
+    ),
+    # An image's content can't change, so it has no editable fields.
+    "IMAGE": (),
 }
-_LABEL_PATHS = {"SITELINK": "sitelinkAsset.linkText", "CALLOUT": "calloutAsset.calloutText"}
+_UNSET = (None, "UNSPECIFIED", "UNKNOWN")
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,16 +87,21 @@ class LiveAsset:
     source: str
     # The editable fields by `ASSET_PATHS` path, with null for an unset field.
     values: Mapping[str, Any]
+    name: str | None = None
+    # An image's width and height in pixels.
+    size: tuple[int, int] | None = None
 
     @property
     def label(self) -> str:
-        return str(self.values.get(_LABEL_PATHS.get(self.asset_type, "")) or self.resource_name)
+        return asset_label(self.asset_type, self.values, self.name) or self.resource_name
 
 
 @dataclass(frozen=True, slots=True)
 class LiveLink:
     resource_name: str
     asset: LiveAsset
+    # Google's field type, which is the asset's type except for images.
+    field_type: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,15 +128,65 @@ class LiveAssets:
     # The uses read reached its row limit, so `used_in` is incomplete.
     uses_truncated: bool = False
 
-    def link(self, target: str, asset: str) -> str | None:
+    def link(self, target: str, asset: str, field_type: str | None = None) -> str | None:
+        """Finds the target's link to the asset, as that field type when one is given."""
         return next(
             (
                 item.resource_name
                 for item in self.links.get(target, ())
                 if item.asset.resource_name == asset
+                and field_type in (None, item.field_type or item.asset.asset_type)
             ),
             None,
         )
+
+
+def asset_label(asset_type: str, values: Mapping[str, Any], name: str | None = None) -> str:
+    """Names an asset by its content, such as a sitelink's link text or a call's number."""
+    match asset_type:
+        case "SITELINK":
+            return str(values.get("sitelinkAsset.linkText") or "")
+        case "CALLOUT":
+            return str(values.get("calloutAsset.calloutText") or "")
+        case "STRUCTURED_SNIPPET":
+            items = values.get("structuredSnippetAsset.values") or []
+            return (
+                f"{values.get('structuredSnippetAsset.header') or ''}: {', '.join(map(str, items))}"
+            )
+        case "CALL":
+            return str(values.get("callAsset.phoneNumber") or "")
+        case "PRICE":
+            offerings = values.get("priceAsset.priceOfferings") or []
+            return ", ".join(str(item.get("header") or "") for item in offerings if item)
+    return name or ""
+
+
+def price_offering_value(offering: Any) -> dict[str, Any] | None:
+    """Returns a price offering in the one shape both the request and Google's read compare in."""
+    if not isinstance(offering, Mapping):
+        return None
+    price = offering.get("price") if isinstance(offering.get("price"), Mapping) else {}
+    value: dict[str, Any] = {
+        "header": offering.get("header"),
+        "description": offering.get("description"),
+        "price": {
+            "currencyCode": price.get("currencyCode"),
+            "amountMicros": str(price.get("amountMicros") or "0"),
+        },
+        "finalUrl": offering.get("finalUrl"),
+    }
+    if offering.get("unit") not in (None, "UNSPECIFIED", "UNKNOWN"):
+        value["unit"] = offering["unit"]
+    return value
+
+
+def _live_value(path: str, value: Any) -> Any:
+    """Puts a value Google returns into the shape the request compares it in."""
+    if path == "priceAsset.priceOfferings":
+        return [price_offering_value(item) for item in value] if isinstance(value, list) else []
+    if path == "priceAsset.priceQualifier":
+        return None if value in _UNSET else value
+    return list(value) if isinstance(value, list) else value
 
 
 def asset_values(asset: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -109,14 +197,14 @@ def asset_values(asset: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
         value: Any = asset
         for part in path.split("."):
             value = value.get(part) if isinstance(value, Mapping) else None
-        values[path] = list(value) if isinstance(value, list) else value
+        values[path] = _live_value(path, value)
     return asset_type, values
 
 
-def new_asset_body(asset: "GoogleAdsSitelink | GoogleAdsCallout") -> dict[str, Any]:
+def new_asset_body(asset: "NewAsset") -> dict[str, Any]:
     """The create body for a new asset; unset fields are left out."""
     body: dict[str, Any] = {}
-    for path, value in asset.values().items():
+    for path, value in asset.values_by_path().items():
         if value is None:
             continue
         *parents, leaf = path.split(".")
@@ -129,7 +217,7 @@ def new_asset_body(asset: "GoogleAdsSitelink | GoogleAdsCallout") -> dict[str, A
 
 def link_new_asset(
     build: CampaignBuild,
-    asset: "GoogleAdsSitelink | GoogleAdsCallout",
+    asset: "NewAsset",
     *,
     link: Literal["campaignAsset", "adGroupAsset"],
     owner: str,
@@ -149,16 +237,28 @@ def link_new_asset(
     )
 
 
+def _image_size(asset: Mapping[str, Any]) -> tuple[int, int] | None:
+    full = (asset.get("imageAsset") or {}).get("fullSize") or {}
+    try:
+        width, height = int(full.get("widthPixels") or 0), int(full.get("heightPixels") or 0)
+    except (TypeError, ValueError):
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
 def _live_asset(customer: str, row: Mapping[str, Any]) -> LiveAsset | None:
     asset = row.get("asset")
     if not isinstance(asset, Mapping) or not str(asset.get("id", "")).isdigit():
         return None
     asset_type, values = asset_values(asset)
+    name = asset.get("name")
     return LiveAsset(
         f"customers/{customer}/assets/{asset['id']}",
         asset_type,
         str(asset.get("source") or "ADVERTISER"),
         values,
+        str(name) if name else None,
+        _image_size(asset),
     )
 
 
@@ -173,40 +273,51 @@ async def list_assets(
     minimum_id_inclusive: bool = False,
     limit: int,
 ) -> list[LiveAsset]:
-    """Returns sitelink and callout assets in ID order, searched by their text."""
+    """Returns linkable assets in ID order, searched by their text or, for images, their name."""
     customer = normalize_customer_id(customer_id)
     if limit < 1 or limit > MAX_ASSET_LOOKUP:
         raise ValueError("Google Ads asset lookup limit must be between 1 and 101")
     ids = sorted(set(asset_ids))
     if any(not value.isdigit() for value in ids) or len(ids) > MAX_ASSET_LOOKUP:
         raise ValueError("Google Ads asset lookup takes at most 101 digit-only ids")
-    filters = [f"asset.type IN ({', '.join(_TYPES)})"]
+    filters = []
     if ids:
         filters.append(f"asset.id IN ({', '.join(ids)})")
-    if search and search.strip():
-        text = escape_gaql_like_literal(search.strip())
-        filters.append(
-            f"(asset.sitelink_asset.link_text LIKE '%{text}%' "
-            f"OR asset.callout_asset.callout_text LIKE '%{text}%')"
-        )
     if boundary := entity_id_boundary_filter(
         "asset.id", minimum_id=minimum_id, inclusive=minimum_id_inclusive
     ):
         filters.append(boundary)
-    payload = await client.post(
-        f"customers/{customer}/googleAds:searchStream",
-        operation="list_assets",
-        policy=IntegrationRequestPolicy.READ,
-        login_customer_id=login_customer_id,
-        json={
-            "query": f"SELECT {_ASSET_FIELDS} FROM asset "  # noqa: S608 -- fixed types, digit-only ids, escaped search
-            f"WHERE {' AND '.join(filters)} ORDER BY asset.id LIMIT {limit}"
-        },
+    text = escape_gaql_like_literal(search.strip()) if search and search.strip() else None
+    queries = (
+        [[f"asset.type = '{kind}'", f"{path} LIKE '%{text}%'"] for kind, path in _SEARCH_FIELDS]
+        if text
+        else [[f"asset.type IN ({', '.join(_TYPES)})"]]
     )
-    return [
-        asset
-        for row in stream_rows(payload, max_rows=limit)
-        if (asset := _live_asset(customer, row)) is not None
+
+    async def query(conditions: list[str]) -> list[LiveAsset]:
+        payload = await client.post(
+            f"customers/{customer}/googleAds:searchStream",
+            operation="list_assets",
+            policy=IntegrationRequestPolicy.READ,
+            login_customer_id=login_customer_id,
+            json={
+                "query": f"SELECT {_ASSET_FIELDS} FROM asset "  # noqa: S608 -- fixed types and paths, digit-only ids, escaped search
+                f"WHERE {' AND '.join([*conditions, *filters])} ORDER BY asset.id LIMIT {limit}"
+            },
+        )
+        return [
+            asset
+            for row in stream_rows(payload, max_rows=limit)
+            if (asset := _live_asset(customer, row)) is not None
+        ]
+
+    found = {
+        asset.resource_name: asset
+        for assets in await asyncio.gather(*(query(conditions) for conditions in queries))
+        for asset in assets
+    }
+    return sorted(found.values(), key=lambda asset: int(asset.resource_name.rsplit("/", 1)[1]))[
+        :limit
     ]
 
 
@@ -220,7 +331,7 @@ async def read_assets(
     asset_ids: Sequence[str],
     with_uses: bool = True,
 ) -> LiveAssets:
-    """Reads the targets, their sitelink and callout links, and the named assets with their uses.
+    """Reads the targets, their asset links, and the named assets with their uses.
 
     Args:
         with_uses: False skips where the named assets are used, which only the card shows.
@@ -314,9 +425,10 @@ class _Reader:
         if not ids:
             return {}
         rows = await self._rows(
-            f"SELECT {resource}_asset.resource_name, {resource}.id, {_ASSET_FIELDS} "  # noqa: S608 -- fixed resources and digit-only ids
+            f"SELECT {resource}_asset.resource_name, {resource}_asset.field_type, "  # noqa: S608 -- fixed resources and digit-only ids
+            f"{resource}.id, {_ASSET_FIELDS} "
             f"FROM {resource}_asset WHERE {resource}.id IN ({', '.join(ids)}) "
-            f"AND {resource}_asset.field_type IN ({', '.join(_TYPES)}) "
+            f"AND {resource}_asset.field_type IN ({', '.join(_FIELD_TYPES)}) "
             f"AND {resource}_asset.status != 'REMOVED'",
             f"read_{resource}_asset_links",
             _MAX_LINKS,
@@ -326,11 +438,13 @@ class _Reader:
         )
         links: dict[str, list[LiveLink]] = defaultdict(list)
         for row in rows:
-            link = (row.get(f"{key}Asset") or {}).get("resourceName")
+            item = row.get(f"{key}Asset") or {}
+            link = item.get("resourceName")
             asset = _live_asset(self.customer, row)
             if isinstance(link, str) and asset is not None:
                 owner = self._name(collection, (row.get(key) or {}).get("id"))
-                links[owner].append(LiveLink(link, asset))
+                field_type = str(item.get("fieldType") or asset.asset_type)
+                links[owner].append(LiveLink(link, asset, field_type))
         return {owner: tuple(items) for owner, items in links.items()}
 
     async def assets(self, ids: Sequence[str]) -> dict[str, LiveAsset]:

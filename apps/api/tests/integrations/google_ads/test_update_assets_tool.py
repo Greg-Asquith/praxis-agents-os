@@ -1,6 +1,6 @@
 # apps/api/tests/integrations/google_ads/test_update_assets_tool.py
 
-"""Sitelinks and callouts on campaigns and ad groups: checked before approval, then sent."""
+"""Ad assets on campaigns and ad groups: checked before approval, then sent."""
 
 import re
 from dataclasses import replace
@@ -53,6 +53,18 @@ class _Account:
                 "type": "CALLOUT",
                 "source": "AUTOMATICALLY_CREATED",
                 "calloutAsset": {"calloutText": "Made By Google"},
+            },
+            "80": {
+                "type": "IMAGE",
+                "source": "ADVERTISER",
+                "name": "Banner",
+                "imageAsset": {"fullSize": {"widthPixels": "1200", "heightPixels": "628"}},
+            },
+            "81": {
+                "type": "IMAGE",
+                "source": "ADVERTISER",
+                "name": "Logo",
+                "imageAsset": {"fullSize": {"widthPixels": "1200", "heightPixels": "1200"}},
             },
         }
         # (collection, owner ID, asset ID, field type).
@@ -113,7 +125,8 @@ class _Account:
                 f"{owner_key}Asset": {
                     "resourceName": f"{_C}/{collection}Assets/{owner}~{asset}~{field}".replace(
                         "campaignsAssets", "campaignAssets"
-                    ).replace("adGroupsAssets", "adGroupAssets")
+                    ).replace("adGroupsAssets", "adGroupAssets"),
+                    "fieldType": field,
                 },
                 owner_key: {"id": owner, "name": names[owner]},
                 "asset": self._asset(asset),
@@ -177,7 +190,7 @@ class _Account:
             name = f"{_C}/assets/{self.next_id}"
             created[create.pop("resourceName")] = name
             if not dry:
-                asset_type = "SITELINK" if "sitelinkAsset" in create else "CALLOUT"
+                asset_type = next(kind for key, kind in _CONTENT_TYPES.items() if key in create)
                 self.assets[str(self.next_id)] = {
                     "type": asset_type,
                     "source": "ADVERTISER",
@@ -193,6 +206,15 @@ class _Account:
         if not dry:
             self.links.add((collection, owner, asset, create["fieldType"]))
         return f"{_C}/{resource}s/{owner}~{asset}~{create['fieldType']}"
+
+
+_CONTENT_TYPES = {
+    "sitelinkAsset": "SITELINK",
+    "calloutAsset": "CALLOUT",
+    "structuredSnippetAsset": "STRUCTURED_SNIPPET",
+    "callAsset": "CALL",
+    "priceAsset": "PRICE",
+}
 
 
 def _campaign(campaign_id: str) -> dict[str, Any]:
@@ -317,7 +339,10 @@ async def test_one_approval_adds_new_assets_once_links_removes_and_edits_where_u
         ("Size Guide", "change"),
         ("Free Returns", "already_set"),
     }
-    assert trail["now"] == {"SITELINK": 1, "CALLOUT": 1}
+    assert {key: trail["now"][key] for key in ("SITELINK", "CALLOUT")} == {
+        "SITELINK": 1,
+        "CALLOUT": 1,
+    }
     edited = display["_changes"][f"{_C}/assets/70"]
     assert (edited["used_in"], edited["account_level"]) == (["Trail", "Road"], True)
     removal = display["_checks"][f"{_C}/adGroups/40"]["rows"][0]
@@ -670,10 +695,16 @@ async def test_a_new_asset_google_rejected_in_the_dry_run_is_left_out_of_the_bui
     }
 
 
-def test_image_and_video_assets_are_refused_wherever_a_reference_is_taken() -> None:
-    with pytest.raises(ValidationError, match="Only sitelinks and callouts"):
+def test_video_assets_are_refused_wherever_a_reference_is_taken() -> None:
+    with pytest.raises(ValidationError, match="YouTube videos"):
         _args(
-            [{"kind": "campaign", "campaign": _campaign("10"), "remove": [_asset("71", "IMAGE")]}]
+            [
+                {
+                    "kind": "campaign",
+                    "campaign": _campaign("10"),
+                    "remove": [_asset("71", "YOUTUBE_VIDEO")],
+                }
+            ]
         )
     with pytest.raises(ValidationError, match="same type"):
         _args(
@@ -685,3 +716,220 @@ def test_image_and_video_assets_are_refused_wherever_a_reference_is_taken() -> N
                 }
             ],
         )
+
+
+def _offerings(count: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "header": f"Tier {index}",
+            "description": "Per pair",
+            "price": f"{index}9.99",
+            "unit": "PER_MONTH" if index == 0 else None,
+            "final_url": f"https://shop.example/tier-{index}",
+        }
+        for index in range(count)
+    ]
+
+
+_SNIPPET = {
+    "type": "structured_snippet",
+    "header": "brands",
+    "values": [f"Brand {index}" for index in range(10)],
+}
+_CALL = {"type": "call", "country_code": "gb", "phone_number": "020 7946 0000"}
+_PRICE = {
+    "type": "price",
+    "price_type": "PRODUCT_TIERS",
+    "price_qualifier": "FROM",
+    "currency_code": "GBP",
+    "offerings": _offerings(8),
+}
+
+
+async def test_snippets_calls_prices_and_an_image_are_added_to_a_campaign_in_one_approval(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [
+                    _SNIPPET,
+                    _CALL,
+                    _PRICE,
+                    {"type": "existing", "asset": _asset("80", "IMAGE")},
+                ],
+            }
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    assert [row["problem"] for row in display["_checks"][f"{_C}/campaigns/20"]["rows"]] == [
+        None
+    ] * 4
+    result = await _run(monkeypatch, account, args, display)
+
+    edits, build = account.mutates[2:]
+    assert edits["mutateOperations"] == [
+        {
+            "campaignAssetOperation": {
+                "create": {
+                    "campaign": f"{_C}/campaigns/20",
+                    "asset": f"{_C}/assets/80",
+                    "fieldType": "AD_IMAGE",
+                }
+            }
+        }
+    ]
+    creates = [op["assetOperation"]["create"] for op in build["mutateOperations"][:3]]
+    assert creates[0] == {
+        "structuredSnippetAsset": {
+            "header": "Brands",
+            "values": [f"Brand {index}" for index in range(10)],
+        },
+        "resourceName": f"{_C}/assets/-1",
+    }
+    assert creates[1] == {
+        "callAsset": {"countryCode": "GB", "phoneNumber": "02079460000"},
+        "resourceName": f"{_C}/assets/-2",
+    }
+    offerings = creates[2]["priceAsset"].pop("priceOfferings")
+    assert creates[2] == {
+        "priceAsset": {"type": "PRODUCT_TIERS", "priceQualifier": "FROM", "languageCode": "en"},
+        "resourceName": f"{_C}/assets/-3",
+    }
+    assert len(offerings) == 8
+    assert offerings[:2] == [
+        {
+            "header": "Tier 0",
+            "description": "Per pair",
+            "price": {"currencyCode": "GBP", "amountMicros": "9990000"},
+            "finalUrl": "https://shop.example/tier-0",
+            "unit": "PER_MONTH",
+        },
+        {
+            "header": "Tier 1",
+            "description": "Per pair",
+            "price": {"currencyCode": "GBP", "amountMicros": "19990000"},
+            "finalUrl": "https://shop.example/tier-1",
+        },
+    ]
+    assert [
+        op["campaignAssetOperation"]["create"]["fieldType"] for op in build["mutateOperations"][3:]
+    ] == ["STRUCTURED_SNIPPET", "CALL", "PRICE"]
+    assert result["results"][0]["data"]["counts"]["added"] == 4
+
+
+async def test_a_price_in_another_currency_is_refused_and_never_sent(monkeypatch) -> None:
+    account = _Account()
+    args = _args(
+        [
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [{**_PRICE, "currency_code": "USD"}],
+            }
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    (row,) = display["_checks"][f"{_C}/campaigns/20"]["rows"]
+    assert row["problem"] == "Prices must be in the account's currency, GBP."
+    result = await _run(monkeypatch, account, args, display)
+
+    assert all(body["validateOnly"] for body in account.mutates)
+    assert {row[3] for row in _outcomes(result)} == {"failed"}
+
+
+async def test_an_image_links_by_where_it_shows_and_must_fit_that_shape(monkeypatch) -> None:
+    account = _Account()
+    account.links.add(("campaigns", "10", "81", "AD_IMAGE"))
+    logo = {"type": "existing", "asset": _asset("81", "IMAGE"), "field_type": "BUSINESS_LOGO"}
+    args = _args(
+        [
+            # Linked beside ads already, so as the logo it's a new link.
+            {"kind": "campaign", "campaign": _campaign("10"), "add": [logo]},
+            # A landscape banner isn't a square logo.
+            {
+                "kind": "campaign",
+                "campaign": _campaign("20"),
+                "add": [{**logo, "asset": _asset("80", "IMAGE")}],
+            },
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+    (square,) = display["_checks"][f"{_C}/campaigns/10"]["rows"]
+    (banner,) = display["_checks"][f"{_C}/campaigns/20"]["rows"]
+    assert (square["state"], square["problem"]) == ("change", None)
+    assert banner["problem"] == tool_module._IMAGE_MISFIT["BUSINESS_LOGO"]
+    result = await _run(monkeypatch, account, args, display)
+
+    assert ("campaigns", "10", "81", "BUSINESS_LOGO") in account.links
+    assert ("campaigns", "20", "80", "BUSINESS_LOGO") not in account.links
+    assert _outcomes(result) == {
+        ("Trail", "add", "Logo", "added"),
+        ("Road", "add", "Banner", "failed"),
+    }
+    with pytest.raises(ValidationError, match="only be added to a campaign"):
+        _args([{"kind": "ad_group", "ad_group": _ad_group("40"), "add": [logo]}])
+
+
+async def test_a_price_edited_to_what_google_already_holds_is_already_set(monkeypatch) -> None:
+    account = _Account()
+    # Google leaves out an unset unit and qualifier, and sends micros as text.
+    account.assets["90"] = {
+        "type": "PRICE",
+        "source": "ADVERTISER",
+        "priceAsset": {
+            "type": "SERVICES",
+            "languageCode": "en",
+            "priceOfferings": [
+                {
+                    "header": f"Tier {index}",
+                    "description": "Per pair",
+                    "price": {
+                        "currencyCode": "GBP",
+                        "amountMicros": str(index * 10_000_000 + 9_990_000),
+                    },
+                    "finalUrl": f"https://shop.example/tier-{index}",
+                }
+                for index in range(3)
+            ],
+        },
+    }
+    content = {
+        "type": "price",
+        "price_type": "SERVICES",
+        "currency_code": "GBP",
+        "offerings": [{**offering, "unit": None} for offering in _offerings(3)],
+    }
+    args = _args([], [{"asset": _asset("90", "PRICE"), "content": content}])
+
+    display = await _display(monkeypatch, account, args)
+
+    assert display["_changes"][f"{_C}/assets/90"]["state"] == "already_set"
+
+
+async def test_asset_search_sends_one_query_per_field_and_merges_them_in_id_order() -> None:
+    queries: list[str] = []
+
+    async def post(_path: str, **kwargs: Any) -> Any:
+        query = kwargs["json"]["query"]
+        queries.append(query)
+        found = {"SITELINK": ["7", "3"], "IMAGE": ["5", "3"]}
+        kind = re.search(r"asset\.type = '(\w+)'", query).group(1)
+        return [{"results": [{"asset": {"id": key, "type": kind}} for key in found.get(kind, [])]}]
+
+    assets = await assets_operations.list_assets(
+        SimpleNamespace(post=post),
+        customer_id="111",
+        login_customer_id="111",
+        search="Sale",
+        limit=2,
+    )
+
+    assert not any(" OR " in query for query in queries)
+    assert [asset.resource_name.rsplit("/", 1)[1] for asset in assets] == ["3", "5"]

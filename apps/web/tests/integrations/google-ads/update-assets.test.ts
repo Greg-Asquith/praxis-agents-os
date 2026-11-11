@@ -36,6 +36,18 @@ const SITELINK = {
 }
 const SITELINK_KEY = "new|sitelink|Size Guide|Find your size|Fit tips|https://shop.example/size||"
 const SALE = { customer_id: CUSTOMER, asset_id: "70", asset_type: "SITELINK", label: "Sale" }
+const PRICE = {
+  type: "price",
+  price_type: "SERVICES",
+  currency_code: "gbp",
+  offerings: [0, 1, 2].map((at) => ({
+    header: `Tier ${String(at)}`,
+    description: "Per pair",
+    price: "9.99",
+    unit: at === 0 ? "PER_MONTH" : null,
+    final_url: "https://shop.example/t",
+  })),
+}
 
 function campaign(id: string, label: string) {
   return { customer_id: CUSTOMER, campaign_id: id, label }
@@ -89,6 +101,42 @@ describe("update assets", () => {
     expect(newAssetKey({ type: "callout", text: "Sale", start_date: "2026-12-01T00:00:00" })).toBe(
       "new|callout|Sale|2026-12-01|"
     )
+  })
+
+  it("names snippets, calls, and prices as the server does after it tidies them", () => {
+    expect(
+      newAssetKey({
+        type: "structured_snippet",
+        header: "brands",
+        values: ["Trail  Co", "Peak", "Ridge"],
+      })
+    ).toBe("new|structured_snippet|Brands|Trail Co|Peak|Ridge")
+    expect(
+      newAssetKey({ type: "call", country_code: "gb", phone_number: "+44 (20) 7946-0000" })
+    ).toBe("new|call|GB|+442079460000")
+    expect(newAssetKey(PRICE)).toBe(
+      "new|price|SERVICES||en|GBP|" +
+        [0, 1, 2]
+          .map(
+            (at) =>
+              `Tier ${String(at)}|Per pair|9.99|${at === 0 ? "PER_MONTH" : ""}|https://shop.example/t`
+          )
+          .join("|")
+    )
+  })
+
+  it("blocks a snippet with too many values, a price with too few items, and a foreign phone format", () => {
+    const values = Array.from({ length: 11 }, (_, at) => `Brand ${String(at)}`)
+    expect(fieldProblem({ type: "structured_snippet", header: "Brands", values })).toBe(
+      "Values: add 3 to 10, separated by commas."
+    )
+    expect(fieldProblem({ ...PRICE, offerings: PRICE.offerings.slice(0, 2) })).toBe(
+      "A price needs 3 to 8 items."
+    )
+    expect(fieldProblem({ type: "call", country_code: "GB", phone_number: "020 7946 ext 1" })).toBe(
+      "Enter a phone number of 6 to 16 digits."
+    )
+    expect(fieldProblem(PRICE)).toBeNull()
   })
 
   it("shows a new asset once, and an edit changes it in every target and asks for a check", () => {
@@ -250,6 +298,29 @@ describe("presenter", () => {
       )
     )
     expect(approval).toContain("Add 1 sitelink in 2 campaigns in Northwind.")
+
+    const priced = {
+      ...raw(),
+      entries: [
+        raw().entries[0],
+        { kind: "campaign", campaign: campaign("20", "Road"), add: [PRICE] },
+      ],
+    }
+    const prices = html(
+      googleAdsUpdateAssetsPresenter.render(
+        props(
+          {
+            id: "assets-3",
+            kind: "approval",
+            name: "google_ads_update_assets",
+            status: "awaiting_approval",
+            args: priced,
+          },
+          true
+        )
+      )
+    )
+    expect(prices).toContain("Tier 2")
 
     const result = html(
       googleAdsUpdateAssetsPresenter.render(

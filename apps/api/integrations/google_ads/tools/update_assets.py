@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/update_assets.py
 
-"""Approval-only tool that adds, removes, and edits sitelinks and callouts on campaigns and ad groups."""
+"""Approval-only tool that adds, removes, and edits ad assets on campaigns and ad groups."""
 
 import hashlib
 from collections import Counter, defaultdict
@@ -33,9 +33,10 @@ from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 
 from ..client import GoogleAdsClient
-from ..operations.assets import ASSET_PATHS, LiveAssets, new_asset_body, read_assets
+from ..operations.assets import ASSET_PATHS, LiveAsset, LiveAssets, new_asset_body, read_assets
 from ..operations.build import CampaignBuild, dry_run_build
 from ..operations.edits import CriterionChange, Edit, FieldChange, ReadState, prepare_edits
+from ..operations.media import image_fits
 from ..operations.mutation_outcomes import GoogleAdsMutationLedger
 from .schemas.assets import (
     MAX_ASSET_CHANGES,
@@ -43,14 +44,14 @@ from .schemas.assets import (
     MAX_ASSETS_PER_TARGET,
     GoogleAdsAssetChange,
     GoogleAdsAssetTarget,
-    GoogleAdsCallout,
     GoogleAdsExistingAsset,
-    GoogleAdsSitelink,
+    GoogleAdsPrice,
     GoogleAdsUpdateAssetsOutput,
     GoogleAdsUpdateAssetsRequest,
+    NewAsset,
     asset_row_key,
 )
-from .utils.accounts import NOT_SHOWN, approval_accounts, writable_entries
+from .utils.accounts import NOT_SHOWN, account_facts, approval_accounts, writable_entries
 from .utils.bindings import GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import google_ads_available, google_ads_client_for_principal
 from .utils.edit_runs import EditBuildPlan, run_approved_edits_then_build
@@ -72,16 +73,44 @@ _ASSET_MISSING = "This asset no longer exists in Google Ads."
 _MADE_BY_GOOGLE = "Google made this asset, so it can't be changed or linked."
 _WRONG_TYPE = "This asset isn't a {expected}."
 _TOO_MANY = "This {noun} would have more than 20 {plural}. Remove some first, or add fewer."
+_WRONG_CURRENCY = "Prices must be in the account's currency, {currency}."
+# The image shapes Google takes for each image field type on Search campaigns.
+_IMAGE_SHAPES = {
+    "AD_IMAGE": frozenset({"MARKETING_IMAGE", "SQUARE_MARKETING_IMAGE"}),
+    "BUSINESS_LOGO": frozenset({"LOGO"}),
+}
+_IMAGE_MISFIT = {
+    "AD_IMAGE": (
+        "Google shows images beside ads only when they're square (at least 300 by 300 pixels) or "
+        "landscape (at least 600 by 314 pixels)."
+    ),
+    "BUSINESS_LOGO": "A business logo must be square and at least 128 by 128 pixels.",
+}
 _TOO_MANY_USES = (
     "These assets are used in too many campaigns and ad groups to check at once. "
     "Change fewer assets in one request."
 )
 _APPLIED = {"add": "added", "remove": "removed", "change": "changed"}
-_TYPE_NOUNS = {"SITELINK": "sitelink", "CALLOUT": "callout"}
-_TYPE_PLURALS = {"SITELINK": "sitelinks", "CALLOUT": "callouts"}
+_TYPE_NOUNS = {
+    "SITELINK": "sitelink",
+    "CALLOUT": "callout",
+    "STRUCTURED_SNIPPET": "structured snippet",
+    "CALL": "call asset",
+    "PRICE": "price asset",
+    "IMAGE": "image",
+}
+# By field type, which for an image is where it shows.
+_FIELD_PLURALS = {
+    "SITELINK": "sitelinks",
+    "CALLOUT": "callouts",
+    "STRUCTURED_SNIPPET": "structured snippets",
+    "CALL": "call assets",
+    "PRICE": "price assets",
+    "AD_IMAGE": "images",
+    "BUSINESS_LOGO": "business logos",
+}
 
 type _Action = Literal["add", "remove", "change", "create"]
-type _NewAsset = GoogleAdsSitelink | GoogleAdsCallout
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,8 +130,14 @@ class _Planned:
     # A change to something that exists; new assets and their links are build steps instead.
     # A new asset the target already links with the same content has that link as its edit.
     edit: Edit | None = None
-    new: _NewAsset | None = None
+    new: NewAsset | None = None
     refused: str | None = None
+    # Google's field type for a link when it isn't the asset's type, such as `AD_IMAGE`.
+    image_field_type: str | None = None
+
+    @property
+    def field_type(self) -> str:
+        return self.image_field_type or self.asset_type
 
 
 def _link_key(target: str, row: str) -> str:
@@ -120,7 +155,7 @@ def _linked(item: _Planned, link: str) -> _Planned:
     body = {
         owner_field: item.target,
         "asset": f"customers/{customer_id}/assets/{asset_id}",
-        "fieldType": item.asset_type,
+        "fieldType": item.field_type,
     }
     edit = CriterionChange(resource, "add", item.key, item.target or "", body, before=link)
     return replace(item, edit=edit)
@@ -151,16 +186,25 @@ def _plan_target(entry: GoogleAdsAssetTarget) -> list[_Planned]:
         key = _link_key(target, row)
         if isinstance(item, GoogleAdsExistingAsset):
             asset = item.asset
+            field_type = item.link_field_type
             edit = CriterionChange(
                 resource,
                 "add",
                 key,
                 target,
-                {owner_field: target, "asset": asset.resource_name, "fieldType": asset.asset_type},
+                {owner_field: target, "asset": asset.resource_name, "fieldType": field_type},
             )
             planned.append(
                 _Planned(
-                    key, row, "add", asset.asset_type, asset.label, target, entry.kind, edit=edit
+                    key,
+                    row,
+                    "add",
+                    asset.asset_type,
+                    asset.label,
+                    target,
+                    entry.kind,
+                    edit=edit,
+                    image_field_type=field_type if field_type != asset.asset_type else None,
                 )
             )
         else:
@@ -172,20 +216,36 @@ def _plan_target(entry: GoogleAdsAssetTarget) -> list[_Planned]:
 
 def _plan_change(change: GoogleAdsAssetChange) -> _Planned:
     asset = change.asset.resource_name
-    edit = FieldChange("asset", asset, change.content.values())
+    edit = FieldChange("asset", asset, change.content.values_by_path())
     return _Planned(
         asset, asset, "change", change.asset.asset_type, change.content.label, edit=edit
     )
 
 
-def _asset_problem(live: LiveAssets, name: str, asset_type: str) -> str | None:
+def _asset_problem(
+    live: LiveAssets, name: str, asset_type: str, field_type: str | None = None
+) -> str | None:
     asset = live.assets.get(name)
     if asset is None:
         return _ASSET_MISSING
     if asset.source == "AUTOMATICALLY_CREATED":
         return _MADE_BY_GOOGLE
     if asset.asset_type != asset_type:
-        return _WRONG_TYPE.format(expected=_TYPE_NOUNS.get(asset_type, "sitelink or callout"))
+        return _WRONG_TYPE.format(expected=_TYPE_NOUNS.get(asset_type, "linkable asset"))
+    if field_type in _IMAGE_SHAPES:
+        return _image_problem(asset, field_type)
+    return None
+
+
+def _image_problem(asset: LiveAsset, field_type: str) -> str | None:
+    """Why Google won't show the image where it's linked, from its size."""
+    fits = set(image_fits(*asset.size)[0]) if asset.size else set()
+    return None if fits & _IMAGE_SHAPES[field_type] else _IMAGE_MISFIT[field_type]
+
+
+def _currency_problem(asset: NewAsset | None, currency: str | None) -> str | None:
+    if isinstance(asset, GoogleAdsPrice) and currency and asset.currency_code != currency:
+        return _WRONG_CURRENCY.format(currency=currency)
     return None
 
 
@@ -200,10 +260,10 @@ def _target_problem(live: LiveAssets, entry: GoogleAdsAssetTarget) -> str | None
 
 
 def _linked_same(
-    live: LiveAssets, target: str, asset: _NewAsset, removed: frozenset[str]
+    live: LiveAssets, target: str, asset: NewAsset, removed: frozenset[str]
 ) -> str | None:
     """The link of an asset staying on the target with the same content as a new one, if any."""
-    values = asset.values()
+    values = asset.values_by_path()
     return next(
         (
             link.resource_name
@@ -216,7 +276,9 @@ def _linked_same(
     )
 
 
-def _plan_live(entry: GoogleAdsAssetTarget, live: LiveAssets) -> tuple[list[_Planned], str | None]:
+def _plan_live(
+    entry: GoogleAdsAssetTarget, live: LiveAssets, currency: str | None = None
+) -> tuple[list[_Planned], str | None]:
     """Plans one target against what's live, with each problem that stops a change."""
     problem = _target_problem(live, entry)
     assets = f"customers/{entry.customer_id}/assets"
@@ -225,19 +287,27 @@ def _plan_live(entry: GoogleAdsAssetTarget, live: LiveAssets) -> tuple[list[_Pla
     for item in _plan_target(entry):
         if item.new is not None:
             link = _linked_same(live, entry.target_key, item.new, removed)
-            planned.append(replace(_linked(item, link) if link else item, refused=problem))
+            reason = problem or _currency_problem(item.new, currency)
+            planned.append(replace(_linked(item, link) if link else item, refused=reason))
             continue
         name = f"{assets}/{item.row.removeprefix('asset:')}"
         reason = problem
         if reason is None and item.action == "add":
-            reason = _asset_problem(live, name, item.asset_type)
-        edit = replace(item.edit, before=live.link(entry.target_key, name)) if item.edit else None
+            reason = _asset_problem(live, name, item.asset_type, item.image_field_type)
+        # An addition matches only a link of the same field type; a removal takes any.
+        link = live.link(entry.target_key, name, item.field_type if item.action == "add" else None)
+        edit = replace(item.edit, before=link) if item.edit else None
         asset = live.assets.get(name)
         if asset is not None:
             item = replace(item, label=asset.label)
             # A removal names its link by the asset, whatever type the reference gives.
             if asset.asset_type in ASSET_PATHS:
                 item = replace(item, asset_type=asset.asset_type)
+        if item.action == "remove" and link and "~" in link:
+            field_type = link.rsplit("~", 1)[1]
+            item = replace(
+                item, image_field_type=field_type if field_type != item.asset_type else None
+            )
         planned.append(replace(item, edit=edit, refused=reason))
     return _within_limit(entry, live, planned), problem
 
@@ -245,34 +315,40 @@ def _plan_live(entry: GoogleAdsAssetTarget, live: LiveAssets) -> tuple[list[_Pla
 def _within_limit(
     entry: GoogleAdsAssetTarget, live: LiveAssets, planned: Sequence[_Planned]
 ) -> list[_Planned]:
-    """Refuses the additions of a type that would leave the target with more than Google allows."""
+    """Refuses the additions of a field type that would leave the target with more than Google allows."""
 
     def changes(item: _Planned) -> bool:
         return item.refused is None and (item.edit is None or not item.edit.unchanged)
 
-    counts = Counter(link.asset.asset_type for link in live.links.get(entry.target_key, ()))
+    counts = Counter(
+        link.field_type or link.asset.asset_type for link in live.links.get(entry.target_key, ())
+    )
     for item in planned:
         if changes(item):
-            counts[item.asset_type] += 1 if item.action == "add" else -1
+            counts[item.field_type] += 1 if item.action == "add" else -1
     return [
         replace(
             item,
             refused=_TOO_MANY.format(
-                noun=_NOUNS[entry.kind], plural=_TYPE_PLURALS[item.asset_type]
+                noun=_NOUNS[entry.kind], plural=_FIELD_PLURALS.get(item.field_type, "assets")
             ),
         )
         if item.action == "add"
         and changes(item)
-        and counts[item.asset_type] > MAX_ASSETS_PER_TARGET
+        and counts[item.field_type] > MAX_ASSETS_PER_TARGET
         else item
         for item in planned
     ]
 
 
-def _plan_change_live(change: GoogleAdsAssetChange, live: LiveAssets) -> _Planned:
+def _plan_change_live(
+    change: GoogleAdsAssetChange, live: LiveAssets, currency: str | None = None
+) -> _Planned:
     item = _plan_change(change)
     name = change.asset.resource_name
-    problem = _asset_problem(live, name, change.asset.asset_type)
+    problem = _asset_problem(live, name, change.asset.asset_type) or _currency_problem(
+        change.content, currency
+    )
     asset = live.assets.get(name)
     if item.edit is None or asset is None or problem is not None:
         return replace(item, refused=problem)
@@ -341,14 +417,15 @@ def _account_plan(
     targets: Sequence[GoogleAdsAssetTarget],
     changes: Sequence[GoogleAdsAssetChange],
     live: LiveAssets,
+    currency: str,
 ) -> tuple[dict[str, list[_Planned]], dict[str, str | None]]:
     """Plans every target and change in one account, by target key or asset resource name."""
     planned: dict[str, list[_Planned]] = {}
     problems: dict[str, str | None] = {}
     for entry in targets:
-        planned[entry.target_key], problems[entry.target_key] = _plan_live(entry, live)
+        planned[entry.target_key], problems[entry.target_key] = _plan_live(entry, live, currency)
     for change in changes:
-        item = _plan_change_live(change, live)
+        item = _plan_change_live(change, live, currency)
         planned[item.key], problems[item.key] = [item], None
     return planned, problems
 
@@ -381,11 +458,16 @@ def _edit_values(live: LiveAssets, items: Sequence[_Planned]) -> dict[str, Mappi
     values: dict[str, Mapping[str, Any]] = {
         name: asset.values for name, asset in live.assets.items()
     }
+    # An image added as one field type isn't there when it's linked only as the other.
+    wanted = {item.key: item.field_type for item in items if item.action == "add"}
     present = set()
     for target, links in live.links.items():
         for link in links:
             row = f"asset:{link.asset.resource_name.rsplit('/', 1)[1]}"
-            values[_link_key(target, row)] = {"resourceName": link.resource_name}
+            key = _link_key(target, row)
+            actual = link.field_type or link.asset.asset_type
+            if wanted.get(key, actual) == actual:
+                values[key] = {"resourceName": link.resource_name}
             present.add(link.resource_name)
     # A new asset the target already links is checked by that link's own name.
     for item in items:
@@ -518,6 +600,12 @@ def _approved_target(target: GoogleAdsAssetTarget, check: Any) -> list[_Planned]
         label = row.get("label") if isinstance(row.get("label"), str) else item.label
         shown_type = row.get("asset_type")
         asset_type = shown_type if shown_type in ASSET_PATHS else item.asset_type
+        # A removal's field type comes from the link the approver saw.
+        shown_field = row.get("field_type")
+        if item.action == "remove" and shown_field in _FIELD_PLURALS:
+            item = replace(
+                item, image_field_type=shown_field if shown_field != asset_type else None
+            )
         approved.append(replace(item, label=label, asset_type=asset_type, refused=reason))
     return approved
 
@@ -649,7 +737,7 @@ async def _account_checks(
         live = await _read_live(client, entry, targets, changes)
         if live.uses_truncated:
             raise ModelRetry(_TOO_MANY_USES)
-        planned, problems = _account_plan(targets, changes, live)
+        planned, problems = _account_plan(targets, changes, live, account_facts(entry).currency)
         google = await _dry_run(client, entry, planned, live)
     except (IntegrationError, LookupError):
         unavailable = {"unavailable": True}
@@ -747,6 +835,7 @@ def _target_check(
                 "row": item.row,
                 "action": item.action,
                 "asset_type": item.asset_type,
+                "field_type": item.field_type,
                 "label": item.label,
                 "before": before,
                 "state": state,
@@ -789,12 +878,18 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_update_assets",
     function=google_ads_update_assets,
     description=(
-        "Add, remove, and edit Google Ads sitelinks and callouts in one approval. Each entry "
+        "Add, remove, and edit Google Ads sitelinks, callouts, structured snippets, calls, "
+        "prices, and images in one approval. Each entry "
         "names one campaign or ad_group by kind and carries add and remove lists. add takes "
         "new assets ({type: sitelink, link_text up to 25 characters, description1 and "
         "description2 up to 35 each, both or neither, final_url} or {type: callout, text up "
-        "to 25 characters}, each with optional start_date and end_date) or existing ones "
-        "({type: existing, asset}). A new asset added to several targets is made once and "
+        "to 25 characters}, each with optional start_date and end_date; {type: "
+        "structured_snippet, header, values: 3 to 10 of up to 25 characters}; {type: call, "
+        "country_code, phone_number}; {type: price, price_type, price_qualifier, "
+        "currency_code (the account's), offerings: 3 to 8 of {header and description up to "
+        "25 each, price, unit, final_url}}) or existing ones ({type: existing, asset}). Images "
+        "come from google_ads_upload_media and are linked as existing assets, with field_type "
+        "BUSINESS_LOGO for a campaign's logo. A new asset added to several targets is made once and "
         "linked to each. remove unlinks an asset; it stays in the account, because Google "
         "Ads doesn't delete assets. change gives existing assets new content, "
         "which changes them everywhere they're used. content replaces the whole asset, so "
@@ -827,7 +922,7 @@ DEFINITION = RuntimeToolDefinition(
         completed_label="Updated Ad Assets",
         failed_label="Couldn't Update Ad Assets",
         approval_title="Update Ad Assets",
-        approval_prompt="The agent wants to change the sitelinks and callouts these Google Ads campaigns show.",
+        approval_prompt="The agent wants to change the assets these Google Ads campaigns show with their ads.",
         approve_label="Approve & Update",
         arg_fields=(
             ToolFieldPresentation(

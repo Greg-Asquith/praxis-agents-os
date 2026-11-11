@@ -5,7 +5,7 @@ import {
   EDIT_OUTCOME_LABELS,
   outcomeTabs,
 } from "@/integrations/google_ads/lib/edit-outcomes"
-import type { AssetType } from "@/integrations/google_ads/lib/new-assets"
+import { ASSET_TYPES, type AssetType } from "@/integrations/google_ads/lib/new-assets"
 import type { AssetTargetKind } from "@/integrations/google_ads/lib/update-assets"
 import { isRecord } from "@/lib/guards"
 
@@ -56,10 +56,11 @@ export const ASSET_OUTCOME_BADGES = {
 
 function parseRow(value: unknown): AssetOutcomeRow | null {
   if (!isRecord(value)) return null
-  const { action, asset_label: label, asset_type: type, outcome, target_kind: kind } = value
+  const { action, asset_label: label, outcome, target_kind: kind } = value
+  const type = ASSET_TYPES.find((item) => item === value["asset_type"])
   if (
     (action !== "add" && action !== "remove" && action !== "change") ||
-    (type !== "SITELINK" && type !== "CALLOUT") ||
+    type === undefined ||
     typeof label !== "string" ||
     typeof outcome !== "string" ||
     !(outcome in ASSET_OUTCOME_LABELS) ||

@@ -31,12 +31,15 @@ import { ProblemList } from "@/integrations/google_ads/components/new-ad-groups"
 import {
   AssetFieldInput,
   NewAssetTable,
+  PriceOfferingsEditor,
 } from "@/integrations/google_ads/components/new-assets-editor"
 import {
   ASSET_FIELDS,
   ASSET_TYPE_LABELS,
   assetDatesText,
-  type AssetType,
+  offeringList,
+  type AssetField,
+  type ContentType,
 } from "@/integrations/google_ads/lib/new-assets"
 import {
   addTarget,
@@ -59,8 +62,12 @@ import {
   type AssetTarget,
   type ChangeRow,
   type LinkRow,
+  type NewAssetRow,
   type UpdateAssetsArgs,
 } from "@/integrations/google_ads/lib/update-assets"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { textOrNull } from "@/integrations/google_ads/lib/field-values"
+import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
 
 const TOOL = "google_ads_update_assets"
@@ -68,8 +75,7 @@ const TOOL = "google_ads_update_assets"
 const TOOLS_FROM = 10
 
 const PARENT_COLUMNS: DataColumn[] = [
-  { key: "sitelinks", kind: "number", label: "Sitelinks Now", width: 120 },
-  { key: "callouts", kind: "number", label: "Callouts Now", width: 120 },
+  { key: "now", kind: "text", label: "Assets Now", width: 240 },
   { key: "add", kind: "number", label: "To Add", width: 90 },
   { key: "remove", kind: "number", label: "To Remove", width: 100 },
   { key: "problems", kind: "text", label: "Problems", width: 110 },
@@ -83,10 +89,20 @@ const LINK_COLUMNS: DataColumn[] = [
   { key: "cancel", kind: "text", label: "Cancel", width: 70 },
 ]
 
-const NEW_ASSET_TITLES: Record<AssetType, string> = {
+const NEW_ASSET_TITLES: Record<ContentType, string> = {
+  CALL: "New Phone Numbers",
   CALLOUT: "New Callouts",
+  PRICE: "New Price Lists",
   SITELINK: "New Sitelinks",
+  STRUCTURED_SNIPPET: "New Structured Snippets",
 }
+const NEW_ASSET_ORDER: readonly ContentType[] = [
+  "SITELINK",
+  "CALLOUT",
+  "STRUCTURED_SNIPPET",
+  "CALL",
+  "PRICE",
+]
 
 const NOTHING_LEFT = { entries: [], rows: [] }
 
@@ -189,33 +205,52 @@ export function UpdateAssetsApproval({
           .join(" · ")}
       />
       <ProblemList problems={assetLimitProblems(args)} />
-      {(["SITELINK", "CALLOUT"] as const).map((type) => {
+      {NEW_ASSET_ORDER.map((type) => {
         const assets = newAssets.filter((row) => row.assetType === type)
         if (assets.length === 0) return null
+        const onCancel = (at: number) => {
+          const key = assets[at]?.key
+          cancel(live.filter((row) => row.assetKey === key).map((row) => row.id))
+        }
+        const onEdit = (at: number, field: string, value: unknown) => {
+          const edit = editNewAsset(args, cancelled.rows, assets[at]?.key ?? "", field, value)
+          saveEntries(edit.entries, NOTHING_LEFT, { ...cancelled, rows: edit.rows })
+        }
         return (
           <section key={type} aria-label={NEW_ASSET_TITLES[type]} className="grid gap-2">
             <h3 className="text-sm font-medium">
               {NEW_ASSET_TITLES[type]}{" "}
               <span className="text-muted-foreground tabular-nums">{String(assets.length)}</span>
             </h3>
-            <NewAssetTable
-              disabled={disabled}
-              onCancel={(at) => {
-                const key = assets[at]?.key
-                cancel(live.filter((row) => row.assetKey === key).map((row) => row.id))
-              }}
-              onEdit={(at, field, value) => {
-                const edit = editNewAsset(args, cancelled.rows, assets[at]?.key ?? "", field, value)
-                saveEntries(edit.entries, NOTHING_LEFT, { ...cancelled, rows: edit.rows })
-              }}
-              rows={assets.map((row, at) => ({
-                asset: row.value,
-                label: `${ASSET_TYPE_LABELS[type]} ${String(at + 1)}`,
-                problem: row.problem,
-                targets: row.targets,
-              }))}
-              type={type}
-            />
+            {type === "PRICE" ? (
+              assets.map((row, at) => (
+                <NewPrice
+                  key={row.key}
+                  disabled={disabled}
+                  label={`${ASSET_TYPE_LABELS.PRICE} ${String(at + 1)}`}
+                  onCancel={() => {
+                    onCancel(at)
+                  }}
+                  onEdit={(field, value) => {
+                    onEdit(at, field, value)
+                  }}
+                  row={row}
+                />
+              ))
+            ) : (
+              <NewAssetTable
+                disabled={disabled}
+                onCancel={onCancel}
+                onEdit={onEdit}
+                rows={assets.map((row, at) => ({
+                  asset: row.value,
+                  label: `${ASSET_TYPE_LABELS[type]} ${String(at + 1)}`,
+                  problem: row.problem,
+                  targets: row.targets,
+                }))}
+                type={type}
+              />
+            )}
           </section>
         )
       })}
@@ -413,7 +448,7 @@ function LinkTable({
     change: linkChange(row),
     key: row.id,
     target: row.targetName,
-    type: ASSET_TYPE_LABELS[row.assetType],
+    type: row.businessLogo ? "Business Logo" : ASSET_TYPE_LABELS[row.assetType],
   }))
   return (
     <DataTable
@@ -499,18 +534,136 @@ function LinkTable({
 
 // Where the edit seam holds each field of an asset's live content.
 const LIVE_PATHS: Record<string, string> = {
+  country_code: "callAsset.countryCode",
   description1: "sitelinkAsset.description1",
   description2: "sitelinkAsset.description2",
   final_url: "finalUrls",
+  header: "structuredSnippetAsset.header",
   link_text: "sitelinkAsset.linkText",
+  phone_number: "callAsset.phoneNumber",
+  price_qualifier: "priceAsset.priceQualifier",
+  price_type: "priceAsset.type",
   text: "calloutAsset.calloutText",
+  values: "structuredSnippetAsset.values",
+}
+// The live date fields of the types that take dates.
+const DATE_GROUPS: Partial<Record<ContentType, string>> = {
+  CALLOUT: "calloutAsset",
+  SITELINK: "sitelinkAsset",
 }
 
-function nowText(before: Record<string, unknown> | null, key: string): string | null {
+function nowText(before: Record<string, unknown> | null, field: AssetField): string | null {
   if (before === null) return null
-  const value = before[LIVE_PATHS[key] ?? ""]
-  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null
+  const value = before[LIVE_PATHS[field.key] ?? ""]
+  if (field.kind === "choice")
+    return field.options.find((option) => option.value === (value ?? ""))?.label ?? null
+  if (Array.isArray(value)) {
+    const items = value.filter((item): item is string => typeof item === "string")
+    return field.key === "final_url" ? (items[0] ?? null) : items.join(", ")
+  }
   return typeof value === "string" ? value : null
+}
+
+/** A price list's items now, such as "Basic 9.99 GBP, Pro 19.99 GBP". */
+function pricesNowText(before: Record<string, unknown> | null): string | null {
+  if (before === null) return null
+  const items = offeringList(before["priceAsset.priceOfferings"]).map((offering) => {
+    const price = isRecord(offering["price"]) ? offering["price"] : {}
+    const amount = Number(price["amountMicros"] ?? 0) / 1_000_000
+    const currency = textOrNull(price["currencyCode"]) ?? ""
+    return `${textOrNull(offering["header"]) ?? ""} ${String(amount)} ${currency}`.trim()
+  })
+  return items.length > 0 ? items.join(", ") : null
+}
+
+/** One new price list, used in each target that gets it, with its settings and items editable. */
+function NewPrice({
+  disabled,
+  label,
+  onCancel,
+  onEdit,
+  row,
+}: {
+  disabled: boolean
+  label: string
+  onCancel: () => void
+  onEdit: (field: string, value: unknown) => void
+  row: NewAssetRow
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="text-muted-foreground text-xs">
+          {approvalCountLine(row.targets, "target")}
+        </span>
+        <span className="ml-auto">
+          <CancelCell
+            cancelled={false}
+            disabled={disabled}
+            onCancel={onCancel}
+            onUndo={() => undefined}
+          />
+        </span>
+      </div>
+      <PriceFields asset={row.value} disabled={disabled} label={label} onEdit={onEdit} />
+      {row.problem ? <p className="text-destructive text-sm wrap-anywhere">{row.problem}</p> : null}
+    </div>
+  )
+}
+
+/** A price list's type, qualifier, and currency, then its items. */
+function PriceFields({
+  asset,
+  before = null,
+  disabled,
+  label,
+  onEdit,
+}: {
+  asset: Record<string, unknown>
+  before?: Record<string, unknown> | null
+  disabled: boolean
+  label: string
+  onEdit: (field: string, value: unknown) => void
+}) {
+  const currency = typeof asset["currency_code"] === "string" ? asset["currency_code"] : ""
+  const now = pricesNowText(before)
+  return (
+    <>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {ASSET_FIELDS.PRICE.map((field) => {
+          const was = nowText(before, field)
+          return (
+            <label key={field.key} className="grid gap-1 text-xs">
+              <span className="text-muted-foreground">
+                {field.label}
+                {was !== null ? ` · Now: ${was}` : ""}
+              </span>
+              <AssetFieldInput
+                disabled={disabled}
+                field={field}
+                label={`${field.label} for ${label}`}
+                onCommit={(next) => {
+                  onEdit(field.key, next)
+                }}
+                value={asset[field.key]}
+              />
+            </label>
+          )
+        })}
+      </div>
+      <PriceOfferingsEditor
+        currency={currency}
+        disabled={disabled}
+        label={label}
+        onChange={(offerings) => {
+          onEdit("offerings", offerings)
+        }}
+        value={asset["offerings"]}
+      />
+      {now ? <p className="text-muted-foreground text-xs wrap-anywhere">Now: {now}</p> : null}
+    </>
+  )
 }
 
 /** One existing asset's new content, with what it says now and where it's used. */
@@ -524,16 +677,17 @@ function ChangeCard({
   change: ChangeRow
   disabled: boolean
   onCancel: () => void
-  onEdit: (field: string, value: string) => void
+  onEdit: (field: string, value: unknown) => void
   onUndo: () => void
 }) {
   const more = change.useCount - change.usedIn.length
-  const group = change.assetType === "SITELINK" ? "sitelinkAsset" : "calloutAsset"
-  const dates = assetDatesText(change.content["start_date"], change.content["end_date"])
-  const datesNow = assetDatesText(
-    change.before?.[`${group}.startDate`],
-    change.before?.[`${group}.endDate`]
-  )
+  const group = change.assetType === "IMAGE" ? undefined : DATE_GROUPS[change.assetType]
+  const dates = group
+    ? assetDatesText(change.content["start_date"], change.content["end_date"])
+    : null
+  const datesNow = group
+    ? assetDatesText(change.before?.[`${group}.startDate`], change.before?.[`${group}.endDate`])
+    : null
   return (
     <div className={cn("grid gap-2 rounded-lg border px-3 py-2", change.cancelled && "opacity-60")}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -565,29 +719,39 @@ function ChangeCard({
               own {ASSET_TYPE_LABELS[change.assetType].toLowerCase()}s.
             </p>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {ASSET_FIELDS[change.assetType].map((field) => {
-              const now = nowText(change.before, field.key)
-              const value = change.content[field.key]
-              return (
-                <label key={field.key} className="grid gap-1 text-xs">
-                  <span className="text-muted-foreground">
-                    {field.label}
-                    {now !== null ? ` · Now: ${now}` : ""}
-                  </span>
-                  <AssetFieldInput
-                    disabled={disabled}
-                    field={field}
-                    label={`${field.label} for ${change.ref.label}`}
-                    onCommit={(next) => {
-                      onEdit(field.key, next)
-                    }}
-                    value={typeof value === "string" ? value : ""}
-                  />
-                </label>
-              )
-            })}
-          </div>
+          {change.assetType === "PRICE" ? (
+            <PriceFields
+              asset={change.content}
+              before={change.before}
+              disabled={disabled}
+              label={change.ref.label}
+              onEdit={onEdit}
+            />
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ASSET_FIELDS[change.assetType].map((field) => {
+                const now = nowText(change.before, field)
+                const value = change.content[field.key]
+                return (
+                  <label key={field.key} className="grid gap-1 text-xs">
+                    <span className="text-muted-foreground">
+                      {field.label}
+                      {now !== null ? ` · Now: ${now}` : ""}
+                    </span>
+                    <AssetFieldInput
+                      disabled={disabled}
+                      field={field}
+                      label={`${field.label} for ${change.ref.label}`}
+                      onCommit={(next) => {
+                        onEdit(field.key, next)
+                      }}
+                      value={value}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+          )}
           {dates || datesNow ? (
             <p className="text-muted-foreground text-xs">
               Shows: {dates ?? "Any Time"}

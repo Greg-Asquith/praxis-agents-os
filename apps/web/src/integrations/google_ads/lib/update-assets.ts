@@ -3,7 +3,6 @@
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import type { ParentRow } from "@/integrations/ads/components/parent-table"
 import type { CancelCard } from "@/integrations/ads/lib/cancelled-rows"
-import { collapseSpaces } from "@/integrations/ads/lib/keyword-notation"
 import { groupedByParent } from "@/integrations/ads/lib/parent-rows"
 import {
   accountsText,
@@ -18,13 +17,19 @@ import {
 import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import {
   ASSET_TYPE_LABELS,
+  ASSET_TYPES,
   assetListProblems,
   blankIsNull,
+  CONTENT_TYPE_VALUES,
+  draftAssetLabel,
+  draftAssetType,
   fieldProblem,
   MAX_ASSETS_PER_TARGET,
   newAssetKey,
+  parseContentAsset,
   sitelinkAdvice,
   type AssetType,
+  type ContentType,
 } from "@/integrations/google_ads/lib/new-assets"
 import { isRecord } from "@/lib/guards"
 
@@ -46,6 +51,16 @@ const MAX_LINKS = 1_000
 const UNAVAILABLE =
   "Google Ads couldn't check this. Check again, or ask the agent to prepare the change again."
 
+// How the prompt and the parent table count each type.
+const TYPE_NOUNS: Record<AssetType, string> = {
+  CALL: "phone number",
+  CALLOUT: "callout",
+  IMAGE: "image",
+  PRICE: "price list",
+  SITELINK: "sitelink",
+  STRUCTURED_SNIPPET: "structured snippet",
+}
+
 type AssetRef = {
   assetId: string
   assetType: AssetType
@@ -62,7 +77,14 @@ type Addition =
       label: string
       value: Record<string, unknown>
     }
-  | { kind: "existing"; key: string; ref: AssetRef; value: Record<string, unknown> }
+  | {
+      kind: "existing"
+      // Set for an image linked as the campaign's business logo.
+      businessLogo: boolean
+      key: string
+      ref: AssetRef
+      value: Record<string, unknown>
+    }
 
 export type AssetTarget = {
   add: Addition[]
@@ -100,7 +122,7 @@ type TargetCheck =
       unavailable: false
       campaignName: string | null
       name: string
-      now: Record<AssetType, number>
+      now: Partial<Record<AssetType, number>>
       problem: string | null
       rows: CheckRow[]
     }
@@ -127,7 +149,7 @@ export type UpdateAssetsArgs = {
 }
 
 function assetType(value: unknown): AssetType | null {
-  return value === "SITELINK" || value === "CALLOUT" ? value : null
+  return ASSET_TYPES.find((type) => type === value) ?? null
 }
 
 function parseRef(value: unknown): AssetRef | null {
@@ -145,20 +167,26 @@ function parseRef(value: unknown): AssetRef | null {
   }
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? collapseSpaces(value) : ""
-}
-
 function parseAddition(value: unknown): Addition | null {
   if (!isRecord(value)) return null
   if (value["type"] === "existing") {
     const ref = parseRef(value["asset"])
-    return ref ? { key: `asset:${ref.assetId}`, kind: "existing", ref, value } : null
+    const businessLogo = value["field_type"] === "BUSINESS_LOGO"
+    return ref ? { businessLogo, key: `asset:${ref.assetId}`, kind: "existing", ref, value } : null
   }
-  if (value["type"] !== "sitelink" && value["type"] !== "callout") return null
-  const type = value["type"] === "sitelink" ? "SITELINK" : "CALLOUT"
-  const label = text(value[type === "SITELINK" ? "link_text" : "text"])
-  return { assetType: type, key: newAssetKey(value), kind: "new", label, value }
+  const asset = parseContentAsset(value)
+  if (asset === null) return null
+  return {
+    assetType: draftAssetType(asset),
+    key: newAssetKey(asset),
+    kind: "new",
+    label: draftAssetLabel(asset),
+    value,
+  }
+}
+
+function contentDraft(type: AssetType, content: Record<string, unknown>) {
+  return type === "IMAGE" ? null : { ...content, type: CONTENT_TYPE_VALUES[type] }
 }
 
 const TARGET_FIELDS = {
@@ -206,11 +234,12 @@ function parseChange(value: unknown): AssetChange | null {
   const ref = parseRef(value["asset"])
   if (ref === null) return null
   const content = value["content"]
+  const draft = contentDraft(ref.assetType, content)
   return {
     assetType: ref.assetType,
     content,
     key: `customers/${ref.customerId}/assets/${ref.assetId}`,
-    label: text(content[ref.assetType === "SITELINK" ? "link_text" : "text"]) || ref.label,
+    label: (draft ? draftAssetLabel(draft) : "") || ref.label,
     ref,
     value,
   }
@@ -247,7 +276,7 @@ function parseTargetCheck(value: unknown): TargetCheck {
     unavailable: false,
     campaignName: textOrNull(value["campaign_name"]),
     name: textOrNull(value["name"]) ?? "",
-    now: { CALLOUT: count(now["CALLOUT"]), SITELINK: count(now["SITELINK"]) },
+    now: Object.fromEntries(ASSET_TYPES.map((type) => [type, count(now[type])])),
     problem: textOrNull(value["problem"]),
     rows: rows.flatMap((row) => parseCheckRow(row) ?? []),
   }
@@ -300,6 +329,8 @@ export type LinkRow = {
   assetType: AssetType
   // The new asset's key, or `asset:{id}` for an existing one.
   assetKey: string
+  // An image linked as the business logo rather than beside ads.
+  businessLogo: boolean
   cancelled: boolean
   id: string
   isNew: boolean
@@ -334,7 +365,8 @@ function entryRows(entry: AssetTarget, name: string, check: TargetCheck | null):
     label: string,
     isNew: boolean,
     local: string | null,
-    value: Record<string, unknown>
+    value: Record<string, unknown>,
+    businessLogo = false
   ): LinkRow => {
     const answer = answers.get(`${action}|${assetKey}`)
     const whole = check && !check.unavailable ? check.problem : null
@@ -344,6 +376,7 @@ function entryRows(entry: AssetTarget, name: string, check: TargetCheck | null):
       action,
       assetKey,
       assetType: type,
+      businessLogo,
       cancelled: false,
       id: linkId(entry.key, action, assetKey),
       isNew,
@@ -371,7 +404,16 @@ function entryRows(entry: AssetTarget, name: string, check: TargetCheck | null):
             fieldProblem(item.value),
             item.value
           )
-        : row("add", item.key, item.ref.assetType, item.ref.label, false, null, item.value)
+        : row(
+            "add",
+            item.key,
+            item.ref.assetType,
+            item.ref.label,
+            false,
+            null,
+            item.value,
+            item.businessLogo
+          )
     ),
   ]
 }
@@ -449,10 +491,8 @@ export type ChangeRow = AssetChange & {
 }
 
 function changeFieldProblem(change: AssetChange): string | null {
-  return fieldProblem({
-    ...change.content,
-    type: change.assetType === "SITELINK" ? "sitelink" : "callout",
-  })
+  const draft = contentDraft(change.assetType, change.content)
+  return draft ? fieldProblem(draft) : "An image can't be edited. Upload a new one instead."
 }
 
 /** Every content change, checked against what Google last answered for, then cancelled ones. */
@@ -525,7 +565,16 @@ export function sitelinksAfter(now: number, rows: readonly LinkRow[]): number {
     .reduce((total, row) => total + (row.action === "add" ? 1 : -1), now)
 }
 
-/** One row per campaign or ad group, with its sitelinks and callouts now and what changes. */
+/** What a target links now, such as "4 sitelinks, 2 callouts", or "None". */
+function assetsNowText(now: Partial<Record<AssetType, number>>): string {
+  const parts = ASSET_TYPES.flatMap((type) => {
+    const total = now[type] ?? 0
+    return total > 0 ? [approvalCountLine(total, TYPE_NOUNS[type])] : []
+  })
+  return parts.length > 0 ? parts.join(", ") : "None"
+}
+
+/** One row per campaign or ad group, with what it links now and what changes. */
 export function assetParents(
   args: UpdateAssetsArgs,
   rows: readonly LinkRow[],
@@ -534,7 +583,7 @@ export function assetParents(
   return groupedByParent(rows, (row) => row.targetKey).map(({ items, key, live }) => {
     const check = args.checks.get(key)
     const known = check && !check.unavailable ? check : null
-    const sitelinks = known ? sitelinksAfter(known.now.SITELINK, live) : null
+    const sitelinks = known ? sitelinksAfter(known.now.SITELINK ?? 0, live) : null
     const advice =
       sitelinks !== null && live.some((row) => row.assetType === "SITELINK")
         ? sitelinkAdvice(sitelinks)
@@ -549,9 +598,8 @@ export function assetParents(
       problems: live.filter((row) => row.problem !== null).length,
       values: {
         add: live.filter((row) => row.action === "add").length,
-        callouts: known ? known.now.CALLOUT : "",
+        now: known ? assetsNowText(known.now) : "",
         remove: live.filter((row) => row.action === "remove").length,
-        sitelinks: known ? known.now.SITELINK : "",
       },
     }
   })
@@ -618,7 +666,7 @@ export function editNewAsset(
   cancelled: readonly LinkRow[],
   key: string,
   field: string,
-  value: string
+  value: unknown
 ): { entries: AssetTarget[]; rows: LinkRow[] } {
   const edited = (asset: Record<string, unknown>) =>
     parseAddition({ ...asset, [field]: blankIsNull(value) })
@@ -653,7 +701,7 @@ export function editChange(
   args: UpdateAssetsArgs,
   key: string,
   field: string,
-  value: string
+  value: unknown
 ): AssetChange[] {
   return args.changes.map((change) => {
     if (change.key !== key) return change
@@ -670,7 +718,7 @@ export function assetLimitProblems(args: UpdateAssetsArgs): string[] {
   )
   return [
     ...args.entries.flatMap((entry) =>
-      assetListProblems(`${targetName(args, entry)} sitelinks and callouts`, [
+      assetListProblems(`${targetName(args, entry)} assets`, [
         entry.add.map((item) => item.key),
         entry.remove.map((ref) => `asset:${ref.assetId}`),
       ])
@@ -736,7 +784,7 @@ export function assetsApproveLabel(args: UpdateAssetsArgs): string {
   return applyChangesLabel(assetCounts(linkRows(args, args), changeRows(args, args)).apply)
 }
 
-function newCount(args: UpdateAssetsArgs, type: AssetType): number {
+function newCount(args: UpdateAssetsArgs, type: ContentType): number {
   return new Set(
     args.entries.flatMap((entry) =>
       entry.add.filter((item) => item.kind === "new" && item.assetType === type).map((i) => i.key)
@@ -762,14 +810,12 @@ export function assetsPrompt(args: UpdateAssetsArgs): string {
     ...args.entries.map((entry) => entry.customerId),
     ...args.changes.map((change) => change.key.split("/")[1] ?? ""),
   ])
-  const sitelinks = newCount(args, "SITELINK")
-  const callouts = newCount(args, "CALLOUT")
-  const added = [
-    sitelinks > 0 ? approvalCountLine(sitelinks, "sitelink") : null,
-    callouts > 0 ? approvalCountLine(callouts, "callout") : null,
-  ].filter(Boolean)
+  const added = (Object.keys(CONTENT_TYPE_VALUES) as ContentType[]).flatMap((type) => {
+    const total = newCount(args, type)
+    return total > 0 ? [approvalCountLine(total, TYPE_NOUNS[type])] : []
+  })
   const parts = [
-    added.length > 0 ? `Add ${added.join(" and ")}` : null,
+    added.length > 0 ? `Add ${listText(added)}` : null,
     args.entries.length > 0 && added.length === 0 ? "Change the assets" : null,
     args.entries.length > 0 ? `in ${targetsText(args)}` : null,
     args.changes.length > 0
@@ -777,6 +823,11 @@ export function assetsPrompt(args: UpdateAssetsArgs): string {
       : null,
   ].filter(Boolean)
   return `${parts.join(" ")} in ${where}.`
+}
+
+function listText(items: readonly string[]): string {
+  if (items.length <= 2) return items.join(" and ")
+  return `${items.slice(0, -1).join(", ")}, and ${String(items.at(-1))}`
 }
 
 export function assetsDetails(args: UpdateAssetsArgs | null): FanOutDetail[] {

@@ -32,6 +32,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   addition with Google first. `google_ads_create_campaign` and
   `google_ads_create_ad_groups` take sitelinks and callouts too, created
   once and linked wherever they're listed.
+- Google Ads structured snippets, calls, prices, and images on
+  `google_ads_update_assets`: add or edit structured snippets, phone
+  numbers, and price lists on campaigns and ad groups, and link uploaded
+  images beside ads or as a campaign's business logo, in the same approval
+  as sitelinks and callouts. The card edits each price list's items in
+  place, refuses a price in another currency, and checks that each image
+  fits where it shows.
 - Google Ads media uploads: `google_ads_upload_media` uploads up to 20
   workspace JPEG, PNG, or GIF images and links up to 20 YouTube videos to
   the selected account as assets. The card previews each image, shows which
@@ -487,6 +494,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Searching for Google Ads sitelinks and callouts by their text no longer
+  sends a query Google Ads rejects; each text field is searched on its own.
 - Google Ads Create Ads, Create Ad Groups, and Create Campaign cards show a
   Google rejection once when two ads share the same copy, instead of
   repeating it.

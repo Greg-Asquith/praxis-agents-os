@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/entity_resolvers/asset.py
 
-"""Google Ads sitelink and callout lookup for runtime entity selectors."""
+"""Google Ads ad asset lookup for runtime entity selectors."""
 
 from collections.abc import Sequence
 from typing import Any
@@ -16,13 +16,22 @@ from services.integrations.entity_references import EntityChoice, EntityResolver
 
 from .utils import group_scoped_references, search_scoped_entities
 
-_TYPE_LABELS = {"SITELINK": "Sitelink", "CALLOUT": "Callout"}
+_TYPE_LABELS = {
+    "SITELINK": "Sitelink",
+    "CALLOUT": "Callout",
+    "STRUCTURED_SNIPPET": "Structured snippet",
+    "CALL": "Call",
+    "PRICE": "Price",
+    "IMAGE": "Image",
+}
 
 
 def _choice(entry, asset: LiveAsset) -> EntityChoice | None:
     if asset.asset_type not in _TYPE_LABELS:
         return None
     description = _TYPE_LABELS[asset.asset_type]
+    if asset.size:
+        description = f"{description}, {asset.size[0]} by {asset.size[1]}"
     if asset.source == "AUTOMATICALLY_CREATED":
         description = f"{description} made by Google"
     return EntityChoice.from_reference(
