@@ -30,6 +30,12 @@ separate write charge. Estimates use Gemini API and Vertex `global` rates;
 regional premiums and Vertex promotional-credit reconciliation remain pending.
 See [Carbon pricing and transport limits](model-providers.md#gemini-4-carbon).
 
+Claude Fable 5.2 rates apply from 9 November 2026: $8 input, $0.20 cache read,
+$10 five-minute cache write, and $40 output per million tokens. Estimates use
+Claude API and Vertex `global` standard rates. See
+[Fable pricing and transport limits](model-providers.md#claude-fable-52) for
+the one-hour cache rate, fast mode, and regional pricing limitations.
+
 GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 have base rates effective from
 22 September 2026. Claude Sonnet 5.5 rates apply from 28 September 2026 and
 GPT-6.1 Sol rates from 29 September 2026. From 7 October 2026, Claude Sonnet

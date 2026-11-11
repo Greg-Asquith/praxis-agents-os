@@ -15,6 +15,8 @@ export type DataColumnKind =
   | "badge"
   | "link"
   | "id"
+  // A list of numbers drawn as a small line, such as monthly searches.
+  | "sparkline"
 
 export type DataColumn = {
   align?: "left" | "right"
@@ -138,6 +140,9 @@ function exportCell(value: unknown): string {
   }
   if (value === null || value === undefined) {
     return ""
+  }
+  if (Array.isArray(value) && value.every((item) => typeof item === "number")) {
+    return value.join(" ")
   }
   try {
     return JSON.stringify(value)

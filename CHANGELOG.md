@@ -12,6 +12,20 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Claude Fable 5.2 as the Anthropic Max model, with standard token pricing
+  effective from 9 November 2026 and support for adaptive thinking and
+  structured output through the Claude API and configured Vertex projects.
+  Pydantic AI 2.67 supplies Fable's profile and Gemini 4 Carbon's supported
+  thinking levels, reducing the local model overrides.
+
+- Google Ads keyword research: `google_ads_research_keywords` finds keyword
+  ideas from words, a page, or a whole site with Keyword Planner, or gets
+  metrics for exact keywords. Each row has average monthly searches, a
+  12-month trend, competition, and the top-of-page bid range in the account
+  currency, and can show which existing ad group Google would put it in. The
+  card has theme tabs and a trend line per row, and **Build Ad Group From N
+  Selected** asks the agent to prepare the ad group for approval.
+
 - Google Ads keyword additions per ad group: `google_ads_create_keywords` takes
   each ad group with its own keywords, up to 1,000 across 50 ad groups, adds
   them paused by default, checks each with Google first, and refuses a keyword

@@ -22,6 +22,45 @@ so loading them at import time slows every cold start, and a deployment should
 load only the providers it calls. The clean-process test in
 `tests/contract/test_entrypoint_imports.py` fails if startup loads any of them.
 
+### Claude Fable 5.2
+
+The [model overview](https://platform.claude.com/docs/en/models/fable-5-2/overview),
+[pricing](https://platform.claude.com/docs/en/about-claude/pricing), and
+[Google Cloud model card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/claude/fable-5-2),
+checked on 11 November 2026, list `claude-fable-5-2` from 9 November 2026.
+Both transports use that ID. It has a 1,000,000-token context window,
+128,000 maximum output tokens, and a June 2026 knowledge cutoff. It accepts
+text and images, returns text, and supports streaming, tools, and structured
+output. Fable 5.2 is the Anthropic **Max** default when available. Fable 5.1
+and Fable 5 remain selectable.
+
+Standard prices are $8 input, $0.20 cache read, $10 five-minute cache write,
+and $40 output per million tokens, effective from 9 November 2026. One-hour
+cache writes cost $16. Estimates use Claude API and Vertex `global` standard
+rates. Regional premiums, one-hour cache writes, batch discounts, and fast-mode
+charges remain outside the aggregated estimates. Fast mode costs $16 input
+and $80 output per million tokens on the Claude API. Vertex fast-mode requests
+remain pending because the installed SDK suppresses the speed setting there.
+
+The [migration guide](https://platform.claude.com/docs/en/models/fable-5-2/migration-guide)
+requires always-on adaptive thinking and rejects forced tool choice and
+non-default sampling settings. Effort accepts `low`, `medium`, `high`,
+`xhigh`, and `max`, with `high` as the default. Catalogue settings request
+summarised thinking. Pydantic AI 2.67 covers the family settings, output
+limit, forced-tool restriction, thinking-block binding, and direct fast-mode
+support without a local profile override. Structured results use
+native JSON schema output. Prefix-binding failures use the SDK's existing
+single retry with stale-block recovery.
+
+Google Cloud supports `global`, `us`, and `eu`; Praxis uses the configured
+`ANTHROPIC_VERTEX_LOCATION`, which defaults to `global`. Enable the model in
+Model Garden and add `claude-fable-5-2` to `ANTHROPIC_VERTEX_MODELS` to expose
+it on Vertex. Live access remains unverified with a Praxis key or project.
+Fable 5.2 requires 30-day data retention unless Anthropic expressly authorises
+an exception. Structured output with customer-managed encryption keys is
+unsupported. Provider-native computer use and advisor tools remain outside
+Praxis's governed tool catalogue.
+
 ### GPT-6.1 Terra
 
 The [model page](https://developers.openai.com/api/docs/models/gpt-6.1-terra),
@@ -60,8 +99,8 @@ Vertex supports `global`, `us`, and `eu`; `GOOGLE_VERTEX_LOCATION=auto` selects
 hasn't been checked with a Praxis API key or Vertex project.
 
 Carbon accepts `low`, `medium` (the provider default), and `high` thinking.
-Pydantic AI 2.66 lacks Carbon's thinking restrictions, so
-`provider_model_profile` supplies its supported levels and always-on thinking.
+Pydantic AI 2.67 supplies Carbon's supported levels, and
+`provider_model_profile` adds its missing always-on-thinking flag.
 The UI's `minimal` preference and disabled thinking both send `low`.
 Explicit `thinking_budget` and `MINIMAL` settings are unsupported. Google
 ignores temperature, top-p, and top-k. Only implicit caching is supported,
@@ -446,10 +485,13 @@ failures. Run failures map Pydantic AI's provider error categories to safe
 codes, without provider bodies or project details: `model_rate_limited`,
 `model_quota_exceeded`, `model_context_window_exceeded`, `model_access_denied`,
 `model_not_found`, and `model_unavailable` for overload and server errors.
-Only rate limits tell the user to try again later. The shared transport pools
+Provider safety filters map to `model_content_blocked`, covering Pydantic AI's
+`ContentFilterError` and OpenAI's in-stream `invalid_prompt` code, which
+Pydantic AI leaves uncategorised. Only rate limits tell the user to try again
+later. The shared transport pools
 up to 1,000 connections, 100 kept alive, matching the provider SDKs.
 
-The API locks Pydantic AI, slim, evals, and graph to 2.66.0, with OpenAI
+The API locks Pydantic AI, slim, evals, and graph to 2.67.0, with OpenAI
 3.40.0, Anthropic 2.5.0, and Google Gen AI 2.34.0. The manifest retains minimum
 version ranges. The OpenAI SDK comes through Pydantic AI's `openai` extra
 (`openai>=3.31.0`), which includes the Decisions API. It explicitly selects Pydantic AI's `retries` extra and
@@ -458,6 +500,14 @@ still depends on legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
 have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
 required. Monty is pinned to 1.0.0.
+
+The [2.67 release](https://github.com/pydantic/pydantic-ai/releases/tag/v2.67.0)
+adds native Fable 5.2 and Gemini 4 Carbon profiles. The Gemini 4 override
+retains only always-on thinking. Native web and image helpers keep using
+capability arguments, which remain supported as provider-specific native-tool
+fields move to `provider_settings`. Structured output cut off at `max_tokens`
+and failing validation raises `UnexpectedModelBehavior` immediately instead
+of retrying the same token limit. The runtime uses its existing failure path.
 
 The local retry wrapper remains necessary to return an exhausted response
 with its unread body intact. SDKs translate that final response into their

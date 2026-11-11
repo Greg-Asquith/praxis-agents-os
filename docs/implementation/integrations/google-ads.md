@@ -929,6 +929,33 @@ changed since is refused as changed since approval.
 The display result has one row per link and per content change with its outcome. The
 agent gets the counts and only the rows that failed or are unconfirmed, up to 50.
 
+### Keyword research
+
+`google_ads_research_keywords` is a read with auto approval. It calls Keyword Planner
+(`KeywordPlanIdeaService`) in one account: the ad groups' account when the agent passes
+`ad_groups`, or else the first selected account. Bids are in that account's currency.
+The developer token needs Basic access, which the deployment's token has.
+
+The arguments are as follows:
+
+| Argument | What it does |
+| --- | --- |
+| `seeds`, `url` | Up to 20 words or phrases, a page, or both, for `GenerateKeywordIdeas`. Seeds alone send a keyword seed, both send a keyword and URL seed, and a home page with no path sends a site seed for the whole site. |
+| `keywords` | Up to 1,000 exact keywords for `GenerateKeywordHistoricalMetrics`, with no ideas added. |
+| `locations`, `language` | Up to 10 location keys and one language key from `google_ads_search_targeting`. The tool reads them back first and refuses an unknown key. Without them Google counts every location and language. |
+| `ad_groups` | Up to 20 existing ad groups for `GenerateAdGroupThemes`, which needs existing ad groups; it doesn't invent new ones. Each row then has the suggested ad group and match type, and an ad group Google can't use is marked unusable. |
+| `limit` | Rows to return, 200 by default and 1,000 at most. |
+
+Every call uses the Google Search network, as Keyword Planner does, and asks for
+`KEYWORD_CONCEPT` annotations, which become each idea's `themes`. Google returns ideas
+in no volume order, so the tool asks for one page of 2,000 (`IDEA_PAGE_SIZE`), ranks by
+average monthly searches, and keeps the top rows. Requested keywords are always kept.
+`truncated` is true when Google has more ideas than the rows returned, and
+`total_ideas` is Google's count. Each row has the 12 monthly volumes oldest first, the
+competition level, and the top-of-page bid range as decimal strings. The audit record
+holds counts only, not the agent's search text. Large results are previewed for the
+model and saved in full, like reports.
+
 ### Labels
 
 `google_ads_create_labels` creates 1 to 50 text labels in each selected
@@ -1318,6 +1345,21 @@ lists each content change with what each field says now and where the asset is u
 The result (`components/update-assets-outcome.tsx`) is one `DataTable` with a row per
 asset and target, tabs per outcome, opening on Failed when anything failed.
 
+### Research Keywords card
+
+`lib/research-keywords.ts` parses the result. `themeTabs` turns the three most common
+themes into tabs, after **All**, with **Other Themes** for rows in none of them.
+`components/research-keywords-table.tsx` is one searchable `DataTable` with
+selection: Keyword, Avg Monthly Searches, a 12-month trend sparkline, Competition, Low
+Bid, High Bid, and Fits Ad Group when the agent passed ad groups. A note under the table
+says searches and bids are Google's estimates.
+
+**Build Ad Group From N Selected** sends the selected keywords as the operator's own
+governed turn (`buildAdGroupInstruction`), through `ConversationActionsContext` in
+`components/tool-ui/conversation-actions-context.ts`. The agent then prepares
+`google_ads_create_ad_groups`, which asks for approval as usual. The button is
+unavailable where the conversation can't take a turn, such as a shared transcript.
+
 ### Optimise Search Terms card
 
 `lib/search-terms.ts` parses `decisions` with `_accounts` and `_checks`, and keeps each
@@ -1590,6 +1632,8 @@ before paging, so counts, pages, and the row total follow the view:
   the details sheet, as Create Ads does to open an ad. Controls in a cell
   stop the click's propagation.
 - CSV export and copy hold every row, not only the filtered view.
+- The `sparkline` column kind draws a list of numbers as a small line, such as
+  monthly searches. It doesn't sort, and exports the numbers separated by spaces.
 
 ### Add Keywords card
 

@@ -2,7 +2,7 @@
 
 import { useCallback } from "react"
 
-import type { SendInstruction } from "@/features/conversations/conversation-actions-context"
+import type { SendInstruction } from "@/components/tool-ui/conversation-actions-context"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 
 export function useSendInstruction(

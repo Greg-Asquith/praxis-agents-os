@@ -42,6 +42,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Sparkline } from "@/components/ui/sparkline"
 import {
   Table,
   TableBody,
@@ -425,7 +426,7 @@ export function dataColumnsToDefs(
         id: column.key,
         cell: () => <DataCellFromContext column={column} renderCell={renderCell} />,
         enableHiding: true,
-        enableSorting: sortable,
+        enableSorting: sortable && column.kind !== "sparkline",
         header: ({ header }) => <header.ColumnHeader />,
         meta: {
           align: columnAlignment(column),
@@ -495,6 +496,9 @@ export function DataTableSkeleton({ label = "Loading report…" }: { label?: str
 }
 
 function DataCell({ column, value }: { column: DataColumn; value: unknown }) {
+  if (column.kind === "sparkline") {
+    return <Sparkline label={column.label} values={value} />
+  }
   const formatted = formatDataCell(column, value)
   if (column.kind === "status" || column.kind === "badge") {
     return (
@@ -611,6 +615,9 @@ function columnWidth(column: DataColumn): number | "auto" {
   }
   if (column.kind === "id" || column.kind === "date" || column.kind === "status") {
     return 136
+  }
+  if (column.kind === "sparkline") {
+    return 96
   }
   return 120
 }
