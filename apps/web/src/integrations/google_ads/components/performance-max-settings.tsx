@@ -137,6 +137,7 @@ export function BrandFields({
           }}
           shapeFor={logoShapeFor}
           shapes={LOGO_TYPES}
+          toolName="google_ads_create_campaign"
         />
       </div>
       <p className="text-muted-foreground text-xs">

@@ -42,6 +42,7 @@ export function ImageTiles<T extends Shape>({
   onChange,
   shapeFor,
   shapes,
+  toolName,
 }: {
   addLabel: string
   checks: PerformanceMaxChecks | null
@@ -51,6 +52,8 @@ export function ImageTiles<T extends Shape>({
   onChange: (images: DraftImage<T>[]) => void
   shapeFor: (choice: EntityChoice) => T
   shapes: readonly T[]
+  // The tool whose approval runs the search.
+  toolName: string
 }) {
   const [adding, setAdding] = useState(false)
   return (
@@ -103,7 +106,7 @@ export function ImageTiles<T extends Shape>({
                 setAdding(false)
               }}
               placeholder="Search uploaded images by name"
-              toolName="google_ads_create_campaign"
+              toolName={toolName}
             />
           </div>
           <Button

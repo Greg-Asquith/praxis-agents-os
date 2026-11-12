@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/utils/performance_max_builds.py
 
-"""Rules, account reads, and dry run answers for building a Performance Max campaign."""
+"""Rules, account reads, and dry run answers for building Performance Max campaigns and groups."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -19,7 +19,7 @@ from ...operations.performance_max import (
     read_merchant_center_ids,
 )
 from ...operations.search_campaigns import CampaignItem
-from ...operations.search_targeting import read_languages, read_locations
+from ...operations.search_targeting import read_audiences, read_languages, read_locations
 from ..schemas.campaigns import performance_max_brand_problems
 from ..schemas.performance_max import asset_group_problems
 
@@ -55,18 +55,61 @@ def performance_max_problems(
     if customer_id and any(
         reference.customer_id != customer_id for reference in _media(campaign, request.asset_groups)
     ):
-        problems.append("Choose images and videos from the account the campaign goes in.")
+        problems.append(MEDIA_FROM_ANOTHER_ACCOUNT)
     return problems
+
+
+MEDIA_FROM_ANOTHER_ACCOUNT = "Choose images and videos from the account the campaign is in."
+
+
+def group_media(groups: Sequence["GoogleAdsNewAssetGroup"]) -> list[Any]:
+    """The asset groups' image and video references."""
+    return [
+        *(image.asset for group in groups for image in group.images),
+        *(video for group in groups for video in group.videos),
+    ]
+
+
+def audience_id(kind: str, key: str) -> str:
+    return f"{kind}:{key}"
+
+
+async def read_signal_audiences(
+    client: GoogleAdsClient,
+    *,
+    customer_id: str,
+    login_customer_id: str,
+    groups: Sequence["GoogleAdsNewAssetGroup"],
+) -> dict[str, str]:
+    """Returns the name of each audience signal that exists, by `kind:key`."""
+    keys: dict[str, list[str]] = {}
+    for group in groups:
+        for audience in group.audience_signals:
+            keys.setdefault(audience.kind, []).append(audience.key)
+    if not keys:
+        return {}
+    found = await read_audiences(
+        client, customer_id=customer_id, login_customer_id=login_customer_id, keys=keys
+    )
+    return {audience_id(kind, key): option.name for (kind, key), option in found.items()}
+
+
+def unknown_audiences(
+    groups: Sequence["GoogleAdsNewAssetGroup"], audiences: dict[str, str]
+) -> list[str]:
+    """The `kind:key` of each audience signal the account doesn't have, once each."""
+    ids = (
+        audience_id(audience.kind, audience.key)
+        for group in groups
+        for audience in group.audience_signals
+    )
+    return sorted({item for item in ids if item not in audiences})
 
 
 def _media(
     campaign: "GoogleAdsNewPerformanceMaxCampaign", groups: Sequence["GoogleAdsNewAssetGroup"]
 ) -> list[Any]:
-    return [
-        *(logo.asset for logo in campaign.logos),
-        *(image.asset for group in groups for image in group.images),
-        *(video for group in groups for video in group.videos),
-    ]
+    return [*(logo.asset for logo in campaign.logos), *group_media(groups)]
 
 
 async def read_account_facts(
@@ -137,7 +180,7 @@ def compile_performance_max(
         )
 
 
-async def _read_images(
+async def read_images(
     client: GoogleAdsClient, *, customer_id: str, login_customer_id: str, asset_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
     """Reads each image's name and size, and the shapes it fits."""
@@ -190,8 +233,14 @@ async def performance_max_checks(
         {reference.asset_id for reference in _media(campaign, request.asset_groups)}
         - {video.asset_id for group in request.asset_groups for video in group.videos}
     )
-    images = await _read_images(
+    images = await read_images(
         client, customer_id=customer_id, login_customer_id=login_customer_id, asset_ids=image_ids
+    )
+    audiences = await read_signal_audiences(
+        client,
+        customer_id=customer_id,
+        login_customer_id=login_customer_id,
+        groups=request.asset_groups,
     )
     facts = await read_account_facts(
         client,
@@ -213,7 +262,12 @@ async def performance_max_checks(
             login_customer_id=login_customer_id,
             request=request,
             today=today,
-            known={"locations": set(locations), "languages": set(languages), "images": images},
+            known={
+                "locations": set(locations),
+                "languages": set(languages),
+                "images": images,
+                "audiences": audiences,
+            },
             goals=facts.goals,
         )
     every_location = (*campaign.locations, *campaign.excluded_locations)
@@ -228,6 +282,8 @@ async def performance_max_checks(
         "unknown_languages": [item.key for item in campaign.languages if item.key not in languages],
         "images": images,
         "unknown_images": [asset_id for asset_id in image_ids if asset_id not in images],
+        "audiences": audiences,
+        "unknown_audiences": unknown_audiences(request.asset_groups, audiences),
         "merchant_ids": sorted(facts.merchant_ids),
         "account_goals": [
             {
@@ -242,10 +298,14 @@ async def performance_max_checks(
     }
 
 
-def _images_fit(group: "GoogleAdsNewAssetGroup", images: dict[str, dict[str, Any]]) -> bool:
+def dry_run_ready(group: "GoogleAdsNewAssetGroup", known: dict[str, Any]) -> bool:
+    """True when the card faults none of the group's images or audiences, so Google checks it."""
+    images, audiences = known["images"], known["audiences"]
     return all(
         image.field_type in images.get(image.asset.asset_id, {}).get("fits", ())
         for image in group.images
+    ) and all(
+        audience_id(audience.kind, audience.key) in audiences for audience in group.audience_signals
     )
 
 
@@ -272,9 +332,7 @@ async def _dry_run(
     )
     build = CampaignBuild(customer_id)
     indexes = [
-        index
-        for index, group in enumerate(request.asset_groups)
-        if _images_fit(group, known["images"])
+        index for index, group in enumerate(request.asset_groups) if dry_run_ready(group, known)
     ]
     compile_performance_max(build, request, checked, today, indexes, goals)
     answers: dict[str, list[Any]] = {
@@ -303,21 +361,26 @@ def _sort_answer(
     message = f"Google says: {problem.message}"
     source = problem.step.source if problem.step is not None else None
     if isinstance(source, AssetGroupItem):
-        answers["problems"].append(
-            {
-                "asset_group": request.asset_groups[source.asset_group].name,
-                "kind": source.kind,
-                "field_type": source.field_type,
-                "content": source.content,
-                "message": message,
-            }
-        )
+        answers["problems"].append(asset_group_answer(request.asset_groups, source, message))
     elif isinstance(source, CampaignItem):
         answers["campaign_problems"].append(
             {**campaign_item_fields(campaign, source, goals), "message": message}
         )
     else:
         answers["request_problems"].append(message)
+
+
+def asset_group_answer(
+    groups: Sequence["GoogleAdsNewAssetGroup"], source: AssetGroupItem, message: str
+) -> dict[str, Any]:
+    """Names Google's rejection by group, kind, and content, so an edit can tell it's gone."""
+    return {
+        "asset_group": groups[source.asset_group].name,
+        "kind": source.kind,
+        "field_type": source.field_type,
+        "content": source.content,
+        "message": message,
+    }
 
 
 def campaign_item_fields(

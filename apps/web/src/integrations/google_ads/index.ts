@@ -12,6 +12,7 @@ import { googleAdsSearchTargetingPresenter } from "@/integrations/google_ads/pre
 import { googleAdsUpdateTargetingPresenter } from "@/integrations/google_ads/presenters/update-targeting"
 import { googleAdsCreateAdsPresenter } from "@/integrations/google_ads/presenters/create-ads"
 import { googleAdsCreateAdGroupsPresenter } from "@/integrations/google_ads/presenters/create-ad-groups"
+import { googleAdsCreateAssetGroupsPresenter } from "@/integrations/google_ads/presenters/create-asset-groups"
 import { googleAdsCreateCampaignPresenter } from "@/integrations/google_ads/presenters/create-campaign"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
 import { googleAdsCreateKeywordsPresenter } from "@/integrations/google_ads/presenters/create-keywords"
@@ -50,6 +51,7 @@ export default {
     googleAdsUpdateTargetingPresenter,
     googleAdsCreateAdsPresenter,
     googleAdsCreateAdGroupsPresenter,
+    googleAdsCreateAssetGroupsPresenter,
     googleAdsCreateCampaignPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,

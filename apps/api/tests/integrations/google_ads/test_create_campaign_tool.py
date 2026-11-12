@@ -671,7 +671,7 @@ async def test_an_asset_group_below_a_minimum_or_with_another_accounts_image_is_
         )
 
     assert "Rain Jackets: needs at least 3 headlines, has 2." in str(refused.value)
-    assert "Choose images and videos from the account the campaign goes in." in str(refused.value)
+    assert "Choose images and videos from the account the campaign is in." in str(refused.value)
 
 
 async def test_performance_max_approval_reads_images_feed_and_goals_and_dry_runs(

@@ -373,6 +373,8 @@ type GoogleAdsCampaignBuildKind = Literal[
     "listing_filter",
     "asset_group_link",
     "search_theme",
+    "audience",
+    "audience_signal",
 ]
 
 
@@ -398,7 +400,7 @@ class GoogleAdsCreateCampaignData(GoogleAdsStrictModel):
     outcome: Literal["created", "failed", "unverified"]
     # Set when created, for the agent to pass to other tools.
     campaign: GoogleAdsCampaignReference | None = None
-    kinds: list[GoogleAdsCampaignKindCount] = Field(max_length=18)
+    kinds: list[GoogleAdsCampaignKindCount] = Field(max_length=20)
     ad_groups: list[GoogleAdsCreatedAdGroup] = Field(
         default_factory=list, max_length=MAX_NEW_AD_GROUPS
     )

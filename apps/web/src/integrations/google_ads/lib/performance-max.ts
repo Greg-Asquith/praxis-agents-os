@@ -8,6 +8,7 @@ import { isRecord } from "@/lib/guards"
 
 const MAX_ASSET_GROUPS = 5
 const MAX_SEARCH_THEMES = 25
+export const MAX_AUDIENCE_SIGNALS = 20
 const MAX_LOGOS = 5
 const SHORT_DESCRIPTION = 60
 const BUSINESS_NAME_LENGTH = 25
@@ -63,7 +64,14 @@ export type DraftImage<T extends string = ImageType> = {
   reference: Record<string, unknown>
 }
 
+const SIGNAL_AUDIENCE_KINDS = ["user_list", "user_interest", "custom_audience"] as const
+type SignalAudienceKind = (typeof SIGNAL_AUDIENCE_KINDS)[number]
+
+/** An audience that guides Google; the group's signals read as people in any of them. */
+export type DraftAudienceSignal = { key: string; kind: SignalAudienceKind; name: string }
+
 export type DraftAssetGroup = {
+  audienceSignals: DraftAudienceSignal[]
   descriptions: string[]
   finalUrl: string
   headlines: string[]
@@ -101,10 +109,13 @@ type GroupProblem = {
 /** What Google told the card about a Performance Max campaign. */
 export type PerformanceMaxChecks = {
   accountGoals: AccountGoal[]
+  // Google's name for each audience signal, by `kind:key`.
+  audiences: Map<string, string>
   groupProblems: GroupProblem[]
   images: Map<string, ImageFacts>
   languageNames: Map<string, string>
   merchantIds: string[]
+  unknownAudiences: Set<string>
   unknownImages: Set<string>
   unknownLanguages: Set<string>
 }
@@ -135,6 +146,19 @@ function parseImage<T extends string>(
   }
 }
 
+export function audienceSignalId(signal: { key: string; kind: string }): string {
+  return `${signal.kind}:${signal.key}`
+}
+
+/** An audience signal from the request or an audience search result; null when it can't be one. */
+export function parseAudienceSignal(value: unknown): DraftAudienceSignal | null {
+  if (!isRecord(value)) return null
+  const kind = value["kind"]
+  const key = googleAdsId(value["key"])
+  if (key === null || !SIGNAL_AUDIENCE_KINDS.includes(kind as SignalAudienceKind)) return null
+  return { key, kind: kind as SignalAudienceKind, name: text(value["name"]) }
+}
+
 export function parseAssetGroup(value: unknown): DraftAssetGroup | null {
   if (!isRecord(value) || typeof value["name"] !== "string") return null
   const headlines = strings(value["headlines"])
@@ -143,9 +167,12 @@ export function parseAssetGroup(value: unknown): DraftAssetGroup | null {
   const searchThemes = strings(value["search_themes"])
   const images = parseEach(value["images"], (item) => parseImage(item, IMAGE_TYPES, null))
   const videos = parseEach(value["videos"], (item) => (isRecord(item) ? item : null))
+  const audienceSignals = parseEach(value["audience_signals"] ?? [], parseAudienceSignal)
   if (!headlines || !longHeadlines || !descriptions || !searchThemes || !images || !videos)
     return null
+  if (!audienceSignals) return null
   return {
+    audienceSignals,
     descriptions,
     finalUrl: text(value["final_url"]),
     headlines,
@@ -232,6 +259,7 @@ function parseImageFacts(value: unknown): Map<string, ImageFacts> {
 export function parsePerformanceMaxChecks(value: Record<string, unknown>): PerformanceMaxChecks {
   const names = isRecord(value["languages"]) ? value["languages"] : {}
   const goals = Array.isArray(value["account_goals"]) ? value["account_goals"] : []
+  const audiences = isRecord(value["audiences"]) ? value["audiences"] : {}
   return {
     accountGoals: goals.flatMap((item): AccountGoal[] => {
       const goal = parseGoal(item)
@@ -239,6 +267,11 @@ export function parsePerformanceMaxChecks(value: Record<string, unknown>): Perfo
         ? [{ ...goal, biddable: item["biddable"] === true, name: text(item["name"]) }]
         : []
     }),
+    audiences: new Map(
+      Object.entries(audiences).flatMap(([id, name]) =>
+        typeof name === "string" ? [[id, name] as const] : []
+      )
+    ),
     groupProblems: parseGroupProblems(value["problems"]),
     images: parseImageFacts(value["images"]),
     languageNames: new Map(
@@ -247,6 +280,7 @@ export function parsePerformanceMaxChecks(value: Record<string, unknown>): Perfo
       )
     ),
     merchantIds: strings(value["merchant_ids"]) ?? [],
+    unknownAudiences: new Set(strings(value["unknown_audiences"]) ?? []),
     unknownImages: new Set(strings(value["unknown_images"]) ?? []),
     unknownLanguages: new Set(strings(value["unknown_languages"]) ?? []),
   }
@@ -268,6 +302,11 @@ function serializeAssetGroup(group: DraftAssetGroup): Record<string, unknown> {
     images: group.images.map(imageValue),
     videos: group.videos,
     search_themes: lines(group.searchThemes),
+    audience_signals: group.audienceSignals.map((signal) => ({
+      kind: signal.kind,
+      key: signal.key,
+      name: signal.name || null,
+    })),
   }
 }
 
@@ -374,6 +413,26 @@ function imageProblems(
   return problems
 }
 
+export function audienceSignalName(
+  signal: DraftAudienceSignal,
+  checks: PerformanceMaxChecks | null
+): string {
+  return checks?.audiences.get(audienceSignalId(signal)) ?? (signal.name || signal.key)
+}
+
+function audienceProblems(group: DraftAssetGroup, checks: PerformanceMaxChecks | null): string[] {
+  const problems: string[] = []
+  if (group.audienceSignals.length > MAX_AUDIENCE_SIGNALS)
+    problems.push(`Takes at most ${String(MAX_AUDIENCE_SIGNALS)} audiences in its signal.`)
+  for (const signal of group.audienceSignals) {
+    if (checks?.unknownAudiences.has(audienceSignalId(signal)))
+      problems.push(`${signal.name || signal.key} isn't an audience in this account. Remove it.`)
+  }
+  return problems
+}
+
+const SIGNAL_KINDS = new Set(["audience", "audience_signal"])
+
 /** Google's dry run answers for the group, while what it rejected is still there. */
 function googleGroupProblems(
   group: DraftAssetGroup,
@@ -391,7 +450,8 @@ function googleGroupProblems(
     .filter(
       (problem) =>
         problem.assetGroup === group.name &&
-        (problem.content === null || present.has(problem.content))
+        (problem.content === null || present.has(problem.content)) &&
+        (!SIGNAL_KINDS.has(problem.kind) || group.audienceSignals.length > 0)
     )
     .map((problem) =>
       problem.content ? `${problem.content}: ${problem.message}` : problem.message
@@ -426,7 +486,7 @@ function assetGroupProblems(
     problems.push(`Takes at most ${String(MAX_SEARCH_THEMES)} search themes.`)
   if (themes.some((theme) => characterCount(theme) > SEARCH_THEME_LENGTH))
     problems.push(`A search theme is over ${String(SEARCH_THEME_LENGTH)} characters.`)
-  return [...problems, ...googleGroupProblems(group, checks)]
+  return [...problems, ...audienceProblems(group, checks), ...googleGroupProblems(group, checks)]
 }
 
 export function assetGroupRows(
@@ -514,7 +574,9 @@ export function assetGroupsObjectCount(groups: readonly DraftAssetGroup[]): numb
           textLines(group.descriptions).length) +
       group.images.length +
       group.videos.length +
-      textLines(group.searchThemes).length,
+      textLines(group.searchThemes).length +
+      // One audience and one signal, however many audiences it holds.
+      (group.audienceSignals.length > 0 ? 2 : 0),
     0
   )
 }
@@ -523,6 +585,7 @@ export function blankAssetGroup(groups: readonly DraftAssetGroup[]): DraftAssetG
   if (groups.length >= MAX_ASSET_GROUPS) return null
   const finalUrl = groups[0]?.finalUrl ?? ""
   return {
+    audienceSignals: [],
     descriptions: [],
     finalUrl,
     headlines: [],

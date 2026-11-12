@@ -7,12 +7,21 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
-from ...references import GoogleAdsAssetGroupReference, GoogleAdsAssetReference
+from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
+
+from ...references import (
+    GoogleAdsAssetGroupReference,
+    GoogleAdsAssetReference,
+    GoogleAdsCampaignReference,
+)
+from .ad_groups import MAX_OBJECTS, MAX_RESULT_PROBLEMS
 from .base import GoogleAdsStrictModel
 from .positive_keywords import GoogleAdsFinalUrl
 
 MAX_NEW_ASSET_GROUPS = 5
 MAX_SEARCH_THEMES = 25
+# Segments in one asset group's audience signal; enough for any signal an operator reads.
+MAX_AUDIENCE_SEGMENTS = 20
 MAX_LOGOS = 5
 # The longest description Google accepts; at least one must also fit the short length.
 SHORT_DESCRIPTION = 60
@@ -21,6 +30,8 @@ type GoogleAdsAssetGroupImageType = Literal[
     "MARKETING_IMAGE", "SQUARE_MARKETING_IMAGE", "PORTRAIT_MARKETING_IMAGE"
 ]
 type GoogleAdsLogoType = Literal["LOGO", "LANDSCAPE_LOGO"]
+# Google's audience segments; a combined audience can't be one.
+type GoogleAdsSignalAudienceKind = Literal["user_list", "user_interest", "custom_audience"]
 
 # Google's minimum and maximum of each asset type in one asset group.
 ASSET_GROUP_LIMITS: Mapping[str, tuple[int, int]] = {
@@ -81,6 +92,15 @@ class GoogleAdsCampaignLogo(GoogleAdsStrictModel):
         return self
 
 
+class GoogleAdsAudienceSignal(GoogleAdsStrictModel):
+    """An audience from google_ads_search_targeting that guides Google, without limiting reach."""
+
+    kind: GoogleAdsSignalAudienceKind
+    key: Annotated[str, Field(pattern=r"^[0-9]{1,20}$")]
+    # For display until Google's own name is read back.
+    name: str | None = Field(default=None, max_length=500)
+
+
 class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
     """One asset group: its landing page, the text and media Google mixes into ads, and themes."""
 
@@ -96,6 +116,14 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
         default_factory=list, max_length=15, description="YouTube video assets."
     )
     search_themes: list[_SearchTheme] = Field(default_factory=list, max_length=MAX_SEARCH_THEMES)
+    audience_signals: list[GoogleAdsAudienceSignal] = Field(
+        default_factory=list,
+        max_length=MAX_AUDIENCE_SEGMENTS,
+        description=(
+            "Your-data lists, interests, and custom audiences, from google_ads_search_targeting. "
+            "Google reads them as one signal: people in any of them."
+        ),
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -126,6 +154,9 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
             raise ValueError(f"{self.name}: videos must be YouTube video assets.")
         if len({video.asset_id for video in self.videos}) != len(self.videos):
             raise ValueError(f"{self.name}: list each video once.")
+        audiences = [(audience.kind, audience.key) for audience in self.audience_signals]
+        if len(set(audiences)) != len(audiences):
+            raise ValueError(f"{self.name}: list each audience signal once.")
         return self
 
     @property
@@ -147,9 +178,15 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
 
     @property
     def object_count(self) -> int:
-        """The group, its filter, and at most an asset and a link for each text, plus the rest."""
+        """The group, its filter, and at most an asset and a link for each text, plus the rest.
+
+        An audience signal is an audience and a signal, however many segments it holds.
+        """
         texts = len(self.headlines) + len(self.long_headlines) + len(self.descriptions)
-        return 2 + 2 * texts + len(self.images) + len(self.videos) + len(self.search_themes)
+        signal = 2 if self.audience_signals else 0
+        return (
+            2 + 2 * texts + len(self.images) + len(self.videos) + len(self.search_themes) + signal
+        )
 
 
 def asset_group_problems(group: GoogleAdsNewAssetGroup, *, retail: bool) -> list[str]:
@@ -193,3 +230,65 @@ class GoogleAdsCreatedAssetGroup(GoogleAdsStrictModel):
     images: int = Field(ge=0)
     videos: int = Field(ge=0)
     search_themes: int = Field(ge=0)
+    audience_signals: int = Field(default=0, ge=0)
+
+
+class GoogleAdsCreateAssetGroupsRequest(GoogleAdsStrictModel):
+    """Every argument of an asset group creation, so an edited approval is checked whole."""
+
+    campaign: GoogleAdsCampaignReference
+    asset_groups: list[GoogleAdsNewAssetGroup] = Field(
+        min_length=1, max_length=MAX_NEW_ASSET_GROUPS
+    )
+    status: Literal["PAUSED", "ENABLED"] = "PAUSED"
+
+    @model_validator(mode="after")
+    def _whole_request(self) -> Self:
+        names = [group.name.casefold() for group in self.asset_groups]
+        if len(set(names)) != len(names):
+            raise ValueError("Give each new asset group a different name.")
+        if sum(group.object_count for group in self.asset_groups) > MAX_OBJECTS:
+            raise ValueError(f"One request can create at most {MAX_OBJECTS:,} objects.")
+        return self
+
+
+type GoogleAdsAssetGroupBuildKind = Literal[
+    "asset_group",
+    "listing_filter",
+    "text_asset",
+    "asset_group_link",
+    "search_theme",
+    "audience",
+    "audience_signal",
+]
+
+
+class GoogleAdsAssetGroupKindCount(GoogleAdsStrictModel):
+    kind: GoogleAdsAssetGroupBuildKind
+    created: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
+class GoogleAdsAssetGroupProblemRow(GoogleAdsStrictModel):
+    item: str
+    kind: GoogleAdsAssetGroupBuildKind
+    message: str
+    error_code: str | None = None
+
+
+class GoogleAdsCreateAssetGroupsData(GoogleAdsStrictModel):
+    account_id: str
+    campaign_name: str
+    requested_status: Literal["PAUSED", "ENABLED"]
+    kinds: list[GoogleAdsAssetGroupKindCount] = Field(max_length=7)
+    asset_groups: list[GoogleAdsCreatedAssetGroup] = Field(max_length=MAX_NEW_ASSET_GROUPS)
+    problems: list[GoogleAdsAssetGroupProblemRow] = Field(max_length=MAX_RESULT_PROBLEMS)
+
+
+class GoogleAdsCreateAssetGroupsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsCreateAssetGroupsData | None = None
+
+
+class GoogleAdsCreateAssetGroupsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsCreateAssetGroupsEntry]

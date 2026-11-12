@@ -21,6 +21,8 @@ type BuildKind =
   | "listing_filter"
   | "asset_group_link"
   | "search_theme"
+  | "audience"
+  | "audience_signal"
 
 export type BuildKindCount = {
   created: number
@@ -43,6 +45,8 @@ export const BUILD_KIND_LABELS: Record<BuildKind, { one: string; many: string }>
   ad_group: { one: "Ad group", many: "Ad groups" },
   asset_group: { one: "Asset group", many: "Asset groups" },
   asset_group_link: { one: "Asset in an asset group", many: "Assets in asset groups" },
+  audience: { one: "Audience", many: "Audiences" },
+  audience_signal: { one: "Audience signal", many: "Audience signals" },
   brand_link: { one: "Business name or logo", many: "Business name and logos" },
   conversion_goal: { one: "Conversion goal", many: "Conversion goals" },
   language: { one: "Language", many: "Languages" },

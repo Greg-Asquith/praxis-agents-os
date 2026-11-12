@@ -108,6 +108,7 @@ _KINDS = (
     "listing_filter",
     "asset_group_link",
     "search_theme",
+    "audience_signal",
 )
 _ONE_ACCOUNT = (
     "A campaign goes in one account. Ask the user to select exactly one Google Ads account "
@@ -490,6 +491,7 @@ def _result(
                 "images": len(group.images),
                 "videos": len(group.videos),
                 "search_themes": len(group.search_themes),
+                "audience_signals": len(group.audience_signals),
             }
             for index, group in enumerate(request.asset_groups)
         ]
@@ -712,9 +714,11 @@ DEFINITION = RuntimeToolDefinition(
         "15 headlines (30 characters), 1 to 5 long_headlines (90), 2 to 5 descriptions (90, one "
         "of them 60 or fewer), images [{asset, field_type}] with at least one MARKETING_IMAGE "
         "(landscape) and one SQUARE_MARKETING_IMAGE, optional PORTRAIT_MARKETING_IMAGE, "
-        "optional videos (YouTube video asset references), and up to 25 search_themes. Images "
-        "and videos are asset references from google_ads_upload_media; use a field_type its "
-        "fits lists. budget is {kind: 'new', daily_amount}; Performance Max can't share a "
+        "optional videos (YouTube video asset references), up to 25 search_themes, and up to 20 "
+        "audience_signals [{kind, key, name}]: user_list, user_interest, or custom_audience "
+        "audiences from google_ads_search_targeting, which guide Google without limiting reach. "
+        "Images and videos are asset references from google_ads_upload_media; use a field_type "
+        "its fits lists. budget is {kind: 'new', daily_amount}; Performance Max can't share a "
         "budget. bidding is MAXIMIZE_CONVERSIONS with optional target_cpa, or "
         "MAXIMIZE_CONVERSION_VALUE with optional target_roas. languages are language keys from "
         "google_ads_search_targeting; none means every language. business_name (25) and logos "
@@ -773,7 +777,7 @@ DEFINITION = RuntimeToolDefinition(
                 label="Asset Groups",
                 editable=True,
                 format="structured",
-                entity_kinds=("google_ads_asset",),
+                entity_kinds=("google_ads_asset", "google_ads_audience"),
             ),
             ToolFieldPresentation(
                 key="status", label="Status", editable=True, options=("PAUSED", "ENABLED")

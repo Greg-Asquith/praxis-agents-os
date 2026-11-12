@@ -38,6 +38,7 @@ type BuildResource = Literal[
     "assetGroupAsset",
     "assetGroupSignal",
     "assetGroupListingGroupFilter",
+    "audience",
     "campaignConversionGoal",
     "sharedSet",
     "sharedCriterion",
@@ -61,6 +62,8 @@ _COLLECTIONS: dict[str, tuple[str, int]] = {
     "assetGroupAsset": ("assetGroupAssets", 8),
     "assetGroupSignal": ("assetGroupSignals", 8),
     "assetGroupListingGroupFilter": ("assetGroupListingGroupFilters", 8),
+    # An audience signal's audience names its asset group, and the signal names the audience.
+    "audience": ("audiences", 8),
     # Google makes a new campaign's goals with the campaign, so they're updated after it.
     "campaignConversionGoal": ("campaignConversionGoals", 9),
     "sharedSet": ("sharedSets", 1),
@@ -70,7 +73,7 @@ _COLLECTIONS: dict[str, tuple[str, int]] = {
 # Objects other operations refer to get a temporary name; Google names the rest.
 # The only resource a build updates rather than creates.
 _UPDATED = {"campaignConversionGoal"}
-_NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup", "sharedSet"}
+_NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup", "audience", "sharedSet"}
 _TEMPORARY_NAME = re.compile(r"customers/\d+/[A-Za-z]+/-\d+")
 _NOTHING_CREATED = "Google Ads created nothing, because part of the request was rejected."
 

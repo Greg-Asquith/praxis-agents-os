@@ -118,11 +118,12 @@ endpoint per resource type. Two seams build on it:
   Working policy."
 - **Build seam** (`operations/build.py`). `CampaignBuild` collects the
   objects to create in one account. Budgets, assets, campaigns, ad groups,
-  asset groups, and shared lists get temporary resource names (`-1`, `-2`,
-  and so on).
+  asset groups, audiences, and shared lists get temporary resource names
+  (`-1`, `-2`, and so on).
   A step that refers to a temporary name the build hasn't made is
   rejected. Steps are sent parents first: budgets, assets, campaigns,
-  campaign criteria, ad groups, keywords, ads, asset groups, then links.
+  campaign criteria, ad groups, keywords, ads, asset groups, then links,
+  signals, and audiences, in the order the build added them.
   `dry_run_build` reports each step Google rejects. `send_build` sends one
   atomic request (`partialFailure: false`), so a rejection creates nothing,
   and maps each temporary name to its real resource name.
@@ -625,8 +626,14 @@ declaration work as for Search. The campaign also takes these fields:
 Each asset group has a `name`, `final_url`, `headlines`, `long_headlines`, `descriptions`,
 `images` (`{asset, field_type}` with `MARKETING_IMAGE`, `SQUARE_MARKETING_IMAGE`, or
 `PORTRAIT_MARKETING_IMAGE`), `videos` (YouTube video asset references), and up to 25
-`search_themes`, sent as `assetGroupSignal` search themes. Audience signals are pending
-(310 B). Google's minimums are in `ASSET_GROUP_LIMITS` in
+`search_themes`, sent as `assetGroupSignal` search themes, and up to 20
+`audience_signals` (`{kind, key, name}`: `user_list`, `user_interest`, or `custom_audience`
+from `google_ads_search_targeting`). A combined audience can't be a signal, because
+Google's `Audience` resource can't hold one. The group's audiences become one audience of
+its own (`Audience` with `scope: ASSET_GROUP`, no name, and one `audienceSegments`
+dimension holding every audience, so Google reads them as people in any of them), and one
+`assetGroupSignal` that names it, both in the same atomic request. Google removes that
+audience with the group. Google's minimums are in `ASSET_GROUP_LIMITS` in
 `tools/schemas/performance_max.py`: 3 to 15 headlines (30 characters), 1 to 5 long
 headlines (90), 2 to 5 descriptions (90, one of them 60 or fewer), at least one landscape
 and one square image, and at most 20 images of each shape and 15 videos. The schema holds
@@ -651,12 +658,14 @@ image, logo, or video from another account. While preparing the approval,
 `performance_max_checks` in `tools/utils/performance_max_builds.py` reads Google's names
 for the locations and languages, each image's size and the shapes it fits (`image_fits`
 from `operations/media.py`), the linked Merchant Center accounts (`product_link`), and the
-account goals, then dry runs the build. Google refuses partial failure for these operations,
+account goals, and Google's name for each audience signal (`read_signal_audiences`), then
+dry runs the build. Google refuses partial failure for these operations,
 even with `validateOnly`, so this dry run sends `partialFailure: false` and reports only
 Google's first rejection, for the whole request. Asset groups with an image in a shape it doesn't
-fit are left out of the dry run, and the dry run is skipped while the card already shows a
+fit, or an audience the account doesn't have, are left out of the dry run (`dry_run_ready`), and the dry run is skipped while the card already shows a
 problem with the brand, the feed, or the goals. `_checks` then also holds `languages`,
-`unknown_languages`, `images`, `unknown_images`, `merchant_ids`, `account_goals`, and
+`unknown_languages`, `images`, `unknown_images`, `audiences` (names by `kind:key`),
+`unknown_audiences`, `merchant_ids`, `account_goals`, and
 Google's asset group rejections by group name, kind, field type, and content. After
 approval, the tool reads the account again and refuses a Merchant Center account that
 isn't linked and a goal the account doesn't have, with nothing sent.
@@ -675,15 +684,48 @@ accepts only a JPEG or PNG data URL whose bytes start with that format's signatu
 
 The result has `campaign_type`, and `asset_groups` in place of `ad_groups`, with each
 group's reference and counts. It counts text assets, brand links, asset group links,
-search themes, product filters, languages, and goal updates as kinds.
+search themes, audience signals, product filters, languages, and goal updates as kinds.
 
 The card (`components/create-campaign-approval.tsx`) shows the Search card's rows plus
 **Goals** and **Brand**, with languages under **Locations** and final URL expansion and the
 product feed under **More Settings**. `components/asset-groups-editor.tsx` lists the asset
 groups with each text type and the images counted against Google's minimums ("2 of 3" in
 red), and the open group below: its final URL, text pasted one per line, images with
-their shape, and search themes, labelled as guidance that doesn't limit reach. Cancel and
-Restore work as for ad groups.
+their shape, search themes, and **Audience Signals**, both labelled as guidance that
+doesn't limit reach. Audiences are found with the `google_ads_audience` search; a combined
+audience is shown as taken, and one the account doesn't have is a problem on its group.
+The editor takes the `toolName` whose approval runs its image and audience searches.
+Cancel and Restore work as for ad groups.
+
+### Asset group creation
+
+`google_ads_create_asset_groups` adds 1 to 5 asset groups to one live Performance Max
+campaign in one approval, created paused unless `status` is `ENABLED`. Each group takes
+`GoogleAdsNewAssetGroup`, as Performance Max creation does, and compiles with the same
+`add_asset_group`, so its text assets, image and video links, search themes, audience
+signal, and (in a campaign with a feed) root listing filter go in one atomic request.
+
+`read_performance_max_campaign` in `operations/performance_max.py` reads the campaign's
+channel, `brand_guidelines_enabled`, `shopping_setting.merchant_id`, and the names of its
+live asset groups. Before the dry run, and again after approval with nothing sent, the
+tool refuses:
+
+- a campaign that is removed or isn't Performance Max
+- a campaign with brand guidelines off, whose business name and logos belong to each
+  asset group; adding those per group is pending, so the refusal asks the operator to
+  turn brand guidelines on in Google Ads
+- more asset groups than the campaign has room for (Google allows 100)
+- a name the campaign already uses, compared without case
+- a group under a minimum (a group with no assets of its own is exempt in a campaign with
+  a feed), and an image or video from another account
+
+While preparing the approval, `_checks` holds the campaign (`key`, `name`, `retail`,
+`problem`), `existing_names`, `images`, `unknown_images`, `audiences`, `unknown_audiences`,
+Google's rejections by group, and whole-request problems. The dry run sends
+`partialFailure: false`, as Performance Max creation does. The result has the campaign
+name, kinds, and each group's outcome, reference, and counts. Audit intents are grouped by
+asset group, keyed by build step. `campaign` leads the review, with `google_ads_asset` and
+`google_ads_audience` searches on `asset_groups`.
 
 ### Targeting
 
@@ -1465,6 +1507,17 @@ More Settings (networks, dates, the EU political declaration, campaign negatives
 `KeywordPaste`, and sitelinks and callouts for every ad group with `NewAssetsEditor`). The ad groups follow with `AdGroupSummary` and `NewAdGroups`, as on Create
 Ad Groups, with the same Cancel These N and Restore. The approve button reads **Create
 Campaign**.
+
+### Add Asset Groups card
+
+`lib/create-asset-groups.ts` parses the request with `_accounts` and `_checks` and reuses
+the asset group rules in `lib/performance-max.ts`, adding a problem for a name the campaign
+already uses. The campaign's checks apply only while the operator keeps the checked
+campaign. `components/create-asset-groups-approval.tsx` shows `StatusChoice`, then the
+campaign on `ParentTable` with **Change Campaign**, then `AssetGroupsEditor` with
+`toolName` set to `google_ads_create_asset_groups`, and **Check Changes** after an edit.
+The approve button reads **Add N Asset Groups**. The result is `CampaignBuildOutcome`, as
+on the other create cards.
 
 ### Update Targeting card
 

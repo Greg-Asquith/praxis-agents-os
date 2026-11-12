@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/performance_max.py
 
-"""Compiles a new Performance Max campaign and its asset groups for the build seam."""
+"""Compiles Performance Max campaigns and asset groups for the build seam, and reads live ones."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,6 +12,7 @@ from services.integrations.http import IntegrationRequestPolicy
 from ..client import GoogleAdsClient, normalize_customer_id
 from .build import CampaignBuild
 from .conversion_settings import LiveAccountGoal
+from .criteria import AUDIENCE_FIELDS
 from .search_campaigns import (
     CampaignItem,
     add_campaign_budget,
@@ -25,11 +26,19 @@ if TYPE_CHECKING:
     from ..tools.schemas.performance_max import GoogleAdsNewAssetGroup
 
 type AssetGroupItemKind = Literal[
-    "asset_group", "listing_filter", "text_asset", "asset_group_link", "search_theme"
+    "asset_group",
+    "listing_filter",
+    "text_asset",
+    "asset_group_link",
+    "search_theme",
+    "audience",
+    "audience_signal",
 ]
 
 # Merchant Center links one account holds; far more than any account has.
 _MAX_MERCHANT_LINKS = 1_000
+# Google allows 100 asset groups in a campaign, so one more shows the read is whole.
+_MAX_ASSET_GROUPS_READ = 101
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +226,38 @@ def add_asset_group(
             label=theme,
             source=AssetGroupItem("search_theme", index, content=theme),
         )
+    if group.audience_signals:
+        _add_audience_signal(build, group, name, index)
+
+
+def _add_audience_signal(
+    build: CampaignBuild, group: "GoogleAdsNewAssetGroup", asset_group: str | None, index: int
+) -> None:
+    """Adds one audience of the group's own holding every segment, so Google reads them as OR."""
+    segments = []
+    for audience in group.audience_signals:
+        field, inner, collection = AUDIENCE_FIELDS[audience.kind]
+        segments.append(
+            {field: {inner: f"customers/{build.customer_id}/{collection}/{audience.key}"}}
+        )
+    label = f"{group.name}: audience signal"
+    # An asset group's own audience takes no name, and Google removes it with the group.
+    audience = build.create(
+        "audience",
+        {
+            "scope": "ASSET_GROUP",
+            "assetGroup": asset_group,
+            "dimensions": [{"audienceSegments": {"segments": segments}}],
+        },
+        label=label,
+        source=AssetGroupItem("audience", index),
+    )
+    build.create(
+        "assetGroupSignal",
+        {"assetGroup": asset_group, "audience": {"audience": audience}},
+        label=label,
+        source=AssetGroupItem("audience_signal", index),
+    )
 
 
 def _link(
@@ -256,3 +297,66 @@ async def read_merchant_center_ids(
         if merchant.isdigit():
             ids.add(merchant)
     return ids
+
+
+@dataclass(frozen=True, slots=True)
+class PerformanceMaxCampaignFacts:
+    """A live campaign's channel, brand placement, feed, and the names of its asset groups."""
+
+    name: str
+    channel: str
+    # False when the business name and logos belong to each asset group, not the campaign.
+    brand_guidelines: bool
+    merchant_id: str | None
+    asset_group_names: tuple[str, ...]
+
+
+async def read_performance_max_campaign(
+    client: GoogleAdsClient, *, customer_id: str, login_customer_id: str, campaign_id: str
+) -> PerformanceMaxCampaignFacts | None:
+    """Returns the campaign's facts, or None when it's removed or doesn't exist."""
+    if not campaign_id.isdigit():
+        raise ValueError("Google Ads campaign ids must contain only digits")
+    path = f"customers/{normalize_customer_id(customer_id)}/googleAds:searchStream"
+    campaigns = await client.post(
+        path,
+        operation="read_performance_max_campaign",
+        policy=IntegrationRequestPolicy.READ,
+        login_customer_id=login_customer_id,
+        json={
+            "query": (
+                "SELECT campaign.id, campaign.name, campaign.advertising_channel_type, "  # noqa: S608 -- digit-only id
+                "campaign.brand_guidelines_enabled, campaign.shopping_setting.merchant_id "
+                f"FROM campaign WHERE campaign.id = {campaign_id} AND campaign.status != 'REMOVED'"
+            )
+        },
+    )
+    rows = stream_rows(campaigns, max_rows=1)
+    campaign = rows[0].get("campaign") if rows else None
+    if not isinstance(campaign, dict):
+        return None
+    groups = await client.post(
+        path,
+        operation="read_performance_max_campaign",
+        policy=IntegrationRequestPolicy.READ,
+        login_customer_id=login_customer_id,
+        json={
+            "query": (
+                "SELECT asset_group.id, asset_group.name FROM asset_group "  # noqa: S608 -- digit-only id
+                f"WHERE campaign.id = {campaign_id} AND asset_group.status != 'REMOVED' "
+                f"ORDER BY asset_group.id LIMIT {_MAX_ASSET_GROUPS_READ}"
+            )
+        },
+    )
+    merchant = str((campaign.get("shoppingSetting") or {}).get("merchantId") or "")
+    return PerformanceMaxCampaignFacts(
+        name=str(campaign.get("name") or f"Campaign {campaign_id}"),
+        channel=str(campaign.get("advertisingChannelType") or ""),
+        brand_guidelines=campaign.get("brandGuidelinesEnabled") is True,
+        merchant_id=merchant if merchant.isdigit() and merchant != "0" else None,
+        asset_group_names=tuple(
+            str(row["assetGroup"]["name"])
+            for row in stream_rows(groups, max_rows=_MAX_ASSET_GROUPS_READ)
+            if isinstance(row.get("assetGroup"), dict) and row["assetGroup"].get("name")
+        ),
+    )

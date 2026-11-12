@@ -12,6 +12,15 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads asset groups in live Performance Max campaigns:
+  `google_ads_create_asset_groups` adds up to five complete asset groups to
+  a campaign in one approval, all created or none. The card lists the
+  campaign first, counts each asset type against Google's minimum, and
+  refuses a campaign that isn't Performance Max or keeps its brand on each
+  asset group, and a name the campaign already uses. New asset groups, here
+  and on Create Campaign, take audience signals: your own lists, interests,
+  and custom audiences, which guide Google without limiting who sees the ads.
+
 - Claude Fable 5.2 as the Anthropic Max model, with standard token pricing
   effective from 9 November 2026 and support for adaptive thinking and
   structured output through the Claude API and configured Vertex projects.

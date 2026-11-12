@@ -7,10 +7,13 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
+import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { ImageTiles } from "@/integrations/google_ads/components/image-tiles"
 import { TextAssetList } from "@/integrations/google_ads/components/text-asset-list"
 import {
+  audienceSignalId,
+  audienceSignalName,
   blankAssetGroup,
   IMAGE_LIMITS,
   IMAGE_TYPE_LABELS,
@@ -19,11 +22,14 @@ import {
   imageProblem,
   imageShapeFor,
   isBare,
+  MAX_AUDIENCE_SIGNALS,
+  parseAudienceSignal,
   TEXT_LIMITS,
   SEARCH_THEME_LIMITS,
   textLines,
   type AssetGroupRow,
   type DraftAssetGroup,
+  type DraftAudienceSignal,
   type PerformanceMaxChecks,
   type TextKind,
 } from "@/integrations/google_ads/lib/performance-max"
@@ -60,6 +66,7 @@ export function AssetGroupsEditor({
   onSave,
   retail,
   rows,
+  toolName,
 }: {
   checks: PerformanceMaxChecks | null
   disabled: boolean
@@ -68,6 +75,8 @@ export function AssetGroupsEditor({
   // True when a product feed fills groups that link no assets of their own.
   retail: boolean
   rows: readonly AssetGroupRow[]
+  // The tool whose approval runs image and audience searches.
+  toolName: string
 }) {
   const [open, setOpen] = useState(() => rows.find((row) => row.problems.length > 0)?.index ?? 0)
   const openRow = rows[Math.min(open, rows.length - 1)]
@@ -184,6 +193,7 @@ export function AssetGroupsEditor({
           }}
           retail={retail}
           row={openRow}
+          toolName={toolName}
         />
       ) : null}
       {blank ? (
@@ -239,12 +249,14 @@ function AssetGroupFields({
   onEdit,
   retail,
   row,
+  toolName,
 }: {
   checks: PerformanceMaxChecks | null
   disabled: boolean
   onEdit: (patch: Partial<DraftAssetGroup>) => void
   retail: boolean
   row: AssetGroupRow
+  toolName: string
 }) {
   const urlId = useId()
   const { group } = row
@@ -310,6 +322,7 @@ function AssetGroupFields({
             }}
             shapeFor={imageShapeFor}
             shapes={IMAGE_TYPES}
+            toolName={toolName}
           />
         </SettingRow>
         {group.videos.length > 0 ? (
@@ -357,6 +370,28 @@ function AssetGroupFields({
             }}
           />
         </SettingRow>
+        <SettingRow
+          rowKey="audiences"
+          summary={audiencesSummary(group.audienceSignals.length)}
+          title="Audience Signals"
+          tone={
+            group.audienceSignals.some((signal) =>
+              checks?.unknownAudiences.has(audienceSignalId(signal))
+            )
+              ? "error"
+              : "neutral"
+          }
+        >
+          <AudienceSignals
+            checks={checks}
+            disabled={disabled}
+            onChange={(audienceSignals) => {
+              onEdit({ audienceSignals })
+            }}
+            signals={group.audienceSignals}
+            toolName={toolName}
+          />
+        </SettingRow>
       </SettingRows>
       {row.problems.length > 1 ? (
         <ul className="text-destructive grid gap-0.5 border-t px-3 py-2 text-xs" role="alert">
@@ -366,6 +401,110 @@ function AssetGroupFields({
             </li>
           ))}
         </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function audiencesSummary(count: number): string {
+  if (count === 0) return "None · optional"
+  return `${String(count)} audience${count === 1 ? "" : "s"} · guide Google, don't limit reach`
+}
+
+/** The audiences in a group's signal, and a search for more. */
+function AudienceSignals({
+  checks,
+  disabled,
+  onChange,
+  signals,
+  toolName,
+}: {
+  checks: PerformanceMaxChecks | null
+  disabled: boolean
+  onChange: (signals: DraftAudienceSignal[]) => void
+  signals: readonly DraftAudienceSignal[]
+  toolName: string
+}) {
+  const [adding, setAdding] = useState(false)
+  const taken = new Set(signals.map(audienceSignalId))
+  return (
+    <div className="grid min-w-0 gap-2">
+      {signals.length > 0 ? (
+        <ul className="grid gap-1">
+          {signals.map((signal, at) => (
+            <li key={audienceSignalId(signal)} className="flex items-center gap-2 text-sm">
+              <span
+                className={cn(
+                  "min-w-0 flex-1 wrap-anywhere",
+                  checks?.unknownAudiences.has(audienceSignalId(signal)) && "text-destructive"
+                )}
+              >
+                {audienceSignalName(signal, checks)}
+              </span>
+              <Button
+                aria-label={`Remove ${audienceSignalName(signal, checks)}`}
+                disabled={disabled}
+                onClick={() => {
+                  onChange(signals.filter((_, index) => index !== at))
+                }}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                <XIcon />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {adding ? (
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <EntitySearch
+              disabled={disabled}
+              entityKind="google_ads_audience"
+              fieldKey="asset_groups"
+              // A combined audience can't be part of a signal.
+              isTaken={(choice) => {
+                const signal = parseAudienceSignal(choice.value)
+                return signal === null || taken.has(audienceSignalId(signal))
+              }}
+              label="Search for an audience"
+              onChoose={(choice) => {
+                const signal = parseAudienceSignal(choice.value)
+                if (signal) onChange([...signals, signal])
+                setAdding(false)
+              }}
+              placeholder="Search your lists, interests, and custom audiences"
+              searchRequired
+              toolName={toolName}
+            />
+          </div>
+          <Button
+            onClick={() => {
+              setAdding(false)
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : signals.length < MAX_AUDIENCE_SIGNALS ? (
+        <Button
+          className="w-fit"
+          disabled={disabled}
+          onClick={() => {
+            setAdding(true)
+          }}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          <PlusIcon />
+          Add an Audience
+        </Button>
       ) : null}
     </div>
   )

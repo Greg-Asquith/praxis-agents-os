@@ -203,6 +203,7 @@ export function CreateCampaignApproval({
             onSave={saveAssetGroups}
             retail={campaign.performanceMax?.merchant != null}
             rows={groupRows}
+            toolName="google_ads_create_campaign"
           />
         </>
       ) : (
