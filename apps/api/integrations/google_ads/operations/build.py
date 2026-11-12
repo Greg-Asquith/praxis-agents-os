@@ -37,6 +37,8 @@ type BuildResource = Literal[
     "adGroupAsset",
     "assetGroupAsset",
     "assetGroupSignal",
+    "assetGroupListingGroupFilter",
+    "campaignConversionGoal",
     "sharedSet",
     "sharedCriterion",
     "campaignSharedSet",
@@ -58,11 +60,16 @@ _COLLECTIONS: dict[str, tuple[str, int]] = {
     "adGroupAsset": ("adGroupAssets", 8),
     "assetGroupAsset": ("assetGroupAssets", 8),
     "assetGroupSignal": ("assetGroupSignals", 8),
+    "assetGroupListingGroupFilter": ("assetGroupListingGroupFilters", 8),
+    # Google makes a new campaign's goals with the campaign, so they're updated after it.
+    "campaignConversionGoal": ("campaignConversionGoals", 9),
     "sharedSet": ("sharedSets", 1),
     "sharedCriterion": ("sharedCriteria", 3),
     "campaignSharedSet": ("campaignSharedSets", 8),
 }
 # Objects other operations refer to get a temporary name; Google names the rest.
+# The only resource a build updates rather than creates.
+_UPDATED = {"campaignConversionGoal"}
 _NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup", "sharedSet"}
 _TEMPORARY_NAME = re.compile(r"customers/\d+/[A-Za-z]+/-\d+")
 _NOTHING_CREATED = "Google Ads created nothing, because part of the request was rejected."
@@ -70,7 +77,7 @@ _NOTHING_CREATED = "Google Ads created nothing, because part of the request was 
 
 @dataclass(frozen=True, slots=True)
 class BuildStep:
-    """One object to create. `label` names it for the operator, such as the ad group's name."""
+    """One object to create or update. `label` names it for the operator, such as a name."""
 
     resource: BuildResource
     label: str
@@ -78,6 +85,8 @@ class BuildStep:
     temporary_name: str | None
     # What the caller compiled this from, so a rejection can be traced back to it.
     source: Any = None
+    # The fields an update sets; None for a create.
+    update_mask: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,13 +125,9 @@ class CampaignBuild:
         Raises:
             ValueError: When the body refers to a temporary name this build hasn't made.
         """
-        if resource not in _COLLECTIONS:
+        if resource not in _COLLECTIONS or resource in _UPDATED:
             raise ValueError("Google Ads builds can't create this resource")
-        if len(self._steps) >= MAX_MUTATE_OPERATIONS:
-            raise ValueError("Google Ads builds accept at most 5,000 objects")
-        known = {step.temporary_name for step in self._steps}
-        if any(name not in known for name in _temporary_names(body)):
-            raise ValueError("A Google Ads build step refers to an object it doesn't create")
+        self._check(body)
         temporary_name = None
         if resource in _NAMED:
             collection = _COLLECTIONS[resource][0]
@@ -131,6 +136,28 @@ class CampaignBuild:
             body = {**body, "resourceName": temporary_name}
         self._steps.append(BuildStep(resource, label, body, temporary_name, source))
         return temporary_name
+
+    def update(
+        self,
+        resource: BuildResource,
+        body: Mapping[str, Any],
+        *,
+        update_mask: str,
+        label: str,
+        source: Any = None,
+    ) -> None:
+        """Updates an object Google makes along with one this build creates."""
+        if resource not in _UPDATED:
+            raise ValueError("Google Ads builds can't update this resource")
+        self._check(body)
+        self._steps.append(BuildStep(resource, label, body, None, source, update_mask))
+
+    def _check(self, body: Mapping[str, Any]) -> None:
+        if len(self._steps) >= MAX_MUTATE_OPERATIONS:
+            raise ValueError("Google Ads builds accept at most 5,000 objects")
+        known = {step.temporary_name for step in self._steps}
+        if any(name not in known for name in _temporary_names(body)):
+            raise ValueError("A Google Ads build step refers to an object it doesn't create")
 
     def create_once(
         self,
@@ -152,7 +179,14 @@ class CampaignBuild:
         return sorted(self._steps, key=lambda step: _COLLECTIONS[step.resource][1])
 
     def operations(self) -> list[MutateOperation]:
-        return [MutateOperation(step.resource, {"create": dict(step.body)}) for step in self.steps]
+        return [
+            MutateOperation(step.resource, {"create": dict(step.body)})
+            if step.update_mask is None
+            else MutateOperation(
+                step.resource, {"update": dict(step.body), "updateMask": step.update_mask}
+            )
+            for step in self.steps
+        ]
 
 
 async def dry_run_build(
@@ -161,8 +195,12 @@ async def dry_run_build(
     *,
     login_customer_id: str,
     operation: str,
+    partial_failure: bool = True,
 ) -> list[BuildProblem]:
     """Checks the whole build with Google without creating anything.
+
+    Partial failure reports every rejected step rather than only the first. Builds with
+    Performance Max asset groups turn it off, because Google refuses it for them.
 
     Returns:
         Each rejected step with Google's reason, or one problem for the whole request.
@@ -174,8 +212,7 @@ async def dry_run_build(
             customer_id=build.customer_id,
             login_customer_id=login_customer_id,
             operations=build.operations(),
-            # Partial failure reports every rejected step rather than only the first.
-            partial_failure=True,
+            partial_failure=partial_failure,
             validate_only=True,
             operation=operation,
         )
@@ -276,7 +313,7 @@ def _ledger(
 def _created_name(customer_id: str, step: BuildStep, name: str) -> bool:
     collection = _COLLECTIONS[step.resource][0]
     return (
-        re.fullmatch(rf"customers/{customer_id}/{collection}/\d+(?:~\d+)*(?:~[A-Z_]+)?", name)
+        re.fullmatch(rf"customers/{customer_id}/{collection}/\d+(?:~\d+)*(?:~[A-Z_]+)*", name)
         is not None
     )
 

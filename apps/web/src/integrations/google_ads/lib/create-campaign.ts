@@ -36,6 +36,20 @@ import {
   serializeNewAssets,
   type DraftAsset,
 } from "@/integrations/google_ads/lib/new-assets"
+import {
+  assetGroupRows,
+  assetGroupsObjectCount,
+  parseAssetGroup,
+  parsePerformanceMax,
+  parsePerformanceMaxChecks,
+  performanceMaxProblems,
+  serializeAssetGroups,
+  serializePerformanceMax,
+  type AssetGroupRow,
+  type DraftAssetGroup,
+  type DraftPerformanceMax,
+  type PerformanceMaxChecks,
+} from "@/integrations/google_ads/lib/performance-max"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -57,6 +71,13 @@ export const STRATEGIES = [
   "TARGET_IMPRESSION_SHARE",
 ] as const
 export type Strategy = (typeof STRATEGIES)[number]
+// Performance Max bids only for conversions or their value.
+export const PERFORMANCE_MAX_STRATEGIES = [
+  "MAXIMIZE_CONVERSIONS",
+  "MAXIMIZE_CONVERSION_VALUE",
+] as const satisfies readonly Strategy[]
+
+type CampaignType = "search" | "performance_max"
 
 export const STRATEGY_LABELS: Record<Strategy, string> = {
   MANUAL_CPC: "Manual CPC",
@@ -106,6 +127,9 @@ export type LocationSetting = "PRESENCE" | "PRESENCE_OR_INTEREST"
 export type DraftCampaign = {
   // New sitelinks and callouts for every ad group.
   assets: DraftAsset[]
+  // Set for a Performance Max campaign: its brand, goals, feed, and languages.
+  performanceMax: DraftPerformanceMax | null
+  type: CampaignType
   bidding: DraftBidding
   budget: DraftBudget
   displayExpansion: boolean
@@ -135,6 +159,8 @@ type CampaignChecks =
       campaignProblems: CampaignItemProblem[]
       itemProblems: ItemProblem[]
       locationNames: Map<string, string>
+      // Set for a Performance Max campaign.
+      performanceMax: PerformanceMaxChecks | null
       requestProblems: string[]
       // The date in the account time zone when Google last checked.
       today: string
@@ -144,6 +170,7 @@ type CampaignChecks =
 export type CreateCampaignArgs = {
   accounts: Map<string, GoogleAdsApprovalAccount>
   adGroups: DraftAdGroup[]
+  assetGroups: DraftAssetGroup[]
   campaign: DraftCampaign
   checks: CampaignChecks
   status: "PAUSED" | "ENABLED"
@@ -209,6 +236,10 @@ function parseNegative(value: unknown): PastedKeyword | null {
 
 function parseDraftCampaign(value: unknown): DraftCampaign | null {
   if (!isRecord(value) || typeof value["name"] !== "string") return null
+  const type = value["type"] ?? "search"
+  if (type !== "search" && type !== "performance_max") return null
+  const performanceMax = type === "performance_max" ? parsePerformanceMax(value) : null
+  if (type === "performance_max" && performanceMax === null) return null
   const budget = parseBudget(value["budget"])
   const bidding = parseBidding(value["bidding"])
   const locations = parseEach(value["locations"], parseLocation)
@@ -217,6 +248,8 @@ function parseDraftCampaign(value: unknown): DraftCampaign | null {
   const assets = parseEach(value["assets"], parseNewAsset)
   const setting = value["location_setting"] ?? "PRESENCE"
   if (budget === null || bidding === null || locations === null || excluded === null) return null
+  // Performance Max can't share a budget.
+  if (type === "performance_max" && budget.kind === "shared") return null
   if (
     assets === null ||
     negatives === null ||
@@ -234,9 +267,11 @@ function parseDraftCampaign(value: unknown): DraftCampaign | null {
     locations,
     name: value["name"],
     negatives,
+    performanceMax,
     political: value["contains_eu_political_advertising"] === true,
     searchPartners: value["search_partners"] === true,
     startDate: text(value["start_date"]),
+    type,
   }
 }
 
@@ -272,6 +307,7 @@ function parseChecks(value: unknown): CampaignChecks {
         typeof name === "string" ? [[key, name] as const] : []
       )
     ),
+    performanceMax: Array.isArray(value["account_goals"]) ? parsePerformanceMaxChecks(value) : null,
     requestProblems: strings(value["request_problems"]),
     today: text(value["today"]),
     unknownLocations: new Set(strings(value["unknown_locations"])),
@@ -283,16 +319,29 @@ export function parseCreateCampaignArgs(value: unknown): CreateCampaignArgs | nu
   if (!isRecord(value)) return null
   const campaign = parseDraftCampaign(value["campaign"])
   const adGroups = parseEach(value["ad_groups"], parseAdGroup)
+  const assetGroups = parseEach(value["asset_groups"], parseAssetGroup)
   const status = value["status"] ?? "PAUSED"
-  if (campaign === null || adGroups === null) return null
+  if (campaign === null || adGroups === null || assetGroups === null) return null
   if (status !== "PAUSED" && status !== "ENABLED") return null
   return {
     accounts: parseApprovalAccounts(value["_accounts"]),
     adGroups,
+    assetGroups,
     campaign,
     checks: parseChecks(value["_checks"]),
     status,
   }
+}
+
+export function performanceMaxChecks(args: CreateCampaignArgs): PerformanceMaxChecks | null {
+  return args.checks.unavailable ? null : args.checks.performanceMax
+}
+
+export function campaignAssetGroupRows(args: CreateCampaignArgs): AssetGroupRow[] {
+  return assetGroupRows(args.assetGroups, {
+    checks: performanceMaxChecks(args),
+    retail: args.campaign.performanceMax?.merchant != null,
+  })
 }
 
 export function currencyOf(args: CreateCampaignArgs): string | null {
@@ -389,6 +438,13 @@ function campaignCardProblems(args: CreateCampaignArgs): string[] {
     ...dateProblems(campaign, args.checks.unavailable ? null : args.checks.today),
     ...listProblems("negative keyword", campaign.negatives, MAX_NEGATIVES, "A campaign"),
     ...newAssetProblems(campaign.assets),
+    ...(campaign.performanceMax
+      ? performanceMaxProblems(
+          campaign.performanceMax,
+          args.assetGroups,
+          performanceMaxChecks(args)
+        )
+      : []),
   ]
 }
 
@@ -412,6 +468,10 @@ function googleCampaignProblems(args: CreateCampaignArgs): string[] {
       return googleAssetProblems(campaign.assets, [
         { key: problem.key ?? "", message: problem.message },
       ])
+    if (problem.kind === "language") {
+      const language = campaign.performanceMax?.languages.find((item) => item.key === problem.key)
+      return language ? [`${language.name || language.key}: ${problem.message}`] : []
+    }
     return [problem.message]
   })
   // A new asset is made once for every place that links it, so an ad group's rejection applies here.
@@ -457,13 +517,28 @@ export function campaignAdGroupRows(args: CreateCampaignArgs): AdGroupRow[] {
 }
 
 function campaignObjectCount(campaign: DraftCampaign): number {
+  const performanceMax = campaign.performanceMax
   return (
     (campaign.budget.kind === "new" ? 2 : 1) +
     campaign.locations.length +
     campaign.excludedLocations.length +
     campaign.negatives.length +
     // Each new asset is created and linked.
-    2 * campaign.assets.length
+    2 * campaign.assets.length +
+    (performanceMax
+      ? performanceMax.languages.length +
+        performanceMax.logos.length +
+        (performanceMax.businessName.trim() ? 2 : 0)
+      : 0)
+  )
+}
+
+/** Every object the request creates: the campaign's own and its groups'. */
+function requestObjectCount(args: CreateCampaignArgs): number {
+  return (
+    campaignObjectCount(args.campaign) +
+    objectCount(args.adGroups) +
+    assetGroupsObjectCount(args.assetGroups)
   )
 }
 
@@ -471,7 +546,7 @@ function campaignObjectCount(campaign: DraftCampaign): number {
 export function requestProblems(args: CreateCampaignArgs): string[] {
   if (args.checks.unavailable) return [UNAVAILABLE]
   return [
-    ...(campaignObjectCount(args.campaign) + objectCount(args.adGroups) > MAX_OBJECTS
+    ...(requestObjectCount(args) > MAX_OBJECTS
       ? [`One request can create at most ${MAX_OBJECTS.toLocaleString("en-GB")} objects.`]
       : []),
     ...args.checks.requestProblems,
@@ -479,7 +554,11 @@ export function requestProblems(args: CreateCampaignArgs): string[] {
 }
 
 function requestKey(args: CreateCampaignArgs): string {
-  return JSON.stringify([serializeCampaign(args.campaign), serializeAdGroups(args.adGroups)])
+  return JSON.stringify([
+    serializeCampaign(args.campaign),
+    serializeAdGroups(args.adGroups),
+    serializeAssetGroups(args.assetGroups),
+  ])
 }
 
 /** True when Google hasn't answered for this request. Status doesn't change its answer. */
@@ -488,9 +567,20 @@ export function campaignNeedsCheck(args: CreateCampaignArgs, checked: CreateCamp
 }
 
 export function canCheckCampaign(args: CreateCampaignArgs): boolean {
+  if (args.campaign.type === "performance_max")
+    return (
+      args.assetGroups.length > 0 &&
+      requestObjectCount(args) <= MAX_OBJECTS &&
+      campaignCardProblems(args).length === 0 &&
+      // Image shapes need Google's read, so only the rules the card holds count here.
+      assetGroupRows(args.assetGroups, {
+        checks: null,
+        retail: args.campaign.performanceMax?.merchant != null,
+      }).every((row) => row.problems.length === 0)
+    )
   return (
     args.adGroups.length > 0 &&
-    campaignObjectCount(args.campaign) + objectCount(args.adGroups) <= MAX_OBJECTS &&
+    requestObjectCount(args) <= MAX_OBJECTS &&
     campaignCardProblems(args).length === 0 &&
     args.adGroups.every(
       (group) => !adGroupCardProblems(group, args.adGroups, adGroupContext(args, false)).length
@@ -504,14 +594,18 @@ export function createCampaignBlock(
   checked: CreateCampaignArgs
 ): string | null {
   if (args === null) return null
-  if (args.adGroups.length === 0)
-    return "Every ad group is cancelled. Decline this request, or restore one."
+  const performanceMax = args.campaign.type === "performance_max"
+  const groups = performanceMax ? args.assetGroups : args.adGroups
+  const noun = performanceMax ? "asset group" : "ad group"
+  if (groups.length === 0)
+    return `Every ${noun} is cancelled. Decline this request, or restore one.`
   const [problem] = requestProblems(args)
   if (problem) return problem
   if (campaignProblems(args).length > 0) return "Fix the campaign settings to continue."
-  const counts = createAdGroupsCounts(campaignAdGroupRows(args))
-  if (counts.problems > 0)
-    return `Fix or cancel ${approvalCountLine(counts.problems, "ad group")} to continue.`
+  const failing = performanceMax
+    ? campaignAssetGroupRows(args).filter((row) => row.problems.length > 0).length
+    : createAdGroupsCounts(campaignAdGroupRows(args)).problems
+  if (failing > 0) return `Fix or cancel ${approvalCountLine(failing, noun)} to continue.`
   return campaignNeedsCheck(args, checked)
     ? "Click Check Changes so Google can check your edits, then approve."
     : null
@@ -522,9 +616,13 @@ function number(count: number, noun: string): string {
 }
 
 export function createCampaignPrompt(args: CreateCampaignArgs): string {
+  const name = args.campaign.name.trim() || "this campaign"
+  if (args.campaign.type === "performance_max") {
+    if (args.assetGroups.length === 0) return "Nothing is left to create."
+    return `Build ${name} with ${number(args.assetGroups.length, "asset group")}. Everything is created together, or nothing is.`
+  }
   const counts = createAdGroupsCounts(campaignAdGroupRows(args))
   if (counts.adGroups === 0) return "Nothing is left to create."
-  const name = args.campaign.name.trim() || "this campaign"
   return `Build ${name} with ${number(counts.adGroups, "ad group")}, ${number(counts.keywords, "keyword")}, and ${number(counts.ads, "ad")}. Everything is created together, or nothing is.`
 }
 
@@ -569,8 +667,23 @@ export function biddingSummary(args: CreateCampaignArgs): string {
   return label
 }
 
+export function createCampaignTitle(args: CreateCampaignArgs): string {
+  return args.campaign.type === "performance_max"
+    ? "Create Performance Max Campaign"
+    : "Create Search Campaign"
+}
+
 export function createCampaignDetails(args: CreateCampaignArgs | null): FanOutDetail[] {
   if (args === null) return []
+  if (args.campaign.type === "performance_max")
+    return [
+      { label: "Campaign", value: args.campaign.name },
+      { label: "Type", value: "Performance Max" },
+      { label: "Budget", value: budgetSummary(args) },
+      { label: "Bidding", value: biddingSummary(args) },
+      { label: "Asset Groups", value: String(args.assetGroups.length) },
+      { label: "Status", value: args.status === "ENABLED" ? "Active" : "Paused" },
+    ]
   const counts = createAdGroupsCounts(campaignAdGroupRows(args))
   return [
     { label: "Campaign", value: args.campaign.name },
@@ -610,6 +723,22 @@ function serializeBidding(bidding: DraftBidding): Record<string, unknown> {
 /** The `campaign` value for the draft; blank optional fields are null. */
 export function serializeCampaign(campaign: DraftCampaign): Record<string, unknown> {
   const location = (item: DraftLocation) => ({ key: item.key, name: item.name || null })
+  const shared = {
+    name: campaign.name,
+    bidding: serializeBidding(campaign.bidding),
+    locations: campaign.locations.map(location),
+    excluded_locations: campaign.excludedLocations.map(location),
+    location_setting: campaign.locationSetting,
+    start_date: campaign.startDate.trim() || null,
+    end_date: campaign.endDate.trim() || null,
+    contains_eu_political_advertising: campaign.political,
+  }
+  if (campaign.performanceMax)
+    return {
+      ...shared,
+      budget: { kind: "new", daily_amount: campaign.budget.dailyAmount?.trim() ?? "" },
+      ...serializePerformanceMax(campaign.performanceMax),
+    }
   return {
     name: campaign.name,
     budget:

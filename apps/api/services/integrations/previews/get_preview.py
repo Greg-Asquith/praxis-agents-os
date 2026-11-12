@@ -25,6 +25,7 @@ from services.audit_events import (
 from services.integrations.connections.utils import (
     get_visible_connection,
 )
+from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.plugin import (
     PROVIDER_PLUGINS,
     IntegrationPreviewDefinition,
@@ -33,8 +34,11 @@ from services.integrations.plugin import (
 from services.integrations.previews.sanitize import sanitize_preview_html
 from services.integrations.previews.schemas import IntegrationPreviewRead
 
-_JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,"
-_JPEG_MAGIC = b"\xff\xd8\xff"
+# Each image type a provider may return, by data URL prefix, with its file signature.
+_IMAGE_SIGNATURES = {
+    "data:image/jpeg;base64,": b"\xff\xd8\xff",
+    "data:image/png;base64,": b"\x89PNG\r\n\x1a\n",
+}
 
 
 async def get_integration_preview(
@@ -45,7 +49,7 @@ async def get_integration_preview(
     ref: str,
     actor: User,
     workspace: Workspace,
-    scope_id: str | None = None,
+    scope: ResolvedContextEntry | None = None,
 ) -> IntegrationPreviewRead:
     connection = await get_visible_connection(
         db,
@@ -64,7 +68,11 @@ async def get_integration_preview(
             )
         await db.commit()
         request = IntegrationPreviewRequest(
-            ref=ref, scope_id=scope_id, actor=actor, workspace=workspace
+            ref=ref,
+            scope_id=scope.external_id if scope else None,
+            actor=actor,
+            workspace=workspace,
+            scope=scope,
         )
         payload = await definition.fetch(db, connection, request)
         content = payload.content
@@ -79,7 +87,7 @@ async def get_integration_preview(
         if content_type == "html":
             content = sanitize_preview_html(content)
         elif content_type == "image":
-            _require_jpeg_data_url(content, provider_key=connection.provider_key)
+            _require_image_data_url(content, provider_key=connection.provider_key)
     except Exception as exc:
         await _record_preview_failure_audit(
             connection=connection,
@@ -102,19 +110,22 @@ async def get_integration_preview(
     )
 
 
-def _require_jpeg_data_url(content: str, *, provider_key: str) -> None:
+def _require_image_data_url(content: str, *, provider_key: str) -> None:
     # Providers re-encode images themselves; anything else could carry markup or scripts.
-    encoded = content.removeprefix(_JPEG_DATA_URL_PREFIX)
-    try:
-        decoded = base64.b64decode(encoded, validate=True)
-    except ValueError:
-        decoded = b""
-    if encoded == content or not decoded.startswith(_JPEG_MAGIC):
-        raise IntegrationValidationError(
-            "The provider returned an invalid image preview",
-            provider_key=provider_key,
-            operation="preview_image",
-        )
+    for prefix, signature in _IMAGE_SIGNATURES.items():
+        if content.startswith(prefix):
+            try:
+                decoded = base64.b64decode(content.removeprefix(prefix), validate=True)
+            except ValueError:
+                break
+            if decoded.startswith(signature):
+                return
+            break
+    raise IntegrationValidationError(
+        "The provider returned an invalid image preview",
+        provider_key=provider_key,
+        operation="preview_image",
+    )
 
 
 def _get_preview_definition(

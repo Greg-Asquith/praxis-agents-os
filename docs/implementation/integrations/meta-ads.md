@@ -1569,7 +1569,8 @@ the account can use, and its picture is used.
 
 The API downloads the picture only from Meta's HTTPS hosts, without
 following redirects or sending the token, up to 8 MB; an image over that
-falls back to Meta's 128-pixel copy. Pillow decodes it, refuses anything over
+falls back to Meta's 128-pixel copy. The download and re-encoding are shared
+with Google Ads in `services/integrations/previews/images.py`. Pillow decodes it, refuses anything over
 50 million pixels or not JPEG, PNG, WebP, or GIF, and re-encodes it as a JPEG
 at most 720 pixels on its long side. The response is a
 `data:image/jpeg;base64,` URL with `width` and `height`, so no Meta address

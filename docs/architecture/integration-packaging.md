@@ -258,7 +258,8 @@ Each provider package's `__init__.py` exports exactly one
 boring — data plus bounded callable contributions. Preview definitions
 contain a kind, audit operation name, and raw-content fetch function; the
 engine retains connection scoping, response bounds, HTML sanitization, and
-failure auditing. Successful preview renders are not audited: the governed
+failure auditing. The conversation route passes the matched context target to the
+fetch, so a provider can route the read through that account. Successful preview renders are not audited: the governed
 tool call that surfaced the content is the durable audit record, and
 per-render read events add noise. Anything a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,

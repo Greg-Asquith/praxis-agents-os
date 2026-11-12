@@ -181,7 +181,7 @@ async def test_preview_404_outside_workspace_visibility(
     assert response.status_code == 404
 
 
-async def test_image_preview_must_be_a_jpeg_data_url(
+async def test_image_preview_must_be_a_jpeg_or_png_data_url(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     integration_identity: dict[str, object],
@@ -189,21 +189,22 @@ async def test_image_preview_must_be_a_jpeg_data_url(
 ) -> None:
     connection = await _gmail_connection(db_session, integration_identity)
     svg = base64.b64encode(b"<svg onload='alert(1)'></svg>").decode()
+    # Markup, and markup labelled as a PNG.
+    contents = [f"data:image/svg+xml;base64,{svg}", f"data:image/png;base64,{svg}"]
 
     async def fetch(_db: Any, _connection: Any, _request: Any) -> IntegrationPreviewPayload:
-        return IntegrationPreviewPayload(
-            content_type="image", content=f"data:image/svg+xml;base64,{svg}", meta={}
-        )
+        return IntegrationPreviewPayload(content_type="image", content=contents.pop(0), meta={})
 
     definition = IntegrationPreviewDefinition(kind="gmail_message", operation="test", fetch=fetch)
     plugin = replace(PROVIDER_PLUGINS["gmail"], preview_definitions=(definition,))
     monkeypatch.setitem(PROVIDER_PLUGINS, "gmail", plugin)
 
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "message-1"},
-        headers=integration_identity["headers"],
-    )
+    for _ in range(2):
+        response = await db_async_client.get(
+            f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
+            params={"ref": "message-1"},
+            headers=integration_identity["headers"],
+        )
 
-    assert response.status_code == 400
-    assert "svg" not in response.text
+        assert response.status_code == 400
+        assert "svg" not in response.text

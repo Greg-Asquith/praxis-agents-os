@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/search_campaigns.py
 
-"""Compiles a new Search campaign, with its budget and campaign criteria, for the build seam."""
+"""Compiles a new campaign's budget, settings, and locations, and a whole Search campaign."""
 
 from dataclasses import dataclass
 from datetime import date
@@ -11,10 +11,20 @@ from .build import CampaignBuild
 from .search_ad_groups import SearchCampaignFacts
 
 if TYPE_CHECKING:
-    from ..tools.schemas.campaigns import GoogleAdsNewSearchCampaign
+    from ..tools.schemas.campaigns import GoogleAdsNewSearchCampaign, NewCampaign
 
 type CampaignItemKind = Literal[
-    "budget", "campaign", "location", "excluded_location", "negative_keyword", "asset", "asset_link"
+    "budget",
+    "campaign",
+    "location",
+    "excluded_location",
+    "negative_keyword",
+    "asset",
+    "asset_link",
+    "language",
+    "conversion_goal",
+    "text_asset",
+    "brand_link",
 ]
 
 # Google's bidding strategy type for each strategy the card offers.
@@ -64,25 +74,13 @@ def add_search_campaign(
     """
     budget = campaign.budget
     if budget.kind == "new":
-        budget_name = build.create(
-            "campaignBudget",
-            {
-                "name": campaign.name,
-                "amountMicros": str(budget.amount_micros),
-                "deliveryMethod": "STANDARD",
-                "explicitlyShared": False,
-                "period": "DAILY",
-            },
-            label=campaign.name,
-            source=CampaignItem("budget"),
-        )
+        budget_name = add_campaign_budget(build, campaign.name, budget.amount_micros)
     else:
         budget_name = (
             f"customers/{budget.budget.customer_id}/campaignBudgets/{budget.budget.budget_id}"
         )
     body: dict[str, Any] = {
-        "name": campaign.name,
-        "status": status,
+        **campaign_body(campaign, status=status, today=today),
         "advertisingChannelType": "SEARCH",
         "campaignBudget": budget_name,
         "networkSettings": {
@@ -91,38 +89,11 @@ def add_search_campaign(
             "targetContentNetwork": campaign.display_expansion,
             "targetPartnerSearchNetwork": False,
         },
-        "geoTargetTypeSetting": {"positiveGeoTargetType": campaign.location_setting},
-        "containsEuPoliticalAdvertising": (
-            "CONTAINS_EU_POLITICAL_ADVERTISING"
-            if campaign.contains_eu_political_advertising
-            else "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
-        ),
-        **_bidding(campaign),
     }
-    if campaign.start_date and campaign.start_date > today:
-        body["startDateTime"] = f"{campaign.start_date.isoformat()} 00:00:00"
-    if campaign.end_date:
-        body["endDateTime"] = f"{campaign.end_date.isoformat()} 23:59:59"
     name = build.create("campaign", body, label=campaign.name, source=CampaignItem("campaign"))
     if name is None:
         raise ValueError("Google Ads builds must name new campaigns")
-    for kind, locations in (
-        ("location", campaign.locations),
-        ("excluded_location", campaign.excluded_locations),
-    ):
-        for position, location in enumerate(locations):
-            criterion: dict[str, Any] = {
-                "campaign": name,
-                "location": {"geoTargetConstant": f"geoTargetConstants/{location.key}"},
-            }
-            if kind == "excluded_location":
-                criterion["negative"] = True
-            build.create(
-                "campaignCriterion",
-                criterion,
-                label=location.name or location.key,
-                source=CampaignItem(kind, position),
-            )
+    add_campaign_locations(build, campaign, name)
     for position, negative in enumerate(campaign.negative_keywords):
         build.create(
             "campaignCriterion",
@@ -146,9 +117,68 @@ def add_search_campaign(
     return name
 
 
-def _bidding(campaign: "GoogleAdsNewSearchCampaign") -> dict[str, Any]:
+def add_campaign_budget(build: CampaignBuild, name: str, amount_micros: int) -> str:
+    """Adds a daily budget for the new campaign alone; returns its temporary name."""
+    budget = build.create(
+        "campaignBudget",
+        {
+            "name": name,
+            "amountMicros": str(amount_micros),
+            "deliveryMethod": "STANDARD",
+            "explicitlyShared": False,
+            "period": "DAILY",
+        },
+        label=name,
+        source=CampaignItem("budget"),
+    )
+    if budget is None:
+        raise ValueError("Google Ads builds must name new budgets")
+    return budget
+
+
+def campaign_body(campaign: "NewCampaign", *, status: str, today: date) -> dict[str, Any]:
+    """The settings every new campaign sets: name, status, bidding, locations, and dates."""
+    body: dict[str, Any] = {
+        "name": campaign.name,
+        "status": status,
+        "geoTargetTypeSetting": {"positiveGeoTargetType": campaign.location_setting},
+        "containsEuPoliticalAdvertising": (
+            "CONTAINS_EU_POLITICAL_ADVERTISING"
+            if campaign.contains_eu_political_advertising
+            else "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+        ),
+        **_bidding(campaign.bidding),
+    }
+    if campaign.start_date and campaign.start_date > today:
+        body["startDateTime"] = f"{campaign.start_date.isoformat()} 00:00:00"
+    if campaign.end_date:
+        body["endDateTime"] = f"{campaign.end_date.isoformat()} 23:59:59"
+    return body
+
+
+def add_campaign_locations(build: CampaignBuild, campaign: "NewCampaign", name: str) -> None:
+    """Adds the campaign's targeted and excluded locations."""
+    for kind, locations in (
+        ("location", campaign.locations),
+        ("excluded_location", campaign.excluded_locations),
+    ):
+        for position, location in enumerate(locations):
+            criterion: dict[str, Any] = {
+                "campaign": name,
+                "location": {"geoTargetConstant": f"geoTargetConstants/{location.key}"},
+            }
+            if kind == "excluded_location":
+                criterion["negative"] = True
+            build.create(
+                "campaignCriterion",
+                criterion,
+                label=location.name or location.key,
+                source=CampaignItem(kind, position),
+            )
+
+
+def _bidding(bidding: Any) -> dict[str, Any]:
     """The campaign's bidding field; each strategy sets only its own oneof member."""
-    bidding = campaign.bidding
     if bidding.strategy == "MANUAL_CPC":
         return {"manualCpc": {}}
     if bidding.strategy == "MAXIMIZE_CLICKS":

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   campaignAdGroupRows,
+  campaignAssetGroupRows,
   campaignProblems,
   canCheckCampaign,
   createCampaignBlock,
@@ -190,6 +191,115 @@ describe("Google Ads create campaign arguments", () => {
   })
 })
 
+function image(assetId: string, fieldType: string) {
+  return {
+    asset: {
+      customer_id: CUSTOMER,
+      asset_id: assetId,
+      asset_type: "IMAGE",
+      label: `Image ${assetId}`,
+    },
+    field_type: fieldType,
+  }
+}
+
+function assetGroup(over: Record<string, unknown> = {}) {
+  return {
+    name: "Rain Jackets",
+    final_url: "https://shop.test/rain-jackets",
+    headlines: ["Rain Jackets", "Stay Dry Outside", "Free Returns"],
+    long_headlines: ["Waterproof jackets for every trail"],
+    descriptions: ["Light, packable, and fully taped.", "Free UK delivery."],
+    images: [image("301", "MARKETING_IMAGE"), image("302", "SQUARE_MARKETING_IMAGE")],
+    search_themes: ["waterproof jacket"],
+    ...over,
+  }
+}
+
+function pmaxArgs(
+  campaignOver: Record<string, unknown> = {},
+  groups: unknown[] = [assetGroup()],
+  checks: Record<string, unknown> = {}
+) {
+  return args(
+    {
+      campaign: campaign({
+        type: "performance_max",
+        bidding: { strategy: "MAXIMIZE_CONVERSION_VALUE", target_roas: 4 },
+        business_name: "Northwind Outdoor",
+        logos: [image("302", "LOGO")],
+        ...campaignOver,
+      }),
+      ad_groups: undefined,
+      asset_groups: groups,
+    },
+    {
+      images: {
+        "301": { name: "Jacket", width: 1200, height: 628, fits: ["MARKETING_IMAGE"] },
+        "302": {
+          name: "Logo",
+          width: 1200,
+          height: 1200,
+          fits: ["SQUARE_MARKETING_IMAGE", "LOGO"],
+        },
+      },
+      unknown_images: [],
+      languages: {},
+      unknown_languages: [],
+      merchant_ids: ["5551234"],
+      account_goals: [
+        { category: "PURCHASE", origin: "WEBSITE", name: "Purchase from website", biddable: true },
+      ],
+      ...checks,
+    }
+  )
+}
+
+describe("Google Ads Performance Max campaign arguments", () => {
+  it("blocks an asset group below a minimum, but not a retail group the feed fills", () => {
+    const short = parsed(pmaxArgs({}, [assetGroup({ headlines: ["Rain Jackets", "Stay Dry"] })]))
+    expect(campaignAssetGroupRows(short)[0]?.problems).toEqual([
+      "Needs at least 3 headlines, has 2.",
+    ])
+    expect(createCampaignBlock(short, short)).toBe("Fix or cancel 1 asset group to continue.")
+
+    // A retail group with none of its own assets needs no brand either.
+    const bare = { name: "All Products", final_url: "https://shop.test/" }
+    const retail = parsed(
+      pmaxArgs({ merchant: { merchant_id: "5551234" }, business_name: null, logos: [] }, [bare])
+    )
+    expect(campaignAssetGroupRows(retail)[0]?.problems).toEqual([])
+    expect(createCampaignBlock(retail, retail)).toBeNull()
+  })
+
+  it("refuses an unlinked feed and an image in a shape it doesn't fit", () => {
+    const unlinked = parsed(pmaxArgs({ merchant: { merchant_id: "999" } }))
+    expect(campaignProblems(unlinked)).toEqual([
+      "Merchant Center account 999 isn't linked to this Google Ads account. Link it in Google Ads, or leave the product feed out.",
+    ])
+    const misfit = parsed(
+      pmaxArgs({}, [assetGroup({ images: [image("301", "SQUARE_MARKETING_IMAGE")] })])
+    )
+    expect(campaignAssetGroupRows(misfit)[0]?.problems).toEqual([
+      "Needs at least 1 landscape image.",
+      "Image 301 (1200 by 628) doesn't fit the square shape.",
+    ])
+  })
+
+  it("sends Performance Max fields without the Search campaign's", () => {
+    const value = serializeCampaign(parsed(pmaxArgs()).campaign)
+    expect(value).toMatchObject({
+      type: "performance_max",
+      budget: { kind: "new", daily_amount: "60" },
+      business_name: "Northwind Outdoor",
+      conversion_goals: null,
+      final_url_expansion: true,
+    })
+    expect(value).not.toHaveProperty("search_partners")
+    expect(value).not.toHaveProperty("negative_keywords")
+  })
+})
+
 describe("Google Ads create campaign card", () => {
   const baseProps = (activity: ToolActivity, withApproval = false) => ({
     activity,
@@ -235,6 +345,22 @@ describe("Google Ads create campaign card", () => {
       )
     )
     expect(approval).toContain("£1,824.00")
+
+    const performanceMax = html(
+      googleAdsCreateCampaignPresenter.render(
+        baseProps(
+          {
+            id: "campaign-3",
+            kind: "approval",
+            name: "google_ads_create_campaign",
+            status: "awaiting_approval",
+            args: pmaxArgs(),
+          },
+          true
+        )
+      )
+    )
+    expect(performanceMax).toContain("Create Performance Max Campaign")
 
     const result = html(
       googleAdsCreateCampaignPresenter.render(

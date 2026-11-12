@@ -28,6 +28,7 @@ from .entity_resolvers import (
     GOOGLE_ADS_RECOMMENDATION_RESOLVER,
     GOOGLE_ADS_SHARED_SET_RESOLVER,
 )
+from .preview import GOOGLE_ADS_IMAGE_PREVIEW
 from .settings import google_ads_settings
 from .tools import TOOL_DEFINITIONS
 
@@ -84,4 +85,5 @@ PROVIDER = IntegrationProviderPlugin(
         GOOGLE_ADS_RECOMMENDATION_RESOLVER,
         GOOGLE_ADS_SHARED_SET_RESOLVER,
     ),
+    preview_definitions=(GOOGLE_ADS_IMAGE_PREVIEW,),
 )

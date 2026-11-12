@@ -20,9 +20,11 @@ const PROBLEM_COLUMNS: DataColumn[] = [
   { key: "message", kind: "text", label: "Google Says", width: 360 },
 ]
 
-// Google creates the campaign, ad groups, and ads as chosen; everything else starts enabled.
+// Google creates the campaign and its groups and ads as chosen; everything else starts enabled.
+const FOLLOWS_REQUEST = new Set(["campaign", "ad_group", "ad", "asset_group"])
+
 function kindStatus(kind: BuildKindCount, result: CampaignBuildResult): "Paused" | "Enabled" {
-  const followsRequest = kind.kind === "campaign" || kind.kind === "ad_group" || kind.kind === "ad"
+  const followsRequest = FOLLOWS_REQUEST.has(kind.kind)
   return followsRequest && result.requestedStatus === "PAUSED" ? "Paused" : "Enabled"
 }
 

@@ -13,6 +13,14 @@ type BuildKind =
   | "ad"
   | "asset"
   | "asset_link"
+  | "language"
+  | "conversion_goal"
+  | "text_asset"
+  | "brand_link"
+  | "asset_group"
+  | "listing_filter"
+  | "asset_group_link"
+  | "search_theme"
 
 export type BuildKindCount = {
   created: number
@@ -33,6 +41,14 @@ export type CampaignBuildResult = {
 export const BUILD_KIND_LABELS: Record<BuildKind, { one: string; many: string }> = {
   ad: { one: "Ad", many: "Ads" },
   ad_group: { one: "Ad group", many: "Ad groups" },
+  asset_group: { one: "Asset group", many: "Asset groups" },
+  asset_group_link: { one: "Asset in an asset group", many: "Assets in asset groups" },
+  brand_link: { one: "Business name or logo", many: "Business name and logos" },
+  conversion_goal: { one: "Conversion goal", many: "Conversion goals" },
+  language: { one: "Language", many: "Languages" },
+  listing_filter: { one: "Product filter", many: "Product filters" },
+  search_theme: { one: "Search theme", many: "Search themes" },
+  text_asset: { one: "Text asset", many: "Text assets" },
   asset: { one: "Sitelink or callout", many: "Sitelinks and callouts" },
   asset_link: { one: "Sitelink or callout link", many: "Sitelink and callout links" },
   budget: { one: "Budget", many: "Budgets" },

@@ -22,9 +22,16 @@ import { KeywordPaste } from "@/integrations/ads/components/keyword-paste"
 import { MoneyField } from "@/integrations/ads/components/money-field"
 import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { StatusChoice } from "@/integrations/ads/components/status-choice"
+import { AssetGroupsEditor } from "@/integrations/google_ads/components/asset-groups-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { LocationPaste } from "@/integrations/google_ads/components/location-paste"
 import { NewAssetsEditor } from "@/integrations/google_ads/components/new-assets-editor"
+import {
+  BrandFields,
+  GoalsFields,
+  LanguageFields,
+  PerformanceMaxMoreFields,
+} from "@/integrations/google_ads/components/performance-max-settings"
 import {
   AdGroupSummary,
   NewAdGroups,
@@ -43,6 +50,7 @@ import {
   biddingSummary,
   budgetSummary,
   campaignAdGroupRows,
+  campaignAssetGroupRows,
   campaignNeedsCheck,
   campaignProblems,
   canCheckCampaign,
@@ -53,6 +61,8 @@ import {
   monthlyEstimate,
   PAGE_LOCATION_LABELS,
   PAGE_LOCATIONS,
+  PERFORMANCE_MAX_STRATEGIES,
+  performanceMaxChecks,
   requestProblems,
   serializeCampaign,
   STRATEGIES,
@@ -66,6 +76,14 @@ import {
   type Strategy,
 } from "@/integrations/google_ads/lib/create-campaign"
 import { assetSummary, isAssetProblem } from "@/integrations/google_ads/lib/new-assets"
+import {
+  brandSummary,
+  goalsSummary,
+  parseCancelledAssetGroups,
+  serializeAssetGroups,
+  type DraftAssetGroup,
+  type DraftPerformanceMax,
+} from "@/integrations/google_ads/lib/performance-max"
 
 const TOOL_NAME = "google_ads_create_campaign"
 // Chips shown per list before Show All, so a long paste doesn't fill the card.
@@ -107,9 +125,13 @@ export function CreateCampaignApproval({
   onFieldEdit: (key: string, value: EditedValue) => void
 }) {
   const rows = useMemo(() => campaignAdGroupRows(args), [args])
-  const counts = createAdGroupsCounts(rows)
-  // Cancelled ad groups, so Restore puts them back with their edits.
-  const cancelled = parseCancelledAdGroups(controls.retained, args.adGroups)
+  const groupRows = useMemo(() => campaignAssetGroupRows(args), [args])
+  const performanceMax = args.campaign.type === "performance_max"
+  // Cancelled groups, so Restore puts them back with their edits.
+  const cancelled = performanceMax ? [] : parseCancelledAdGroups(controls.retained, args.adGroups)
+  const cancelledGroups = performanceMax
+    ? parseCancelledAssetGroups(controls.retained, args.assetGroups)
+    : []
   const { campaign } = args
 
   const editCampaign = (patch: Partial<DraftCampaign>) => {
@@ -128,6 +150,18 @@ export function CreateCampaignApproval({
     saveAdGroups([...args.adGroups, ...cancelled])
     controls.onRetain?.([])
   }
+  const saveAssetGroups = (groups: readonly DraftAssetGroup[]) => {
+    onFieldEdit("asset_groups", serializeAssetGroups(groups))
+  }
+  const cancelAssetGroups = (indexes: ReadonlySet<number>) => {
+    controls.onRetain?.(
+      serializeAssetGroups([
+        ...cancelledGroups,
+        ...args.assetGroups.filter((_, at) => indexes.has(at)),
+      ])
+    )
+    saveAssetGroups(args.assetGroups.filter((_, at) => !indexes.has(at)))
+  }
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -143,11 +177,85 @@ export function CreateCampaignApproval({
       />
       <ProblemList problems={[...requestProblems(args), ...campaignProblems(args)]} />
       <CampaignSettings args={args} disabled={disabled} onEdit={editCampaign} />
-      <p className="text-sm font-medium">Ad Groups</p>
-      {rows.length > 1 || cancelled.length > 0 ? (
-        <AdGroupSummary
+      {performanceMax ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium">Asset Groups</p>
+            {cancelledGroups.length > 0 ? (
+              <Button
+                disabled={disabled}
+                onClick={() => {
+                  saveAssetGroups([...args.assetGroups, ...cancelledGroups])
+                  controls.onRetain?.([])
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Restore {approvalCountLine(cancelledGroups.length, "Asset Group")}
+              </Button>
+            ) : null}
+          </div>
+          <AssetGroupsEditor
+            checks={performanceMaxChecks(args)}
+            disabled={disabled}
+            onCancel={cancelAssetGroups}
+            onSave={saveAssetGroups}
+            retail={campaign.performanceMax?.merchant != null}
+            rows={groupRows}
+          />
+        </>
+      ) : (
+        <SearchAdGroups
+          cancel={cancel}
           cancelled={cancelled.length}
-          counts={counts}
+          disabled={disabled}
+          onSave={saveAdGroups}
+          restore={restore}
+          args={args}
+          rows={rows}
+        />
+      )}
+      {/* At the end, beside the approve button that waits on it. */}
+      {campaignNeedsCheck(args, checked) ? (
+        <CheckChanges
+          canCheck={canCheckCampaign(args)}
+          disabled={disabled}
+          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
+          note="Google hasn't checked these changes yet."
+          onCheck={controls.onReview}
+          submitting={controls.submitting}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/** A Search campaign's ad groups: the summary once there's more than one, then the table. */
+function SearchAdGroups({
+  args,
+  cancel,
+  cancelled,
+  disabled,
+  onSave,
+  restore,
+  rows,
+}: {
+  args: CreateCampaignArgs
+  cancel: (indexes: ReadonlySet<number>) => void
+  cancelled: number
+  disabled: boolean
+  onSave: (adGroups: readonly DraftAdGroup[]) => void
+  restore: () => void
+  rows: ReturnType<typeof campaignAdGroupRows>
+}) {
+  return (
+    <>
+      <p className="text-sm font-medium">Ad Groups</p>
+      {rows.length > 1 || cancelled > 0 ? (
+        <AdGroupSummary
+          cancelled={cancelled}
+          counts={createAdGroupsCounts(rows)}
           detail="in this campaign"
           disabled={disabled}
           keywordMix={keywordMixLine(rows)}
@@ -161,22 +269,11 @@ export function CreateCampaignApproval({
         currency={currencyOf(args)}
         disabled={disabled}
         onCancel={cancel}
-        onSave={saveAdGroups}
+        onSave={onSave}
         rows={rows}
-        rules={biddingRules(campaign.bidding)}
+        rules={biddingRules(args.campaign.bidding)}
       />
-      {/* At the end, beside the approve button that waits on it. */}
-      {campaignNeedsCheck(args, checked) ? (
-        <CheckChanges
-          canCheck={canCheckCampaign(args)}
-          disabled={disabled}
-          label={args.checks.unavailable ? "Check Again" : "Check Changes"}
-          note="Google hasn't checked these changes yet."
-          onCheck={controls.onReview}
-          submitting={controls.submitting}
-        />
-      ) : null}
-    </div>
+    </>
   )
 }
 
@@ -215,6 +312,11 @@ function CampaignSettings({
 }) {
   const nameId = useId()
   const { campaign } = args
+  const performanceMax = campaign.performanceMax
+  const checks = performanceMaxChecks(args)
+  const editPerformanceMax = (patch: Partial<DraftPerformanceMax>) => {
+    if (performanceMax) onEdit({ performanceMax: { ...performanceMax, ...patch } })
+  }
   return (
     <SettingRows ariaLabel="Campaign settings">
       <SettingLine htmlFor={nameId} title="Name">
@@ -239,8 +341,24 @@ function CampaignSettings({
           onEdit={(patch) => {
             onEdit({ bidding: { ...campaign.bidding, ...patch } })
           }}
+          strategies={performanceMax ? PERFORMANCE_MAX_STRATEGIES : STRATEGIES}
         />
       </SettingRow>
+      {performanceMax ? (
+        <SettingRow
+          rowKey="goals"
+          summary={goalsSummary(performanceMax, checks)}
+          title="Goals"
+          tone={performanceMax.conversionGoals?.length === 0 ? "error" : "neutral"}
+        >
+          <GoalsFields
+            checks={checks}
+            disabled={disabled}
+            fields={performanceMax}
+            onEdit={editPerformanceMax}
+          />
+        </SettingRow>
+      ) : null}
       <SettingRow
         rowKey="locations"
         summary={locationSummary(args)}
@@ -248,13 +366,44 @@ function CampaignSettings({
         tone={campaign.locations.length === 0 ? "error" : "neutral"}
       >
         <LocationFields args={args} disabled={disabled} onEdit={onEdit} />
+        {performanceMax ? (
+          <LanguageFields
+            checks={checks}
+            disabled={disabled}
+            fields={performanceMax}
+            onEdit={editPerformanceMax}
+          />
+        ) : null}
       </SettingRow>
+      {performanceMax ? (
+        <SettingRow
+          rowKey="brand"
+          summary={brandSummary(performanceMax)}
+          title="Brand"
+          tone={brandIncomplete(performanceMax) ? "error" : "neutral"}
+        >
+          <BrandFields
+            checks={checks}
+            disabled={disabled}
+            fields={performanceMax}
+            onEdit={editPerformanceMax}
+          />
+        </SettingRow>
+      ) : null}
       <SettingRow
         rowKey="more"
         summary={moreSummary(campaign)}
         title="More Settings"
         tone={campaignProblems(args).some(isAssetProblem) ? "error" : "neutral"}
       >
+        {performanceMax ? (
+          <PerformanceMaxMoreFields
+            checks={checks}
+            disabled={disabled}
+            fields={performanceMax}
+            onEdit={editPerformanceMax}
+          />
+        ) : null}
         <MoreFields campaign={campaign} disabled={disabled} onEdit={onEdit} />
       </SettingRow>
     </SettingRows>
@@ -308,7 +457,7 @@ function BudgetFields({
         suffix="a day"
         value={budget.dailyAmount}
       />
-      {searching ? (
+      {args.campaign.type === "performance_max" ? null : searching ? (
         <EntitySearch
           disabled={disabled}
           entityKind="google_ads_campaign_budget"
@@ -356,11 +505,13 @@ function BiddingFields({
   currency,
   disabled,
   onEdit,
+  strategies,
 }: {
   bidding: DraftBidding
   currency: string | null
   disabled: boolean
   onEdit: (patch: Partial<DraftBidding>) => void
+  strategies: readonly Strategy[]
 }) {
   const shareId = useId()
   return (
@@ -370,9 +521,9 @@ function BiddingFields({
         columns={2}
         disabled={disabled}
         onChange={(strategy) => {
-          if (STRATEGIES.includes(strategy as Strategy)) onEdit({ strategy: strategy as Strategy })
+          if (strategies.includes(strategy as Strategy)) onEdit({ strategy: strategy as Strategy })
         }}
-        options={STRATEGIES.map((strategy) => ({
+        options={strategies.map((strategy) => ({
           value: strategy,
           label: STRATEGY_LABELS[strategy],
           description: STRATEGY_NOTES[strategy],
@@ -633,6 +784,20 @@ function LocationChips({
 }
 
 function moreSummary(campaign: DraftCampaign): string {
+  const start = campaign.startDate.trim() ? `starts ${campaign.startDate.trim()}` : "starts when on"
+  const end = campaign.endDate.trim() ? `ends ${campaign.endDate.trim()}` : "no end date"
+  const performanceMax = campaign.performanceMax
+  if (performanceMax)
+    return [
+      `Final URL expansion ${performanceMax.finalUrlExpansion ? "on" : "off"}`,
+      `${start}, ${end}`,
+      campaign.political ? "EU political ads" : "not political",
+      performanceMax.merchant
+        ? `products from ${performanceMax.merchant.merchantId || "a feed"}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" · ")
   const networks =
     campaign.searchPartners || campaign.displayExpansion
       ? [
@@ -643,8 +808,6 @@ function moreSummary(campaign: DraftCampaign): string {
           .filter(Boolean)
           .join(", ")
       : "Search only"
-  const start = campaign.startDate.trim() ? `starts ${campaign.startDate.trim()}` : "starts when on"
-  const end = campaign.endDate.trim() ? `ends ${campaign.endDate.trim()}` : "no end date"
   return [
     networks,
     `${start}, ${end}`,
@@ -665,28 +828,31 @@ function MoreFields({
   disabled: boolean
   onEdit: (patch: Partial<DraftCampaign>) => void
 }) {
+  const search = campaign.type === "search"
   return (
     <div className="grid min-w-0 gap-4">
-      <div className="grid gap-3">
-        <SwitchField
-          checked={campaign.searchPartners}
-          description="Also show ads on sites that partner with Google Search."
-          disabled={disabled}
-          label="Search Partners"
-          onChange={(searchPartners) => {
-            onEdit({ searchPartners })
-          }}
-        />
-        <SwitchField
-          checked={campaign.displayExpansion}
-          description="Also show ads on websites and apps when that's likely to get results."
-          disabled={disabled}
-          label="Display Expansion"
-          onChange={(displayExpansion) => {
-            onEdit({ displayExpansion })
-          }}
-        />
-      </div>
+      {search ? (
+        <div className="grid gap-3">
+          <SwitchField
+            checked={campaign.searchPartners}
+            description="Also show ads on sites that partner with Google Search."
+            disabled={disabled}
+            label="Search Partners"
+            onChange={(searchPartners) => {
+              onEdit({ searchPartners })
+            }}
+          />
+          <SwitchField
+            checked={campaign.displayExpansion}
+            description="Also show ads on websites and apps when that's likely to get results."
+            disabled={disabled}
+            label="Display Expansion"
+            onChange={(displayExpansion) => {
+              onEdit({ displayExpansion })
+            }}
+          />
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField
           disabled={disabled}
@@ -716,24 +882,32 @@ function MoreFields({
           onEdit({ political })
         }}
       />
-      <KeywordPaste
-        disabled={disabled}
-        keywords={campaign.negatives}
-        label="Negative Keywords for Every Ad Group, One Per Line"
-        onChange={(negatives) => {
-          onEdit({ negatives })
-        }}
-      />
-      <div className="grid min-w-0 gap-1.5">
-        <p className="text-sm font-medium">Sitelinks and Callouts for Every Ad Group</p>
-        <NewAssetsEditor
-          assets={campaign.assets}
-          disabled={disabled}
-          onChange={(assets) => {
-            onEdit({ assets })
-          }}
-        />
-      </div>
+      {search ? (
+        <>
+          <KeywordPaste
+            disabled={disabled}
+            keywords={campaign.negatives}
+            label="Negative Keywords for Every Ad Group, One Per Line"
+            onChange={(negatives) => {
+              onEdit({ negatives })
+            }}
+          />
+          <div className="grid min-w-0 gap-1.5">
+            <p className="text-sm font-medium">Sitelinks and Callouts for Every Ad Group</p>
+            <NewAssetsEditor
+              assets={campaign.assets}
+              disabled={disabled}
+              onChange={(assets) => {
+                onEdit({ assets })
+              }}
+            />
+          </div>
+        </>
+      ) : null}
     </div>
   )
+}
+
+function brandIncomplete(fields: DraftPerformanceMax): boolean {
+  return !fields.businessName.trim() || !fields.logos.some((logo) => logo.fieldType === "LOGO")
 }

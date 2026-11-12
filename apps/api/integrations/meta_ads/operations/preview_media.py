@@ -2,17 +2,18 @@
 
 """Read one library image, video thumbnail, or Page or post picture from Meta's CDN as a JPEG."""
 
-import asyncio
-import base64
 import json
-from io import BytesIO
-from typing import Any, Literal
+from typing import Literal
 
 import httpx2
-from PIL import Image, ImageOps, UnidentifiedImageError
 
 from core.exceptions.integration import IntegrationValidationError
-from services.integrations.http import IntegrationRequestPolicy, consume_stream_with_retries
+from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.previews.images import (
+    PreviewTooLargeError,
+    download_preview_image,
+    image_preview,
+)
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
@@ -31,16 +32,6 @@ from .list_assets import (
 type MetaAdsPreviewType = Literal["image", "video", "page", "post", "igpost"]
 
 _OPERATION = "preview_media"
-_MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
-# Well above any ad image Meta accepts, so only a decompression bomb is refused.
-_MAX_PIXELS = 50_000_000
-_MAX_SIDE = 720
-_JPEG_QUALITY = 82
-_FORMATS = ("JPEG", "PNG", "WEBP", "GIF")
-
-
-class _TooLargeError(Exception):
-    pass
 
 
 async def preview_media(
@@ -63,11 +54,15 @@ async def preview_media(
         case "post" | "igpost":
             urls = await _post_urls(client, account_id=account_id, ref=media_id, kind=media_type)
     for url in urls:
+        if media_url(url) is None:
+            raise _invalid("Meta returned a media address off its own hosts.")
         try:
-            data = await _download(url, download_client)
-        except _TooLargeError:
+            data = await download_preview_image(
+                url, provider_key="meta_ads", operation=_OPERATION, client=download_client
+            )
+        except PreviewTooLargeError:
             continue
-        return await asyncio.to_thread(_jpeg_data_url, data)
+        return await image_preview(data, provider_key="meta_ads", operation=_OPERATION)
     raise _invalid("The image is too large to preview.")
 
 
@@ -160,59 +155,6 @@ async def _post_urls(
     if found[0].thumbnail_url is None:
         raise _invalid("Meta has no picture for this post.")
     return [found[0].thumbnail_url]
-
-
-async def _download(url: str, client: httpx2.AsyncClient | None) -> bytes:
-    async def consume(response: httpx2.Response) -> bytes:
-        # A redirect could lead off Meta's hosts, so only a direct answer is used.
-        if response.status_code != 200:
-            raise _invalid("Meta's media host didn't return the image.")
-        body = bytearray()
-        async for chunk in response.aiter_bytes():
-            if len(body) + len(chunk) > _MAX_DOWNLOAD_BYTES:
-                raise _TooLargeError
-            body.extend(chunk)
-        return bytes(body)
-
-    if media_url(url) is None:
-        raise _invalid("Meta returned a media address off its own hosts.")
-    return await consume_stream_with_retries(
-        "GET",
-        url,
-        operation=_OPERATION,
-        provider_key="meta_ads",
-        policy=IntegrationRequestPolicy.READ,
-        consume=consume,
-        client=client,
-        follow_redirects=False,
-    )
-
-
-def _jpeg_data_url(data: bytes) -> tuple[str, int, int]:
-    try:
-        with Image.open(BytesIO(data), formats=_FORMATS) as source:
-            width, height = source.size
-            if width * height > _MAX_PIXELS:
-                raise _invalid("The image is too large to preview.")
-            source.draft("RGB", (_MAX_SIDE, _MAX_SIDE))
-            image = _flatten(ImageOps.exif_transpose(source))
-            image.thumbnail((_MAX_SIDE, _MAX_SIDE))
-            output = BytesIO()
-            image.save(output, format="JPEG", quality=_JPEG_QUALITY)
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
-        raise _invalid("Meta returned media that isn't an image.") from None
-    encoded = base64.b64encode(output.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}", image.width, image.height
-
-
-def _flatten(image: Any) -> Image.Image:
-    # Transparent areas show white, as they do in Meta's own previews.
-    if image.mode in {"RGBA", "LA", "P"}:
-        rgba = image.convert("RGBA")
-        background = Image.new("RGB", rgba.size, "white")
-        background.paste(rgba, mask=rgba.getchannel("A"))
-        return background
-    return image.convert("RGB")
 
 
 def _invalid(message: str) -> IntegrationValidationError:

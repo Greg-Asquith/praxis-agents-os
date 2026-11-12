@@ -25,28 +25,32 @@ from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _C = "customers/111"
 _KNOWN_LOCATIONS = {"2826": "United Kingdom", "1006886": "London"}
+# Image assets by ID: a landscape image, a square one that also fits as a logo.
+_IMAGES = {
+    "301": {"widthPixels": 1200, "heightPixels": 628},
+    "302": {"widthPixels": 1200, "heightPixels": 1200},
+}
 
 
 class _Account:
-    """One account: answers location reads and applies `googleAds:mutate`."""
+    """One account: answers location, feed, goal, and image reads, and applies mutates."""
 
-    def __init__(self, *, reject_location: str | None = None, refuse_send: bool = False):
+    def __init__(
+        self,
+        *,
+        reject_location: str | None = None,
+        refuse_send: bool = False,
+        merchant_ids: tuple[str, ...] = (),
+    ):
         self.reject_location = reject_location
         self.refuse_send = refuse_send
+        self.merchant_ids = merchant_ids
         self.mutates: list[dict[str, Any]] = []
 
     async def post(self, _path: str, **kwargs: Any) -> Any:
         body = kwargs["json"]
         if "query" in body:
-            return [
-                {
-                    "results": [
-                        {"geoTargetConstant": {"id": key, "name": name}}
-                        for key, name in _KNOWN_LOCATIONS.items()
-                        if key in body["query"]
-                    ]
-                }
-            ]
+            return [{"results": self._rows(body["query"])}]
         self.mutates.append(body)
         if self.refuse_send and not body["validateOnly"]:
             raise IntegrationValidationError(
@@ -57,7 +61,7 @@ class _Account:
         for index, operation in enumerate(body["mutateOperations"]):
             key = next(iter(operation))
             resource = key.removesuffix("Operation")
-            created = operation[key]["create"]
+            created = operation[key].get("create") or operation[key]["update"]
             location = created.get("location", {}).get("geoTargetConstant", "")
             if self.reject_location and location.endswith(f"/{self.reject_location}"):
                 responses.append({})
@@ -83,12 +87,49 @@ class _Account:
                 "asset": f"assets/{500 + index}",
                 "campaignAsset": f"campaignAssets/800~{500 + index}~SITELINK",
                 "adGroupAsset": f"adGroupAssets/{900 + index}~{500 + index}~CALLOUT",
+                "assetGroup": "assetGroups/950",
+                "assetGroupAsset": f"assetGroupAssets/950~{500 + index}~HEADLINE",
+                "assetGroupSignal": f"assetGroupSignals/950~{index}",
+                "assetGroupListingGroupFilter": f"assetGroupListingGroupFilters/950~{index}",
+                "campaignConversionGoal": "campaignConversionGoals/800~PURCHASE~WEBSITE",
             }[resource]
             responses.append({f"{resource}Result": {"resourceName": f"{_C}/{collection}"}})
         reply: dict[str, Any] = {"mutateOperationResponses": responses}
         if errors:
             reply["partialFailureError"] = {"details": [{"errors": errors}]}
         return reply
+
+    def _rows(self, query: str) -> list[dict[str, Any]]:
+        if "FROM product_link" in query:
+            return [
+                {"productLink": {"merchantCenter": {"merchantCenterId": merchant}}}
+                for merchant in self.merchant_ids
+            ]
+        if "FROM customer_conversion_goal" in query:
+            return [
+                {
+                    "customerConversionGoal": {
+                        "resourceName": f"{_C}/customerConversionGoals/{category}~WEBSITE",
+                        "category": category,
+                        "origin": "WEBSITE",
+                        "biddable": True,
+                    }
+                }
+                for category in ("PURCHASE", "SIGNUP")
+            ]
+        if "FROM asset " in query:
+            return [
+                {"asset": {"id": asset_id, "type": "IMAGE", "imageAsset": {"fullSize": size}}}
+                for asset_id, size in _IMAGES.items()
+                if asset_id in query
+            ]
+        if "FROM language_constant" in query:
+            return [{"languageConstant": {"id": "1000", "name": "English", "code": "en"}}]
+        return [
+            {"geoTargetConstant": {"id": key, "name": name}}
+            for key, name in _KNOWN_LOCATIONS.items()
+            if key in query
+        ]
 
 
 def _ad() -> dict[str, Any]:
@@ -164,7 +205,7 @@ async def _run(monkeypatch, account: _Account, args: dict[str, Any], *, approved
     )
     request = GoogleAdsCreateCampaignRequest.model_validate(args)
     result = await tool_module.google_ads_create_campaign(
-        _ctx(entry), request.campaign, request.ad_groups, request.status
+        _ctx(entry), request.campaign, request.ad_groups, request.asset_groups, request.status
     )
     return result, audit
 
@@ -328,7 +369,7 @@ async def test_a_campaign_that_could_not_serve_is_refused_before_approval() -> N
 
     with pytest.raises(ModelRetry) as refused:
         tool_module._validate_args(
-            _ctx(_entry()), request.campaign, request.ad_groups, request.status
+            _ctx(_entry()), request.campaign, request.ad_groups, status=request.status
         )
 
     assert "at least one location" in str(refused.value)
@@ -399,3 +440,269 @@ async def test_approval_names_locations_and_reports_google_per_item_leaving_know
         }
     ]
     assert checks["problems"] == [] and checks["request_problems"] == []
+
+
+def _image(asset_id: str, field_type: str, customer_id: str = "111") -> dict[str, Any]:
+    return {
+        "asset": {
+            "customer_id": customer_id,
+            "asset_id": asset_id,
+            "asset_type": "IMAGE",
+            "label": f"Image {asset_id}",
+        },
+        "field_type": field_type,
+    }
+
+
+def _asset_group(**over: Any) -> dict[str, Any]:
+    return {
+        "name": "Rain Jackets",
+        "final_url": "https://shop.test/rain-jackets",
+        "headlines": ["Rain Jackets", "Stay Dry Outside", "Free Returns"],
+        "long_headlines": ["Waterproof jackets for every trail"],
+        "descriptions": ["Light, packable, and fully taped.", "Free UK delivery."],
+        "images": [_image("301", "MARKETING_IMAGE"), _image("302", "SQUARE_MARKETING_IMAGE")],
+        "search_themes": ["waterproof jacket"],
+        **over,
+    }
+
+
+def _pmax(**over: Any) -> dict[str, Any]:
+    return {
+        "type": "performance_max",
+        "name": "PMax Hiking UK",
+        "budget": {"kind": "new", "daily_amount": "80"},
+        "bidding": {"strategy": "MAXIMIZE_CONVERSION_VALUE", "target_roas": 4},
+        "locations": [{"key": "2826", "name": "United Kingdom"}],
+        "languages": [{"key": "1000", "name": "English"}],
+        "business_name": "Northwind Outdoor",
+        "logos": [_image("302", "LOGO")],
+        **over,
+    }
+
+
+async def _run_pmax(monkeypatch, account: _Account, args: dict[str, Any]):
+    entry = _entry()
+    monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    monkeypatch.setattr(
+        tool_module, "approved_display_args", lambda _ctx: {"_accounts": approval_accounts([entry])}
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+    request = GoogleAdsCreateCampaignRequest.model_validate(args)
+    result = await tool_module.google_ads_create_campaign(
+        _ctx(entry), request.campaign, asset_groups=request.asset_groups, status=request.status
+    )
+    return GoogleAdsCreateCampaignOutput.model_validate(result).results[0]
+
+
+async def test_performance_max_builds_brand_on_the_campaign_and_complete_asset_groups_atomically(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = {
+        "campaign": _pmax(
+            final_url_expansion=False,
+            conversion_goals=[{"category": "PURCHASE", "origin": "WEBSITE"}],
+        ),
+        "asset_groups": [_asset_group(headlines=["Rain Jackets", "Northwind Outdoor", "Dry"])],
+    }
+
+    entry = await _run_pmax(monkeypatch, account, args)
+
+    sent = account.mutates[-1]
+    assert sent["validateOnly"] is False and sent["partialFailure"] is False
+    operations = sent["mutateOperations"]
+    created = [(next(iter(op)), op[next(iter(op))]) for op in operations]
+    campaign, group = f"{_C}/campaigns/-2", f"{_C}/assetGroups/-4"
+    body = created[7][1]["create"]
+    assert body["advertisingChannelType"] == "PERFORMANCE_MAX"
+    assert body["brandGuidelinesEnabled"] is True
+    assert body["maximizeConversionValue"] == {"targetRoas": 4}
+    assert body["assetAutomationSettings"] == [
+        {
+            "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
+            "assetAutomationStatus": "OPTED_OUT",
+        }
+    ]
+    # Text assets come before the campaign, one per distinct text, the business name included.
+    assert [
+        op["create"]["textAsset"]["text"] for kind, op in created if kind == "assetOperation"
+    ] == [
+        "Northwind Outdoor",
+        "Rain Jackets",
+        "Dry",
+        "Waterproof jackets for every trail",
+        "Light, packable, and fully taped.",
+        "Free UK delivery.",
+    ]
+    assert [op["create"] for kind, op in created if kind == "campaignCriterionOperation"] == [
+        {"campaign": campaign, "location": {"geoTargetConstant": "geoTargetConstants/2826"}},
+        {"campaign": campaign, "language": {"languageConstant": "languageConstants/1000"}},
+    ]
+    assert [
+        op["create"]["fieldType"] for kind, op in created if kind == "campaignAssetOperation"
+    ] == [
+        "BUSINESS_NAME",
+        "LOGO",
+    ]
+    assert created[10] == (
+        "assetGroupOperation",
+        {
+            "create": {
+                "name": "Rain Jackets",
+                "campaign": campaign,
+                "finalUrls": ["https://shop.test/rain-jackets"],
+                "status": "PAUSED",
+                "resourceName": group,
+            }
+        },
+    )
+    links = [op["create"] for kind, op in created if kind == "assetGroupAssetOperation"]
+    assert [link["fieldType"] for link in links] == [
+        "HEADLINE",
+        "HEADLINE",
+        "HEADLINE",
+        "LONG_HEADLINE",
+        "DESCRIPTION",
+        "DESCRIPTION",
+        "MARKETING_IMAGE",
+        "SQUARE_MARKETING_IMAGE",
+    ]
+    # The headline that repeats the business name links the same asset.
+    assert links[1]["asset"] == f"{_C}/assets/-3"
+    assert links[6]["asset"] == f"{_C}/assets/301"
+    signals = [op["create"] for kind, op in created if kind == "assetGroupSignalOperation"]
+    assert signals == [{"assetGroup": group, "searchTheme": {"text": "waterproof jacket"}}]
+    # Google makes the campaign's goals with it, so each is updated last, in the same request.
+    assert [op for kind, op in created if kind == "campaignConversionGoalOperation"] == [
+        {
+            "update": {
+                "resourceName": f"{_C}/campaignConversionGoals/-2~PURCHASE~WEBSITE",
+                "biddable": True,
+            },
+            "updateMask": "biddable",
+        },
+        {
+            "update": {
+                "resourceName": f"{_C}/campaignConversionGoals/-2~SIGNUP~WEBSITE",
+                "biddable": False,
+            },
+            "updateMask": "biddable",
+        },
+    ]
+    assert not any(
+        kind == "campaignBudgetOperation" and op["create"]["explicitlyShared"]
+        for kind, op in created
+    )
+    assert entry.data.outcome == "created" and entry.data.campaign_type == "performance_max"
+    assert entry.data.asset_groups[0].reference.asset_group_id == "950"
+    assert entry.data.asset_groups[0].reference.campaign_id == "800"
+
+
+async def test_a_retail_campaign_shows_the_linked_feed_and_its_bare_asset_group_every_product(
+    monkeypatch,
+) -> None:
+    account = _Account(merchant_ids=("5551234",))
+    bare = {"name": "All Products", "final_url": "https://shop.test/"}
+    args = {
+        "campaign": _pmax(
+            business_name=None, logos=[], merchant={"merchant_id": "5551234", "feed_label": "UK"}
+        ),
+        "asset_groups": [bare],
+    }
+
+    entry = await _run_pmax(monkeypatch, account, args)
+
+    created = [next(iter(op)) for op in account.mutates[-1]["mutateOperations"]]
+    operations = account.mutates[-1]["mutateOperations"]
+    campaign = next(
+        op["campaignOperation"]["create"] for op in operations if "campaignOperation" in op
+    )
+    assert campaign["shoppingSetting"] == {"merchantId": "5551234", "feedLabel": "UK"}
+    assert "assetOperation" not in created and "campaignAssetOperation" not in created
+    assert next(
+        op["assetGroupListingGroupFilterOperation"]["create"]
+        for op in operations
+        if "assetGroupListingGroupFilterOperation" in op
+    ) == {
+        "assetGroup": f"{_C}/assetGroups/-3",
+        "type": "UNIT_INCLUDED",
+        "listingSource": "SHOPPING",
+    }
+    assert entry.data.outcome == "created"
+
+
+async def test_a_merchant_center_account_not_linked_is_refused_after_approval_with_nothing_sent(
+    monkeypatch,
+) -> None:
+    account = _Account(merchant_ids=("999",))
+    args = {
+        "campaign": _pmax(merchant={"merchant_id": "5551234"}),
+        "asset_groups": [_asset_group()],
+    }
+
+    entry = await _run_pmax(monkeypatch, account, args)
+
+    assert entry.status == "error" and "isn't linked" in entry.error_message
+    assert account.mutates == []
+
+
+async def test_an_asset_group_below_a_minimum_or_with_another_accounts_image_is_refused() -> None:
+    args = {
+        "campaign": _pmax(),
+        "asset_groups": [
+            _asset_group(
+                headlines=["Rain Jackets", "Stay Dry Outside"],
+                images=[
+                    _image("301", "MARKETING_IMAGE", customer_id="222"),
+                    _image("302", "SQUARE_MARKETING_IMAGE"),
+                ],
+            )
+        ],
+    }
+    request = GoogleAdsCreateCampaignRequest.model_validate(args)
+
+    with pytest.raises(ModelRetry) as refused:
+        tool_module._validate_args(
+            _ctx(_entry()), request.campaign, asset_groups=request.asset_groups
+        )
+
+    assert "Rain Jackets: needs at least 3 headlines, has 2." in str(refused.value)
+    assert "Choose images and videos from the account the campaign goes in." in str(refused.value)
+
+
+async def test_performance_max_approval_reads_images_feed_and_goals_and_dry_runs(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = {
+        "campaign": _pmax(),
+        "asset_groups": [
+            _asset_group(),
+            # The landscape image doesn't fit the square shape, so Google isn't asked about it.
+            _asset_group(
+                name="Boots",
+                images=[_image("301", "SQUARE_MARKETING_IMAGE"), _image("302", "MARKETING_IMAGE")],
+            ),
+        ],
+    }
+
+    checks = (await _display(monkeypatch, account, args))["_checks"]
+
+    assert checks["images"]["302"]["fits"] == ["SQUARE_MARKETING_IMAGE", "LOGO"]
+    assert checks["unknown_images"] == [] and checks["languages"] == {"1000": "English"}
+    assert [goal["name"] for goal in checks["account_goals"]] == [
+        "Purchase from website",
+        "Signup from website",
+    ]
+    sent = account.mutates[0]
+    # Google refuses partial failure for Performance Max asset groups, even in a dry run.
+    assert sent["validateOnly"] is True and sent["partialFailure"] is False
+    assert [
+        op["assetGroupOperation"]["create"]["name"]
+        for op in sent["mutateOperations"]
+        if "assetGroupOperation" in op
+    ] == ["Rain Jackets"]

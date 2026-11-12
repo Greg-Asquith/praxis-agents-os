@@ -540,7 +540,9 @@ step.
 
 ### Campaign creation
 
-`google_ads_create_campaign` builds a complete Search campaign in one approval: a budget,
+`google_ads_create_campaign` builds a complete campaign in one approval. `campaign.type`
+is `search` (the default) or `performance_max`; Performance Max is described under
+[Performance Max creation](#performance-max-creation) below. A Search campaign is a budget,
 the campaign, its locations and negative keywords, and 1 to 20 ad groups using the ad group
 model above. It builds in the one Google Ads account with permission to make changes in
 Active Context, as Meta's create tools do, because integration tools never take an account
@@ -602,6 +604,86 @@ kind of object and returns references for the campaign (with its budget) and eac
 group, for other tools to use. When Google refuses the request, the result gives each
 distinct reason once. Audit intents are grouped by the campaign and each ad group, keyed by
 build step, and record locations by key.
+
+### Performance Max creation
+
+With `campaign.type: "performance_max"`, `google_ads_create_campaign` takes `asset_groups`
+in place of `ad_groups` and builds the campaign, its brand, and 1 to 5 asset groups in the
+same atomic request. Budget, locations, location setting, dates, and the EU political
+declaration work as for Search. The campaign also takes these fields:
+
+| Field | What it does |
+| --- | --- |
+| `budget` | `{kind: "new", daily_amount}` only. Google doesn't let Performance Max spend from a shared budget. |
+| `bidding` | `MAXIMIZE_CONVERSIONS` with an optional `target_cpa`, or `MAXIMIZE_CONVERSION_VALUE` with an optional `target_roas` ratio. |
+| `languages` | Language keys from `google_ads_search_targeting`, as campaign criteria. None means every language. |
+| `business_name`, `logos` | The brand. Brand guidelines are always on (`brandGuidelinesEnabled`), so one business name (25 characters) and 1 to 5 logos are linked to the campaign with `campaignAsset`, at least one of them a square `LOGO`; `LANDSCAPE_LOGO` is optional. Logos are image assets from `google_ads_upload_media`. |
+| `final_url_expansion` | On by default, as Google sets it. Off sends `FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION` as `OPTED_OUT`. |
+| `conversion_goals` | Left out, the campaign bids for the account's goals. A list of `{category, origin}` sets each account goal's `campaignConversionGoal` to bid or not, in the same request. |
+| `merchant` | `{merchant_id, feed_label}` for a retailer: `shoppingSetting` on the campaign, and one root listing filter (`UNIT_INCLUDED`, `SHOPPING`) per asset group, so it advertises every product in the feed. 311 B adds narrower filters. |
+
+Each asset group has a `name`, `final_url`, `headlines`, `long_headlines`, `descriptions`,
+`images` (`{asset, field_type}` with `MARKETING_IMAGE`, `SQUARE_MARKETING_IMAGE`, or
+`PORTRAIT_MARKETING_IMAGE`), `videos` (YouTube video asset references), and up to 25
+`search_themes`, sent as `assetGroupSignal` search themes. Audience signals are pending
+(310 B). Google's minimums are in `ASSET_GROUP_LIMITS` in
+`tools/schemas/performance_max.py`: 3 to 15 headlines (30 characters), 1 to 5 long
+headlines (90), 2 to 5 descriptions (90, one of them 60 or fewer), at least one landscape
+and one square image, and at most 20 images of each shape and 15 videos. The schema holds
+the maximums; `asset_group_problems` checks the minimums, so a refusal names the group and
+the count. In a retail campaign, a group that links none of its own assets is exempt,
+because Google makes its assets from the feed, and the brand is then optional too. A
+group that links some assets must meet every minimum, as Google requires.
+
+`operations/performance_max.py` compiles the campaign (`add_performance_max_campaign`,
+which reuses `add_campaign_budget`, `campaign_body`, and `add_campaign_locations` from
+`operations/search_campaigns.py`) and each asset group (`add_asset_group`). Text assets
+are created once per distinct text across the build, so a headline that repeats the
+business name is one asset with two links. Images, logos, and videos link existing assets.
+Each step records its `source` (`CampaignItem` or `AssetGroupItem`, which names the field
+type and content). The build seam's `CampaignBuild.update` adds the goal updates: Google
+makes a new campaign's goals with it, so they're updates to
+`campaignConversionGoals/{temporary campaign id}~{category}~{origin}`, ordered after the
+campaign. They're the only updates a build sends.
+
+Before approval, the tool refuses a missing brand, an asset group under a minimum, and an
+image, logo, or video from another account. While preparing the approval,
+`performance_max_checks` in `tools/utils/performance_max_builds.py` reads Google's names
+for the locations and languages, each image's size and the shapes it fits (`image_fits`
+from `operations/media.py`), the linked Merchant Center accounts (`product_link`), and the
+account goals, then dry runs the build. Google refuses partial failure for these operations,
+even with `validateOnly`, so this dry run sends `partialFailure: false` and reports only
+Google's first rejection, for the whole request. Asset groups with an image in a shape it doesn't
+fit are left out of the dry run, and the dry run is skipped while the card already shows a
+problem with the brand, the feed, or the goals. `_checks` then also holds `languages`,
+`unknown_languages`, `images`, `unknown_images`, `merchant_ids`, `account_goals`, and
+Google's asset group rejections by group name, kind, field type, and content. After
+approval, the tool reads the account again and refuses a Merchant Center account that
+isn't linked and a goal the account doesn't have, with nothing sent.
+
+The card shows each chosen image and logo through the `google_ads_image` preview kind
+(`preview.py`, `operations/preview_image.py`), because the content security policy blocks
+Google's image hosts. The web client asks the conversation preview route with the customer ID
+as `scope_id` and the asset ID as `ref`. The route passes the matched context target to the
+fetch, which reads `asset.image_asset.full_size.url` in that customer only, so another
+account's image isn't found. The API downloads it only from Google's HTTPS image hosts
+(`googlesyndication.com`, `googleusercontent.com`), without following redirects or sending the
+token, up to 8 MB, and re-encodes it at most 720 pixels a side with the shared
+`services/integrations/previews/images.py`: as a PNG when the image has transparency, since
+logos are often round on a transparent square, and as a JPEG otherwise. The preview route
+accepts only a JPEG or PNG data URL whose bytes start with that format's signature.
+
+The result has `campaign_type`, and `asset_groups` in place of `ad_groups`, with each
+group's reference and counts. It counts text assets, brand links, asset group links,
+search themes, product filters, languages, and goal updates as kinds.
+
+The card (`components/create-campaign-approval.tsx`) shows the Search card's rows plus
+**Goals** and **Brand**, with languages under **Locations** and final URL expansion and the
+product feed under **More Settings**. `components/asset-groups-editor.tsx` lists the asset
+groups with each text type and the images counted against Google's minimums ("2 of 3" in
+red), and the open group below: its final URL, text pasted one per line, images with
+their shape, and search themes, labelled as guidance that doesn't limit reach. Cancel and
+Restore work as for ad groups.
 
 ### Targeting
 

@@ -14,6 +14,7 @@ import {
   createCampaignBlock,
   createCampaignDetails,
   createCampaignPrompt,
+  createCampaignTitle,
   parseCreateCampaignArgs,
   type CreateCampaignArgs,
 } from "@/integrations/google_ads/lib/create-campaign"
@@ -33,7 +34,7 @@ export const googleAdsCreateCampaignPresenter = createIntegrationWritePresenter(
     >(googleAdsProvider, {
       copy: { verb: "Create", object: "campaign", effect: "created" },
       approval: {
-        title: "Create Search Campaign",
+        title: createCampaignTitle,
         approveLabel: "Create Campaign",
         parseArgs: parseCreateCampaignArgs,
         prompt: createCampaignPrompt,

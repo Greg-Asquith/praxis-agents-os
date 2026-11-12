@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from models.workspace import Workspace
     from services.agents.runtime.entity_references.registry import EntityResolverDefinition
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
+    from services.integrations.context.domain import ResolvedContextEntry
     from services.integrations.table_scopes.adapter import TableScopeAdapter
 
 
@@ -121,7 +122,7 @@ OAuthConfigFn = Callable[[], OAuthClientConfig]
 class IntegrationPreviewPayload:
     """Raw provider content returned to the engine preview boundary."""
 
-    # An image is a `data:image/jpeg;base64,` URL the provider re-encoded itself.
+    # An image is a JPEG or PNG `data:` URL the provider re-encoded itself.
     content_type: Literal["html", "text", "image"]
     content: str
     meta: dict[str, object]
@@ -136,6 +137,8 @@ class IntegrationPreviewRequest:
     scope_id: str | None
     actor: "User"
     workspace: "Workspace"
+    # The matched context target, with its routing metadata; set with `scope_id`.
+    scope: "ResolvedContextEntry | None" = None
 
 
 IntegrationPreviewFetchFn = Callable[

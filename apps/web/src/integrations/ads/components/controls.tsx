@@ -117,11 +117,12 @@ export function SegmentedChoice<T extends string>({
       {options.map((option) => (
         <ToggleGroupItem
           key={option.value}
-          className={
+          className={cn(
+            "hover:cursor-pointer disabled:cursor-not-allowed",
             compact
               ? "text-muted-foreground aria-pressed:bg-muted aria-pressed:text-foreground h-6 min-w-14 px-2 text-xs"
               : "text-foreground/70 aria-pressed:bg-accent aria-pressed:text-accent-foreground h-8 min-w-20 px-3 aria-pressed:font-semibold"
-          }
+          )}
           value={option.value}
         >
           {option.label}

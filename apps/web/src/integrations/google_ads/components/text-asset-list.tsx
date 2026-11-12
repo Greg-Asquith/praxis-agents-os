@@ -19,22 +19,26 @@ import { cn } from "@/lib/utils"
 // Shown before Show All, so a 15-headline ad stays short.
 const FIRST_SHOWN = 3
 const NO_PIN = "none"
+const NO_PINS: readonly string[] = []
 
-/** Edits an ad's headlines or descriptions, with character counters, pins, and the minimum. */
+/** Edits text assets such as headlines, with character counters, any pins, and the minimum. */
 export function TextAssetList({
   assets,
   disabled,
+  heading = true,
   limits,
   noun,
   onChange,
-  pins,
+  pins = NO_PINS,
 }: {
   assets: readonly TextAsset[]
   disabled: boolean
+  // Off when the row around the list already names it and counts it.
+  heading?: boolean
   limits: { min: number; max: number; length: number }
-  noun: "Headline" | "Description"
+  noun: string
   onChange: (assets: TextAsset[]) => void
-  pins: readonly string[]
+  pins?: readonly string[]
 }) {
   const [showAll, setShowAll] = useState(false)
   // Typing stays here until the field is left, so a caller that tidies the text can't redraw it mid-word.
@@ -51,17 +55,20 @@ export function TextAssetList({
   const short = assets.length < limits.min
   return (
     <div className="grid min-w-0 gap-2">
-      <p className="flex flex-wrap items-baseline gap-2 text-sm font-medium">
-        {plural}
-        <span
-          className={cn(
-            "text-xs font-normal",
-            short ? "text-destructive" : "text-muted-foreground"
-          )}
-        >
-          {String(assets.length)} of {String(limits.max)} · at least {String(limits.min)}
-        </span>
-      </p>
+      {heading ? (
+        <p className="flex flex-wrap items-baseline gap-2 text-sm font-medium">
+          {plural}
+          <span
+            className={cn(
+              "text-xs font-normal",
+              short ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {String(assets.length)} of {String(limits.max)}
+            {limits.min > 0 ? ` · at least ${String(limits.min)}` : ""}
+          </span>
+        </p>
+      ) : null}
       <ul className="grid gap-1.5">
         {shown.map((asset, index) => {
           const text = draft?.at === index ? draft.text : asset.text
@@ -94,30 +101,32 @@ export function TextAssetList({
               >
                 {String(count)}/{String(limits.length)}
               </span>
-              <Select<string>
-                disabled={disabled}
-                onValueChange={(value) => {
-                  update(index, { pin: value === null || value === NO_PIN ? null : value })
-                }}
-                value={asset.pin ?? NO_PIN}
-              >
-                <SelectTrigger
-                  aria-label={`Pin ${label.toLowerCase()}`}
-                  className="w-28 shrink-0"
-                  size="sm"
+              {pins.length > 0 ? (
+                <Select<string>
+                  disabled={disabled}
+                  onValueChange={(value) => {
+                    update(index, { pin: value === null || value === NO_PIN ? null : value })
+                  }}
+                  value={asset.pin ?? NO_PIN}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  <SelectGroup>
-                    {pinOptions.map((option) => (
-                      <SelectItem key={option.value} label={option.label} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    aria-label={`Pin ${label.toLowerCase()}`}
+                    className="w-28 shrink-0"
+                    size="sm"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectGroup>
+                      {pinOptions.map((option) => (
+                        <SelectItem key={option.value} label={option.label} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : null}
               <Button
                 aria-label={`Remove ${label.toLowerCase()}`}
                 disabled={disabled}
