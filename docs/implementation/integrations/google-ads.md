@@ -19,6 +19,11 @@ API access belongs to the Google Cloud project that owns the OAuth client or
 the service account. Check it on the Google Ads API page in Cloud Console. A
 project with Test access can only reach test accounts, so a service account
 key from a customer's own project needs Explorer or Basic access there too.
+From v25 Google refuses a real account for a Test-access project with
+`authorizationError: CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION`. The client
+raises `IntegrationPermissionError` with error code
+`cloud_project_not_approved` and a message that says to apply for Explorer
+access, for every request, and doesn't refresh the token or retry.
 
 The Google Ads tools are available when `google_ads` is in
 `INTEGRATIONS_ENABLED_PROVIDERS`. A workspace without a Google Ads

@@ -419,6 +419,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 - Google Ads calls API v26 instead of v24, which Google sunsets in May 2027.
   No field the tools send or read changed, and the cards are unchanged.
+- Google Ads explains a Google Cloud project that only has Test access: the
+  agent says the project can only use test accounts and to apply for Explorer
+  access in Cloud Console, instead of Google's raw authorisation error.
 - Google Ads Update Negative Keywords and Optimise Search Terms cards list
   their parents first. Update Negative Keywords lists its campaigns, ad
   groups, and lists with the count to add and to remove, and Optimise Search

@@ -11,6 +11,7 @@ from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationError,
     IntegrationFailureDisposition,
+    IntegrationPermissionError,
     IntegrationValidationError,
 )
 from services.integrations.http import (
@@ -184,10 +185,14 @@ class GoogleAdsClient:
                     response,
                     operation=operation,
                 ),
+                response_error_mapper=lambda response: _unapproved_project_error(
+                    response,
+                    operation=operation,
+                ),
                 **kwargs,
             )
         except IntegrationError as exc:
-            # httpx request objects retain headers; never carry the developer
+            # httpx request objects retain headers; never carry the bearer
             # token beyond this provider boundary in exception context.
             exc.original_error = None
             raise
@@ -214,23 +219,12 @@ def _google_ads_error_detail(
         return fallback
 
     messages: list[str] = []
-    details = error.get("details")
-    if isinstance(details, list):
-        for detail in details:
-            provider_errors = detail.get("errors") if isinstance(detail, dict) else None
-            if not isinstance(provider_errors, list):
-                continue
-            for provider_error in provider_errors:
-                message = (
-                    provider_error.get("message") if isinstance(provider_error, dict) else None
-                )
-                normalized = _bounded_provider_message(message)
-                if normalized and normalized not in messages:
-                    messages.append(normalized)
-                if len(messages) == 3:
-                    break
-            if len(messages) == 3:
-                break
+    for provider_error in _provider_errors(error):
+        normalized = _bounded_provider_message(provider_error.get("message"))
+        if normalized and normalized not in messages:
+            messages.append(normalized)
+        if len(messages) == 3:
+            break
 
     if not messages:
         fallback = _bounded_provider_message(error.get("message"))
@@ -240,6 +234,49 @@ def _google_ads_error_detail(
         return fallback
 
     return f"Google Ads rejected the {subject}: {' '.join(messages)}"[:1000]
+
+
+def _unapproved_project_error(
+    response: httpx2.Response,
+    *,
+    operation: str,
+) -> IntegrationPermissionError | None:
+    """Explain the v25+ refusal for a Cloud project that only has Test access."""
+    if response.status_code != 403:
+        return None
+    try:
+        error = response.json().get("error")
+    except (AttributeError, ValueError):
+        return None
+    if not isinstance(error, dict):
+        return None
+    if not any(
+        isinstance(code := provider_error.get("errorCode"), dict)
+        and code.get("authorizationError") == "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
+        for provider_error in _provider_errors(error)
+    ):
+        return None
+    return IntegrationPermissionError(
+        "This Google Cloud project can only use Google Ads test accounts. In Google Cloud "
+        "Console, open Google Ads API and apply for Explorer access.",
+        provider_key="google_ads",
+        operation=operation,
+        error_code="cloud_project_not_approved",
+        failure_disposition=IntegrationFailureDisposition.REJECTED,
+    )
+
+
+def _provider_errors(error: dict[str, Any]) -> list[dict[str, Any]]:
+    details = error.get("details")
+    if not isinstance(details, list):
+        return []
+    return [
+        provider_error
+        for detail in details
+        if isinstance(detail, dict) and isinstance(detail.get("errors"), list)
+        for provider_error in detail["errors"]
+        if isinstance(provider_error, dict)
+    ]
 
 
 def _bounded_provider_message(value: Any) -> str | None:

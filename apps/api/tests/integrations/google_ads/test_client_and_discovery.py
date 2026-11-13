@@ -8,6 +8,7 @@ import pytest
 from core.exceptions.integration import (
     IntegrationError,
     IntegrationFailureDisposition,
+    IntegrationPermissionError,
     IntegrationValidationError,
 )
 from integrations.google_ads.client import GoogleAdsClient
@@ -108,6 +109,58 @@ async def test_google_ads_mutation_retries_exactly_once_after_auth_rejection() -
 
     assert attempts == 2
     assert forces == [False, True]
+
+
+async def test_unapproved_cloud_project_says_how_to_fix_it_without_retrying() -> None:
+    attempts = 0
+    forces: list[bool] = []
+
+    async def token(force: bool) -> str:
+        forces.append(force)
+        return "token"
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(
+            403,
+            json={
+                "error": {
+                    "code": 403,
+                    "status": "PERMISSION_DENIED",
+                    "details": [
+                        {
+                            "errors": [
+                                {
+                                    "errorCode": {
+                                        "authorizationError": (
+                                            "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
+                                        )
+                                    },
+                                    "message": "The Google Cloud project is not approved.",
+                                }
+                            ]
+                        }
+                    ],
+                }
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(token, client=http_client)
+        with pytest.raises(IntegrationPermissionError) as exc_info:
+            await client.post(
+                "customers/333/googleAds:searchStream",
+                operation="run_report",
+                policy=IntegrationRequestPolicy.READ,
+                json={"query": "SELECT campaign.id FROM campaign"},
+            )
+
+    assert exc_info.value.error_code == "cloud_project_not_approved"
+    assert "apply for Explorer access" in exc_info.value.user_message
+    assert attempts == 1
+    assert forces == [False]
 
 
 async def test_google_ads_malformed_mutation_response_is_ambiguous() -> None:
