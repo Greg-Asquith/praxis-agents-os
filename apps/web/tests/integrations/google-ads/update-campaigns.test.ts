@@ -14,6 +14,7 @@ import {
   campaignRows,
   campaignsApproveLabel,
   campaignsBlock,
+  canCheckCampaigns,
   editedChanges,
   needsCheck,
   parseCancelled,
@@ -191,6 +192,51 @@ describe("adding a change", () => {
     expect(rows[1]).toMatchObject({ problem: null, unchanged: true })
     expect(rows[2]?.problem).toContain("http://")
   })
+
+  it("offers Performance Max switches and goals, and holds an emptied goal list back", () => {
+    const purchase = { category: "PURCHASE", origin: "WEBSITE" }
+    const signup = { category: "SIGNUP", origin: "WEBSITE" }
+    const current = { final_url_expansion: true, text_customisation: true }
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), conversion_goals: [signup, purchase] },
+          { campaign: campaign("11"), name: "Custom" },
+        ],
+        _checks: {
+          [key("10")]: check({
+            channel: "PERFORMANCE_MAX",
+            current: { ...current, conversion_goals: [purchase, signup] },
+            requested: { conversion_goals: [purchase, signup] },
+          }),
+          [key("11")]: check({
+            channel: "PERFORMANCE_MAX",
+            current: { ...current, conversion_goals: "custom" },
+            requested: { name: "Custom" },
+          }),
+        },
+      })
+    )
+    const rows = campaignRows(args, args)
+    const offered = (id: string) =>
+      addableCampaignSettings(args, args, rows, key(id)).map((item) => item.setting)
+
+    // The same goals in another order change nothing.
+    expect(rows[0]).toMatchObject({ problem: null, unchanged: true })
+    expect(offered("10")).toEqual(expect.arrayContaining(["final_url_expansion"]))
+    // A custom goal can't change here, so goals aren't offered on its campaign.
+    expect(offered("11")).toEqual(expect.arrayContaining(["text_customisation"]))
+    expect(offered("11")).not.toContain("conversion_goals")
+
+    const ids = new Set([`${key("10")}|conversion_goals`])
+    const none = edited(editedChanges(args, ids, () => []))
+    expect(campaignRows(none, args)[0]?.problem).toContain("at least one")
+    expect(canCheckCampaigns(none)).toBe(false)
+    expect(editedChanges(args, ids, () => "account")[0]).toEqual({
+      campaign: campaign("10"),
+      conversion_goals: "account",
+    })
+  })
 })
 
 describe("bidding", () => {
@@ -317,12 +363,20 @@ describe("presenters", () => {
                   campaign: campaign("11"),
                   bidding: { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18" },
                 },
+                {
+                  campaign: campaign("12"),
+                  conversion_goals: [{ category: "PURCHASE", origin: "WEBSITE" }],
+                },
               ],
               _checks: {
                 [key("10")]: check(),
                 [key("11")]: check({
                   current: { bidding: { strategy: "MANUAL_CPC" } },
                   requested: { bidding: { strategy: "MAXIMIZE_CONVERSIONS", target_cpa: "18" } },
+                }),
+                [key("12")]: check({
+                  current: { conversion_goals: "account" },
+                  requested: { conversion_goals: [{ category: "PURCHASE", origin: "WEBSITE" }] },
                 }),
               },
             }),
@@ -332,6 +386,7 @@ describe("presenters", () => {
       )
     )
     expect(approval).toContain("31 Dec 2026")
+    expect(approval).toContain("Purchase from website only")
 
     const result = html(
       googleAdsUpdateCampaignsPresenter.render(

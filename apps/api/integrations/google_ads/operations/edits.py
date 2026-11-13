@@ -57,6 +57,8 @@ _CRITERION_COLLECTIONS = {
     "campaignAsset": "campaignAssets",
     "adGroupAsset": "adGroupAssets",
 }
+# Google refuses these in a partial-failure request, so they always go in an atomic group.
+_NO_PARTIAL_FAILURE = frozenset({"campaignConversionGoal", "conversionGoalCampaignConfig"})
 _CREATED_SUFFIX = re.compile(r"\d+(?:~[A-Z_]+)?")
 
 
@@ -246,32 +248,35 @@ async def prepare_edits(
             prepared.append(replace(edit, before=edit.live(values) or {}))
         else:
             prepared.append(replace(edit, before=edit.live(values)))
-    checked = [
-        index for index, edit in enumerate(prepared) if edit.refused is None and not edit.unchanged
-    ]
-    if not checked:
-        return prepared
-    try:
-        response = await google_ads_mutate(
-            client,
-            customer_id=customer_id,
-            login_customer_id=login_customer_id,
-            operations=[prepared[index].operation() for index in checked],
-            partial_failure=True,
-            validate_only=True,
-            operation=operation,
-        )
-    except IntegrationValidationError as exc:
-        return [
-            replace(edit, refused=exc.user_message) if index in checked else edit
-            for index, edit in enumerate(prepared)
-        ]
-    for slot, index in enumerate(checked):
-        error = response.indexed_errors.get(slot)
-        if error is None and response.unattributed_errors:
-            error = response.unattributed_errors[0]
-        if error is not None:
-            prepared[index] = replace(prepared[index], refused=error["message"] or _DRY_RUN_FAILED)
+    # One request names the edit Google rejects, so only the resources that can't take
+    # partial failure are checked apart, each atomic group on its own, as they're sent.
+    requests: dict[str | None, list[int]] = {}
+    for index, edit in enumerate(prepared):
+        if edit.refused is None and not edit.unchanged:
+            group = edit.atomic_group if edit.resource in _NO_PARTIAL_FAILURE else None
+            requests.setdefault(group, []).append(index)
+    for group, checked in requests.items():
+        try:
+            response = await google_ads_mutate(
+                client,
+                customer_id=customer_id,
+                login_customer_id=login_customer_id,
+                operations=[prepared[index].operation() for index in checked],
+                partial_failure=group is None,
+                validate_only=True,
+                operation=operation,
+            )
+        except IntegrationValidationError as exc:
+            for index in checked:
+                prepared[index] = replace(prepared[index], refused=exc.user_message)
+            continue
+        for slot, index in enumerate(checked):
+            error = response.indexed_errors.get(slot)
+            if error is None and response.unattributed_errors:
+                error = response.unattributed_errors[0]
+            if error is not None:
+                refused = error["message"] or _DRY_RUN_FAILED
+                prepared[index] = replace(prepared[index], refused=refused)
     return prepared
 
 

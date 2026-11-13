@@ -9,7 +9,7 @@ from typing import Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .asset_automation import live_automation, video_pages
+from .asset_automation import AUTOMATION_SWITCHES, automation_on, live_automation, video_pages
 from .campaign_bidding import BIDDING_FIELDS, bidding_values, card_bidding
 from .utils import stream_rows
 
@@ -23,12 +23,18 @@ type CampaignSetting = Literal[
     "search_partners",
     "display_expansion",
     "video_pages",
+    "final_url_expansion",
+    "text_customisation",
+    "conversion_goals",
     "bidding",
 ]
 
 # Each setting's field path in Google's JSON names, as the edit seam compares and masks it.
-# Bidding has several paths, which `campaign_bidding` works out from the change. Video pages
-# are one entry of the automation list, which `asset_automation` merges into the live list.
+# Bidding has several paths, which `campaign_bidding` works out from the change. Video pages,
+# final URL expansion, and text customisation are entries of the automation list, which
+# `asset_automation` merges into the live list. Conversion goals are their own objects, which
+# `campaign_goals` reads.
+AUTOMATION_PATH = "assetAutomationSettings"
 SETTING_PATHS: dict[CampaignSetting, str] = {
     "name": "name",
     "start_date": "startDateTime",
@@ -38,7 +44,9 @@ SETTING_PATHS: dict[CampaignSetting, str] = {
     "custom_parameters": "urlCustomParameters",
     "search_partners": "networkSettings.targetSearchNetwork",
     "display_expansion": "networkSettings.targetContentNetwork",
-    "video_pages": "assetAutomationSettings",
+    "video_pages": AUTOMATION_PATH,
+    "final_url_expansion": AUTOMATION_PATH,
+    "text_customisation": AUTOMATION_PATH,
 }
 _FIELDS = (
     "campaign.resource_name",
@@ -89,6 +97,8 @@ def card_value(setting: CampaignSetting, value: Any) -> Any:
         return value is True
     if setting == "video_pages":
         return video_pages(value)
+    if setting in AUTOMATION_SWITCHES:
+        return automation_on(value, AUTOMATION_SWITCHES[setting])
     return value if isinstance(value, str) and value else None
 
 
@@ -106,7 +116,7 @@ class LiveCampaignSettings:
 
 
 def card_settings(values: Mapping[str, Any]) -> dict[CampaignSetting, Any]:
-    """Every setting in card terms, from the values `read_campaign_settings` returns."""
+    """Every campaign field in card terms, from the values `read_campaign_settings` returns."""
     settings: dict[CampaignSetting, Any] = {
         setting: card_value(setting, values.get(path)) for setting, path in SETTING_PATHS.items()
     }
@@ -172,6 +182,6 @@ def _values(campaign: Mapping[str, Any]) -> dict[str, Any]:
         # A flag Google leaves out is off.
         "networkSettings.targetSearchNetwork": networks.get("targetSearchNetwork") is True,
         "networkSettings.targetContentNetwork": networks.get("targetContentNetwork") is True,
-        "assetAutomationSettings": live_automation(campaign.get("assetAutomationSettings")),
+        AUTOMATION_PATH: live_automation(campaign.get(AUTOMATION_PATH)),
         **bidding_values(campaign),
     }

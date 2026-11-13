@@ -21,6 +21,7 @@ import { SegmentedChoice } from "@/integrations/ads/components/controls"
 import { ParentTable } from "@/integrations/ads/components/parent-table"
 import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { BiddingCell, BiddingChange } from "@/integrations/google_ads/components/bidding-editor"
+import { CampaignGoalsEditor } from "@/integrations/google_ads/components/campaign-goals-editor"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import {
   canonicalMoney,
@@ -29,6 +30,7 @@ import {
   type Bidding,
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
+import { GOALS_RELEARN, type GoalOption } from "@/integrations/google_ads/lib/campaign-goals"
 import { parametersText, parseParametersText } from "@/integrations/google_ads/lib/setting-changes"
 import {
   addableCampaignSettings,
@@ -44,7 +46,9 @@ import {
   type CancelledSetting,
   canCheckCampaigns,
   editedChanges,
+  goalOptions,
   isBidding,
+  isGoals,
   isVideoPages,
   needsCheck,
   parseCancelled,
@@ -174,6 +178,7 @@ export function UpdateCampaignsApproval({
       <ChangeCell
         context={rowContext(args, row)}
         disabled={disabled}
+        goals={goalOptions(checked, row.key)}
         onChange={(value) => {
           setValue([row.id], value)
         }}
@@ -441,11 +446,14 @@ function SettingCell({ row }: { row: CampaignRow }) {
 function ChangeCell({
   context,
   disabled,
+  goals,
   onChange,
   row,
 }: {
   context: BiddingContext
   disabled: boolean
+  // The goals the row's campaign can bid for.
+  goals: readonly GoalOption[]
   onChange: (value: SettingValue) => void
   row: CampaignRow
 }) {
@@ -464,6 +472,7 @@ function ChangeCell({
       </span>
       <SettingEditor
         disabled={disabled}
+        goals={goals}
         label={`New ${SETTING_TITLES[row.setting].toLowerCase()} for ${row.campaignName}`}
         onChange={onChange}
         setting={row.setting}
@@ -473,18 +482,23 @@ function ChangeCell({
       {isVideoPages(row.setting, row.value) && row.value.length > 0 && !row.unchanged ? (
         <p className="text-muted-foreground basis-full text-xs">{VIDEO_PAGES_RIGHTS}</p>
       ) : null}
+      {row.setting === "conversion_goals" && !row.unchanged ? (
+        <p className="text-muted-foreground basis-full text-xs">{GOALS_RELEARN}</p>
+      ) : null}
     </div>
   )
 }
 
 function SettingEditor({
   disabled,
+  goals,
   label,
   onChange,
   setting,
   value,
 }: {
   disabled: boolean
+  goals: readonly GoalOption[]
   label: string
   onChange: (value: SettingValue) => void
   setting: CampaignSetting
@@ -501,6 +515,16 @@ function SettingEditor({
         }}
         options={ON_OFF}
         value={value ? "on" : "off"}
+      />
+    )
+  if (isGoals(setting, value) || (setting === "conversion_goals" && typeof value === "string"))
+    return (
+      <CampaignGoalsEditor
+        disabled={disabled}
+        label={label}
+        onChange={onChange}
+        options={goals}
+        value={value}
       />
     )
   if (isVideoPages(setting, value))
@@ -577,7 +601,7 @@ function EveryAction({
   const [first] = rows
   if (!first || rows.length < 2) return null
   const shared = rows.every((row) => sameValue(row.value, first.value))
-  if (setting === "search_partners" || setting === "display_expansion")
+  if (typeof first.value === "boolean")
     return (
       <SegmentedChoice
         ariaLabel={`${SETTING_TITLES[setting]} for every campaign in this line`}

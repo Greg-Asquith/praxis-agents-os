@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .asset_automation import video_crawl_setting
+from .asset_automation import FINAL_URL_EXPANSION, video_crawl_setting
 from .asset_group_state import URL_OPTION_PATHS
 from .build import CampaignBuild
 from .campaign_settings import api_value
@@ -88,7 +88,7 @@ def add_performance_max_campaign(
     if not campaign.final_url_expansion:
         automation.append(
             {
-                "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
+                "assetAutomationType": FINAL_URL_EXPANSION,
                 "assetAutomationStatus": "OPTED_OUT",
             }
         )

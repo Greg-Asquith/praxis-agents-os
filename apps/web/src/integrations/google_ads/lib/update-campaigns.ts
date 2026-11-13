@@ -26,6 +26,16 @@ import {
   type BiddingContext,
 } from "@/integrations/google_ads/lib/campaign-bidding"
 import {
+  ACCOUNT_GOALS,
+  CUSTOM_GOAL,
+  goalsProblem,
+  goalsText,
+  parseGoalOptions,
+  parseGoals,
+  type CampaignGoal,
+  type GoalOption,
+} from "@/integrations/google_ads/lib/campaign-goals"
+import {
   applyChangesLabel,
   approvalCountLine,
   changesBlock,
@@ -64,27 +74,38 @@ export const CAMPAIGN_SETTINGS = [
   "search_partners",
   "display_expansion",
   "video_pages",
+  "final_url_expansion",
+  "text_customisation",
+  "conversion_goals",
   "bidding",
 ] as const
 
 export type CampaignSetting = (typeof CAMPAIGN_SETTINGS)[number]
-// Card terms, as the server sends them: dates as YYYY-MM-DD, null for none, video pages as addresses.
-export type SettingValue = string | boolean | UrlParameter[] | string[] | Bidding | null
+// Card terms, as the server sends them: dates as YYYY-MM-DD, null for none, video pages as
+// addresses, and conversion goals as "account", "custom", or the goals that bid.
+export type SettingValue =
+  string | boolean | UrlParameter[] | string[] | CampaignGoal[] | Bidding | null
 
 export const SETTING_TITLES: Record<CampaignSetting, string> = {
   bidding: "Bidding",
+  conversion_goals: "Conversion Goals",
   custom_parameters: "Custom Parameters",
   display_expansion: "Display Expansion",
   end_date: "End Date",
+  final_url_expansion: "Final URL Expansion",
   final_url_suffix: "Final URL Suffix",
   name: "Name",
   search_partners: "Search Partners",
   start_date: "Start Date",
+  text_customisation: "Text Customisation",
   tracking_template: "Tracking Template",
   video_pages: "Video Pages",
 }
 
 const NETWORK_SETTINGS = new Set<CampaignSetting>(["search_partners", "display_expansion"])
+// Performance Max settings that are on or off.
+const AUTOMATION_SWITCHES = ["final_url_expansion", "text_customisation"] as const
+const SWITCH_SETTINGS = new Set<CampaignSetting>([...NETWORK_SETTINGS, ...AUTOMATION_SWITCHES])
 
 type CampaignChange = {
   campaignId: string
@@ -102,6 +123,8 @@ type CampaignCheck =
       unavailable: false
       channel: string | null
       current: Partial<Record<CampaignSetting, SettingValue>>
+      // Every goal the campaign can bid for.
+      goals: GoalOption[]
       name: string | null
       // Notes about a bidding change, such as recent conversions and ad groups' own bids.
       notes: string[]
@@ -156,11 +179,18 @@ export type CampaignCounts = {
 
 const UNAVAILABLE_PROBLEM = unavailableProblem("campaign")
 
+/** Conversion goals in card terms; undefined when they aren't. */
+function goalsValue(value: unknown): string | CampaignGoal[] | undefined {
+  if (value === ACCOUNT_GOALS || value === CUSTOM_GOAL) return value
+  return parseGoals(value) ?? undefined
+}
+
 function settingValue(setting: CampaignSetting, value: unknown): SettingValue | undefined {
   if (setting === "bidding") return parseBidding(value) ?? undefined
   if (setting === "video_pages") return parseVideoPages(value ?? []) ?? undefined
+  if (setting === "conversion_goals") return goalsValue(value)
   if (value === null) return setting === "custom_parameters" ? [] : null
-  if (NETWORK_SETTINGS.has(setting)) return typeof value === "boolean" ? value : undefined
+  if (SWITCH_SETTINGS.has(setting)) return typeof value === "boolean" ? value : undefined
   if (setting === "custom_parameters") return parseUrlParameters(value) ?? undefined
   return typeof value === "string" ? value : undefined
 }
@@ -182,6 +212,12 @@ function requestedOf(
   }
   const pages = parseVideoPages(entry["video_pages"])
   if (pages) values.video_pages = videoPagesFromText(pages.join(" "))
+  for (const setting of AUTOMATION_SWITCHES) {
+    const value = entry[setting]
+    if (typeof value === "boolean") values[setting] = value
+  }
+  const goals = goalsValue(entry["conversion_goals"])
+  if (goals !== undefined && goals !== CUSTOM_GOAL) values.conversion_goals = goals
   const bidding = parseBidding(entry["bidding"])
   if (bidding) values.bidding = bidding
   return values
@@ -220,6 +256,7 @@ function parseCheck(value: unknown): CampaignCheck {
     unavailable: false,
     channel: textOrNull(value["channel"]),
     current: parseSettingMap(CAMPAIGN_SETTINGS, settingValue, value["current"]),
+    goals: parseGoalOptions(value["goals"]),
     name: textOrNull(value["name"]),
     notes: Array.isArray(notes) ? notes.filter((note) => typeof note === "string") : [],
     portfolios,
@@ -253,6 +290,14 @@ export function isVideoPages(
   return setting === "video_pages" && Array.isArray(value)
 }
 
+/** Whether a setting's value is the list of goals the campaign alone bids for. */
+export function isGoals(
+  setting: CampaignSetting,
+  value: SettingValue | undefined
+): value is CampaignGoal[] {
+  return setting === "conversion_goals" && Array.isArray(value)
+}
+
 export function isBidding(value: SettingValue | undefined): value is Bidding {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -279,11 +324,6 @@ function rowOf(
   // Google answered for the value it was checked with, so an edited value waits for a new check.
   const checked = live !== null && sameValue(live.requested[setting], value)
   const result = rowResult({ value, was })
-  const local = isBidding(value)
-    ? biddingProblem(value)
-    : isVideoPages(setting, value)
-      ? videoPagesProblem(value)
-      : null
   return {
     campaignName: live?.name ?? label,
     cancelled: change === null,
@@ -298,7 +338,7 @@ function rowOf(
       changesStrategy(result, was),
     notes: live !== null && checked && setting === "bidding" ? live.notes : [],
     problem:
-      local ??
+      localProblem(setting, value) ??
       (live === null
         ? UNAVAILABLE_PROBLEM
         : checked
@@ -309,6 +349,13 @@ function rowOf(
     value,
     was,
   }
+}
+
+/** Why the server refuses a value, known before Google is asked; null when it doesn't. */
+function localProblem(setting: CampaignSetting, value: SettingValue): string | null {
+  if (isBidding(value)) return biddingProblem(value)
+  if (isVideoPages(setting, value)) return videoPagesProblem(value)
+  return isGoals(setting, value) ? goalsProblem(value) : null
 }
 
 /** One row per campaign and setting, with cancelled settings after the ones still requested. */
@@ -396,7 +443,9 @@ export function editedChanges(
 // The channels on which each setting can change, as on the server.
 const SETTING_CHANNELS: Partial<Record<CampaignSetting, readonly string[]>> = {
   display_expansion: ["SEARCH"],
+  final_url_expansion: ["PERFORMANCE_MAX"],
   search_partners: ["SEARCH", "SHOPPING"],
+  text_customisation: ["PERFORMANCE_MAX"],
   video_pages: ["PERFORMANCE_MAX"],
 }
 
@@ -411,8 +460,9 @@ function today(timeZone: string | undefined): string {
 
 /** Settings the request doesn't change on a campaign yet, each starting at its live value.
 
-Networks and video pages are offered only on channels that take them, a start date only
-before the campaign starts, and bidding only from a standard strategy the card can write back.
+Networks and Performance Max settings are offered only on channels that take them, a start
+date only before the campaign starts, conversion goals unless the campaign bids for a custom
+goal, and bidding only from a standard strategy the card can write back.
  */
 export function addableCampaignSettings(
   args: UpdateCampaignsArgs,
@@ -437,6 +487,7 @@ export function addableCampaignSettings(
       (channels && !channels.includes(check.channel ?? "")) ||
       (setting === "start_date" && started) ||
       (setting === "name" && live === null) ||
+      (setting === "conversion_goals" && (live === null || live === CUSTOM_GOAL)) ||
       (setting === "bidding" &&
         !(isBidding(live) && (STANDARD_STRATEGIES as readonly string[]).includes(live.strategy)))
     )
@@ -486,11 +537,14 @@ export function parseCancelled(value: unknown): CancelledSetting[] {
   })
 }
 
-/** Whether Google can check the request: every bidding change is complete. */
+/** Whether Google can check the request: every bidding change is complete and has a goal. */
 export function canCheckCampaigns(args: UpdateCampaignsArgs): boolean {
   return args.changes.every((change) => {
-    const bidding = change.requested.bidding
-    return !isBidding(bidding) || biddingProblem(bidding) === null
+    const { bidding, conversion_goals: goals } = change.requested
+    return (
+      (!isBidding(bidding) || biddingProblem(bidding) === null) &&
+      (!isGoals("conversion_goals", goals) || goalsProblem(goals) === null)
+    )
   })
 }
 
@@ -534,6 +588,12 @@ export function rowContext(args: UpdateCampaignsArgs, row: CampaignRow): Bidding
   }
 }
 
+/** The goals a campaign in the request can bid for, as Google last returned them. */
+export function goalOptions(checked: UpdateCampaignsArgs, key: string): GoalOption[] {
+  const check = checked.checks.get(key)
+  return check && !check.unavailable ? check.goals : []
+}
+
 /** A setting's value in the words the card uses. */
 export function valueText(
   setting: CampaignSetting,
@@ -544,6 +604,8 @@ export function valueText(
   if (isBidding(value)) return biddingText(value, context)
   if (typeof value === "boolean") return value ? "On" : "Off"
   if (isVideoPages(setting, value)) return value.length > 0 ? value.join(", ") : "Off"
+  if (isGoals(setting, value) || (setting === "conversion_goals" && typeof value === "string"))
+    return goalsText(value)
   if (Array.isArray(value)) return value.length > 0 ? parametersText(value) : "None"
   if (value === null) return setting === "end_date" ? "No end date" : "None"
   return setting === "start_date" || setting === "end_date" ? dateText(value) : value

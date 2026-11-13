@@ -222,9 +222,8 @@ The agent receives `counts` and only the failed and unverified objects, up to
 
 `google_ads_update_campaigns` changes up to 50 live campaigns of any type in
 one approval. Each entry names one campaign and only the settings that change.
-Conversion goals, Shopping settings, and the other Performance Max settings
-(final URL expansion, text customisation, and brand guidelines) are pending. The
-fields are as follows:
+Shopping settings, turning on brand guidelines for a Performance Max campaign,
+and custom conversion goals are pending. The fields are as follows:
 
 | Field | What it does |
 | --- | --- |
@@ -234,6 +233,8 @@ fields are as follows:
 | `url_options` | `final_url_suffix`, `tracking_template`, and `custom_parameters` (up to 8 pairs, replacing the list). An empty value or list clears it. |
 | `networks` | `search_partners` (Search and Shopping) and `display_expansion` (Search) on or off. |
 | `video_pages` | Performance Max only. Up to 20 pages Google may take the advertiser's videos from, replacing the campaign's list. An empty list turns that off. See [Video pages](#video-pages). |
+| `final_url_expansion`, `text_customisation` | Performance Max only. Each on or off. See [Final URL expansion and text customisation](#final-url-expansion-and-text-customisation). |
+| `conversion_goals` | `"account"` to bid for the account's goals, or a list of `{category, origin}` that become the only goals the campaign bids for. See [Campaign goals](#campaign-goals). |
 | `bidding` | One of `MANUAL_CPC`; `MAXIMIZE_CLICKS` with an optional `max_cpc`; `MAXIMIZE_CONVERSIONS` with an optional `target_cpa`; `MAXIMIZE_CONVERSION_VALUE` with an optional `target_roas` ratio; `TARGET_IMPRESSION_SHARE` with `location`, `share_percent`, and `max_cpc`; `PORTFOLIO` with a `google_ads_bidding_strategy` reference from the campaign's account; or `TARGETS` with `target_cpa`, `target_roas`, or `max_cpc`, changing only targets on the current strategy. Leaving out an optional target removes it. |
 
 `operations/campaign_settings.py` reads each campaign's settings by ID,
@@ -273,6 +274,57 @@ shows only pages that are on (`OPTED_IN`, with `enabled` true).
 
 That Google accepts every other setting sent back unchanged, and returns the pages as they
 were sent, isn't verified on a real account yet.
+
+#### Final URL expansion and text customisation
+
+Both are entries of the same `assetAutomationSettings` list as video pages:
+`FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION` and `TEXT_ASSET_AUTOMATION`, each `OPTED_IN` or
+`OPTED_OUT`. A Performance Max campaign has both on until it opts out, so an entry Google
+doesn't return reads as on (`automation_on`). `with_automation_changes` merges every
+automation setting one entry changes, video pages included, into one list, because they
+share one field path and Google replaces the list whole. A switch already at its value
+adds no entry.
+
+Google keeps text customisation on for as long as final URL expansion is on. The tool
+refuses the combination before Google sees it: turning text customisation off needs final
+URL expansion off, in the same entry or already, and turning final URL expansion on needs
+text customisation on. Both are refused on any other channel, whatever value is asked for,
+because the default only holds for Performance Max.
+
+#### Campaign goals
+
+Google makes a `campaignConversionGoal` for every category and origin pair in the account,
+on every campaign, and a `conversionGoalCampaignConfig` whose `goalConfigLevel` says
+whether the campaign bids for the account's goals (`CUSTOMER`) or its own (`CAMPAIGN`).
+Both can only be updated. `operations/campaign_goals.py` reads them
+(`read_campaign_goals`, two queries per account) and holds the card's value: `"account"`,
+`"custom"` when the config names a custom conversion goal, or the sorted list of goals
+that bid.
+
+A change is several edits on the edit seam, built by `LiveCampaignGoals.edits`: the
+config's level, then `biddable` on each of the campaign's goals, true for the ones
+listed and false for the rest. Going back to the account's goals is the level edit
+alone. The edits share an atomic group (`goals:{campaign_id}`), so each campaign's goals
+go in their own all-or-nothing request, after the request that holds every campaign's own
+fields. Goals already at their value aren't sent, but every one is compared with what the
+card showed, so a goal or a level that changed since approval refuses the whole group
+(`CHANGED_SINCE_APPROVAL`). The level edit also compares `customConversionGoal`.
+
+Google refuses goal operations in a partial-failure request ("This operation cannot be
+used with partial_failure"). The edit seam's dry run normally checks every edit in one
+partial-failure request, so it can name the edit Google rejects; `prepare_edits` checks
+these two resources (`_NO_PARTIAL_FAILURE` in `operations/edits.py`) apart, each atomic
+group in its own request without partial failure, as they're sent.
+
+Before Google sees it, the tool refuses a goal the campaign doesn't have, any change on a
+campaign that bids for a custom goal, and an empty list. Each goal edit has its own audit
+intent (`campaign_goal:update-settings`), and the result folds them into one Conversion
+Goals row per campaign, read back with the same two queries.
+
+Google's guide says updating a campaign goal moves the level to `CAMPAIGN` by itself. The
+tool sets the level explicitly as well, so a campaign asked for the goals the account
+already bids for still stops following the account. That Google accepts the level and the
+goals in one request isn't verified on a real account yet.
 
 #### Bidding
 
@@ -321,21 +373,28 @@ rules locally, and dry runs the rest through the edit seam:
 - A new start date must be after today, and a new end date today or later.
 - The end date can't be before the start date, after the request's dates are
   applied to the live ones.
-- A network the channel doesn't support is refused before Google sees it.
+- A network or Performance Max setting the channel doesn't support is refused
+  before Google sees it.
+- Text customisation can't be off while final URL expansion is on.
+- A goal the campaign doesn't have, or any goal change on a campaign that bids
+  for a custom goal, is refused before Google sees it.
 - A target the current strategy doesn't take, a strategy the channel doesn't
   offer, or a missing portfolio is refused before Google sees it.
 
 The trusted `_checks` display argument, keyed by campaign resource name, holds
 the campaign's name, status, and channel, its `current` settings in card terms,
 the `requested` settings the check covered, Google's `values` for those
-settings and bidding guards (what approval plans against), the bidding
-`notes`, `learning`, and the `portfolios` named (name and type by resource
-name), a campaign `problem` (missing, removed, or Google's dry-run rejection
+settings and bidding guards (what approval plans against), `goal_values` (the
+same for the campaign's goal objects, by resource name, when the change sets
+goals), `goals` (every goal the campaign can bid for, with its name and whether
+it bids), the bidding `notes`, `learning`, and the `portfolios` named (name and
+type by resource name), a campaign `problem` (missing, removed, or Google's dry-run rejection
 prefixed "Google says:"), and `problems` by setting. Edits on the card need a new check (`approval_review_fields`).
 After approval, a campaign whose request differs from its check, or whose check
 showed a problem, is refused without a request. The rest go in one
 partial-failure `googleAds:mutate` request per account, masking only the
-settings that differ from the live values. Each result row is one setting with
+settings that differ from the live values, then one atomic request for each
+campaign whose goals change. Each result row is one setting with
 **Before** (as the card showed it), **Requested**, **After** (read back), and
 its outcome; a setting already at its value is `already_set`. Bidding values in
 the result are card terms; the result also carries the account `currency` and
@@ -1736,6 +1795,7 @@ has its own module for arguments (`update-budgets.ts`) and one for results
 | `accounts.ts` | Account facts, the account overview parser, `parseCheckedEntries` for an argument list with its checks, and `accountsText`. |
 | `field-values.ts` | Scalar and URL validation: `parseGoogleAdsMoney`, `isGoogleAdsUrl`, `parseGoogleAdsUrlList`, and `textOrNull`. Callers own normalisation, defaults, and clears. |
 | `setting-changes.ts` | What the cards that change settings share (Update Campaigns, Update Ad Groups, Update Keywords): URL options and custom parameters, writing a setting into an entry, cancel and restore, and `settingsNeedCheck`, which compares the request with the one Google checked. A requested null differs from a setting the entry doesn't name. |
+| `campaign-goals.ts` | A campaign's conversion goals for Update Campaigns: reading goals in the server's order, naming them, and adding or taking out one goal. |
 | `video-pages.ts` | The pages Google may take videos from, for the Performance Max create card and Update Campaigns: reading pasted addresses, the server's limit, and the rights sentence both cards show. |
 | `edit-outcomes.ts` | The edit seam's outcomes: `EditOutcome`, `isEditOutcome`, labels, badges, result tabs, and `editOutcomeSummary`. |
 | `campaign-bidding.ts` | Bidding values, `canonicalMoney`, and `scaledMoney`, the percentage rule for bids and budgets. |
@@ -2276,7 +2336,14 @@ editor: an On/Off choice for networks, a date field for dates (an empty end date
 means no end date), and a text field otherwise. Custom parameters are edited as
 `key=value, key=value`. Video pages are edited as addresses separated by commas, read as
 Off when empty; the row is offered under **Add a Change**, as **Video Pages (Advanced)**,
-only for a Performance Max campaign, and an address that doesn't start with `http://` or `https://` blocks approval. Bidding has its own editor (`components/bidding-editor.tsx`).
+only for a Performance Max campaign, and an address that doesn't start with `http://` or `https://` blocks approval. Final URL expansion and text customisation are On/Off choices,
+offered under **Add a Change** only for a Performance Max campaign. Conversion goals are
+one line, such as "Account goals" or "Purchase from website only", that opens a popover
+(`components/campaign-goals-editor.tsx`): **Account Goals** or **Only These Goals**, then a
+checkbox for each goal the campaign can bid for. Its own goals start as the ones that bid
+at the time of the check. A list with no goal is a problem the card raises itself, and Check Changes waits for
+it. A changed goals row says that bidding relearns what to aim for. Goals aren't offered
+under **Add a Change** for a campaign that bids for a custom goal. Bidding has its own editor (`components/bidding-editor.tsx`).
 With one campaign, `BiddingChange` is a section beside the list of other settings: a
 **Now** panel with the live strategy and its targets, and the new strategy as a labelled
 select with each target as its own labelled field. A sentence says what the new bidding
@@ -2297,7 +2364,7 @@ account and its time zone. A sole change's prompt names only the campaign, such 
 its settings; more than
 one is a `DataTable` with Campaign, Setting, Change, and Cancel columns. From
 ten rows, a `ChangeSummary` line per setting filters the table, and the End
-Date, Search Partners, and Display Expansion lines can set every campaign in the
+Date line and every On/Off line can set every campaign in the
 line, as can the Bidding line for one shared target when every change in it is
 on the same strategy; search, setting tabs, Needs Attention, and row selection with **Cancel
 These Changes** appear too. Cancelled settings move into the approval controls'

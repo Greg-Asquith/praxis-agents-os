@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/update-campaigns-result.ts
 
 import { parseBidding, type BiddingContext } from "@/integrations/google_ads/lib/campaign-bidding"
+import { parseGoals } from "@/integrations/google_ads/lib/campaign-goals"
 import { isEditOutcome, type EditOutcome } from "@/integrations/google_ads/lib/edit-outcomes"
 import type { UrlParameter } from "@/integrations/google_ads/lib/setting-changes"
 import {
@@ -32,8 +33,11 @@ function value(raw: unknown): SettingValue | undefined {
   if (raw === null || typeof raw === "string" || typeof raw === "boolean") return raw
   if (isRecord(raw)) return parseBidding(raw) ?? undefined
   if (!Array.isArray(raw)) return undefined
-  // Video pages are addresses; custom parameters are key and value pairs.
+  // Video pages are addresses, goals are category and origin pairs, and custom parameters
+  // are key and value pairs.
   if (raw.length > 0 && raw.every((item) => typeof item === "string")) return raw
+  const goals = raw.length > 0 ? parseGoals(raw) : null
+  if (goals) return goals
   const items: UrlParameter[] = []
   for (const item of raw) {
     if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string")

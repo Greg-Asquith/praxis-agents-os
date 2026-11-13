@@ -1,12 +1,18 @@
 # apps/api/integrations/google_ads/operations/asset_automation.py
 
-"""A campaign's asset automation settings, and the pages Google may take videos from."""
+"""A campaign's asset automation settings: video pages, final URL expansion, and text customisation."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit
 
 VIDEO_CRAWL = "AUTOMATED_VIDEO_CRAWL"
+FINAL_URL_EXPANSION = "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION"
+# The card's on and off settings, and Google's automation type for each.
+AUTOMATION_SWITCHES = {
+    "final_url_expansion": FINAL_URL_EXPANSION,
+    "text_customisation": "TEXT_ASSET_AUTOMATION",
+}
 # The sites Google reads as an advertiser's social profiles.
 _SOCIAL_HOSTS = (
     "facebook.com",
@@ -97,3 +103,35 @@ def with_video_pages(settings: Any, urls: Sequence[str]) -> list[dict[str, Any]]
         else {"assetAutomationType": VIDEO_CRAWL, "assetAutomationStatus": "OPTED_OUT"}
     )
     return sorted([*rest, crawl], key=lambda setting: setting["assetAutomationType"])
+
+
+def automation_on(settings: Any, kind: str) -> bool:
+    """Whether a Performance Max campaign has this automation on, as it is until opted out."""
+    for setting in live_automation(settings):
+        if setting["assetAutomationType"] == kind:
+            return setting.get("assetAutomationStatus") != "OPTED_OUT"
+    return True
+
+
+def _with_automation(settings: Any, kind: str, on: bool) -> list[dict[str, Any]]:
+    live = live_automation(settings)
+    if automation_on(live, kind) == on:
+        return live
+    rest = [setting for setting in live if setting["assetAutomationType"] != kind]
+    status = "OPTED_IN" if on else "OPTED_OUT"
+    switch = {"assetAutomationType": kind, "assetAutomationStatus": status}
+    return sorted([*rest, switch], key=lambda setting: setting["assetAutomationType"])
+
+
+def with_automation_changes(settings: Any, requested: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The campaign's whole settings list after every requested automation setting, in card terms.
+
+    The settings share one field that Google replaces whole, so they're merged into one list.
+    """
+    merged = live_automation(settings)
+    if "video_pages" in requested:
+        merged = with_video_pages(merged, requested["video_pages"])
+    for setting, kind in AUTOMATION_SWITCHES.items():
+        if setting in requested:
+            merged = _with_automation(merged, kind, requested[setting])
+    return merged

@@ -10,11 +10,13 @@ from pydantic import Field, field_validator, model_validator
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from ...operations.campaign_bidding import Bidding, money
+from ...operations.campaign_goals import ACCOUNT_GOALS
 from ...operations.campaign_settings import CampaignSetting
 from ...references import GoogleAdsBiddingStrategyReference, GoogleAdsCampaignReference
 from ..utils.money import money_to_micros
 from .base import GoogleAdsStrictModel
 from .campaigns import (
+    GoogleAdsCampaignGoal,
     GoogleAdsManualCpc,
     GoogleAdsMaxCpc,
     GoogleAdsMaximizeClicks,
@@ -93,6 +95,13 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
     networks: GoogleAdsCampaignNetworks | None = None
     # Replaces the pages Google may take videos from; an empty list turns video crawl off.
     video_pages: GoogleAdsVideoPages | None = None
+    # Performance Max only. Google customises text whenever final URL expansion is on.
+    final_url_expansion: bool | None = None
+    text_customisation: bool | None = None
+    # "account" bids for the account's goals; a list bids for exactly those in this campaign.
+    conversion_goals: list[GoogleAdsCampaignGoal] | Literal["account"] | None = Field(
+        default=None, max_length=100
+    )
     bidding: GoogleAdsCampaignBidding | None = None
 
     @field_validator("name", mode="before")
@@ -115,6 +124,12 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
             and self.bidding.portfolio.customer_id != self.campaign.customer_id
         ):
             raise ValueError("Choose a portfolio strategy from the campaign's own account.")
+        if isinstance(self.conversion_goals, list):
+            goals = {(goal.category, goal.origin) for goal in self.conversion_goals}
+            if not goals:
+                raise ValueError("Choose at least one conversion goal, or use the account's goals.")
+            if len(goals) != len(self.conversion_goals):
+                raise ValueError("List each conversion goal once.")
         return self
 
     @property
@@ -123,7 +138,10 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
 
     @property
     def requested(self) -> dict[CampaignSetting, Any]:
-        """The settings that change, in card terms: dates as `YYYY-MM-DD`, no end date as null."""
+        """The settings that change, in card terms.
+
+        Dates are `YYYY-MM-DD`, no end date is null, and goals are in category and origin order.
+        """
         values: dict[CampaignSetting, Any] = {}
         if self.name is not None:
             values["name"] = self.name
@@ -141,6 +159,17 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
                 values["display_expansion"] = networks.display_expansion
         if self.video_pages is not None:
             values["video_pages"] = list(self.video_pages)
+        if self.final_url_expansion is not None:
+            values["final_url_expansion"] = self.final_url_expansion
+        if self.text_customisation is not None:
+            values["text_customisation"] = self.text_customisation
+        if isinstance(self.conversion_goals, list):
+            values["conversion_goals"] = sorted(
+                (goal.model_dump() for goal in self.conversion_goals),
+                key=lambda goal: (goal["category"], goal["origin"]),
+            )
+        elif self.conversion_goals is not None:
+            values["conversion_goals"] = ACCOUNT_GOALS
         if self.bidding is not None:
             values["bidding"] = card_request(self.bidding)
         return values
@@ -173,8 +202,15 @@ class GoogleAdsBiddingValue(GoogleAdsStrictModel):
     type: str | None = Field(default=None, max_length=64)
 
 
+# Conversion goals are "account", "custom", or the goals that bid.
 type GoogleAdsSettingValue = (
-    str | bool | list[GoogleAdsUrlParameter] | list[str] | GoogleAdsBiddingValue | None
+    str
+    | bool
+    | list[GoogleAdsUrlParameter]
+    | list[GoogleAdsCampaignGoal]
+    | list[str]
+    | GoogleAdsBiddingValue
+    | None
 )
 
 
@@ -193,7 +229,7 @@ class GoogleAdsCampaignUpdateOutcome(GoogleAdsStrictModel):
     campaign_id: str
     name: str
     read_back: bool
-    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=10)
+    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=16)
     error_code: str | None = None
     message: str | None = None
 

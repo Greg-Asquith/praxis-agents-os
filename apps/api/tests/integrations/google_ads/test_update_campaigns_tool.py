@@ -54,6 +54,9 @@ class _Account:
         self.mutates: list[dict[str, Any]] = []
         self.ad_groups: list[dict[str, Any]] = []
         self.conversions: dict[str, float] = {}
+        # Each campaign's goal level, and whether each of its goals bids, by `category~origin`.
+        self.goal_levels: dict[str, str] = {}
+        self.goals: dict[str, dict[str, bool]] = {}
 
     async def post(self, path: str, **kwargs: Any) -> Any:
         body = kwargs["json"]
@@ -63,6 +66,29 @@ class _Account:
             rows = [
                 {"campaign": {"id": key}, "metrics": {"conversions": value}}
                 for key, value in self.conversions.items()
+            ]
+            return [{"results": rows}]
+        if "FROM conversion_goal_campaign_config" in body.get("query", ""):
+            rows = [
+                {
+                    "campaign": {"id": key},
+                    "conversionGoalCampaignConfig": {"goalConfigLevel": level},
+                }
+                for key, level in self.goal_levels.items()
+            ]
+            return [{"results": rows}]
+        if "FROM campaign_conversion_goal" in body.get("query", ""):
+            rows = [
+                {
+                    "campaign": {"id": key},
+                    "campaignConversionGoal": {
+                        "category": goal.split("~")[0],
+                        "origin": goal.split("~")[1],
+                        "biddable": biddable,
+                    },
+                }
+                for key, goals in self.goals.items()
+                for goal, biddable in goals.items()
             ]
             return [{"results": rows}]
         if path.endswith("googleAds:searchStream"):
@@ -76,12 +102,25 @@ class _Account:
         self.mutates.append(body)
         responses = []
         for operation in body["mutateOperations"]:
-            update = operation["campaignOperation"]["update"]
+            ((kind, item),) = operation.items()
+            if kind != "campaignOperation" and body["partialFailure"]:
+                raise AssertionError("Google refuses goal operations with partial failure")
+            update = item["update"]
             name = update["resourceName"]
             if not body["validateOnly"]:
-                self._apply(self.campaigns[name], update, operation["campaignOperation"])
-            responses.append({"campaignResult": {"resourceName": name}})
+                self._write(kind, name, update, item)
+            responses.append({kind.replace("Operation", "Result"): {"resourceName": name}})
         return {"mutateOperationResponses": responses}
+
+    def _write(self, kind: str, name: str, update: dict[str, Any], item: dict[str, Any]) -> None:
+        key = name.rsplit("/", 1)[1]
+        if kind == "campaignOperation":
+            self._apply(self.campaigns[name], update, item)
+        elif kind == "conversionGoalCampaignConfigOperation":
+            self.goal_levels[key] = update["goalConfigLevel"]
+        else:
+            campaign_id, goal = key.split("~", 1)
+            self.goals[campaign_id][goal] = update["biddable"]
 
     def _apply(self, campaign: dict[str, Any], update: dict[str, Any], operation: dict[str, Any]):
         for path in operation["updateMask"].split(","):
@@ -437,3 +476,139 @@ async def test_a_strategy_changed_since_approval_is_not_replaced(monkeypatch) ->
 
     assert [body["validateOnly"] for body in account.mutates] == [True]
     assert data.campaigns[0].error_code == "CHANGED_SINCE_APPROVAL"
+
+
+async def test_expansion_and_text_customisation_share_one_automation_list(monkeypatch) -> None:
+    pmax, kept_on = "customers/111/campaigns/15", "customers/111/campaigns/16"
+    account = _Account(_campaign("15", "PERFORMANCE_MAX"), _campaign("16", "PERFORMANCE_MAX"))
+    changes = _changes(
+        {"campaign": "15", "final_url_expansion": False, "text_customisation": False},
+        {"campaign": "16", "text_customisation": False},
+    )
+    display = await _display(monkeypatch, account, changes)
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    # Google keeps text customisation on while final URL expansion is on.
+    assert display["_checks"][kept_on]["problems"] == {
+        "text_customisation": tool_module._TEXT_WITH_EXPANSION
+    }
+    assert account.mutates[-1]["mutateOperations"] == [
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": pmax,
+                    "assetAutomationSettings": [
+                        {
+                            "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
+                            "assetAutomationStatus": "OPTED_OUT",
+                        },
+                        {
+                            "assetAutomationType": "TEXT_ASSET_AUTOMATION",
+                            "assetAutomationStatus": "OPTED_OUT",
+                        },
+                    ],
+                },
+                "updateMask": "assetAutomationSettings",
+            }
+        }
+    ]
+    changed, refused = data.campaigns
+    assert [(row.setting, row.before, row.after, row.outcome) for row in changed.settings] == [
+        ("final_url_expansion", True, False, "updated"),
+        ("text_customisation", True, False, "updated"),
+    ]
+    assert refused.settings[0].outcome == "failed"
+
+
+async def test_campaign_goals_change_together_and_go_back_to_the_account_s(monkeypatch) -> None:
+    account = _Account(_campaign("10", "SEARCH"), _campaign("11", "SHOPPING"))
+    account.goal_levels = {"10": "CUSTOMER", "11": "CAMPAIGN"}
+    account.goals = {
+        "10": {"PURCHASE~WEBSITE": True, "SIGNUP~WEBSITE": True},
+        "11": {"PURCHASE~WEBSITE": True, "SIGNUP~WEBSITE": False},
+    }
+    changes = _changes(
+        {"campaign": "10", "conversion_goals": [{"category": "PURCHASE", "origin": "WEBSITE"}]},
+        {"campaign": "11", "conversion_goals": "account"},
+    )
+    display = await _display(monkeypatch, account, changes)
+
+    data, audit = await _run(monkeypatch, account, changes, display)
+
+    goals = "customers/111/campaignConversionGoals"
+    configs = "customers/111/conversionGoalCampaignConfigs"
+    # Each campaign's goals go in their own request, which Google applies whole or not at all.
+    assert [
+        (body["partialFailure"], body["mutateOperations"]) for body in account.mutates[-2:]
+    ] == [
+        (
+            False,
+            [
+                {
+                    "conversionGoalCampaignConfigOperation": {
+                        "update": {"resourceName": f"{configs}/10", "goalConfigLevel": "CAMPAIGN"},
+                        "updateMask": "goalConfigLevel",
+                    }
+                },
+                # Purchases already bid, so only the goal that stops is sent.
+                {
+                    "campaignConversionGoalOperation": {
+                        "update": {"resourceName": f"{goals}/10~SIGNUP~WEBSITE", "biddable": False},
+                        "updateMask": "biddable",
+                    }
+                },
+            ],
+        ),
+        (
+            False,
+            [
+                {
+                    "conversionGoalCampaignConfigOperation": {
+                        "update": {"resourceName": f"{configs}/11", "goalConfigLevel": "CUSTOMER"},
+                        "updateMask": "goalConfigLevel",
+                    }
+                }
+            ],
+        ),
+    ]
+    purchases = [{"category": "PURCHASE", "origin": "WEBSITE"}]
+    assert [
+        (
+            row.before if isinstance(row.before, str) else [g.model_dump() for g in row.before],
+            row.after if isinstance(row.after, str) else [g.model_dump() for g in row.after],
+            row.outcome,
+        )
+        for campaign in data.campaigns
+        for row in campaign.settings
+    ] == [("account", purchases, "updated"), (purchases, "account", "updated")]
+    assert all(campaign.read_back for campaign in data.campaigns)
+    assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
+
+
+async def test_goals_are_refused_when_unknown_or_changed_since_approval(monkeypatch) -> None:
+    account = _Account(_campaign("10", "SEARCH"), _campaign("11", "SHOPPING"))
+    account.goal_levels = {"10": "CUSTOMER", "11": "CUSTOMER"}
+    account.goals = {
+        "10": {"PURCHASE~WEBSITE": True},
+        "11": {"PURCHASE~WEBSITE": True, "SIGNUP~WEBSITE": True},
+    }
+    purchases = [{"category": "PURCHASE", "origin": "WEBSITE"}]
+    changes = _changes(
+        {"campaign": "10", "conversion_goals": [{"category": "STORE_VISIT", "origin": "STORE"}]},
+        {"campaign": "11", "conversion_goals": purchases},
+    )
+    display = await _display(monkeypatch, account, changes)
+    # Someone stops purchases bidding in the second campaign after the card was checked.
+    account.goals["11"]["PURCHASE~WEBSITE"] = False
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert display["_checks"][_SEARCH]["problems"] == {
+        "conversion_goals": "Store visit from store isn't one of the account's conversion goals."
+    }
+    assert all(body["validateOnly"] for body in account.mutates)
+    unknown, stale = data.campaigns
+    assert unknown.settings[0].outcome == "failed"
+    assert stale.error_code == "CHANGED_SINCE_APPROVAL"
+    assert account.goal_levels["11"] == "CUSTOMER"
