@@ -7,6 +7,7 @@ import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { WorkspaceFileThumbnail } from "@/components/tool-ui/workspace-file-thumbnail"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Popover,
   PopoverContent,
@@ -33,6 +34,7 @@ import {
   editFiles,
   editVideoText,
   keptVideoText,
+  madeWithAiIds,
   fileSize,
   fitsText,
   MAX_DESCRIPTION,
@@ -67,6 +69,7 @@ function columns(hasImages: boolean, hasVideos: boolean): DataColumn[] {
     { key: "size", kind: "text", label: "Size", width: 100 },
     { key: "details", kind: "text", label: details, width: hasVideos && hasImages ? 180 : 120 },
     ...(hasImages ? [{ key: "fits", kind: "text", label: "Fits", width: 200 } as const] : []),
+    { key: "ai", kind: "text", label: "Made With AI", width: 120 },
     { key: "cancel", kind: "text", label: "Cancel", width: 90 },
   ]
 }
@@ -99,6 +102,7 @@ export function UploadMediaApproval({
   const tableRows = useMemo<DataRow[]>(
     () =>
       args.files.map((file) => ({
+        ai: file.cancelled ? "—" : args.madeWithAi.has(file.id) ? "Yes" : "No",
         cancel: "",
         details: fileDetails(file),
         fits: fileFits(file),
@@ -119,6 +123,10 @@ export function UploadMediaApproval({
     if (args.videoText.size > 0) {
       const details = keptVideoText(args, next.rows)
       onFieldEdit("video_details", details.length > 0 ? details : null)
+    }
+    if (args.madeWithAi.size > 0) {
+      const marked = madeWithAiIds(args, next.rows)
+      onFieldEdit("made_with_ai", marked.length > 0 ? marked : null)
     }
   }
   const editVideos = (videos: string[]) => {
@@ -158,6 +166,12 @@ export function UploadMediaApproval({
             detail: "that were still processing",
             id: "uploads",
             label: "Finish Earlier Uploads",
+          },
+          {
+            count: counts.madeWithAi,
+            detail: "Google is told with the upload",
+            id: "made-with-ai",
+            label: "Marked as Made With AI",
           },
           {
             count: counts.problems,
@@ -216,6 +230,18 @@ export function UploadMediaApproval({
                   text={videoTextFor(args, file)}
                 />
               )
+            if (column.key === "ai" && !file.cancelled)
+              return (
+                <Checkbox
+                  aria-label={`Made with AI: ${file.check?.name ?? file.label}`}
+                  checked={args.madeWithAi.has(file.id)}
+                  disabled={disabled}
+                  onCheckedChange={() => {
+                    const marked = madeWithAiIds(args, args.files, file.id)
+                    onFieldEdit("made_with_ai", marked.length > 0 ? marked : null)
+                  }}
+                />
+              )
             if (column.key === "cancel")
               return (
                 <CancelCell
@@ -263,6 +289,12 @@ export function UploadMediaApproval({
               }
             : {})}
         />
+      ) : null}
+      {counts.images + counts.videoFiles > 0 ? (
+        <p className="text-muted-foreground text-sm">
+          Select Made With AI for anything created or changed with AI. Google is told with the
+          upload, and a video&apos;s answer can&apos;t change later.
+        </p>
       ) : null}
       {counts.videoFiles > 0 ? (
         <p className="text-muted-foreground text-sm">

@@ -72,6 +72,7 @@ async def upload_video(
     source: VideoSource,
     title: str,
     description: str | None,
+    made_with_ai: bool,
     progress: UploadProgress,
     on_session: Callable[[str], Awaitable[None]],
 ) -> str:
@@ -79,10 +80,16 @@ async def upload_video(
 
     `on_session` records the session before the first chunk. After an unclear chunk reply
     the upload resumes from the size Google says it received. An upload that stops before
-    the final chunk is cancelled, so no video is made from part of a File.
+    the final chunk is cancelled, so no video is made from part of a File. `made_with_ai`
+    tells YouTube the video was made or changed with AI, which can't change later.
     """
+    upload: dict[str, Any] = {"video_title": title}
+    if description:
+        upload["video_description"] = description
+    if made_with_ai:
+        upload["video_content_metadata"] = {"generative_content_disclosure": "GENERATIVE_CONTENT"}
     url, granularity = await _start(
-        client, customer, login_customer_id, source.revision.size_bytes, title, description
+        client, customer, login_customer_id, source.revision.size_bytes, upload
     )
     progress.session = _session(url)
     await on_session(progress.session)
@@ -104,12 +111,8 @@ async def _start(
     customer: str,
     login_customer_id: str,
     size: int,
-    title: str,
-    description: str | None,
+    upload: dict[str, Any],
 ) -> tuple[str, int]:
-    upload: dict[str, Any] = {"video_title": title}
-    if description:
-        upload["video_description"] = description
     response = await client.upload_request(
         "POST",
         f"{GOOGLE_ADS_UPLOAD_BASE_URL}/customers/{customer}/youTubeVideoUploads:create",

@@ -61,6 +61,8 @@ export type UploadMediaArgs = {
   videoText: ReadonlyMap<string, VideoText>
   // Earlier uploads that were still processing, to finish now.
   uploads: string[]
+  // The Files Google is told were made or changed with AI.
+  madeWithAi: ReadonlySet<string>
   accountName: string | null
   // True when the File list differs from the one the server last checked.
   needsReview: boolean
@@ -112,7 +114,14 @@ export function parseUploadMediaArgs(value: unknown, retained?: unknown): Upload
   const references = value["files"] ?? []
   const videos = value["youtube_videos"] ?? []
   const uploads = value["video_uploads"] ?? []
-  if (!Array.isArray(references) || !isStringList(videos) || !isStringList(uploads)) return null
+  const madeWithAi = value["made_with_ai"] ?? []
+  if (
+    !Array.isArray(references) ||
+    !isStringList(videos) ||
+    !isStringList(uploads) ||
+    !isStringList(madeWithAi)
+  )
+    return null
   const videoText = parseVideoText(value["video_details"])
   if (videoText === null) return null
   const checks = parseChecks(value["_files"])
@@ -137,6 +146,7 @@ export function parseUploadMediaArgs(value: unknown, retained?: unknown): Upload
     videos,
     videoText,
     uploads,
+    madeWithAi: new Set(madeWithAi),
     accountName: account?.label ?? null,
     needsReview:
       checkedIds.length !== files.length ||
@@ -196,6 +206,17 @@ export function keptVideoText(
       title: text.title,
       ...(text.description ? { description: text.description } : {}),
     }))
+}
+
+/** `made_with_ai` for the Files still in `rows`, with `toggled` marked or cleared. */
+export function madeWithAiIds(
+  args: UploadMediaArgs,
+  rows: readonly FileRow[],
+  toggled?: string
+): string[] {
+  return rows
+    .filter((row) => !row.cancelled && args.madeWithAi.has(row.id) !== (row.id === toggled))
+    .map((row) => row.id)
 }
 
 /** Why a title or description can't go to YouTube, or null. */
@@ -305,6 +326,7 @@ export type UploadCounts = {
   videoFiles: number
   links: number
   uploads: number
+  madeWithAi: number
   problems: number
   badTitles: number
   badVideos: number
@@ -322,6 +344,7 @@ export function uploadCounts(args: UploadMediaArgs): UploadCounts {
     videoFiles: videoFiles.length,
     links: valid.length,
     uploads: args.uploads.length,
+    madeWithAi: live.filter((file) => args.madeWithAi.has(file.id)).length,
     problems: live.filter((file) => file.check?.problem).length,
     badTitles: videoFiles.filter((file) => videoTextProblem(videoTextFor(args, file))).length,
     badVideos: ids.length - valid.length,

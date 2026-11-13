@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import {
   editFiles,
   editVideoText,
+  madeWithAiIds,
   parseUploadMediaArgs,
   serializeCancelled,
   uploadBlock,
@@ -96,6 +97,16 @@ describe("upload media approval", () => {
     expect(uploadBlock(parseUploadMediaArgs({ ...value, video_details: details }))).toBe(
       "Fix the title of 1 video to continue."
     )
+  })
+
+  it("keeps the AI mark only for Files still in the request", () => {
+    const value = { ...raw(), files: [SQUARE, VIDEO], _files: [check("f-1"), VIDEO_CHECK] }
+    const args = parseUploadMediaArgs({ ...value, made_with_ai: ["f-1"] })
+    if (!args) throw new Error("The arguments didn't parse")
+    expect(madeWithAiIds(args, args.files, "f-3")).toEqual(["f-1", "f-3"])
+
+    const cancelled = editFiles(args.files, new Set(["f-1"]), true)
+    expect(madeWithAiIds(args, cancelled.rows)).toEqual([])
   })
 
   it("reads video IDs only from YouTube links", () => {

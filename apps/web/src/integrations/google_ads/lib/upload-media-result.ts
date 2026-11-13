@@ -22,6 +22,10 @@ export type MediaUploadRow = {
   videoId: string | null
   // A video upload's ID, which finishes it later while Google processes it.
   uploadId: string | null
+  // Whether Google was told the File was made or changed with AI; null when no File was sent.
+  madeWithAi: boolean | null
+  // What Google's own check says about the asset, when it says anything.
+  googleMadeWithAi: boolean | null
   errorCode: string | null
   message: string | null
 }
@@ -80,6 +84,9 @@ function parseUpload(value: unknown): MediaUploadRow | null {
     fits: fits.filter((item) => isOneOf(FIELD_TYPES, item)),
     videoId: text(value["video_id"]),
     uploadId: text(value["upload_id"]),
+    madeWithAi: typeof value["made_with_ai"] === "boolean" ? value["made_with_ai"] : null,
+    googleMadeWithAi:
+      typeof value["google_made_with_ai"] === "boolean" ? value["google_made_with_ai"] : null,
     errorCode: text(value["error_code"]),
     message: text(value["message"]),
   }
@@ -94,6 +101,18 @@ export function parseUploadMediaResult(value: unknown): UploadMediaResult | null
     accountId: value["account_id"],
     uploads: uploads.filter((upload) => upload !== null),
   }
+}
+
+/** What Google was told about AI, and its own answer where that differs. */
+export function aiDisclosureText(upload: MediaUploadRow): string {
+  const told = upload.madeWithAi === null ? null : upload.madeWithAi ? "Made With AI" : "Not Marked"
+  const google =
+    upload.googleMadeWithAi === null || upload.googleMadeWithAi === (upload.madeWithAi ?? false)
+      ? null
+      : upload.googleMadeWithAi
+        ? "Google marked it as made with AI"
+        : "Google's check didn't find AI"
+  return [told, google].filter(Boolean).join(" · ") || "—"
 }
 
 export function mediaOutcomeSummary(uploads: readonly MediaUploadRow[]): string {

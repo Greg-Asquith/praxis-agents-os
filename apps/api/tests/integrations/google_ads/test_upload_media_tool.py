@@ -189,9 +189,20 @@ class _Google:
                 if f"asset.name = '{asset.get('name')}'" in query
             ]
         return [
-            {"asset": {"id": key, "youtubeVideoAsset": {"youtubeVideoTitle": "Trail Fit 2026"}}}
+            {
+                "asset": {"id": key, "youtubeVideoAsset": {"youtubeVideoTitle": "Trail Fit 2026"}}
+                if "youtubeVideoAsset" in asset
+                # Google's own check disagrees with an image nobody declared.
+                else {
+                    "id": key,
+                    "syntheticContentInfo": {
+                        **asset.get("syntheticContentInfo", {}),
+                        "systemAttestation": {"status": "IS_SYNTHETIC"},
+                    },
+                }
+            }
             for key, asset in self.assets.items()
-            if "youtubeVideoAsset" in asset and key in query
+            if key in query
         ]
 
 
@@ -254,6 +265,7 @@ async def _run(
     audits=None,
     details=None,
     uploads=None,
+    made_with_ai=None,
 ):
     audits = [] if audits is None else audits
 
@@ -272,7 +284,9 @@ async def _run(
         tool_name="google_ads_upload_media",
         tool_call_id="upload-media-call",
     )
-    result = await tool_module.google_ads_upload_media(ctx, files, videos, details, uploads)
+    result = await tool_module.google_ads_upload_media(
+        ctx, files, videos, details, uploads, made_with_ai
+    )
     GoogleAdsMediaUploadOutput.model_validate(result)
     return result["results"][0], audits
 
@@ -308,6 +322,7 @@ async def test_approved_upload_sends_each_asset_once_and_audits_provenance_witho
         display=_display(image),
         files=_files([image]),
         videos=["https://youtu.be/dQw4w9WgXcQ"],
+        made_with_ai=[image.file.id],
     )
 
     assert google.creates == [
@@ -315,6 +330,9 @@ async def test_approved_upload_sends_each_asset_once_and_audits_provenance_witho
             "name": f"grip-sole-square.png ({image.revision.content_hash[:8]})",
             "type": "IMAGE",
             "imageAsset": {"data": base64.b64encode(image.revision.data).decode("ascii")},
+            "syntheticContentInfo": {
+                "advertiserAttestation": {"status": "IS_SYNTHETIC", "source": "ADVERTISER_ATTESTED"}
+            },
         },
         {"type": "YOUTUBE_VIDEO", "youtubeVideoAsset": {"youtubeVideoId": "dQw4w9WgXcQ"}},
     ]
@@ -325,10 +343,12 @@ async def test_approved_upload_sends_each_asset_once_and_audits_provenance_witho
     ]
     assert uploads[0]["fits"] == ["SQUARE_MARKETING_IMAGE", "LOGO"]
     assert uploads[1]["name"] == "Trail Fit 2026"
+    assert [row["made_with_ai"] for row in uploads] == [True, None]
     detail = audits[-1]["operation_detail"]
     image_intent = detail.intent_groups[0].items[0].fields
     assert image_intent["content_hash"] == image.revision.content_hash
     assert image_intent["revision_id"] == str(image.revision.id)
+    assert image_intent["made_with_ai"] is True
     assert google.creates[0]["imageAsset"]["data"] not in str(detail.model_dump())
 
 
@@ -416,6 +436,9 @@ async def test_unclear_reply_is_settled_by_finding_the_asset_and_never_resent(mo
     assert upload["asset"]["asset_id"] == "901"
     assert upload["fits"] == ["MARKETING_IMAGE"]
     assert len(google.creates) == 1
+    # Nothing is declared for a File that isn't marked, and Google's own answer still shows.
+    assert "syntheticContentInfo" not in google.creates[0]
+    assert (upload["made_with_ai"], upload["google_made_with_ai"]) == (False, True)
 
 
 async def test_video_file_streams_in_googles_chunks_and_becomes_one_asset(monkeypatch):
@@ -435,6 +458,7 @@ async def test_video_file_streams_in_googles_chunks_and_becomes_one_asset(monkey
         display=_display(video),
         files=_files([video]),
         details=details,
+        made_with_ai=[video.file.id],
     )
 
     start, *chunks = google.uploads
@@ -451,6 +475,7 @@ async def test_video_file_streams_in_googles_chunks_and_becomes_one_asset(monkey
             "you_tube_video_upload": {
                 "video_title": "Trail Fit Launch",
                 "video_description": "Our autumn range.",
+                "video_content_metadata": {"generative_content_disclosure": "GENERATIVE_CONTENT"},
             },
         },
     )
@@ -528,6 +553,23 @@ async def test_video_still_processing_is_finished_by_a_later_call_once(monkeypat
     # The second call finds the asset the first one made.
     assert len(google.creates) == 1
     assert [command for _m, command, _h, _b in google.uploads].count("start") == 1
+
+
+async def test_ai_mark_for_a_file_that_isnt_uploaded_is_refused(monkeypatch):
+    image = _source("grip-sole-square.png", _png(1200, 1200))
+    google = _Google()
+
+    with pytest.raises(ModelRetry, match="made_with_ai"):
+        await _run(
+            monkeypatch,
+            _deps([image], monkeypatch),
+            google,
+            display=None,
+            files=_files([image]),
+            made_with_ai=[uuid4()],
+        )
+
+    assert google.creates == []
 
 
 async def test_video_title_with_angle_brackets_is_refused_before_any_request(monkeypatch):

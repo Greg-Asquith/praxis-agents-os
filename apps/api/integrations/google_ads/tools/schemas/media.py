@@ -49,6 +49,7 @@ class GoogleAdsUploadMediaRequest(GoogleAdsStrictModel):
         default=None, max_length=MAX_MEDIA_FILES
     )
     video_uploads: list[str] | None = Field(default=None, max_length=MAX_VIDEO_UPLOADS)
+    made_with_ai: list[UUID] | None = Field(default=None, max_length=MAX_MEDIA_FILES)
 
 
 class GoogleAdsMediaUpload(GoogleAdsStrictModel):
@@ -72,6 +73,10 @@ class GoogleAdsMediaUpload(GoogleAdsStrictModel):
     # A video upload's ID, which finishes it in a later call while Google processes it.
     upload_id: str | None = Field(default=None, max_length=32, pattern=r"^\d+$")
     duration_ms: int | None = Field(default=None, ge=0)
+    # Whether Google was told the File was made or changed with AI; None when no File was sent.
+    made_with_ai: bool | None = None
+    # What Google's own check says about the asset; None when it says nothing.
+    google_made_with_ai: bool | None = None
     error_code: str | None = Field(default=None, max_length=100)
     message: str | None = Field(default=None, max_length=1000)
 

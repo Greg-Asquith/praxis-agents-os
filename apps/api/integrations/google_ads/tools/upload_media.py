@@ -6,6 +6,7 @@ import asyncio
 import re
 from collections.abc import Sequence
 from typing import Annotated, Any
+from uuid import UUID
 
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
@@ -116,6 +117,13 @@ type VideoUploads = Annotated[
         description="Upload IDs of earlier video uploads that were still processing.",
     ),
 ]
+type MadeWithAi = Annotated[
+    list[UUID] | None,
+    Field(
+        max_length=MAX_MEDIA_FILES,
+        description="IDs of the Files in `files` that were made or changed with AI.",
+    ),
+]
 
 
 async def google_ads_upload_media(
@@ -124,10 +132,11 @@ async def google_ads_upload_media(
     youtube_videos: YouTubeVideos = None,
     video_details: VideoDetails = None,
     video_uploads: VideoUploads = None,
+    made_with_ai: MadeWithAi = None,
 ) -> dict[str, Any]:
     selected = upload_entry(ctx.deps)
     video_ids, upload_ids = _checked_request(
-        selected, files, youtube_videos, video_details, video_uploads
+        selected, files, youtube_videos, video_details, video_uploads, made_with_ai
     )
     # Unattended runs have no approval to pin against; approved runs must match what was shown.
     reviewed = approved_display_args(ctx) if ctx.tool_call_approved else None
@@ -159,7 +168,7 @@ async def google_ads_upload_media(
                         provider_key="google_ads",
                         operation=_OPERATION,
                     )
-            items = _items(sources, video_details, video_ids, upload_ids)
+            items = _items(sources, video_details, video_ids, upload_ids, made_with_ai)
             client = await google_ads_client(ctx, entry)
             pending = _pending_detail(entry, items)
             return pending
@@ -223,6 +232,7 @@ def _checked_request(
     videos: Sequence[str] | None,
     details: Sequence[GoogleAdsVideoDetails] | None,
     uploads: Sequence[str] | None,
+    made_with_ai: Sequence[UUID] | None,
 ) -> tuple[list[str], list[str]]:
     """Refuses an empty or repeated request; returns the video IDs and upload IDs in order."""
     if not files and not videos and not uploads:
@@ -246,6 +256,8 @@ def _checked_request(
                 raise ModelRetry(problem)
     if len({detail.file_id for detail in details or ()}) != len(details or ()):
         raise ModelRetry("Give each video File one title.")
+    if not file_ids.issuperset(made_with_ai or ()):
+        raise ModelRetry("List in `made_with_ai` only Files in `files`.")
     upload_ids = [_upload_id(entry, value) for value in uploads or ()]
     if len(set(upload_ids)) != len(upload_ids):
         raise ModelRetry("List each video upload once.")
@@ -278,13 +290,15 @@ def _items(
     details: Sequence[GoogleAdsVideoDetails] | None,
     video_ids: Sequence[str],
     upload_ids: Sequence[str],
+    made_with_ai: Sequence[UUID] | None,
 ) -> list[MediaItem]:
     """Orders the work as the audit record lists it: images, videos, links, then finishes."""
     by_file = {detail.file_id: detail for detail in details or ()}
+    with_ai = set(made_with_ai or ())
     videos = [source for source in sources if isinstance(source, VideoSource)]
     return [
         *(
-            MediaItem("image", image=source)
+            MediaItem("image", image=source, made_with_ai=source.file.id in with_ai)
             for source in sources
             if isinstance(source, ImageSource)
         ),
@@ -296,6 +310,7 @@ def _items(
                 if (detail := by_file.get(source.file.id))
                 else source.default_title,
                 description=detail.description if detail else None,
+                made_with_ai=source.file.id in with_ai,
                 upload=UploadProgress(),
                 intent_index=index,
             )
@@ -322,10 +337,11 @@ async def _validate_args(
     youtube_videos: YouTubeVideos = None,
     video_details: VideoDetails = None,
     video_uploads: VideoUploads = None,
+    made_with_ai: MadeWithAi = None,
 ) -> None:
     """Refuses unclear requests before approval; Files Google won't take show on the card."""
     entry = upload_entry(ctx.deps)
-    _checked_request(entry, files, youtube_videos, video_details, video_uploads)
+    _checked_request(entry, files, youtube_videos, video_details, video_uploads, made_with_ai)
     try:
         sources = await _sources(ctx.deps, files or ())
     except IntegrationError as exc:
@@ -373,7 +389,7 @@ def _pending_detail(
     entry: ResolvedContextEntry, items: Sequence[MediaItem]
 ) -> PendingIntegrationOperationDetail:
     """Records each File's provenance, never its bytes, and each video ID."""
-    images = [item.image for item in items if item.image is not None]
+    images = [item for item in items if item.image is not None]
     uploads = [item for item in items if item.video is not None]
     videos = [item for item in items if item.kind == "youtube_video"]
     finishes = [item for item in items if item.kind == "video" and item.video is None]
@@ -384,19 +400,7 @@ def _pending_detail(
                 key="image:upload",
                 action="upload_media",
                 entity_type="google_ads_image_asset",
-                items=[
-                    IntegrationOperationIntent(
-                        fields={
-                            "object": f"file:{source.file.id}",
-                            "file_id": str(source.file.id),
-                            "revision_id": str(source.revision.id),
-                            "content_hash": source.revision.content_hash,
-                            "content_type": source.revision.content_type,
-                            "size_bytes": source.revision.size_bytes,
-                        }
-                    )
-                    for source in images
-                ],
+                items=[_file_intent(item) for item in images],
             )
         )
     if uploads:
@@ -405,7 +409,7 @@ def _pending_detail(
                 key=VIDEO_UPLOAD_GROUP,
                 action="upload_media",
                 entity_type="google_ads_youtube_video_upload",
-                items=[_video_intent(item) for item in uploads],
+                items=[_file_intent(item) for item in uploads],
             )
         )
     if videos:
@@ -442,22 +446,24 @@ def _pending_detail(
     )
 
 
-def _video_intent(item: MediaItem) -> IntegrationOperationIntent:
-    """A video File's provenance and its title; the title can't change after the upload."""
-    if item.video is None:
-        raise RuntimeError("A video upload needs its File")
-    revision = item.video.revision
-    return IntegrationOperationIntent(
-        fields={
-            "object": item.key,
-            "file_id": str(item.video.file.id),
-            "revision_id": str(revision.id),
-            "content_hash": revision.content_hash,
-            "content_type": revision.content_type,
-            "size_bytes": revision.size_bytes,
-            "title": item.title or "",
-        }
-    )
+def _file_intent(item: MediaItem) -> IntegrationOperationIntent:
+    """A File's provenance and whether it's declared as made with AI, never its bytes."""
+    source = item.image or item.video
+    if source is None:
+        raise RuntimeError("A File upload needs its File")
+    fields: dict[str, Any] = {
+        "object": item.key,
+        "file_id": str(source.file.id),
+        "revision_id": str(source.revision.id),
+        "content_hash": source.revision.content_hash,
+        "content_type": source.revision.content_type,
+        "size_bytes": source.revision.size_bytes,
+        "made_with_ai": item.made_with_ai,
+    }
+    if isinstance(source, VideoSource):
+        # The title can't change after the upload.
+        fields["title"] = item.title or ""
+    return IntegrationOperationIntent(fields=fields)
 
 
 def _result(entry: ResolvedContextEntry, items: Sequence[MediaItem]) -> dict[str, Any]:
@@ -497,6 +503,8 @@ def _upload_row(entry: ResolvedContextEntry, item: MediaItem) -> dict[str, Any]:
         "video_id": item.video_id,
         "upload_id": item.upload.upload_id if item.upload else None,
         "duration_ms": item.video.duration_ms if item.video else None,
+        "made_with_ai": item.made_with_ai if source else None,
+        "google_made_with_ai": item.google_made_with_ai,
         "error_code": error_code,
         "message": message,
     }
@@ -537,7 +545,10 @@ DEFINITION = RuntimeToolDefinition(
         "processed them. Give each video a title in `video_details` (up to 100 characters, "
         "without < or >; it defaults to the File name and can't change later). A video still "
         "processing when the call ends returns its `upload_id`; pass it in `video_uploads` "
-        "later to make its asset. Also links up to 20 YouTube videos by link or ID. The "
+        "later to make its asset. List in `made_with_ai` the IDs of Files that were made or "
+        "changed with AI, such as generated images and videos, so Google is told with the "
+        "upload; the user can change this on the approval card, and a video's answer can't "
+        "change later. Also links up to 20 YouTube videos by link or ID. The "
         "approval card shows each image's size and the shapes it fits: landscape 1.91:1 (at "
         "least 600 x 314), square 1:1 (300 x 300), portrait 4:5 (480 x 600), logo 1:1 "
         "(128 x 128), and landscape logo 4:1 (512 x 128). Each finished upload returns an "
@@ -598,6 +609,13 @@ DEFINITION = RuntimeToolDefinition(
             ToolFieldPresentation(
                 key="video_uploads",
                 label="Earlier Video Uploads",
+                format="list",
+                editable=True,
+                secondary=True,
+            ),
+            ToolFieldPresentation(
+                key="made_with_ai",
+                label="Made With AI",
                 format="list",
                 editable=True,
                 secondary=True,

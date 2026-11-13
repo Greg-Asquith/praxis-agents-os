@@ -49,8 +49,15 @@ POLL_INTERVAL_SECONDS = 5
 VIDEO_UPLOAD_GROUP = "video:upload"
 _READ_FIELDS = (
     "asset.id, asset.type, asset.image_asset.full_size.width_pixels, "
-    "asset.image_asset.full_size.height_pixels, asset.youtube_video_asset.youtube_video_title"
+    "asset.image_asset.full_size.height_pixels, asset.youtube_video_asset.youtube_video_title, "
+    "asset.synthetic_content_info.advertiser_attestation.status, "
+    "asset.synthetic_content_info.system_attestation.status"
 )
+# Says the account declares the media was made or changed with AI.
+_MADE_WITH_AI = {
+    "advertiserAttestation": {"status": "IS_SYNTHETIC", "source": "ADVERTISER_ATTESTED"}
+}
+_ATTESTED = {"IS_SYNTHETIC": True, "NOT_SYNTHETIC": False}
 
 # A video is a video File uploaded to YouTube here, or an earlier upload being finished.
 type MediaKind = Literal["image", "youtube_video", "video"]
@@ -69,6 +76,10 @@ class MediaItem:
     height: int | None = None
     title: str | None = None
     description: str | None = None
+    # Whether the upload says the File was made or changed with AI; an image's is read back.
+    made_with_ai: bool = False
+    # What Google's own check says about the asset, when it says anything.
+    google_made_with_ai: bool | None = None
     # The asset's outcome; for a video, set once the video processed or failed to.
     outcome: GoogleAdsMutationOutcome | None = None
     # The asset's ID, once Google returned it or it was found after an unclear reply.
@@ -239,6 +250,7 @@ async def _upload(
             source=item.video,
             title=item.title,
             description=item.description,
+            made_with_ai=item.made_with_ai,
             progress=progress,
             on_session=lambda session: checkpoint(upload_session=session),
         )
@@ -327,6 +339,8 @@ async def _create(
             "type": "IMAGE",
             "imageAsset": {"data": base64.b64encode(data).decode("ascii")},
         }
+        if item.made_with_ai:
+            body["syntheticContentInfo"] = _MADE_WITH_AI
     else:
         if item.kind == "video" and (
             existing := await _find(client, customer, login_customer_id, item)
@@ -404,7 +418,10 @@ async def _find(
 async def _read_back(
     client: GoogleAdsClient, customer: str, login_customer_id: str, items: Sequence[MediaItem]
 ) -> None:
-    """Fills in Google's dimensions and video titles; a failed read keeps what was sent."""
+    """Fills in Google's dimensions, video titles, and AI attestations.
+
+    A failed read keeps what was sent.
+    """
     # Google returns one asset for Files with the same content.
     created: dict[str, list[MediaItem]] = {}
     for item in items:
@@ -431,7 +448,14 @@ async def _read_back(
         width = nonnegative_int(size.get("widthPixels"))
         height = nonnegative_int(size.get("heightPixels"))
         title = (asset.get("youtubeVideoAsset") or {}).get("youtubeVideoTitle")
+        synthetic = asset.get("syntheticContentInfo") or {}
+        declared = _ATTESTED.get((synthetic.get("advertiserAttestation") or {}).get("status"))
+        detected = _ATTESTED.get((synthetic.get("systemAttestation") or {}).get("status"))
         for item in created.get(str(asset.get("id") or ""), ()):
+            # A video's disclosure went with its upload, which Google doesn't return.
+            if declared is not None and item.kind == "image":
+                item.made_with_ai = declared
+            item.google_made_with_ai = detected
             if width and height:
                 item.width, item.height = width, height
                 item.fits = image_fits(width, height)[0]

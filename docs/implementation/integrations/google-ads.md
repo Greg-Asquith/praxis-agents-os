@@ -1246,7 +1246,8 @@ arguments name an account only through references. `files` takes File references
 `youtube_videos` takes links or 11-character IDs, read by `youtube_video_id` from
 `youtube.com` and `youtu.be` addresses only. `video_details` gives each video File a
 title and description, and `video_uploads` takes the upload IDs of earlier uploads that
-were still processing. Like Meta's upload, the tool may run unattended, because it sets up
+were still processing. `made_with_ai` lists the IDs of the Files in `files` that were made
+or changed with AI; an ID that isn't in `files` is refused before approval. Like Meta's upload, the tool may run unattended, because it sets up
 no spend. Its timeout is 10 minutes, for a 1 GB upload and the processing wait, so one
 call's video Files total at most 1 GB and a larger request is refused before anything is sent.
 
@@ -1297,6 +1298,18 @@ recovered when found, or unconfirmed otherwise, and never sends it again. Google
 the existing asset for content it already has. A read-back fills in Google's dimensions
 and each video's title.
 
+For a File listed in `made_with_ai`, the upload tells Google the media was made or changed
+with AI. An image carries `syntheticContentInfo: {advertiserAttestation: {status:
+IS_SYNTHETIC, source: ADVERTISER_ATTESTED}}` on its asset, and a video carries
+`video_content_metadata: {generative_content_disclosure: GENERATIVE_CONTENT}` on its
+YouTube upload, which is input only and can't change later. A File that isn't listed
+carries no statement: the tool never declares that media wasn't made with AI. Files don't
+record how they were made, so the list comes from the agent and the card. The read-back
+also selects `asset.synthetic_content_info.advertiser_attestation.status` and
+`system_attestation.status`. An image's `made_with_ai` in the result is Google's stored
+advertiser status when it returns one, and `google_made_with_ai` is Google's own check, or
+null when it says nothing. The audit record holds `made_with_ai` for each File.
+
 #### Video uploads
 
 `operations/video_upload.py` uses `YouTubeVideoUploadService`'s resumable REST upload, so
@@ -1306,7 +1319,8 @@ each video goes to an unlisted channel Google manages for the account.
 1. `POST /resumable/upload/v26/customers/{id}/youTubeVideoUploads:create` with
    `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`, and
    `X-Goog-Upload-Header-Content-Length`, and the body `{customer_id,
-   you_tube_video_upload: {video_title, video_description}}`. The reply's
+   you_tube_video_upload: {video_title, video_description}}`, plus
+   `video_content_metadata` for a video listed in `made_with_ai`. The reply's
    `x-goog-upload-url` and `x-goog-upload-chunk-granularity` headers give the upload
    address and chunk size.
 2. The session's `upload_id`, from the address, is checkpointed against the File's
@@ -1940,7 +1954,7 @@ asset and target, tabs per outcome, opening on Failed when anything failed.
 ### Upload Media card
 
 `lib/upload-media.ts` parses `files`, `youtube_videos`, `video_details`,
-`video_uploads`, `_accounts`, and `_files`. `youtubeVideoId` reads a link the same way
+`video_uploads`, `made_with_ai`, `_accounts`, and `_files`. `youtubeVideoId` reads a link the same way
 the server does. The card blocks approval for a File with a problem, a File list the
 server hasn't checked, a video title or description YouTube won't take, an unreadable
 video link, a repeated video, and an upload ID that isn't one.
@@ -1958,11 +1972,14 @@ Attention. **Cancel This Change** removes a File from `files`, and the card keep
 `retained` so **Undo** survives the **Check Files** review. **Add Files** searches
 workspace Files, each YouTube link is its own field, and **Finish Earlier Uploads** lists
 `video_uploads`. With a video File, the card says videos go to an unlisted YouTube
-channel Google manages, and that titles can't change later.
+channel Google manages, and that titles can't change later. Each File row has a **Made
+With AI** checkbox that writes `made_with_ai` for the Files still in the request, and the
+summary counts the marked Files; cancelling a File drops its mark.
 
 The result (`components/upload-media-outcome.tsx`) is one `DataTable` with Name, Kind,
-Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed. A
-processing video says Google is still processing it, with its upload ID.
+Size, Fits, AI Disclosure, and Status, tabs per outcome, opening on Failed when anything
+failed. AI Disclosure shows what Google was told, and Google's own answer where it
+differs. A processing video says Google is still processing it, with its upload ID.
 
 ### Update Conversions card
 

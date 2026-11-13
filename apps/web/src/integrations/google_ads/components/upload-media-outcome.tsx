@@ -11,6 +11,7 @@ import {
   MEDIA_OUTCOME_BADGES,
   MEDIA_OUTCOME_LABELS,
   MEDIA_OUTCOME_TABS,
+  aiDisclosureText,
   mediaOutcomeSummary,
   type MediaKind,
   type MediaOutcome,
@@ -23,6 +24,7 @@ const COLUMNS: DataColumn[] = [
   { key: "kind", kind: "text", label: "Kind", width: 120 },
   { key: "size", kind: "text", label: "Size", width: 100 },
   { key: "fits", kind: "text", label: "Fits", width: 180 },
+  { key: "ai", kind: "text", label: "AI Disclosure", width: 150 },
   { key: "outcome", kind: "text", label: "Status", width: 130 },
   { key: "assetId", kind: "text", label: "Asset ID", hidden: true },
   { key: "uploadId", kind: "text", label: "Upload ID", hidden: true },
@@ -44,6 +46,7 @@ export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
   const rows = useMemo(
     () =>
       result.uploads.map((upload, index) => ({
+        ai: aiDisclosureText(upload),
         assetId: upload.assetId ?? "",
         uploadId: upload.uploadId ?? "",
         details: [
