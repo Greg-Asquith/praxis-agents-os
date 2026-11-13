@@ -23,6 +23,7 @@ from integrations.google_ads.operations.list_recommendations import list_recomme
 from integrations.google_ads.references import GoogleAdsRecommendationReference
 from integrations.google_ads.tools.apply_recommendations import (
     DEFINITION,
+    _approval_display_args,
     _provider_parameters,
     _serialize_parameter,
     google_ads_apply_recommendations,
@@ -30,10 +31,14 @@ from integrations.google_ads.tools.apply_recommendations import (
 from integrations.google_ads.tools.schemas.recommendations import (
     GoogleAdsCampaignBudgetParameters,
     GoogleAdsKeywordParameters,
+    GoogleAdsLowerTargetRoasPerformanceBidTooLowParameters,
+    GoogleAdsOptimizeForNewCustomersParameters,
+    GoogleAdsRaiseBudgetPerformanceTooLowParameters,
     GoogleAdsRecommendationApplyParameters,
     GoogleAdsTargetCpaOptInParameters,
     GoogleAdsTargetRoasOptInParameters,
 )
+from integrations.google_ads.tools.utils.recommendations import recommendation_change
 from integrations.google_ads.tools.verifiers.recommendation import verify_recommendations
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
@@ -148,6 +153,20 @@ def test_apply_definition_is_approval_only_and_uses_recommendation_entities() ->
             ),
             ("targetRoasOptIn", {"targetRoas": 2.5}),
         ),
+        (
+            GoogleAdsOptimizeForNewCustomersParameters(
+                recommendation_resource_name="customers/333/recommendations/5",
+                account_default_incremental_conversion_value=40.5,
+                campaign_override_incremental_conversion_value=60,
+            ),
+            (
+                "optimizeForNewCustomers",
+                {
+                    "accountDefaultIncrementalConversionValue": 40.5,
+                    "campaignOverrideIncrementalConversionValue": 60.0,
+                },
+            ),
+        ),
     ],
 )
 def test_every_supported_parameter_serializes_to_exact_api_fields(
@@ -174,6 +193,115 @@ def test_live_recommendation_type_controls_parameter_compatibility() -> None:
     assert provider_parameters == {
         reference.resource_name: ("campaignBudget", {"newBudgetAmountMicros": "2000000"})
     }
+
+
+@pytest.mark.parametrize(
+    ("recommendation", "parameter", "expected"),
+    [
+        (
+            {
+                "type": "RAISE_TARGET_CPA_PERFORMANCE_BID_TOO_LOW",
+                "raiseTargetCpaPerformanceBidTooLowRecommendation": {
+                    "currentAverageTargetCpaMicros": "20000000",
+                    "recommendedTargetMultiplier": 1.25,
+                },
+            },
+            None,
+            {"setting": "target_cpa", "now": 20.0, "after": 25.0, "currency": "GBP"},
+        ),
+        (
+            {
+                "type": "LOWER_TARGET_ROAS_PERFORMANCE_BID_TOO_LOW",
+                "lowerTargetRoasPerformanceBidTooLowRecommendation": {
+                    "currentAverageTargetRoas": 4.0,
+                    "recommendedTargetMultiplier": 0.9,
+                },
+            },
+            GoogleAdsLowerTargetRoasPerformanceBidTooLowParameters(
+                recommendation_resource_name="customers/333/recommendations/1",
+                target_roas_multiplier=0.75,
+            ),
+            {"setting": "target_roas", "now": 4.0, "after": 3.0, "currency": None},
+        ),
+        (
+            {
+                "type": "RAISE_BUDGET_PERFORMANCE_TOO_LOW",
+                "raiseBudgetPerformanceTooLowRecommendation": {
+                    "currentBudgetAmountMicros": "50000000",
+                    "recommendedBudgetAmountMicros": "80000000",
+                },
+            },
+            GoogleAdsRaiseBudgetPerformanceTooLowParameters(
+                recommendation_resource_name="customers/333/recommendations/1",
+                new_budget_amount_micros=65_500_000,
+            ),
+            {"setting": "daily_budget", "now": 50.0, "after": 65.5, "currency": "GBP"},
+        ),
+    ],
+)
+def test_change_is_the_requested_value_or_googles_in_account_currency(
+    recommendation: dict,
+    parameter: GoogleAdsRecommendationApplyParameters | None,
+    expected: dict,
+) -> None:
+    assert recommendation_change(recommendation, parameter, currency="GBP") == expected
+
+
+async def test_approval_preview_reads_only_accounts_the_run_may_write_to(monkeypatch) -> None:
+    writable = _entry("333")
+    writable.permissions_metadata["currency_code"] = "GBP"
+    read_only = _entry("444", write_allowed=False)
+    reference = _reference(writable, "one", "RAISE_BUDGET_PERFORMANCE_TOO_LOW")
+    client = _Client(
+        [
+            {
+                "results": [
+                    {
+                        "recommendation": {
+                            "resourceName": reference.resource_name,
+                            "type": reference.recommendation_type,
+                            "raiseBudgetPerformanceTooLowRecommendation": {
+                                "currentBudgetAmountMicros": "50000000",
+                                "recommendedBudgetAmountMicros": "80000000",
+                            },
+                        }
+                    }
+                ]
+            }
+        ]
+    )
+    build_client = AsyncMock(return_value=client)
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.apply_recommendations.google_ads_client_for_principal",
+        build_client,
+    )
+    deps = SimpleNamespace(
+        db=object(),
+        user=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(writable, read_only)),
+    )
+    args = {
+        "recommendations": [
+            reference.model_dump(mode="json"),
+            _reference(read_only, "two").model_dump(mode="json"),
+        ]
+    }
+
+    display = await _approval_display_args(deps, args)
+
+    assert display["_checks"] == {
+        reference.resource_name: {
+            "change": {
+                "setting": "daily_budget",
+                "now": 50.0,
+                "after": 80.0,
+                "currency": "GBP",
+            }
+        }
+    }
+    build_client.assert_awaited_once()
+    assert [call["path"] for call in client.calls] == ["customers/333/googleAds:searchStream"]
 
 
 def test_keyword_parameters_reject_cross_account_ad_group() -> None:

@@ -42,7 +42,10 @@ async def list_recommendations(
     query = (
         "SELECT campaign.name, recommendation.resource_name, recommendation.type, "  # noqa: S608 -- validated resource names and bounded integers
         "recommendation.dismissed, recommendation.campaign, recommendation.campaigns, "
-        "recommendation.impact FROM recommendation"
+        "recommendation.impact, "
+        "recommendation.raise_target_cpa_performance_bid_too_low_recommendation, "
+        "recommendation.lower_target_roas_performance_bid_too_low_recommendation, "
+        "recommendation.raise_budget_performance_too_low_recommendation FROM recommendation"
         f"{where_clause} LIMIT {limit}"
     )
     payload = await client.post(

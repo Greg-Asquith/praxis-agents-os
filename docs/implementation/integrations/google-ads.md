@@ -1552,6 +1552,44 @@ write Files, it is an internal write with auto approval by default, like
 
 The audit record holds the month, invoice, and saved PDF counts.
 
+### Recommendations
+
+`google_ads_apply_recommendations` applies 1 to 50 `google_ads_recommendation`
+references through Google's `recommendations:apply`, with partial failure, and
+reports each one as applied, failed, or unverified. After approval it re-reads
+every recommendation and stops before any write when one is missing,
+dismissed, or of another type. Without a `parameters` row, a recommendation
+applies with Google's proposed values. A row names its recommendation and one
+parameter type, and the tool refuses a type that doesn't match the live
+recommendation.
+
+The parameter types are the budget, keyword, target CPA, and target ROAS types
+of earlier versions, and four for the recommendation types Google added in
+v25.2 to v26.1:
+
+| `parameter_type` | Recommendation type | Fields |
+| --- | --- | --- |
+| `raiseTargetCpaPerformanceBidTooLow` | `RAISE_TARGET_CPA_PERFORMANCE_BID_TOO_LOW` | `target_cpa_multiplier`, above 1. |
+| `lowerTargetRoasPerformanceBidTooLow` | `LOWER_TARGET_ROAS_PERFORMANCE_BID_TOO_LOW` | `target_roas_multiplier`, above 0 and below 1. |
+| `raiseBudgetPerformanceTooLow` | `RAISE_BUDGET_PERFORMANCE_TOO_LOW` | `new_budget_amount_micros`. |
+| `optimizeForNewCustomers` | `OPTIMIZE_FOR_NEW_CUSTOMERS` | `account_default_incremental_conversion_value`, `campaign_override_incremental_conversion_value`, or both, in account currency units, not micros. |
+
+Google takes a multiplier on the campaign's current average target for the two
+bid types, not a new target. `list_recommendations` selects Google's detail
+message for the two bid types and the budget type, and
+`recommendation_change` in `tools/utils/recommendations.py` turns it into
+`{setting, now, after, currency}`: `target_cpa` and `daily_budget` in account
+currency units, `target_roas` as a ratio. `after` is the requested value, or
+Google's recommended value without a parameter row. Each result row carries it
+as `change`. The trusted `_checks` display argument, keyed by recommendation
+resource name, holds Google's recommended `change` for accounts the run may
+write to; an account that can't be read leaves it out and the card still
+works. Google's reference has no current value for the new customer type, so
+it has no `change`. The tool reports Google's apply outcome and doesn't
+re-read the campaign afterwards.
+
+`google_ads_dismiss_recommendations` dismisses the same references.
+
 ### Labels
 
 `google_ads_create_labels` creates 1 to 50 text labels in each selected
@@ -1642,6 +1680,12 @@ The recommendation and label presenters use an earlier Google kit:
 and `GoogleAdsOutcomeTable`. The table owns outcome labels, stat order and
 tones, conditional detail and error columns, and sample notices. Every write
 presenter shows accounts that failed with `GoogleAdsFailureTargets`.
+
+The Apply Recommendations card shows a bid or budget recommendation's setting
+now and after, such as "Target CPA: £20.00 → £25.00", from the `_checks`
+change. `changeWithParameters` in `lib/recommendations.ts` works out the value
+after from an edited parameter row, so the line follows an edit without a new
+read. The result table adds a **Change** column when any row has one.
 
 The accounts card reaches `DataTable` through `components/accounts-table.tsx`:
 one table across all accounts, with money in each row's own currency.

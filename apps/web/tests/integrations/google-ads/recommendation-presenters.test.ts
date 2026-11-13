@@ -53,6 +53,58 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).not.toContain("Raise campaign budget")
   })
 
+  it("shows the setting now and after, with an edited multiplier in place of Google's", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      parameters: [
+        {
+          recommendation_resource_name: recommendationName("1"),
+          parameter_type: "raiseTargetCpaPerformanceBidTooLow",
+          target_cpa_multiplier: 1.5,
+        },
+      ],
+    }
+    const html = render(
+      googleAdsApplyRecommendationsPresenter.render(
+        props(
+          {
+            args: {
+              recommendations: [
+                recommendationReference(
+                  "1",
+                  "Raise target CPA",
+                  "RAISE_TARGET_CPA_PERFORMANCE_BID_TOO_LOW"
+                ),
+                recommendationReference(
+                  "2",
+                  "Lower target ROAS",
+                  "LOWER_TARGET_ROAS_PERFORMANCE_BID_TOO_LOW"
+                ),
+              ],
+              _checks: {
+                [recommendationName("1")]: {
+                  change: { setting: "target_cpa", now: 20, after: 25, currency: "GBP" },
+                },
+                [recommendationName("2")]: {
+                  change: { setting: "target_roas", now: 4, after: 3.6, currency: null },
+                },
+              },
+            },
+            id: "apply-change",
+            kind: "approval",
+            name: "google_ads_apply_recommendations",
+            status: "awaiting_approval",
+          },
+          controls,
+          toolUi(applyFields())
+        )
+      )
+    )
+
+    expect(html).toContain("Target CPA: £20.00 → £30.00")
+    expect(html).toContain("Target ROAS: 400% → 360%")
+  })
+
   it("blocks duplicate or unmatched apply parameter edits", () => {
     const controls = approvalControls()
     controls.decision.edits = {
@@ -231,6 +283,7 @@ describe("Google Ads recommendation presenters", () => {
               entry({
                 recommendations: [
                   applyOutcome("1", "Raise campaign budget", "CAMPAIGN_BUDGET", "applied", {
+                    change: { setting: "daily_budget", now: 50, after: 80, currency: "GBP" },
                     impact: {
                       base_metrics: {
                         clicks: 100,
@@ -269,6 +322,7 @@ describe("Google Ads recommendation presenters", () => {
     )
 
     expect(html).toContain("Clicks: 100 → 125")
+    expect(html).toContain("Daily Budget: £50.00 → £80.00")
     expect(html).toContain("Download Report CSV")
   })
 

@@ -150,6 +150,46 @@ class GoogleAdsSetTargetRoasParameters(_RecommendationParameterBase):
         return self
 
 
+class GoogleAdsRaiseTargetCpaPerformanceBidTooLowParameters(_RecommendationParameterBase):
+    parameter_type: Literal["raiseTargetCpaPerformanceBidTooLow"] = (
+        "raiseTargetCpaPerformanceBidTooLow"
+    )
+    target_cpa_multiplier: float = Field(gt=1.0, allow_inf_nan=False)
+
+
+class GoogleAdsLowerTargetRoasPerformanceBidTooLowParameters(_RecommendationParameterBase):
+    parameter_type: Literal["lowerTargetRoasPerformanceBidTooLow"] = (
+        "lowerTargetRoasPerformanceBidTooLow"
+    )
+    target_roas_multiplier: float = Field(gt=0, lt=1.0)
+
+
+class GoogleAdsRaiseBudgetPerformanceTooLowParameters(_RecommendationParameterBase):
+    parameter_type: Literal["raiseBudgetPerformanceTooLow"] = "raiseBudgetPerformanceTooLow"
+    new_budget_amount_micros: int = Field(gt=0, le=GOOGLE_ADS_INT64_MAX)
+
+
+class GoogleAdsOptimizeForNewCustomersParameters(_RecommendationParameterBase):
+    """Extra conversion value per new customer, in account currency units, not micros."""
+
+    parameter_type: Literal["optimizeForNewCustomers"] = "optimizeForNewCustomers"
+    account_default_incremental_conversion_value: float | None = Field(
+        default=None, gt=0, allow_inf_nan=False
+    )
+    campaign_override_incremental_conversion_value: float | None = Field(
+        default=None, gt=0, allow_inf_nan=False
+    )
+
+    @model_validator(mode="after")
+    def require_value(self) -> "GoogleAdsOptimizeForNewCustomersParameters":
+        if (
+            self.account_default_incremental_conversion_value is None
+            and self.campaign_override_incremental_conversion_value is None
+        ):
+            raise ValueError("New customer parameters require an account or campaign value")
+        return self
+
+
 GoogleAdsRecommendationApplyParameters = Annotated[
     GoogleAdsCampaignBudgetParameters
     | GoogleAdsKeywordParameters
@@ -163,7 +203,11 @@ GoogleAdsRecommendationApplyParameters = Annotated[
     | GoogleAdsLowerTargetRoasParameters
     | GoogleAdsForecastingSetTargetCpaParameters
     | GoogleAdsSetTargetCpaParameters
-    | GoogleAdsSetTargetRoasParameters,
+    | GoogleAdsSetTargetRoasParameters
+    | GoogleAdsRaiseTargetCpaPerformanceBidTooLowParameters
+    | GoogleAdsLowerTargetRoasPerformanceBidTooLowParameters
+    | GoogleAdsRaiseBudgetPerformanceTooLowParameters
+    | GoogleAdsOptimizeForNewCustomersParameters,
     Field(discriminator="parameter_type"),
 ]
 
@@ -182,12 +226,22 @@ class GoogleAdsRecommendationImpact(GoogleAdsStrictModel):
     potential_metrics: GoogleAdsRecommendationMetrics | None = None
 
 
+class GoogleAdsRecommendationChange(GoogleAdsStrictModel):
+    """The setting a recommendation changes: money in units of `currency`, ROAS as a ratio."""
+
+    setting: Literal["target_cpa", "target_roas", "daily_budget"]
+    now: float
+    after: float
+    currency: str | None = None
+
+
 class GoogleAdsApplyRecommendationOutcome(GoogleAdsStrictModel):
     recommendation_resource_name: str
     recommendation_type: str
     recommendation_label: str
     affected_campaigns: list[str]
     requested_parameters: GoogleAdsRecommendationApplyParameters | None = None
+    change: GoogleAdsRecommendationChange | None = None
     impact: GoogleAdsRecommendationImpact | None = None
     outcome: Literal["applied", "failed", "unverified"]
     external_ref: str | None = None

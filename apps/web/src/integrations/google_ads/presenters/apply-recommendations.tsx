@@ -12,8 +12,12 @@ import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
+  changeWithParameters,
+  parseRecommendationChange,
   parseRecommendationOutcome,
   parseRecommendationReference,
+  recommendationChangeText,
+  type RecommendationChange,
 } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
@@ -40,6 +44,10 @@ const PARAMETER_TYPES = new Set([
   "forecastingSetTargetCpa",
   "setTargetCpa",
   "setTargetRoas",
+  "raiseTargetCpaPerformanceBidTooLow",
+  "lowerTargetRoasPerformanceBidTooLow",
+  "raiseBudgetPerformanceTooLow",
+  "optimizeForNewCustomers",
 ])
 
 type RecommendationReference = {
@@ -52,6 +60,8 @@ type RecommendationReference = {
 type RecommendationParameters = Record<string, string | number | null>
 
 type ApplyRecommendationArgs = {
+  // From the trusted `_checks`, keyed by recommendation resource name.
+  changes: Map<string, RecommendationChange>
   parameters: RecommendationParameters[]
   recommendations: RecommendationReference[]
 }
@@ -72,6 +82,7 @@ type Impact = {
 
 type ApplyRecommendationOutcome = {
   affectedCampaigns: string[]
+  change: RecommendationChange | null
   errorCode: string | null
   impact: Impact | null
   label: string
@@ -85,6 +96,8 @@ type ApplyRecommendationOutcome = {
 type ApplyRecommendationResult = {
   recommendations: ApplyRecommendationOutcome[]
 }
+
+const CHANGE_COLUMN: DataColumn = { key: "change", kind: "text", label: "Change" }
 
 const COLUMNS: DataColumn[] = [
   { key: "recommendation", kind: "text", label: "Recommendation" },
@@ -136,15 +149,21 @@ function applyRecommendationApprovalSummary(args: ApplyRecommendationArgs) {
     >
       {args.recommendations.map((recommendation) => {
         const parameters = parametersByName.get(recommendation.resourceName)
+        const change = args.changes.get(recommendation.resourceName)
         return (
           <GoogleAdsEntityCard
             key={recommendation.resourceName}
             title={recommendation.label}
             meta={googleAdsTokenLabel(recommendation.recommendationType)}
             trailing={
-              <span className="text-muted-foreground text-xs">
-                {parameters ? formatParameters(parameters) : "Use Google's proposed values"}
-              </span>
+              <div className="grid gap-0.5">
+                {change ? (
+                  <span>{recommendationChangeText(changeWithParameters(change, parameters))}</span>
+                ) : null}
+                <span className="text-muted-foreground text-xs">
+                  {parameters ? formatParameters(parameters) : "Use Google's proposed values"}
+                </span>
+              </div>
             }
           />
         )
@@ -157,6 +176,7 @@ function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
   const counts = countByKind(result.recommendations)
   const rows: GoogleAdsOutcomeRow[] = result.recommendations.map((recommendation) => ({
     campaigns: recommendation.affectedCampaigns.join(", ") || "No campaign identified",
+    change: recommendation.change ? recommendationChangeText(recommendation.change) : "—",
     details: recommendation.message ?? "",
     errorCode: recommendation.errorCode,
     impact: formatImpact(recommendation.impact),
@@ -171,7 +191,11 @@ function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
   return (
     <div className="grid gap-2">
       <GoogleAdsOutcomeTable
-        columns={COLUMNS}
+        columns={
+          result.recommendations.some((recommendation) => recommendation.change)
+            ? [...COLUMNS.slice(0, 3), CHANGE_COLUMN, ...COLUMNS.slice(3)]
+            : COLUMNS
+        }
         rows={rows}
         outcomes={counts.filter(({ kind }) => kind !== "skipped")}
         exportFilename="google-ads-applied-recommendations.csv"
@@ -217,7 +241,12 @@ function applyRecommendationArgs(value: unknown): ApplyRecommendationArgs | null
   ) {
     return null
   }
-  return { parameters: parsedParameters, recommendations }
+  const changes = new Map<string, RecommendationChange>()
+  for (const [name, check] of Object.entries(isRecord(value["_checks"]) ? value["_checks"] : {})) {
+    const change = isRecord(check) ? parseRecommendationChange(check["change"]) : null
+    if (change) changes.set(name, change)
+  }
+  return { changes, parameters: parsedParameters, recommendations }
 }
 
 function applyRecommendationArgsError(value: unknown): string | null {
@@ -316,11 +345,36 @@ function parseParameters(value: unknown): RecommendationParameters | null {
         "campaign_budget_amount_micros",
         isPositiveInteger
       )
+    case "raiseTargetCpaPerformanceBidTooLow":
+      return validParameter(value, common, ["target_cpa_multiplier"], {
+        target_cpa_multiplier: (item) =>
+          typeof item === "number" && Number.isFinite(item) && item > 1,
+      })
+    case "lowerTargetRoasPerformanceBidTooLow":
+      return validParameter(value, common, ["target_roas_multiplier"], {
+        target_roas_multiplier: (item) => typeof item === "number" && item > 0 && item < 1,
+      })
+    case "raiseBudgetPerformanceTooLow":
+      return validParameter(value, common, ["new_budget_amount_micros"], {
+        new_budget_amount_micros: isPositiveInteger,
+      })
+    case "optimizeForNewCustomers":
+      return validOptionalPair(
+        value,
+        common,
+        "account_default_incremental_conversion_value",
+        isPositiveAmount,
+        "campaign_override_incremental_conversion_value",
+        isPositiveAmount
+      )
   }
   return null
 }
 
 type ScalarValidator = (value: unknown) => boolean
+
+const isPositiveAmount: ScalarValidator = (value) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
 
 function validParameter(
   value: Record<string, unknown>,
@@ -374,9 +428,13 @@ function parseApplyOutcome(value: unknown): ApplyRecommendationOutcome | null {
   const parameters =
     value["requested_parameters"] === null ? null : parseParameters(value["requested_parameters"])
   const impact = value["impact"] === null ? null : parseImpact(value["impact"])
+  // Results stored before the change was reported have no `change`.
+  const rawChange = value["change"] ?? null
+  const change = rawChange === null ? null : parseRecommendationChange(rawChange)
   if (parameters === null && value["requested_parameters"] !== null) return null
   if (impact === null && value["impact"] !== null) return null
-  return { ...common, parameters, impact }
+  if (change === null && rawChange !== null) return null
+  return { ...common, change, parameters, impact }
 }
 
 function parseImpact(value: unknown): Impact | null {
@@ -426,9 +484,11 @@ function formatParameters(parameters: RecommendationParameters): string {
     const label = googleAdsTokenLabel(key.replace(/_micros$/, ""))
     const rendered = key.endsWith("_micros")
       ? `${NUMBER_FORMAT.format(microsToCurrencyUnits(Number(value)))} account currency units`
-      : key.includes("roas") || key.includes("multiplier")
-        ? `${NUMBER_FORMAT.format(Number(value))}×`
-        : googleAdsTokenLabel(String(value))
+      : key.endsWith("_conversion_value")
+        ? `${NUMBER_FORMAT.format(Number(value))} account currency units`
+        : key.includes("roas") || key.includes("multiplier")
+          ? `${NUMBER_FORMAT.format(Number(value))}×`
+          : googleAdsTokenLabel(String(value))
     parts.push(`${label}: ${rendered}`)
   }
   return parts.join(" · ") || googleAdsTokenLabel(String(parameters["parameter_type"]))

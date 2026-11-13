@@ -3,6 +3,7 @@
 """Approval-only Google Ads recommendation apply runtime tool."""
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any
 
@@ -10,6 +11,7 @@ from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from integrations.google_ads.operations.list_recommendations import list_recommendations
 from integrations.google_ads.operations.mutation_outcomes import thaw_fields
 from integrations.google_ads.references import GoogleAdsRecommendationReference
 from services.agents.runtime.context import RuntimeDeps
@@ -50,14 +52,20 @@ from .utils import (
     RESULTS_FIELD,
     google_ads_available,
     google_ads_client,
+    google_ads_client_for_principal,
     login_customer_id,
 )
+from .utils.accounts import writable_entries
 from .utils.mutation_evidence import (
     audit_status,
     google_ads_account_target,
     terminal_operation_detail,
 )
-from .utils.recommendations import affected_campaign_label, affected_campaigns
+from .utils.recommendations import (
+    affected_campaign_label,
+    affected_campaigns,
+    recommendation_change,
+)
 from .verifiers import verify_recommendations
 
 _PARAMETER_TYPES_BY_RECOMMENDATION: dict[str, frozenset[str]] = {
@@ -76,6 +84,10 @@ _PARAMETER_TYPES_BY_RECOMMENDATION: dict[str, frozenset[str]] = {
     "forecastingSetTargetCpa": frozenset({"FORECASTING_SET_TARGET_CPA"}),
     "setTargetCpa": frozenset({"SET_TARGET_CPA"}),
     "setTargetRoas": frozenset({"SET_TARGET_ROAS"}),
+    "raiseTargetCpaPerformanceBidTooLow": frozenset({"RAISE_TARGET_CPA_PERFORMANCE_BID_TOO_LOW"}),
+    "lowerTargetRoasPerformanceBidTooLow": frozenset({"LOWER_TARGET_ROAS_PERFORMANCE_BID_TOO_LOW"}),
+    "raiseBudgetPerformanceTooLow": frozenset({"RAISE_BUDGET_PERFORMANCE_TOO_LOW"}),
+    "optimizeForNewCustomers": frozenset({"OPTIMIZE_FOR_NEW_CUSTOMERS"}),
 }
 
 
@@ -161,6 +173,7 @@ async def google_ads_apply_recommendations(
                     provider_operations,
                     exc,
                     disposition=disposition,
+                    currency=_currency(entry),
                 )
                 exc.failure_disposition = disposition
                 exc.operation_detail = exception_outcome.operation_detail
@@ -177,9 +190,12 @@ async def google_ads_apply_recommendations(
                     provider_operations,
                     exc,
                     disposition=disposition,
+                    currency=_currency(entry),
                 )
             operation_detail = terminal_operation_detail(pending_detail, ledger)
-            result = _apply_result(selected, parameters_by_name, live_rows, ledger)
+            result = _apply_result(
+                selected, parameters_by_name, live_rows, ledger, currency=_currency(entry)
+            )
             status = audit_status(operation_detail)
             return IntegrationAuditOutcome(
                 result,
@@ -266,6 +282,12 @@ def _serialize_parameter(
         "campaign_budget_amount_micros": "campaignBudgetAmountMicros",
         "target_cpa_multiplier": "targetCpaMultiplier",
         "target_roas_multiplier": "targetRoasMultiplier",
+        "account_default_incremental_conversion_value": (
+            "accountDefaultIncrementalConversionValue"
+        ),
+        "campaign_override_incremental_conversion_value": (
+            "campaignOverrideIncrementalConversionValue"
+        ),
     }
     micros_fields = {
         "new_budget_amount_micros",
@@ -334,6 +356,8 @@ def _apply_result(
     parameters_by_name: Mapping[str, GoogleAdsRecommendationApplyParameters],
     live_rows: Mapping[str, Mapping[str, Any]],
     ledger,
+    *,
+    currency: str | None,
 ) -> dict[str, Any]:
     parents_by_name = {
         thaw_fields(parent.identity)["recommendation_resource_name"]: parent
@@ -359,6 +383,9 @@ def _apply_result(
                     if reference.resource_name in parameters_by_name
                     else None
                 ),
+                "change": recommendation_change(
+                    live, parameters_by_name.get(reference.resource_name), currency=currency
+                ),
                 "impact": _impact(live.get("impact")),
                 "outcome": effect.outcome,
                 "external_ref": effect.external_ref,
@@ -378,6 +405,7 @@ def _exception_outcome(
     exc: BaseException,
     *,
     disposition: IntegrationFailureDisposition,
+    currency: str | None,
 ) -> IntegrationAuditOutcome[dict[str, Any]]:
     ambiguous = disposition is IntegrationFailureDisposition.AMBIGUOUS
     error_code = exc.__class__.__name__[:100]
@@ -390,7 +418,7 @@ def _exception_outcome(
         message=message,
     )
     operation_detail = terminal_operation_detail(pending_detail, ledger)
-    result = _apply_result(references, parameters_by_name, live_rows, ledger)
+    result = _apply_result(references, parameters_by_name, live_rows, ledger, currency=currency)
     status = audit_status(operation_detail)
     return IntegrationAuditOutcome(
         result,
@@ -398,6 +426,44 @@ def _exception_outcome(
         operation_detail=operation_detail,
         unverified_result=result if ambiguous else None,
     )
+
+
+async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """Adds, per recommendation, the setting Google says it changes, now and as recommended."""
+    names_by_customer: dict[str, list[str]] = defaultdict(list)
+    for item in args.get("recommendations") or ():
+        reference = GoogleAdsRecommendationReference.model_validate(item)
+        names_by_customer[reference.customer_id].append(reference.resource_name)
+    entries = writable_entries(deps.active_context)
+    checks: dict[str, dict[str, Any]] = {}
+    for customer_id, resource_names in names_by_customer.items():
+        entry = entries.get(customer_id)
+        if entry is None:
+            continue
+        # The card works without these facts, so an unreadable account only leaves them out.
+        try:
+            client = await google_ads_client_for_principal(
+                deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
+            )
+            rows = await list_recommendations(
+                client,
+                customer_id=customer_id,
+                login_customer_id=login_customer_id(entry),
+                resource_names=resource_names,
+                include_dismissed=True,
+                limit=len(resource_names),
+            )
+        except (IntegrationError, ModelRetry, ValueError):
+            continue
+        for row in rows:
+            if change := recommendation_change(row, currency=_currency(entry)):
+                checks[str(row["resourceName"])] = {"change": change}
+    return {**args, "_checks": checks}
+
+
+def _currency(entry: ResolvedContextEntry) -> str | None:
+    """Returns the account's discovered currency code, if discovery stored one."""
+    return str(entry.permissions_metadata.get("currency_code") or "").strip() or None
 
 
 def _impact(value: Any) -> dict[str, Any] | None:
@@ -432,7 +498,11 @@ DEFINITION = RuntimeToolDefinition(
     description=(
         "Apply selected live Google Ads recommendations after reviewing them with "
         "google_ads_run_report. Optional typed parameters customize supported budget, "
-        "keyword, CPA, or ROAS proposals; omit parameters to apply Google's proposed values."
+        "keyword, CPA, or ROAS proposals; omit parameters to apply Google's proposed values. "
+        "For a recommendation that raises a target CPA or lowers a target ROAS because bids "
+        "are too low, the parameter is a multiplier on the current target (above 1 for CPA, "
+        "below 1 for ROAS), not a new target. optimizeForNewCustomers takes the extra "
+        "conversion value of a new customer in account currency units, not micros."
     ),
     provider="google_ads",
     label="Apply Google Ads Recommendations",
@@ -447,6 +517,7 @@ DEFINITION = RuntimeToolDefinition(
     output_model=GoogleAdsApplyRecommendationsOutput,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
+    approval_display_args=_approval_display_args,
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Applying Google Ads Recommendations",
