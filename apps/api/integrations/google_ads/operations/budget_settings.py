@@ -19,6 +19,11 @@ DELIVERY_PATH = "deliveryMethod"
 REFERENCE_COUNT_PATH = "referenceCount"
 # A campaign's budget, which moving it onto a shared budget changes.
 CAMPAIGN_BUDGET_PATH = "campaignBudget"
+# Which networks a budget spends on first, and the share the rest may take, per campaign type.
+# Google refuses a mask on the parent message, so the path is its one list.
+NETWORK_PATH = "budgetNetworkSettings.settings"
+# A budget with no network order of its own follows the account's.
+ACCOUNT_DEFAULT = "ACCOUNT_DEFAULT"
 # Campaigns read per request when listing the campaigns a budget funds.
 MAX_BUDGET_CAMPAIGNS = 10_000
 _BUDGET_NAME = re.compile(r"customers/\d+/campaignBudgets/\d+")
@@ -32,6 +37,12 @@ _BUDGET_FIELDS = (
     "campaign_budget.delivery_method",
     "campaign_budget.explicitly_shared",
     "campaign_budget.reference_count",
+)
+# Read only for a network order change, so no other budget change depends on these fields.
+_NETWORK_FIELDS = (
+    "campaign_budget.budget_network_settings.settings",
+    "campaign_budget.budget_network_eligibility.eligible",
+    "campaign_budget.budget_network_eligibility.ineligible_reasons",
 )
 _CAMPAIGN_FIELDS = (
     "campaign.resource_name",
@@ -55,6 +66,8 @@ class LiveBudget:
     reference_count: int
     # By setting path, as the edit seam compares them: micros as an int64 string.
     values: Mapping[str, Any]
+    # Google's reasons the budget can't take a network order; empty when it gave none.
+    network_ineligible: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +89,8 @@ class BudgetCampaign:
     name: str
     status: str
     budget: str
+    # Google's advertising channel type, such as `SEARCH`.
+    channel_type: str
     cost_micros: int
 
 
@@ -125,17 +140,22 @@ async def read_budgets(
     customer_id: str,
     login_customer_id: str,
     budget_ids: Sequence[str],
+    network: bool = False,
 ) -> dict[str, LiveBudget]:
-    """Returns each budget by resource name, removed ones included."""
+    """Returns each budget by resource name, removed ones included.
+
+    `network` also reads each budget's network order and whether it can take one.
+    """
     if not budget_ids:
         return {}
     ids = _ids(budget_ids)
+    fields = (*_BUDGET_FIELDS, *_NETWORK_FIELDS) if network else _BUDGET_FIELDS
     rows = await _search(
         client,
         customer_id=customer_id,
         login_customer_id=login_customer_id,
         query=(
-            f"SELECT {', '.join(_BUDGET_FIELDS)} FROM campaign_budget "  # noqa: S608 -- digits only
+            f"SELECT {', '.join(fields)} FROM campaign_budget "  # noqa: S608 -- digits only
             f"WHERE campaign_budget.id IN ({ids})"
         ),
         operation="read_campaign_budgets",
@@ -148,6 +168,8 @@ async def read_budgets(
             continue
         amount = nonnegative_int(budget.get(AMOUNT_PATH))
         reference_count = nonnegative_int(budget.get(REFERENCE_COUNT_PATH)) or 0
+        eligibility = budget.get("budgetNetworkEligibility")
+        reasons = eligibility.get("ineligibleReasons") if isinstance(eligibility, Mapping) else None
         live[budget["resourceName"]] = LiveBudget(
             resource_name=budget["resourceName"],
             name=str(budget.get("name") or "Budget"),
@@ -161,9 +183,124 @@ async def read_budgets(
                 REFERENCE_COUNT_PATH: reference_count,
                 "resourceName": budget["resourceName"],
                 "status": budget.get("status"),
+                **(
+                    {NETWORK_PATH: _network_settings(budget.get("budgetNetworkSettings"))}
+                    if network
+                    else {}
+                ),
             },
+            network_ineligible=tuple(str(item) for item in reasons or ()),
         )
     return live
+
+
+def network_setting(
+    channel_type: str, first: Sequence[str], then: Sequence[tuple[str, int | None]]
+) -> dict[str, Any]:
+    """One campaign type's network order as Google stores it: tiers, then caps in percent."""
+    tiers = {"TIER1": list(first), "TIER2": [network for network, _cap in then]}
+    return _setting(
+        channel_type,
+        tiers,
+        {network: cap * 1000 for network, cap in then if cap is not None},
+    )
+
+
+def with_network_setting(
+    settings: Sequence[Mapping[str, Any]] | None,
+    channel_type: str | None,
+    setting: Mapping[str, Any] | None,
+) -> list[Mapping[str, Any]] | None:
+    """A budget's network settings with one campaign type's entry replaced, or dropped for None.
+
+    With no campaign type every entry goes. None means the budget follows the account.
+    """
+    kept = [
+        item
+        for item in settings or ()
+        if channel_type is not None and item["advertisingChannelType"] != channel_type
+    ]
+    items = sorted(
+        [*kept, *([setting] if setting else [])], key=lambda item: item["advertisingChannelType"]
+    )
+    return items or None
+
+
+def network_code(setting: Mapping[str, Any] | None) -> str:
+    """One network order in card terms, such as `OWNED_AND_OPERATED>SEARCH_PARTNER:20`.
+
+    Tiers are separated by `>`, networks in a tier by `+`, and a cap follows its network as a
+    percentage.
+    """
+    if setting is None:
+        return ACCOUNT_DEFAULT
+    caps = {
+        cap["networkChannel"]: f"{int(cap['capPercentMillis']) / 1000:g}"
+        for cap in setting.get("budgetCaps", ())
+    }
+    return ">".join(
+        "+".join(
+            f"{network}:{caps[network]}" if network in caps else network
+            for network in tier["networkChannels"]
+        )
+        for tier in setting["channelPriorities"]
+    )
+
+
+def network_setting_for(
+    settings: Sequence[Mapping[str, Any]] | None, channel_type: str | None
+) -> Mapping[str, Any] | None:
+    """The entry for a campaign type; with no type, the first entry there is."""
+    return next(
+        (
+            item
+            for item in settings or ()
+            if channel_type is None or item["advertisingChannelType"] == channel_type
+        ),
+        None,
+    )
+
+
+def _setting(
+    channel_type: str, tiers: Mapping[str, Sequence[str]], caps: Mapping[str, int]
+) -> dict[str, Any]:
+    """Orders tiers, networks, and caps one way, so a request and Google's reply compare equal."""
+    setting: dict[str, Any] = {
+        "advertisingChannelType": channel_type,
+        "channelPriorities": [
+            {"priorityTier": tier, "networkChannels": sorted(networks)}
+            for tier, networks in sorted(tiers.items())
+            if networks
+        ],
+    }
+    if caps:
+        setting["budgetCaps"] = [
+            {"networkChannel": network, "capPercentMillis": str(caps[network])}
+            for network in sorted(caps)
+        ]
+    return setting
+
+
+def _network_settings(raw: Any) -> list[dict[str, Any]] | None:
+    """Google's network settings in the order `_setting` builds them; None when there are none."""
+    items = raw.get("settings") if isinstance(raw, Mapping) else None
+    settings = []
+    for item in items if isinstance(items, list) else ():
+        if not isinstance(item, Mapping):
+            continue
+        tiers = {
+            str(tier.get("priorityTier") or ""): [str(n) for n in tier.get("networkChannels") or ()]
+            for tier in item.get("channelPriorities") or ()
+            if isinstance(tier, Mapping)
+        }
+        # Google leaves a cap of 0 out of its JSON.
+        caps = {
+            str(cap.get("networkChannel") or ""): nonnegative_int(cap.get("capPercentMillis")) or 0
+            for cap in item.get("budgetCaps") or ()
+            if isinstance(cap, Mapping)
+        }
+        settings.append(_setting(str(item.get("advertisingChannelType") or ""), tiers, caps))
+    return sorted(settings, key=lambda item: item["advertisingChannelType"]) or None
 
 
 async def read_budget_campaigns(
@@ -183,6 +320,7 @@ async def read_budget_campaigns(
     where = f"campaign.status != 'REMOVED' AND campaign.campaign_budget IN ({names})"
     query = (
         "SELECT campaign.resource_name, campaign.name, campaign.status, "  # noqa: S608 -- validated resource names
+        "campaign.advertising_channel_type, "
         f"campaign.campaign_budget FROM campaign WHERE {where}"
     )
     # A campaign with no cost this month has no metrics row, so its cost is read apart.
@@ -220,6 +358,7 @@ async def read_budget_campaigns(
                 name=str(campaign.get("name") or "Campaign"),
                 status=str(campaign.get("status") or ""),
                 budget=str(campaign.get(CAMPAIGN_BUDGET_PATH) or ""),
+                channel_type=str(campaign.get("advertisingChannelType") or ""),
                 cost_micros=costs.get(campaign["resourceName"], 0),
             )
         )

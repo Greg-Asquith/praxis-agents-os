@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ...operations.budget_settings import ACCOUNT_DEFAULT, network_code, network_setting
 from ...operations.campaign_bidding import money
 from ...references import GoogleAdsCampaignBudgetReference, GoogleAdsCampaignReference
 from ..utils.money import money_to_micros
@@ -16,7 +17,45 @@ from .campaign_budgets import GoogleAdsMoneyAmount
 
 MAX_BUDGET_UPDATES = 100
 
-type BudgetSetting = Literal["amount", "delivery", "shared_budget"]
+type BudgetSetting = Literal["amount", "delivery", "shared_budget", "network_priority"]
+type NetworkChannel = Literal["OWNED_AND_OPERATED", "SEARCH_PARTNER", "GOOGLE_DISPLAY"]
+
+
+class GoogleAdsNetworkShare(GoogleAdsStrictModel):
+    """A network that spends after the first ones, and the most of the budget it may take."""
+
+    network: NetworkChannel
+    # A whole percentage of the budget; 0 keeps the network from spending, and None sets no cap.
+    cap_percent: int | None = Field(default=None, ge=0, le=100)
+
+
+class GoogleAdsNetworkPriority(GoogleAdsStrictModel):
+    """Which networks a budget spends on first, and which get what is left."""
+
+    first: list[NetworkChannel] = Field(
+        min_length=1, max_length=3, description="The networks that spend first."
+    )
+    then: list[GoogleAdsNetworkShare] = Field(
+        default_factory=list,
+        max_length=2,
+        description=(
+            "Every other network the campaign type can show on. Google refuses an order that "
+            "leaves one out of both lists."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _each_network_once(self) -> Self:
+        networks = [*self.first, *(share.network for share in self.then)]
+        if len(set(networks)) != len(networks):
+            raise ValueError("Put each network either first or after, once.")
+        return self
+
+    def setting(self, channel_type: str) -> dict[str, Any]:
+        """The order as Google stores it for one campaign type."""
+        return network_setting(
+            channel_type, self.first, [(share.network, share.cap_percent) for share in self.then]
+        )
 
 
 class GoogleAdsBudgetUpdate(GoogleAdsStrictModel):
@@ -29,6 +68,8 @@ class GoogleAdsBudgetUpdate(GoogleAdsStrictModel):
     delivery: Literal["STANDARD", "ACCELERATED"] | None = None
     # Moves the campaign onto this shared budget.
     use_shared_budget: GoogleAdsCampaignBudgetReference | None = None
+    # The networks the budget spends on first; `account_default` takes the budget's own order off.
+    network_priority: GoogleAdsNetworkPriority | Literal["account_default"] | None = None
 
     @model_validator(mode="after")
     def _one_target_and_a_change(self) -> Self:
@@ -39,10 +80,10 @@ class GoogleAdsBudgetUpdate(GoogleAdsStrictModel):
         if self.use_shared_budget is not None:
             if self.campaign is None:
                 raise ValueError("Only a campaign can move onto a shared budget.")
-            if self.amount is not None or self.delivery is not None:
+            if not {"amount", "delivery", "network_priority"}.isdisjoint(self.requested):
                 raise ValueError(
                     f"Move {self.label} onto the shared budget in one change, and change the "
-                    "shared budget's amount in another."
+                    "shared budget's settings in another."
                 )
             if self.use_shared_budget.customer_id != self.campaign.customer_id:
                 raise ValueError(
@@ -87,6 +128,10 @@ class GoogleAdsBudgetUpdate(GoogleAdsStrictModel):
             values["delivery"] = self.delivery
         if self.shared_budget_name is not None:
             values["shared_budget"] = self.shared_budget_name
+        if isinstance(self.network_priority, GoogleAdsNetworkPriority):
+            values["network_priority"] = network_code(self.network_priority.setting(""))
+        elif self.network_priority is not None:
+            values["network_priority"] = ACCOUNT_DEFAULT
         return values
 
 
@@ -105,7 +150,8 @@ class GoogleAdsUpdateBudgetsRequest(GoogleAdsStrictModel):
 
 class GoogleAdsBudgetSettingOutcome(GoogleAdsStrictModel):
     setting: BudgetSetting
-    # As the approval card showed it; a shared budget is shown by name.
+    # As the approval card showed it; a shared budget is shown by name, and a network order as
+    # tiers of networks, such as `OWNED_AND_OPERATED>SEARCH_PARTNER:20` for a 20% cap.
     before: str | None
     requested: str | None
     # Read back after the change; meaningful only when the row's `read_back` is true.
@@ -122,7 +168,7 @@ class GoogleAdsBudgetUpdateOutcome(GoogleAdsStrictModel):
     # This month's cost for the budget, or for the campaign when it moves, as the card showed it.
     spend_this_month: str | None = None
     read_back: bool
-    settings: list[GoogleAdsBudgetSettingOutcome] = Field(max_length=3)
+    settings: list[GoogleAdsBudgetSettingOutcome] = Field(max_length=4)
     error_code: str | None = None
     message: str | None = None
 

@@ -10,11 +10,14 @@ import {
   budgetCounts,
   budgetRows,
   budgetsBlock,
+  budgetsNeedCheck,
   editedBudgetChanges,
   monthAtAmount,
   parseUpdateBudgetsArgs,
   totalDailyDelta,
   withAmount,
+  withNetworkCap,
+  withNetworkPriority,
   type UpdateBudgetsArgs,
 } from "@/integrations/google_ads/lib/update-budgets"
 import { googleAdsUpdateBudgetsPresenter } from "@/integrations/google_ads/presenters/update-budgets"
@@ -111,6 +114,46 @@ describe("approval", () => {
 })
 
 describe("edits", () => {
+  it("matches a network order to the code Google's check answered for, in any order given", () => {
+    // The server lists a tier's networks alphabetically; the request doesn't have to.
+    const code = "OWNED_AND_OPERATED>GOOGLE_DISPLAY+SEARCH_PARTNER:20"
+    const priority = {
+      first: ["OWNED_AND_OPERATED"],
+      then: [{ network: "SEARCH_PARTNER", cap_percent: 20 }, { network: "GOOGLE_DISPLAY" }],
+    }
+    const checked = parsed(
+      raw({
+        changes: [{ campaign: campaign("10"), network_priority: priority }],
+        _checks: {
+          [campaignKey("10")]: check({
+            current: { network_priority: "ACCOUNT_DEFAULT" },
+            requested: { network_priority: code },
+          }),
+        },
+      })
+    )
+    const [row] = budgetRows(checked, checked)
+    if (!row?.change || !row.networkPriority || row.networkPriority === "account_default")
+      throw new Error("Expected a network order")
+    expect(row.problem).toBe(TOO_LOW)
+
+    const capped = withNetworkCap(row.networkPriority, "GOOGLE_DISPLAY", 5)
+    const next = parsed({
+      ...raw(),
+      changes: [withNetworkPriority(row.change, capped)],
+    })
+
+    expect(next.changes[0]?.entry["network_priority"]).toEqual({
+      first: ["OWNED_AND_OPERATED"],
+      then: [
+        { network: "SEARCH_PARTNER", cap_percent: 20 },
+        { network: "GOOGLE_DISPLAY", cap_percent: 5 },
+      ],
+    })
+    expect(budgetRows(next, checked)[0]?.problem).toBeNull()
+    expect(budgetsNeedCheck(next, checked)).toBe(true)
+  })
+
   it("leaves a move onto a shared budget without an amount, which Google Ads refuses", () => {
     const move = {
       campaign: campaign("10"),
@@ -182,7 +225,21 @@ describe("presenters", () => {
             kind: "approval",
             name: "google_ads_update_budgets",
             status: "awaiting_approval",
-            args: raw(),
+            // A network order beside the amount, so its line renders too.
+            args: raw({
+              changes: [
+                {
+                  campaign: campaign("10"),
+                  amount: "0.50",
+                  network_priority: { first: ["OWNED_AND_OPERATED"] },
+                },
+              ],
+              _checks: {
+                [campaignKey("10")]: check({
+                  requested: { amount: "0.5", network_priority: "OWNED_AND_OPERATED" },
+                }),
+              },
+            }),
           },
           true
         )

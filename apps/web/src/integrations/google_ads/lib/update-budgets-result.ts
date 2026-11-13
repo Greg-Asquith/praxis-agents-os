@@ -21,7 +21,7 @@ export type UpdateBudgetsResult = {
   rows: BudgetOutcomeRow[]
 }
 
-const SETTINGS: readonly string[] = ["amount", "delivery", "shared_budget"]
+const SETTINGS: readonly string[] = ["amount", "delivery", "shared_budget", "network_priority"]
 
 function parseBudget(raw: unknown): BudgetOutcomeRow[] | null {
   if (!isRecord(raw) || !isNonEmptyString(raw["name"]) || !Array.isArray(raw["settings"]))

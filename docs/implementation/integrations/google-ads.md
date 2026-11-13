@@ -392,7 +392,8 @@ Each entry names either a campaign (`google_ads_campaign`) or a budget
 | --- | --- |
 | `amount` | Sets the daily amount (`amountMicros`) of the budget the campaign uses, or of the named budget. |
 | `delivery` | `STANDARD` or `ACCELERATED` (`deliveryMethod`). |
-| `use_shared_budget` | For a campaign: moves it onto a shared budget from the same account (`campaign.campaignBudget`). It can't be combined with `amount` or `delivery`. |
+| `use_shared_budget` | For a campaign: moves it onto a shared budget from the same account (`campaign.campaignBudget`). It can't be combined with another setting. |
+| `network_priority` | Which networks the budget spends on first (`budgetNetworkSettings`, Google Ads API v26.1), or `account_default` to follow the account's order again. See [Network order](#network-order). |
 
 `operations/budget_settings.py` reads the named campaigns and the budgets
 they use (`read_campaigns`, `read_budgets`), then every campaign on those
@@ -419,8 +420,55 @@ Meta's budget tool does. An amount or delivery change is approved for the
 campaigns the card listed: the edit compares the budget's `referenceCount`
 as well as its settings, so a campaign that joined or left the budget since
 approval refuses the change as `CHANGED_SINCE_APPROVAL`. Each edit is one audit intent. The result has one
-row per change with a setting outcome for each of `amount`, `delivery`, and
-`shared_budget`; a shared budget is shown by name.
+row per change with a setting outcome for each of `amount`, `delivery`,
+`shared_budget`, and `network_priority`; a shared budget is shown by name.
+
+#### Network order
+
+`network_priority` has `first`, the networks that spend first
+(`OWNED_AND_OPERATED` for Google's own sites, `SEARCH_PARTNER`, and
+`GOOGLE_DISPLAY`), and `then`, each other network with an optional
+`cap_percent`, a whole percentage of the budget from 0 to 100. Google needs
+every network the campaign type shows on in one of the two lists
+(`INCOMPLETE_NETWORK_CHANNELS`, live 2026-11-13 for `first` alone). The tool
+description and the `then` field tell the agent so, and the card adds what
+to do to Google's message.
+
+Google stores one setting per campaign type on a budget. The tool takes the
+type from the campaigns the budget funds, so a budget with no campaign, or
+with campaigns of several types, is a problem on the card. `first` becomes
+`TIER1` and `then` becomes `TIER2` in `channelPriorities`, and each cap
+becomes `capPercentMillis` in `budgetCaps` (20% is `20000`). The edit sends
+the budget's whole settings list under the mask
+`budgetNetworkSettings.settings`: the new entry for the campaign type, with
+every other type's entry as it was read. Google refuses a mask on
+`budgetNetworkSettings` itself ("The field mask updated a field with
+subfields", live 2026-11-13). `account_default` drops the type's entry, and
+sends the list empty under the mask when no entry is left.
+
+`read_budgets` selects `budget_network_settings.settings` and
+`budget_network_eligibility` only when a change sets `network_priority`, so
+other budget changes don't depend on those fields. `_network_settings`
+orders tiers, networks, and caps one way and writes a cap of 0, which Google
+leaves out of its JSON, so the edit seam compares a request with Google's
+reply exactly. A budget Google reports `ineligible_reasons` for is refused
+on the card in plain words, such as "its campaigns use different bidding
+strategies". Any other refusal, including an account Google hasn't given
+the feature to (`CUSTOMER_NOT_ALLOWLISTED`), is Google's dry run answer on
+the card.
+
+The card term for a network order is a code: tiers joined by `>`, networks
+in a tier by `+` in alphabetical order, and a cap after its network, as in
+`OWNED_AND_OPERATED>SEARCH_PARTNER:20`; `ACCOUNT_DEFAULT` is a budget with no
+order of its own. `network_code` builds it on the server and `networkCode`
+in `lib/update-budgets.ts` on the card, and the two must match for the card
+to accept Google's check. Each check also has `network_settings`, the value
+approval sends, and `network_channel_type`. The card shows the order in
+words ("Google first, then Search Partners (up to 20%)") on one line under
+the amount, and the line opens a popover that puts each network First,
+After, or Not Used, sets each cap, and has **Use Account Default**.
+
+The account's own default (`CustomerBudgetNetworkSetting`) is pending.
 
 ### Removal
 

@@ -60,6 +60,7 @@ class _Account:
             "name": name,
             "status": "ENABLED",
             "experimentType": "BASE",
+            "advertisingChannelType": "SEARCH",
             "campaignBudget": _budget_name(budget_id),
         }
         if cost:
@@ -119,7 +120,9 @@ class _Account:
                 name = update["resourceName"]
                 if not body["validateOnly"]:
                     for field in value["updateMask"].split(","):
-                        store[name][field] = update[field]
+                        # A nested path replaces its parent, which holds nothing else here.
+                        parent = field.split(".")[0]
+                        store[name][parent] = update.get(parent)
             responses.append({f"{resource}Result": {"resourceName": name}})
         return {"mutateOperationResponses": responses}
 
@@ -288,6 +291,91 @@ async def test_a_budget_a_campaign_joined_since_approval_is_refused(monkeypatch)
     assert [row.settings[0].outcome for row in data.budgets] == ["failed"]
     assert data.budgets[0].error_code == "CHANGED_SINCE_APPROVAL"
     assert account.budgets[_budget_name("2")]["amountMicros"] == "120000000"
+
+
+_GOOGLE_FIRST = {"first": ["OWNED_AND_OPERATED"]}
+
+
+async def test_a_cap_on_search_partners_is_sent_for_the_campaign_type_and_read_back(
+    monkeypatch,
+) -> None:
+    account = _account()
+    priority = {**_GOOGLE_FIRST, "then": [{"network": "SEARCH_PARTNER", "cap_percent": 20}]}
+    changes = _changes({"campaign": _campaign("10"), "network_priority": priority})
+    display = await _display(monkeypatch, account, changes)
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    sent = [body["mutateOperations"] for body in account.mutates if not body["validateOnly"]]
+    setting = {
+        "advertisingChannelType": "SEARCH",
+        "channelPriorities": [
+            {"priorityTier": "TIER1", "networkChannels": ["OWNED_AND_OPERATED"]},
+            {"priorityTier": "TIER2", "networkChannels": ["SEARCH_PARTNER"]},
+        ],
+        "budgetCaps": [{"networkChannel": "SEARCH_PARTNER", "capPercentMillis": "20000"}],
+    }
+    assert sent == [
+        [
+            {
+                "campaignBudgetOperation": {
+                    "update": {
+                        "resourceName": _budget_name("1"),
+                        "budgetNetworkSettings": {"settings": [setting]},
+                    },
+                    "updateMask": "budgetNetworkSettings.settings",
+                }
+            }
+        ]
+    ]
+    assert [(s.before, s.after, s.outcome) for s in data.budgets[0].settings] == [
+        ("ACCOUNT_DEFAULT", "OWNED_AND_OPERATED>SEARCH_PARTNER:20", "updated")
+    ]
+
+
+async def test_a_network_order_google_already_holds_in_its_own_layout_is_not_sent(
+    monkeypatch,
+) -> None:
+    account = _account()
+    # Google lists tiers in any order and leaves a cap of 0 out of its JSON.
+    account.budgets[_budget_name("1")]["budgetNetworkSettings"] = {
+        "settings": [
+            {
+                "advertisingChannelType": "SEARCH",
+                "channelPriorities": [
+                    {"priorityTier": "TIER2", "networkChannels": ["SEARCH_PARTNER"]},
+                    {"priorityTier": "TIER1", "networkChannels": ["OWNED_AND_OPERATED"]},
+                ],
+                "budgetCaps": [{"networkChannel": "SEARCH_PARTNER"}],
+            }
+        ]
+    }
+    priority = {**_GOOGLE_FIRST, "then": [{"network": "SEARCH_PARTNER", "cap_percent": 0}]}
+    changes = _changes({"campaign": _campaign("10"), "network_priority": priority})
+
+    display = await _display(monkeypatch, account, changes)
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert [s.outcome for s in data.budgets[0].settings] == ["already_set"]
+    assert account.mutates == []
+
+
+async def test_a_budget_google_cannot_order_networks_for_is_refused_on_the_card(
+    monkeypatch,
+) -> None:
+    account = _account()
+    account.budgets[_budget_name("2")]["budgetNetworkEligibility"] = {
+        "ineligibleReasons": ["MIXED_BIDDING_STRATEGIES"]
+    }
+    changes = _changes({"budget": _budget("2"), "network_priority": _GOOGLE_FIRST})
+
+    display = await _display(monkeypatch, account, changes)
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    problem = display["_checks"][_budget_name("2")]["problem"]
+    assert "different bidding strategies" in problem
+    assert [s.outcome for s in data.budgets[0].settings] == ["failed"]
+    assert account.mutates == []
 
 
 async def test_card_spend_is_the_month_cost_read_for_every_campaign_on_the_budget(

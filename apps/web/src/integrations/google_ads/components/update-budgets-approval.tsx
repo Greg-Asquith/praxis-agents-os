@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/components/update-budgets-approval.tsx
 
-import { ArrowRightIcon } from "lucide-react"
+import { ArrowRightIcon, PencilIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
@@ -13,6 +13,14 @@ import {
   type DataRow,
   type DataTableTab,
 } from "@/components/ui/data-table"
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { CancelCell } from "@/integrations/ads/components/cancel-cell"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
@@ -41,13 +49,23 @@ import {
   editedBudgetChanges,
   monthAtAmount,
   moneyText,
+  NETWORK_LABELS,
+  networkOrderText,
+  networkTier,
   parseCancelledBudgetChanges,
+  requestedNetworkOrder,
   totalDailyDelta,
   withAmount,
   withDelivery,
+  withNetworkCap,
+  withNetworkPriority,
+  withNetworkTier,
   withSharedBudget,
   type BudgetRow,
   type CancelledBudgetChange,
+  type Network,
+  type NetworkPriority,
+  type NetworkTier,
   type UpdateBudgetsArgs,
 } from "@/integrations/google_ads/lib/update-budgets"
 import { currencySymbol, formatCurrency, formatPercentageChange } from "@/lib/format"
@@ -74,6 +92,17 @@ const PARENT_COLUMNS: DataColumn[] = [
 ]
 
 const DELIVERY_OPTIONS = DELIVERIES.map((value) => ({ value, label: DELIVERY_LABELS[value] }))
+// Google's own sites come first in the editor, as most budgets put them.
+const EDITOR_NETWORKS: readonly Network[] = [
+  "OWNED_AND_OPERATED",
+  "SEARCH_PARTNER",
+  "GOOGLE_DISPLAY",
+]
+const TIER_OPTIONS: { value: NetworkTier; label: string }[] = [
+  { value: "first", label: "First" },
+  { value: "then", label: "After" },
+  { value: "off", label: "Not Used" },
+]
 
 type Ids = Iterable<string>
 
@@ -313,6 +342,14 @@ export function UpdateBudgetsApproval({
                     cancelled
                   )
                 }}
+                onNetworks={(value) => {
+                  save(
+                    editedBudgetChanges(args, new Set([row.id]), (change) =>
+                      withNetworkPriority(change, value)
+                    ),
+                    cancelled
+                  )
+                }}
                 row={row}
               />
             )
@@ -436,7 +473,8 @@ function changeText(row: BudgetRow): string {
   if (row.sharedBudget) return "Move"
   const was = row.was?.amount
   if (row.amount && was) return formatPercentageChange(Number(was), Number(row.amount))
-  return row.delivery ? "Delivery" : "—"
+  if (row.delivery) return "Delivery"
+  return row.networkPriority ? "Networks" : "—"
 }
 
 function changeTabs(byId: ReadonlyMap<string, BudgetRow>): DataTableTab[] {
@@ -550,18 +588,20 @@ function BudgetCell({
   )
 }
 
-/** The live amount, then the new one as an inline edit, and delivery when it changes. */
+/** The live amount, then the new one as an inline edit, with delivery and networks when they change. */
 function AmountCell({
   currency,
   disabled,
   onAmount,
   onDelivery,
+  onNetworks,
   row,
 }: {
   currency: string | null
   disabled: boolean
   onAmount: (amount: string) => void
   onDelivery: (value: (typeof DELIVERIES)[number]) => void
+  onNetworks: (value: NetworkPriority | "account_default") => void
   row: BudgetRow
 }) {
   const was = moneyText(row.was?.amount ?? null, currency)
@@ -613,6 +653,138 @@ function AmountCell({
             value={row.delivery}
           />
         </div>
+      ) : null}
+      {row.networkPriority !== null ? (
+        <NetworkOrder disabled={disabled} onChange={onNetworks} row={row} />
+      ) : null}
+    </div>
+  )
+}
+
+/** The live network order, then the new one on one line, opening its editor. */
+function NetworkOrder({
+  disabled,
+  onChange,
+  row,
+}: {
+  disabled: boolean
+  onChange: (value: NetworkPriority | "account_default") => void
+  row: BudgetRow
+}) {
+  const priority = row.networkPriority === "account_default" ? null : row.networkPriority
+  return (
+    <div className="grid min-w-0 gap-0.5 text-sm">
+      <span className="text-muted-foreground wrap-anywhere whitespace-normal">
+        Networks: {networkOrderText(row.was?.networkPriority ?? null)} →
+      </span>
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Button
+              aria-label={`Edit the network order for ${row.name}`}
+              className="h-auto min-h-7 min-w-0 justify-between gap-2 px-2 py-1 text-left font-normal whitespace-normal"
+              disabled={disabled}
+              size="sm"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <span className="wrap-anywhere">{networkOrderText(requestedNetworkOrder(row))}</span>
+          <PencilIcon className="text-muted-foreground shrink-0" />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] gap-3">
+          <PopoverHeader>
+            <PopoverTitle>Network Order</PopoverTitle>
+            <PopoverDescription className="wrap-anywhere">
+              {priority
+                ? `Which networks ${row.name} spends on first. Include every network its campaigns show on.`
+                : `${row.name} follows the account's order. Choose a network to spend on first to give it its own.`}
+            </PopoverDescription>
+          </PopoverHeader>
+          <div className="grid gap-2">
+            {EDITOR_NETWORKS.map((name) => (
+              <NetworkRow
+                key={name}
+                disabled={disabled}
+                name={name}
+                onChange={onChange}
+                priority={priority}
+              />
+            ))}
+          </div>
+          {priority ? (
+            <Button
+              className="w-fit"
+              disabled={disabled}
+              onClick={() => {
+                onChange("account_default")
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Use Account Default
+            </Button>
+          ) : null}
+        </PopoverContent>
+      </Popover>
+      {row.amount === null && row.unchanged ? (
+        <Badge className="w-fit" variant="secondary">
+          Already Set
+        </Badge>
+      ) : null}
+    </div>
+  )
+}
+
+/** One network: whether it spends first, after, or not at all, and its cap when it's after. */
+function NetworkRow({
+  disabled,
+  name,
+  onChange,
+  priority,
+}: {
+  disabled: boolean
+  name: Network
+  onChange: (value: NetworkPriority) => void
+  priority: NetworkPriority | null
+}) {
+  const tier = networkTier(priority, name)
+  const cap = priority?.then.find((item) => item.network === name)?.cap ?? null
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="w-28 shrink-0 font-medium">{NETWORK_LABELS[name]}</span>
+      <SegmentedChoice
+        ariaLabel={`When ${NETWORK_LABELS[name]} spends`}
+        compact
+        disabled={disabled}
+        onChange={(next) => {
+          // A budget always has a network that spends first.
+          const edited = withNetworkTier(priority, name, next)
+          if (edited) onChange(edited)
+        }}
+        options={TIER_OPTIONS}
+        value={tier}
+      />
+      {priority && tier === "then" ? (
+        <span className="flex items-center gap-1">
+          <CommittedInput
+            ariaLabel={`Most of the budget ${NETWORK_LABELS[name]} can spend, as a percentage`}
+            className="h-7 w-20 text-sm tabular-nums"
+            disabled={disabled}
+            onCommit={(next) => {
+              const text = next.trim().replace(/%$/, "")
+              const percent = Number(text)
+              if (text === "") onChange(withNetworkCap(priority, name, null))
+              else if (Number.isInteger(percent) && percent >= 0 && percent <= 100)
+                onChange(withNetworkCap(priority, name, percent))
+            }}
+            placeholder="No cap"
+            value={cap === null ? "" : String(cap)}
+          />
+          <span className="text-muted-foreground text-xs">% at most</span>
+        </span>
       ) : null}
     </div>
   )

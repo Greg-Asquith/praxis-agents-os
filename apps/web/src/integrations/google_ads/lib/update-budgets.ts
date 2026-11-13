@@ -16,6 +16,7 @@ import {
 } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
 import { soleRow } from "@/integrations/google_ads/lib/setting-changes"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { formatCurrency, formatCurrencyAmount } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -28,11 +29,31 @@ export const DELIVERY_LABELS: Record<Delivery, string> = {
   STANDARD: "Standard",
 }
 
-export type BudgetSetting = "amount" | "delivery" | "shared_budget"
+// The networks a budget can spend on, in the order the server lists them within a tier.
+const NETWORKS = ["GOOGLE_DISPLAY", "OWNED_AND_OPERATED", "SEARCH_PARTNER"] as const
+export type Network = (typeof NETWORKS)[number]
+export const NETWORK_LABELS: Record<Network, string> = {
+  GOOGLE_DISPLAY: "Display Network",
+  OWNED_AND_OPERATED: "Google",
+  SEARCH_PARTNER: "Search Partners",
+}
+// A budget with no network order of its own follows the account's.
+const ACCOUNT_DEFAULT = "ACCOUNT_DEFAULT"
+
+/** The networks that spend first, then the rest with the most of the budget each may take. */
+export type NetworkPriority = {
+  first: Network[]
+  then: { cap: number | null; network: Network }[]
+}
+export type NetworkTier = "first" | "then" | "off"
+
+export type BudgetSetting = "amount" | "delivery" | "shared_budget" | "network_priority"
+const BUDGET_SETTINGS = ["amount", "delivery", "shared_budget", "network_priority"] as const
 
 export const BUDGET_SETTING_TITLES: Record<BudgetSetting, string> = {
   amount: "Daily Budget",
   delivery: "Delivery",
+  network_priority: "Network Order",
   shared_budget: "Budget",
 }
 
@@ -46,6 +67,8 @@ type BudgetChange = {
   key: string
   kind: "campaign" | "budget"
   label: string
+  // The networks the budget spends on first, or the account's order again.
+  networkPriority: NetworkPriority | "account_default" | null
   // The shared budget a campaign moves onto, by resource name.
   sharedBudget: string | null
   sharedBudgetLabel: string | null
@@ -69,7 +92,13 @@ type BudgetCheck =
   | {
       unavailable: false
       budget: BudgetView | null
-      current: { amount: string | null; delivery: string | null; sharedBudget: string | null }
+      current: {
+        amount: string | null
+        delivery: string | null
+        // The live network order as the server codes it; null when it wasn't read.
+        networkPriority: string | null
+        sharedBudget: string | null
+      }
       daysLeft: number | null
       destination: BudgetView | null
       name: string | null
@@ -101,6 +130,7 @@ export type BudgetRow = {
   key: string
   kind: "campaign" | "budget"
   name: string
+  networkPriority: NetworkPriority | "account_default" | null
   // Blocks approval while set.
   problem: string | null
   removesBudget: boolean
@@ -110,8 +140,9 @@ export type BudgetRow = {
   spend: string | null
   // Every requested setting is already live, so nothing is sent.
   unchanged: boolean
-  // The live amount and delivery; undefined when the budget couldn't be read.
-  was: { amount: string | null; delivery: string | null } | undefined
+  // The live settings; undefined when the budget couldn't be read.
+  was:
+    { amount: string | null; delivery: string | null; networkPriority: string | null } | undefined
 }
 
 export type BudgetCounts = {
@@ -135,6 +166,87 @@ function money(value: unknown): string | null {
 
 function delivery(value: unknown): Delivery | null {
   return DELIVERIES.find((item) => item === value) ?? null
+}
+
+function network(value: unknown): Network | null {
+  return NETWORKS.find((item) => item === value) ?? null
+}
+
+function parseNetworkPriority(value: unknown): BudgetChange["networkPriority"] {
+  if (value === "account_default") return value
+  if (!isRecord(value) || !Array.isArray(value["first"])) return null
+  const then = Array.isArray(value["then"]) ? value["then"] : []
+  const first = value["first"].map(network)
+  const rest = then.map((item) => {
+    const name = isRecord(item) ? network(item["network"]) : null
+    const cap = isRecord(item) ? item["cap_percent"] : null
+    return name && { cap: typeof cap === "number" ? cap : null, network: name }
+  })
+  if (first.length === 0 || first.includes(null) || rest.includes(null)) return null
+  return {
+    first: first.filter((item) => item !== null),
+    then: rest.filter((item) => item !== null),
+  }
+}
+
+/** A network order as the server codes it, such as `OWNED_AND_OPERATED>SEARCH_PARTNER:20`. */
+function networkCode(priority: NetworkPriority | "account_default"): string {
+  if (priority === "account_default") return ACCOUNT_DEFAULT
+  const then = priority.then.map((item) =>
+    item.cap === null ? item.network : `${item.network}:${String(item.cap)}`
+  )
+  return [[...priority.first].sort(), then.sort()]
+    .filter((tier) => tier.length > 0)
+    .map((tier) => tier.join("+"))
+    .join(">")
+}
+
+/** A coded network order in words, such as "Google first, then Search Partners (up to 20%)". */
+export function networkOrderText(code: string | null): string {
+  if (code === null) return "—"
+  if (code === ACCOUNT_DEFAULT) return "Account default"
+  const tiers = code.split(">").map((tier) =>
+    tier
+      .split("+")
+      .map((item) => {
+        const [name = "", cap] = item.split(":")
+        const label = network(name) ? NETWORK_LABELS[name as Network] : googleAdsTokenLabel(name)
+        return cap === undefined ? label : `${label} (up to ${cap}%)`
+      })
+      .join(" and ")
+  )
+  const [first = "", ...rest] = tiers
+  if (rest.length > 0) return `${first} first, then ${rest.join(", then ")}`
+  return first.includes(" and ") ? `${first} together` : `${first} only`
+}
+
+export function networkTier(priority: NetworkPriority | null, name: Network): NetworkTier {
+  if (priority?.first.includes(name)) return "first"
+  return priority?.then.some((item) => item.network === name) ? "then" : "off"
+}
+
+/** The order with one network moved; null when that would leave no network first. */
+export function withNetworkTier(
+  priority: NetworkPriority | null,
+  name: Network,
+  tier: NetworkTier
+): NetworkPriority | null {
+  const first = (priority?.first ?? []).filter((item) => item !== name)
+  const then = (priority?.then ?? []).filter((item) => item.network !== name)
+  if (tier === "first") first.push(name)
+  if (tier === "then") then.push({ cap: null, network: name })
+  return first.length === 0 ? null : { first, then }
+}
+
+export function withNetworkCap(
+  priority: NetworkPriority,
+  name: Network,
+  cap: number | null
+): NetworkPriority {
+  return {
+    first: priority.first,
+    then: priority.then.map((item) => (item.network === name ? { cap, network: name } : item)),
+  }
 }
 
 function budgetResource(reference: unknown): string | null {
@@ -162,6 +274,7 @@ function parseChange(value: unknown): BudgetChange | null {
     key: `customers/${customerId}/${campaign ? "campaigns" : "campaignBudgets"}/${id}`,
     kind: campaign ? "campaign" : "budget",
     label: textOrNull(reference["label"]) ?? id,
+    networkPriority: parseNetworkPriority(value["network_priority"]),
     sharedBudget: budgetResource(shared),
     sharedBudgetLabel: isRecord(shared) ? textOrNull(shared["label"]) : null,
   }
@@ -197,6 +310,7 @@ function parseCheck(value: unknown): BudgetCheck {
     current: {
       amount: money(current["amount"]),
       delivery: textOrNull(current["delivery"]),
+      networkPriority: textOrNull(current["network_priority"]),
       sharedBudget: textOrNull(current["shared_budget"]),
     },
     daysLeft: typeof days === "number" && Number.isInteger(days) && days > 0 ? days : null,
@@ -205,7 +319,7 @@ function parseCheck(value: unknown): BudgetCheck {
     problem: textOrNull(value["problem"]),
     removesBudget: value["removes_budget"] === true,
     requested: Object.fromEntries(
-      (["amount", "delivery", "shared_budget"] as const).flatMap((setting) => {
+      BUDGET_SETTINGS.flatMap((setting) => {
         const item = textOrNull(requested[setting])
         return item ? [[setting, setting === "amount" ? canonicalMoney(item) : item]] : []
       })
@@ -226,6 +340,7 @@ function requestedOf(change: BudgetChange): Partial<Record<BudgetSetting, string
     ...(change.amount ? { amount: change.amount } : {}),
     ...(change.delivery ? { delivery: change.delivery } : {}),
     ...(change.sharedBudget ? { shared_budget: change.sharedBudget } : {}),
+    ...(change.networkPriority ? { network_priority: networkCode(change.networkPriority) } : {}),
   }
 }
 
@@ -234,12 +349,20 @@ function rowOf(change: BudgetChange, check: BudgetCheck | undefined, cancelled: 
   const requested = requestedOf(change)
   // Google answered for the change it was checked with, so an edit waits for a new check.
   const checked = live !== null && JSON.stringify(live.requested) === JSON.stringify(requested)
-  const was = live ? { amount: live.current.amount, delivery: live.current.delivery } : undefined
+  const was = live
+    ? {
+        amount: live.current.amount,
+        delivery: live.current.delivery,
+        networkPriority: live.current.networkPriority,
+      }
+    : undefined
   const unchanged =
     live !== null &&
     (change.amount === null || change.amount === live.current.amount) &&
     (change.delivery === null || change.delivery === live.current.delivery) &&
-    (change.sharedBudget === null || change.sharedBudget === live.current.sharedBudget)
+    (change.sharedBudget === null || change.sharedBudget === live.current.sharedBudget) &&
+    (requested.network_priority === undefined ||
+      requested.network_priority === live.current.networkPriority)
   const row: BudgetRow = {
     amount: change.amount,
     budget: live?.budget ?? null,
@@ -253,6 +376,7 @@ function rowOf(change: BudgetChange, check: BudgetCheck | undefined, cancelled: 
     key: change.key,
     kind: change.kind,
     name: live?.name ?? change.label,
+    networkPriority: change.networkPriority,
     problem: live === null ? UNAVAILABLE_PROBLEM : checked ? live.problem : null,
     removesBudget: live?.removesBudget ?? false,
     sharedBudget: change.sharedBudget,
@@ -344,6 +468,31 @@ export function withDelivery(change: BudgetChange, value: Delivery): Record<stri
   return { ...change.entry, delivery: value }
 }
 
+export function withNetworkPriority(
+  change: BudgetChange,
+  value: NetworkPriority | "account_default"
+): Record<string, unknown> {
+  // A move onto a shared budget can't also set a network order.
+  if (change.sharedBudget !== null) return change.entry
+  const priority =
+    value === "account_default"
+      ? value
+      : {
+          first: value.first,
+          then: value.then.map((item) =>
+            item.cap === null
+              ? { network: item.network }
+              : { cap_percent: item.cap, network: item.network }
+          ),
+        }
+  return { ...change.entry, network_priority: priority }
+}
+
+/** The network order a row asks for, as the server codes it; null when it asks for none. */
+export function requestedNetworkOrder(row: BudgetRow): string | null {
+  return row.networkPriority ? networkCode(row.networkPriority) : null
+}
+
 export function withSharedBudget(
   change: BudgetChange,
   reference: Record<string, unknown>
@@ -416,6 +565,7 @@ export function budgetValueText(
 ): string {
   if (value === null) return "—"
   if (setting === "amount") return moneyText(value, currency)
+  if (setting === "network_priority") return networkOrderText(value)
   const method = delivery(value)
   return setting === "delivery" && method ? DELIVERY_LABELS[method] : value
 }
@@ -476,6 +626,7 @@ export function budgetsPrompt(args: UpdateBudgetsArgs): string {
       return `Move ${sole.name} onto ${sole.sharedBudgetLabel ?? "a shared budget"}.`
     if (sole.amount)
       return `Set the daily budget of ${sole.name} to ${moneyText(sole.amount, currency)}.`
+    if (sole.networkPriority) return `Change which networks ${sole.name} spends on first.`
     return `Change how ${sole.name} spends its budget.`
   }
   const where = accountsText(

@@ -37,13 +37,17 @@ from ..operations.budget_settings import (
     AMOUNT_PATH,
     CAMPAIGN_BUDGET_PATH,
     DELIVERY_PATH,
+    NETWORK_PATH,
     REFERENCE_COUNT_PATH,
     BudgetCampaign,
     LiveBudget,
     LiveCampaign,
+    network_code,
+    network_setting_for,
     read_budget_campaigns,
     read_budgets,
     read_campaigns,
+    with_network_setting,
 )
 from ..operations.campaign_bidding import money
 from ..operations.edits import (
@@ -58,6 +62,7 @@ from .schemas.budget_updates import (
     MAX_BUDGET_UPDATES,
     BudgetSetting,
     GoogleAdsBudgetUpdate,
+    GoogleAdsNetworkPriority,
     GoogleAdsUpdateBudgetsOutput,
     GoogleAdsUpdateBudgetsRequest,
 )
@@ -83,6 +88,18 @@ _TOTAL = "{name} is a total for the campaign's run, not a daily budget, so it ca
 _NOT_SHARED = "{name} isn't a shared budget, so only its own campaign can use it."
 _EXPERIMENT = "Draft and experiment campaigns keep the budget of the campaign they test."
 _TWICE = "Another change in this request already changes {name}. Cancel one of them."
+_NO_CAMPAIGNS = "No campaign uses {name}, so there are no networks to put in order."
+_MIXED_TYPES = "{name} funds campaigns of different types, so its networks can't be put in order."
+_INELIGIBLE = "Google can't put the networks of {name} in order, because {reasons}."
+_ALL_NETWORKS = " Put every network these campaigns can show on under First or After."
+# Google's reasons a budget can't take a network order, in the card's words.
+_INELIGIBLE_REASONS = {
+    "HAS_ENABLED_TRIALS": "a campaign on it has an experiment running",
+    "INSUFFICIENT_ELIGIBLE_CHANNELS": "its campaigns show on one network only",
+    "MIXED_BIDDING_STRATEGIES": "its campaigns use different bidding strategies",
+    "MIXED_CAMPAIGN_TYPES": "its campaigns are of different types",
+    "UNSUPPORTED_BIDDING_STRATEGY": "its campaigns' bidding strategy doesn't allow it",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,14 +113,22 @@ class _Plan:
     problem: str | None
     # The campaign's own budget is removed once nothing uses it.
     removes_budget: bool = False
+    # The budget's network settings once the change is made; None follows the account.
+    network: Sequence[Mapping[str, Any]] | None = None
+    # The campaign type the network order is for, as Google names it.
+    channel_type: str | None = None
 
 
-def _budget_edits(change: GoogleAdsBudgetUpdate, budget: str) -> FieldChange:
+def _budget_edits(
+    change: GoogleAdsBudgetUpdate, budget: str, network: Sequence[Mapping[str, Any]] | None
+) -> FieldChange:
     requested: dict[str, Any] = {}
     if change.amount is not None:
         requested[AMOUNT_PATH] = str(money_to_micros(change.amount))
     if change.delivery is not None:
         requested[DELIVERY_PATH] = change.delivery
+    if change.network_priority is not None:
+        requested[NETWORK_PATH] = network
     # A campaign that joined or left the budget since approval makes the change stale.
     return FieldChange(
         resource="campaignBudget",
@@ -113,10 +138,16 @@ def _budget_edits(change: GoogleAdsBudgetUpdate, budget: str) -> FieldChange:
     )
 
 
-def _edits(change: GoogleAdsBudgetUpdate, budget: str | None, *, removes: bool) -> list[Edit]:
+def _edits(
+    change: GoogleAdsBudgetUpdate,
+    budget: str | None,
+    *,
+    removes: bool,
+    network: Sequence[Mapping[str, Any]] | None = None,
+) -> list[Edit]:
     """The edits for one change; a move and the removal of the budget it frees succeed together."""
     if change.shared_budget_name is None:
-        return [_budget_edits(change, budget or change.resource_name)]
+        return [_budget_edits(change, budget or change.resource_name, network)]
     group = change.resource_name if removes and budget else None
     move = FieldChange(
         resource="campaign",
@@ -144,11 +175,40 @@ def _budget_problem(budget: LiveBudget | None, label: str) -> str | None:
     return _TOTAL.format(name=budget.name) if budget.period != "DAILY" else None
 
 
+def _network_plan(
+    change: GoogleAdsBudgetUpdate, budget: LiveBudget, funded: Sequence[BudgetCampaign]
+) -> tuple[Sequence[Mapping[str, Any]] | None, str | None, str | None]:
+    """The budget's network settings after the change, their campaign type, and any problem.
+
+    A budget's campaigns say which campaign type the order is for. Taking the order off needs
+    no eligible budget; with no single campaign type it takes every type's order off.
+    """
+    types = {item.channel_type for item in funded if item.budget == budget.resource_name}
+    channel_type = next(iter(types)) if len(types) == 1 else None
+    live = budget.values.get(NETWORK_PATH)
+    priority = change.network_priority
+    if not isinstance(priority, GoogleAdsNetworkPriority):
+        return with_network_setting(live, channel_type, None), channel_type, None
+    if budget.network_ineligible:
+        reasons = [
+            _INELIGIBLE_REASONS.get(reason, reason.replace("_", " ").lower())
+            for reason in budget.network_ineligible
+        ]
+        problem = _INELIGIBLE.format(name=budget.name, reasons=" and ".join(reasons))
+        return None, channel_type, problem
+    if channel_type is None:
+        problem = (_MIXED_TYPES if types else _NO_CAMPAIGNS).format(name=budget.name)
+        return None, None, problem
+    setting = priority.setting(channel_type)
+    return with_network_setting(live, channel_type, setting), channel_type, None
+
+
 def _plan(
     change: GoogleAdsBudgetUpdate,
     campaigns: Mapping[str, LiveCampaign],
     budgets: Mapping[str, LiveBudget],
     named_budgets: frozenset[str],
+    funded: Sequence[BudgetCampaign],
 ) -> _Plan:
     """Finds the budget a change acts on and why it can't be made, if it can't."""
     campaign = campaigns.get(change.resource_name) if change.campaign is not None else None
@@ -161,7 +221,15 @@ def _plan(
         if budget is None or problem is not None:
             reason = problem or _MISSING.format(name=change.label)
             return _Plan(budget, None, _refused(change, reason), reason)
-        return _Plan(budget, None, _edits(change, budget.resource_name, removes=False), None)
+        if change.network_priority is None:
+            return _Plan(budget, None, _edits(change, budget.resource_name, removes=False), None)
+        network, channel_type, problem = _network_plan(change, budget, funded)
+        if problem is not None:
+            return _Plan(
+                budget, None, _refused(change, problem), problem, channel_type=channel_type
+            )
+        edits = _edits(change, budget.resource_name, removes=False, network=network)
+        return _Plan(budget, None, edits, None, network=network, channel_type=channel_type)
     destination = budgets.get(change.shared_budget_name)
     target = change.use_shared_budget
     problem = _budget_problem(destination, target.label if target else "The shared budget")
@@ -187,6 +255,7 @@ def _plans(
     changes: Sequence[GoogleAdsBudgetUpdate],
     campaigns: Mapping[str, LiveCampaign],
     budgets: Mapping[str, LiveBudget],
+    funded: Sequence[BudgetCampaign],
 ) -> dict[str, _Plan]:
     """Plans each change; a later change to a budget an earlier one changes is a problem."""
     named = frozenset(change.resource_name for change in changes if change.budget is not None)
@@ -195,7 +264,7 @@ def _plans(
     plans: dict[str, _Plan] = {}
     keys: set[str] = set()
     for change in ordered:
-        plan = _plan(change, campaigns, budgets, named)
+        plan = _plan(change, campaigns, budgets, named, funded)
         edit_keys = {edit.key for edit in plan.edits}
         if plan.problem is None and edit_keys & keys:
             name = plan.budget.name if plan.budget else change.label
@@ -291,7 +360,13 @@ def _approved_edits(change: GoogleAdsBudgetUpdate, check: Any) -> list[Edit]:
     current = budget.get("resource_name") if isinstance(budget, Mapping) else None
     values = check.get("values")
     values = values if isinstance(values, Mapping) else {}
-    edits = _edits(change, current, removes=check.get("removes_budget") is True)
+    network = check.get("network_settings")
+    edits = _edits(
+        change,
+        current,
+        removes=check.get("removes_budget") is True,
+        network=network if isinstance(network, list) else None,
+    )
     if any(edit.key not in values for edit in edits):
         return _refused(change, NOT_SHOWN)
     return [replace(edit, before=edit.live(values[edit.key])) for edit in edits]
@@ -307,6 +382,9 @@ def _reader(
             entry,
             campaign_ids=[key.rsplit("/", 1)[-1] for key in keys if "/campaigns/" in key],
             budget_ids=[key.rsplit("/", 1)[-1] for key in keys if "/campaignBudgets/" in key],
+            network=any(
+                isinstance(edit, FieldChange) and NETWORK_PATH in edit.requested for edit in edits
+            ),
         )
         return {
             **{name: item.values for name, item in campaigns.items()},
@@ -322,8 +400,12 @@ async def _read_state(
     *,
     campaign_ids: Sequence[str],
     budget_ids: Sequence[str],
+    network: bool,
 ) -> tuple[dict[str, LiveCampaign], dict[str, LiveBudget]]:
-    """Reads the campaigns, then the budgets they and the request name."""
+    """Reads the campaigns, then the budgets they and the request name.
+
+    `network` also reads each budget's network order, which only a change to it needs.
+    """
     login = login_customer_id(entry)
     campaigns = await read_campaigns(
         client, customer_id=entry.external_id, login_customer_id=login, campaign_ids=campaign_ids
@@ -334,6 +416,7 @@ async def _read_state(
         customer_id=entry.external_id,
         login_customer_id=login,
         budget_ids=[*budget_ids, *used],
+        network=network,
     )
     return campaigns, budgets
 
@@ -436,10 +519,14 @@ def _setting_outcomes(
     names = check.get("budget_names") if isinstance(check.get("budget_names"), Mapping) else {}
     read: dict[BudgetSetting, Any] = {}
     if after is not None:
+        channel_type = check.get("network_channel_type")
         read = {
             "amount": money(after.get(AMOUNT_PATH)),
             "delivery": after.get(DELIVERY_PATH),
             "shared_budget": after.get(CAMPAIGN_BUDGET_PATH),
+            "network_priority": network_code(
+                network_setting_for(after.get(NETWORK_PATH), channel_type)
+            ),
         }
     settings = []
     for setting, requested in change.requested.items():
@@ -497,6 +584,7 @@ async def _account_checks(
                 for reference in (change.budget, change.use_shared_budget)
                 if reference is not None
             ],
+            network=any(change.network_priority is not None for change in changes),
         )
         funded = await read_budget_campaigns(
             client,
@@ -504,7 +592,7 @@ async def _account_checks(
             login_customer_id=login_customer_id(entry),
             budgets=[name for name, budget in budgets.items() if budget.status != "REMOVED"],
         )
-        plans = _plans(changes, campaigns, budgets)
+        plans = _plans(changes, campaigns, budgets, funded)
         rejected = await _dry_run(client, entry, plans, campaigns, budgets)
     except (IntegrationError, LookupError):
         return {change.resource_name: {"unavailable": True} for change in changes}
@@ -561,7 +649,16 @@ async def _dry_run(
         read=read,
         operation=_OPERATION,
     )
-    return {edit.key: f"Google says: {edit.refused}" for edit in prepared if edit.refused}
+    return {
+        edit.key: f"Google says: {edit.refused}{_networks_hint(edit.refused)}"
+        for edit in prepared
+        if edit.refused
+    }
+
+
+def _networks_hint(refused: str) -> str:
+    """What to do about an order that leaves a network out, which Google's message doesn't say."""
+    return _ALL_NETWORKS if "must be assigned to a priority tier" in refused else ""
 
 
 def _check(
@@ -608,7 +705,15 @@ def _check(
             "amount": money(budget.values.get(AMOUNT_PATH)) if budget else None,
             "delivery": budget.values.get(DELIVERY_PATH) if budget else None,
             "shared_budget": campaign.budget if campaign else None,
+            "network_priority": (
+                network_code(network_setting_for(budget.values[NETWORK_PATH], plan.channel_type))
+                if budget and NETWORK_PATH in budget.values
+                else None
+            ),
         },
+        # The budget's network settings once approved, in Google's terms, and their campaign type.
+        "network_settings": plan.network,
+        "network_channel_type": plan.channel_type,
         "budget_names": {item.resource_name: item.name for item in (budget, destination) if item},
         "requested": change.requested,
         # What approval plans against, in Google's terms, for each edit's object.
@@ -666,9 +771,17 @@ DEFINITION = RuntimeToolDefinition(
         "uses; delivery, STANDARD or ACCELERATED; or, for a campaign, use_shared_budget, a "
         "shared budget in the same account to move it onto. A budget only that campaign used "
         "is removed with the move. Changing a shared budget changes every campaign on it, and "
-        "the card lists them. Only daily budgets change here. The card shows each budget's "
-        "spend this month from Google. Each result reports what Google Ads shows after the "
-        "change."
+        "the card lists them. Only daily budgets change here. network_priority, only when the "
+        "user asks which networks a budget spends on first: first lists the networks that spend "
+        "first (OWNED_AND_OPERATED is Google's own sites, SEARCH_PARTNER, GOOGLE_DISPLAY), then "
+        "lists the networks that spend after them, each with an optional cap_percent of the "
+        "budget (0 keeps it from spending). Every network the campaign type can show on must "
+        "be in first or then: Google refuses an order that leaves one out, so never send first "
+        "alone. To put Google first, send first with OWNED_AND_OPERATED and then with the "
+        "other networks; or account_default to follow the account's "
+        "order again. Google offers this to some accounts and budgets only, and the card says "
+        "when it can't be set. The card shows each budget's spend this month from Google. Each "
+        "result reports what Google Ads shows after the change."
     ),
     provider="google_ads",
     label="Update Google Ads Budgets",
