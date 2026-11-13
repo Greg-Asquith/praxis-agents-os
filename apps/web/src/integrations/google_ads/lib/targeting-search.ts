@@ -48,7 +48,7 @@ export function parseTargetingSearch(value: unknown): TargetingSearchResult | nu
   }
 }
 
-const REACH_FORMAT = new Intl.NumberFormat("en-GB", {
+const REACH_FORMAT = new Intl.NumberFormat("en", {
   maximumFractionDigits: 1,
   notation: "compact",
 })

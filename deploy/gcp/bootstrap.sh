@@ -51,6 +51,11 @@ required_vars=(
 for variable_name in "${required_vars[@]}"; do
   [[ -n "${!variable_name:-}" ]] || die "required variable $variable_name is unset or empty"
 done
+for variable_name in API_SERVICE_ACCOUNT WEB_SERVICE_ACCOUNT WORKER_SERVICE_ACCOUNT \
+  MIGRATE_SERVICE_ACCOUNT MEDIA_RENDERER_SERVICE_ACCOUNT DATA_SCIENCE_SERVICE_ACCOUNT; do
+  [[ "${!variable_name}" == *"@${GCP_PROJECT_ID}.iam.gserviceaccount.com" ]] \
+    || die "$variable_name must be a service account in project $GCP_PROJECT_ID"
+done
 
 [[ "$GCS_PLATFORM_PRIVATE_BUCKET" != "$GCS_PUBLIC_ASSETS_BUCKET" ]] \
   || die "GCS_PLATFORM_PRIVATE_BUCKET must differ from GCS_PUBLIC_ASSETS_BUCKET"
