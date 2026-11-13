@@ -46,6 +46,7 @@ import {
   addAudience,
   cancelAudience,
   demographicLines,
+  exclusionsOnly,
   setAudienceMode,
   setDemographic,
 } from "@/integrations/google_ads/lib/targeting-audiences"
@@ -580,6 +581,25 @@ describe("audiences and demographics", () => {
       excluded: true,
       value: "AGE_RANGE_18_24",
     })
+  })
+
+  it("offers demographic bids unless every entry is a Performance Max campaign", () => {
+    const entries = {
+      [key("10")]: check({ channel: "PERFORMANCE_MAX" }),
+      [key("11")]: check(),
+    }
+    const args = parsed(
+      raw({
+        changes: ["10", "11"].map((id) => ({
+          campaign: campaign(id),
+          demographics: [{ dimension: "INCOME_RANGE", value: "INCOME_RANGE_0_50", excluded: true }],
+        })),
+        _checks: { entries, names: { locations: {}, languages: {} } },
+      })
+    )
+
+    expect(exclusionsOnly(args)).toBe(false)
+    expect(exclusionsOnly({ ...args, changes: args.changes.slice(0, 1) })).toBe(true)
   })
 })
 

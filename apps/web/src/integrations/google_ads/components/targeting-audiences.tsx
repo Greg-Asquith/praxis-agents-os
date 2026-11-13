@@ -259,10 +259,13 @@ function nowText(line: DemographicLine): string {
 /** One row per value of a dimension, with its adjustment now and the change asked for. */
 export function DemographicAdjustments({
   disabled,
+  exclusionsOnly,
   lines,
   onChange,
 }: {
   disabled: boolean
+  // Performance Max can exclude a group but can't adjust bids for one.
+  exclusionsOnly: boolean
   lines: readonly DemographicLine[]
   // Null leaves the value as it is.
   onChange: (
@@ -278,6 +281,8 @@ export function DemographicAdjustments({
         const asked = line.requested === "varies" ? null : line.requested
         const excluded = asked ? asked.excluded : line.now === EXCLUDED
         const bid = asked ? asked.bidAdjustment : line.now
+        // An adjustment the request asks for still shows, so it can be cleared.
+        const adjustable = !exclusionsOnly || (!excluded && asked !== null && bid !== 0)
         return (
           <Row key={line.value}>
             <Name
@@ -293,14 +298,16 @@ export function DemographicAdjustments({
                 {excluded ? "Excluding" : "Changing"}
               </Badge>
             )}
-            <BidAdjustment
-              disabled={disabled || excluded || varies}
-              label={`Bid adjustment for ${line.name}`}
-              onChange={(bidAdjustment) => {
-                onChange(line.value, { bidAdjustment: bidAdjustment ?? 0, excluded: false })
-              }}
-              value={excluded || bid === null || bid === 0 ? null : bid}
-            />
+            {adjustable ? (
+              <BidAdjustment
+                disabled={disabled || excluded || varies}
+                label={`Bid adjustment for ${line.name}`}
+                onChange={(bidAdjustment) => {
+                  onChange(line.value, { bidAdjustment: bidAdjustment ?? 0, excluded: false })
+                }}
+                value={excluded || bid === null || bid === 0 ? null : bid}
+              />
+            ) : null}
             <Button
               aria-pressed={excluded}
               disabled={disabled || varies}

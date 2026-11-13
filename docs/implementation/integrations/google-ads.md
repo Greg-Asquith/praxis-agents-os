@@ -935,7 +935,7 @@ follows:
 | `add_audiences` | Adds an audience by `kind` and `key`, with an optional bid adjustment. Naming one already added changes its adjustment. Campaign or ad group. |
 | `remove_audiences` | Removes an audience. Campaign or ad group. |
 | `audience_mode` | `OBSERVATION` (bids only; who sees the ads doesn't change) or `TARGETING` (ads show only to the audiences). Campaign or ad group. |
-| `demographics` | Sets a `dimension` (`AGE_RANGE`, `GENDER`, `PARENTAL_STATUS`, `INCOME_RANGE`) and Google's `value` to a `bid_adjustment` percent (0 clears it, and includes an excluded value again) or `excluded`. Campaign or ad group. |
+| `demographics` | Sets a `dimension` (`AGE_RANGE`, `GENDER`, `PARENTAL_STATUS`, `INCOME_RANGE`) and Google's `value` to a `bid_adjustment` percent (0 clears it, and includes an excluded value again) or `excluded`. Campaign or ad group. A Performance Max campaign takes exclusions only. |
 | `contains_eu_political_advertising` | The campaign's EU political declaration, sent only when Google needs it with a new location or radius. Campaign only. |
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
@@ -1000,6 +1000,15 @@ parental status, and Search usually sets them on ad groups, so Google's dry run 
 and its reason shows on the card. Mixing campaign-level and ad group audiences in one
 campaign is left to the dry run the same way; whether v26 refuses it is a pending live
 check.
+
+A Performance Max campaign takes demographics as exclusions only, on the campaign,
+because it has no ad groups and Google sets every bid. Google Ads API v26.1 added
+household income to the exclusions it accepts there, as a negative campaign
+`incomeRange` criterion, which is the request an exclusion already sends. A bid
+adjustment other than 0 on a Performance Max campaign is refused before the dry run and
+after approval with "Performance Max campaigns can exclude a group, but can't adjust
+bids for one."; an adjustment of 0 still removes an exclusion. Which dimensions
+Performance Max accepts beyond that is Google's answer in the dry run.
 
 The tool refuses these before Google's dry run:
 
@@ -1979,7 +1988,10 @@ The card (`components/targeting-approval.tsx`) shows each change once:
   saying it has no effect. The heading's Cancel This Change takes out every audience change.
 - **Demographics** shows one section per dimension the request changes (Age, Gender,
   Parental Status, Household Income), each listing every value with its adjustment now,
-  a `BidAdjustment`, and **Exclude** (`components/targeting-audiences.tsx`).
+  a `BidAdjustment`, and **Exclude** (`components/targeting-audiences.tsx`). When every
+  entry shown is a Performance Max campaign (`exclusionsOnly`), the rows offer
+  **Exclude** only; a bid adjustment the agent asked for still shows, so you can clear
+  it.
 - Sections the request doesn't change sit in **More Settings**: Audiences, Demographics
   (a choice of dimension, then its values), Devices, Ad Schedule (**Change the
   Schedule** starts from the live week, or every hour when none is set), and, for a

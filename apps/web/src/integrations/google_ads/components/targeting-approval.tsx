@@ -37,6 +37,7 @@ import {
   clearAudiences,
   clearDemographics,
   demographicLines,
+  exclusionsOnly,
   setAudienceBid,
   setAudienceMode,
   setDemographic,
@@ -214,6 +215,7 @@ export function TargetingApproval({
   const devicesOn = shown.changes.some((change) => change.devices.length > 0)
   const audiencesOn = showAudiences || shown.changes.some(changesAudiences)
   const dimensions = changedDimensions(shown)
+  const excludeOnly = exclusionsOnly(shown)
   // More Settings offers the dimensions the request doesn't change yet.
   const otherDimensions = DIMENSION_OPTIONS.filter((option) => !dimensions.includes(option.value))
   const other = dimensions.includes(dimension)
@@ -445,6 +447,7 @@ export function TargetingApproval({
               />
               <DemographicAdjustments
                 disabled={disabled}
+                exclusionsOnly={excludeOnly}
                 lines={demographicLines(shown, item)}
                 onChange={(value, next) => {
                   setDemographicValue(item, value, next)
@@ -572,6 +575,7 @@ export function TargetingApproval({
                 />
                 <DemographicAdjustments
                   disabled={disabled}
+                  exclusionsOnly={excludeOnly}
                   lines={demographicLines(shown, other)}
                   onChange={(value, next) => {
                     setDemographicValue(other, value, next)

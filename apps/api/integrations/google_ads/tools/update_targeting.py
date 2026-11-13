@@ -113,6 +113,11 @@ _NO_LOCATION = (
 )
 # Google refuses to add these, and ignores any left on the campaign from before.
 _SEARCH_LANGUAGES = "Search campaigns can't target languages. Google matches each ad's language."
+# Performance Max takes demographics as exclusions only; Google sets every bid itself.
+_PMAX_DEMOGRAPHIC_BIDS = (
+    "Performance Max campaigns can exclude a group, but can't adjust bids for one. Exclude it "
+    "or leave it as it is."
+)
 _UNKNOWN_LOCATION = "Google Ads doesn't recognise this location."
 _UNKNOWN_LANGUAGE = "Google Ads doesn't recognise this language."
 _UNKNOWN_AUDIENCE = "Google Ads doesn't recognise this audience in this account."
@@ -833,6 +838,14 @@ def _item_problem(
         return _UNKNOWN_LOCATION
     if item.field == "add_audiences" and item.item not in names["audiences"]:
         return _UNKNOWN_AUDIENCE
+    # -100 is an exclusion, and 0 only clears one.
+    if (
+        item.field == "demographics"
+        and live is not None
+        and live.channel == "PERFORMANCE_MAX"
+        and item.bid_adjustment not in (None, 0, -100)
+    ):
+        return _PMAX_DEMOGRAPHIC_BIDS
     return None
 
 
@@ -1430,7 +1443,9 @@ DEFINITION = RuntimeToolDefinition(
         "dimension (AGE_RANGE, GENDER, PARENTAL_STATUS, INCOME_RANGE) and Google's value, such "
         "as AGE_RANGE_18_24, FEMALE, NOT_A_PARENT, or INCOME_RANGE_90_UP, to a bid_adjustment "
         "percent (0 clears it, and includes an excluded value again) or excluded true. On "
-        "Search, set demographics on ad groups. Target ROAS, Maximize Conversion Value, and "
+        "Search, set demographics on ad groups. A Performance Max campaign takes demographics "
+        "as exclusions only, on the campaign, including household income; never a "
+        "bid_adjustment. Target ROAS, Maximize Conversion Value, and "
         "Maximize Conversions without a target CPA ignore device adjustments other than "
         "excluding; Smart Bidding ignores time, audience, and demographic adjustments. Check "
         "campaign.bidding_strategy_type with google_ads_run_report first and only propose "

@@ -293,6 +293,7 @@ class _Account:
                 "userInterest": "USER_INTEREST",
                 "ageRange": "AGE_RANGE",
                 "gender": "GENDER",
+                "incomeRange": "INCOME_RANGE",
             }
             kind = next((kinds[key] for key in create if key in kinds), "LANGUAGE")
             rows = self.ad_group_criteria if owner == "adGroup" else self.criteria
@@ -1055,6 +1056,49 @@ async def test_an_observed_audience_and_an_age_exclusion_go_in_one_approval(monk
         (item["name"], item["previous_bid_adjustment"], item["bid_adjustment"])
         for item in demographics["items"]
     ] == [("Age 18\u201324", 10, -100), ("Gender Female", -100, 0)]
+
+
+async def test_performance_max_excludes_an_income_range_but_refuses_a_bid_adjustment(
+    monkeypatch,
+) -> None:
+    account = _Account([_location("2826")], channel="PERFORMANCE_MAX")
+    args = _args(
+        demographics=[
+            {"dimension": "INCOME_RANGE", "value": "INCOME_RANGE_0_50", "excluded": True},
+            {"dimension": "INCOME_RANGE", "value": "INCOME_RANGE_90_UP", "bid_adjustment": 20},
+        ]
+    )
+
+    display = await _display(monkeypatch, account, args)
+
+    assert _check(display)["item_problems"] == [
+        {
+            "field": "demographics",
+            "key": "INCOME_RANGE:INCOME_RANGE_90_UP",
+            "message": tool_module._PMAX_DEMOGRAPHIC_BIDS,
+        }
+    ]
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    # The adjustment never reaches Google, in the dry run or the send.
+    assert [body["mutateOperations"] for body in account.mutates] == [
+        [
+            {
+                "campaignCriterionOperation": {
+                    "create": {
+                        "campaign": _CAMPAIGN,
+                        "negative": True,
+                        "incomeRange": {"type": "INCOME_RANGE_0_50"},
+                    }
+                }
+            }
+        ]
+    ] * 2
+    assert [(row["outcome"], [item["name"] for item in row["items"]]) for row in _rows(result)] == [
+        ("updated", ["Household Income Lower 50%"]),
+        ("failed", ["Household Income Top 10%"]),
+    ]
 
 
 async def test_an_audience_google_doesnt_know_never_reaches_google(monkeypatch) -> None:

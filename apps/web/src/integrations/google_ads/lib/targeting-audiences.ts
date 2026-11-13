@@ -236,6 +236,17 @@ export function demographicLines(
   })
 }
 
+/** True when every entry is a Performance Max campaign, which takes demographics as exclusions only. */
+export function exclusionsOnly(args: UpdateTargetingArgs): boolean {
+  return (
+    args.changes.length > 0 &&
+    args.changes.every((change) => {
+      const check = args.checks.get(change.key)
+      return check !== undefined && !check.unavailable && check.channel === "PERFORMANCE_MAX"
+    })
+  )
+}
+
 /** The dimensions the request changes, in Google's order. */
 export function changedDimensions(args: UpdateTargetingArgs): DemographicDimension[] {
   const changed = new Set(
