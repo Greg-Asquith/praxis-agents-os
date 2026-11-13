@@ -73,6 +73,7 @@ from .utils.performance_max_builds import (
     group_media,
     read_images,
     read_signal_audiences,
+    signals,
     unknown_audiences,
 )
 from .utils.requests import validated_request
@@ -412,7 +413,7 @@ async def _checks(
                 client,
                 customer_id=entry.external_id,
                 login_customer_id=login_customer_id(entry),
-                groups=groups,
+                audiences=signals(groups),
             ),
         }
         problems, request_problems = await _dry_run(client, entry, request, facts, known)

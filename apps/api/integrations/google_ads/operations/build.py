@@ -71,8 +71,13 @@ _COLLECTIONS: dict[str, tuple[str, int]] = {
     "campaignSharedSet": ("campaignSharedSets", 8),
 }
 # Objects other operations refer to get a temporary name; Google names the rest.
-# The only resource a build updates rather than creates.
+# Google makes campaign goals with their campaign, so a build only updates them.
 _UPDATED = {"campaignConversionGoal"}
+# Live objects a build may change in the same request as the objects it creates.
+_UPDATABLE = {"campaignConversionGoal", "assetGroup", "audience"}
+_REMOVABLE = {"assetGroupAsset", "assetGroupSignal"}
+# Removals go last, so an asset group gains its new assets before it loses old ones.
+_REMOVAL_RANK = 10
 _NAMED = {"campaignBudget", "asset", "campaign", "adGroup", "assetGroup", "audience", "sharedSet"}
 _TEMPORARY_NAME = re.compile(r"customers/\d+/[A-Za-z]+/-\d+")
 _NOTHING_CREATED = "Google Ads created nothing, because part of the request was rejected."
@@ -90,6 +95,8 @@ class BuildStep:
     source: Any = None
     # The fields an update sets; None for a create.
     update_mask: str | None = None
+    # The live object a removal removes; None for a create or update.
+    removed: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,11 +156,20 @@ class CampaignBuild:
         label: str,
         source: Any = None,
     ) -> None:
-        """Updates an object Google makes along with one this build creates."""
-        if resource not in _UPDATED:
+        """Updates a live object, or one Google makes along with one this build creates."""
+        if resource not in _UPDATABLE:
             raise ValueError("Google Ads builds can't update this resource")
         self._check(body)
         self._steps.append(BuildStep(resource, label, body, None, source, update_mask))
+
+    def remove(
+        self, resource: BuildResource, resource_name: str, *, label: str, source: Any = None
+    ) -> None:
+        """Removes a live object in the same request, after everything the build creates."""
+        if resource not in _REMOVABLE:
+            raise ValueError("Google Ads builds can't remove this resource")
+        self._check({})
+        self._steps.append(BuildStep(resource, label, {}, None, source, removed=resource_name))
 
     def _check(self, body: Mapping[str, Any]) -> None:
         if len(self._steps) >= MAX_MUTATE_OPERATIONS:
@@ -179,17 +195,24 @@ class CampaignBuild:
     @property
     def steps(self) -> list[BuildStep]:
         """The steps in the order they're sent: parents before the objects that refer to them."""
-        return sorted(self._steps, key=lambda step: _COLLECTIONS[step.resource][1])
+        return sorted(self._steps, key=_rank)
 
     def operations(self) -> list[MutateOperation]:
-        return [
-            MutateOperation(step.resource, {"create": dict(step.body)})
-            if step.update_mask is None
-            else MutateOperation(
-                step.resource, {"update": dict(step.body), "updateMask": step.update_mask}
-            )
-            for step in self.steps
-        ]
+        return [_operation(step) for step in self.steps]
+
+
+def _rank(step: BuildStep) -> int:
+    return _REMOVAL_RANK if step.removed is not None else _COLLECTIONS[step.resource][1]
+
+
+def _operation(step: BuildStep) -> MutateOperation:
+    if step.removed is not None:
+        return MutateOperation(step.resource, {"remove": step.removed})
+    if step.update_mask is not None:
+        return MutateOperation(
+            step.resource, {"update": dict(step.body), "updateMask": step.update_mask}
+        )
+    return MutateOperation(step.resource, {"create": dict(step.body)})
 
 
 async def dry_run_build(
@@ -314,6 +337,8 @@ def _ledger(
 
 
 def _created_name(customer_id: str, step: BuildStep, name: str) -> bool:
+    if step.removed is not None:
+        return name == step.removed
     collection = _COLLECTIONS[step.resource][0]
     return (
         re.fullmatch(rf"customers/{customer_id}/{collection}/\d+(?:~\d+)*(?:~[A-Z_]+)*", name)

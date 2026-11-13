@@ -2,8 +2,8 @@
 
 """Arguments for a new Performance Max asset group, with Google's asset minimums."""
 
-from collections.abc import Mapping
-from typing import Annotated, Literal, Self
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -43,7 +43,8 @@ ASSET_GROUP_LIMITS: Mapping[str, tuple[int, int]] = {
     "PORTRAIT_MARKETING_IMAGE": (0, 20),
     "YOUTUBE_VIDEO": (0, 15),
 }
-_NOUNS = {
+# What the card and refusals call each asset type that has a minimum.
+ASSET_NOUNS: Mapping[str, str] = {
     "HEADLINE": "headline",
     "LONG_HEADLINE": "long headline",
     "DESCRIPTION": "description",
@@ -52,13 +53,20 @@ _NOUNS = {
 }
 
 
-def _single_spaced(value: object) -> object:
+def single_spaced(value: object) -> object:
     return " ".join(value.split()) if isinstance(value, str) else value
 
 
-type _Headline = Annotated[str, Field(min_length=1, max_length=30)]
-type _LongText = Annotated[str, Field(min_length=1, max_length=90)]
-type _SearchTheme = Annotated[str, Field(min_length=1, max_length=80)]
+def tidy_texts(value: object) -> object:
+    """Collapses spaces in each text of a list and drops blank ones."""
+    if not isinstance(value, list):
+        return value
+    return [single_spaced(item) for item in value if not isinstance(item, str) or item.strip()]
+
+
+type AssetGroupHeadline = Annotated[str, Field(min_length=1, max_length=30)]
+type AssetGroupLongText = Annotated[str, Field(min_length=1, max_length=90)]
+type SearchThemeText = Annotated[str, Field(min_length=1, max_length=80)]
 
 
 class GoogleAdsAssetGroupImage(GoogleAdsStrictModel):
@@ -101,6 +109,45 @@ class GoogleAdsAudienceSignal(GoogleAdsStrictModel):
     name: str | None = Field(default=None, max_length=500)
 
 
+class _GroupAssets(Protocol):
+    @property
+    def headlines(self) -> Sequence[str]: ...
+    @property
+    def long_headlines(self) -> Sequence[str]: ...
+    @property
+    def descriptions(self) -> Sequence[str]: ...
+    @property
+    def images(self) -> Sequence[GoogleAdsAssetGroupImage]: ...
+    @property
+    def videos(self) -> Sequence[GoogleAdsAssetReference]: ...
+
+
+def repeated_problem(
+    assets: _GroupAssets,
+    themes: Sequence[str] = (),
+    audiences: Sequence[GoogleAdsAudienceSignal] = (),
+) -> str | None:
+    """Says what's listed twice, or that a video isn't a YouTube video, or None."""
+    for label, texts in (
+        ("headline", assets.headlines),
+        ("long headline", assets.long_headlines),
+        ("description", assets.descriptions),
+        ("search theme", [theme.casefold() for theme in themes]),
+    ):
+        if len(set(texts)) != len(texts):
+            return f"each {label} must be different."
+    images = [(image.asset.asset_id, image.field_type) for image in assets.images]
+    if len(set(images)) != len(images):
+        return "list each image once for each shape."
+    if any(video.asset_type != "YOUTUBE_VIDEO" for video in assets.videos):
+        return "videos must be YouTube video assets."
+    if len({video.asset_id for video in assets.videos}) != len(assets.videos):
+        return "list each video once."
+    if len({(item.kind, item.key) for item in audiences}) != len(audiences):
+        return "list each audience signal once."
+    return None
+
+
 class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
     """One asset group: its landing page, the text and media Google mixes into ads, and themes."""
 
@@ -108,14 +155,14 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
     final_url: GoogleAdsFinalUrl = Field(
         description="A live page on the advertiser's own site. Never guess a domain."
     )
-    headlines: list[_Headline] = Field(default_factory=list, max_length=15)
-    long_headlines: list[_LongText] = Field(default_factory=list, max_length=5)
-    descriptions: list[_LongText] = Field(default_factory=list, max_length=5)
+    headlines: list[AssetGroupHeadline] = Field(default_factory=list, max_length=15)
+    long_headlines: list[AssetGroupLongText] = Field(default_factory=list, max_length=5)
+    descriptions: list[AssetGroupLongText] = Field(default_factory=list, max_length=5)
     images: list[GoogleAdsAssetGroupImage] = Field(default_factory=list, max_length=60)
     videos: list[GoogleAdsAssetReference] = Field(
         default_factory=list, max_length=15, description="YouTube video assets."
     )
-    search_themes: list[_SearchTheme] = Field(default_factory=list, max_length=MAX_SEARCH_THEMES)
+    search_themes: list[SearchThemeText] = Field(default_factory=list, max_length=MAX_SEARCH_THEMES)
     audience_signals: list[GoogleAdsAudienceSignal] = Field(
         default_factory=list,
         max_length=MAX_AUDIENCE_SEGMENTS,
@@ -128,35 +175,17 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
     @field_validator("name", mode="before")
     @classmethod
     def _normalise_name(cls, value: object) -> object:
-        return _single_spaced(value)
+        return single_spaced(value)
 
     @field_validator("headlines", "long_headlines", "descriptions", "search_themes", mode="before")
     @classmethod
     def _tidy_texts(cls, value: object) -> object:
-        if not isinstance(value, list):
-            return value
-        return [_single_spaced(item) for item in value if not isinstance(item, str) or item.strip()]
+        return tidy_texts(value)
 
     @model_validator(mode="after")
     def _distinct(self) -> Self:
-        for label, texts in (
-            ("headline", self.headlines),
-            ("long headline", self.long_headlines),
-            ("description", self.descriptions),
-            ("search theme", [theme.casefold() for theme in self.search_themes]),
-        ):
-            if len(set(texts)) != len(texts):
-                raise ValueError(f"{self.name}: each {label} must be different.")
-        images = [(image.asset.asset_id, image.field_type) for image in self.images]
-        if len(set(images)) != len(images):
-            raise ValueError(f"{self.name}: list each image once for each shape.")
-        if any(video.asset_type != "YOUTUBE_VIDEO" for video in self.videos):
-            raise ValueError(f"{self.name}: videos must be YouTube video assets.")
-        if len({video.asset_id for video in self.videos}) != len(self.videos):
-            raise ValueError(f"{self.name}: list each video once.")
-        audiences = [(audience.kind, audience.key) for audience in self.audience_signals]
-        if len(set(audiences)) != len(audiences):
-            raise ValueError(f"{self.name}: list each audience signal once.")
+        if problem := repeated_problem(self, self.search_themes, self.audience_signals):
+            raise ValueError(f"{self.name}: {problem}")
         return self
 
     @property
@@ -200,7 +229,7 @@ def asset_group_problems(group: GoogleAdsNewAssetGroup, *, retail: bool) -> list
         return []
     problems = []
     counts = group.counts
-    for field_type, noun in _NOUNS.items():
+    for field_type, noun in ASSET_NOUNS.items():
         minimum, maximum = ASSET_GROUP_LIMITS[field_type]
         if counts[field_type] < minimum:
             problems.append(

@@ -2,7 +2,7 @@
 
 """Rules, account reads, and dry run answers for building Performance Max campaigns and groups."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
         GoogleAdsCreateCampaignRequest,
         GoogleAdsNewPerformanceMaxCampaign,
     )
-    from ..schemas.performance_max import GoogleAdsNewAssetGroup
+    from ..schemas.performance_max import GoogleAdsAudienceSignal, GoogleAdsNewAssetGroup
 
 _OPERATION = "create_campaign"
 
@@ -79,19 +79,23 @@ async def read_signal_audiences(
     *,
     customer_id: str,
     login_customer_id: str,
-    groups: Sequence["GoogleAdsNewAssetGroup"],
+    audiences: Iterable["GoogleAdsAudienceSignal"],
 ) -> dict[str, str]:
     """Returns the name of each audience signal that exists, by `kind:key`."""
     keys: dict[str, list[str]] = {}
-    for group in groups:
-        for audience in group.audience_signals:
-            keys.setdefault(audience.kind, []).append(audience.key)
+    for audience in audiences:
+        keys.setdefault(audience.kind, []).append(audience.key)
     if not keys:
         return {}
     found = await read_audiences(
         client, customer_id=customer_id, login_customer_id=login_customer_id, keys=keys
     )
     return {audience_id(kind, key): option.name for (kind, key), option in found.items()}
+
+
+def signals(groups: Sequence["GoogleAdsNewAssetGroup"]) -> list["GoogleAdsAudienceSignal"]:
+    """Every audience signal of the groups."""
+    return [audience for group in groups for audience in group.audience_signals]
 
 
 def unknown_audiences(
@@ -240,7 +244,7 @@ async def performance_max_checks(
         client,
         customer_id=customer_id,
         login_customer_id=login_customer_id,
-        groups=request.asset_groups,
+        audiences=signals(request.asset_groups),
     )
     facts = await read_account_facts(
         client,

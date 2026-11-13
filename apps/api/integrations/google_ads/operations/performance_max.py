@@ -102,7 +102,7 @@ def add_performance_max_campaign(
             source=CampaignItem("language", position),
         )
     if campaign.business_name:
-        asset = _text_asset(build, campaign.business_name, CampaignItem("text_asset"))
+        asset = text_asset(build, campaign.business_name, CampaignItem("text_asset"))
         build.create(
             "campaignAsset",
             {"campaign": name, "asset": asset, "fieldType": "BUSINESS_NAME"},
@@ -145,8 +145,8 @@ def _add_goals(
         )
 
 
-def _text_asset(build: CampaignBuild, text: str, source: Any) -> str | None:
-    # One asset per distinct text, however many places use it.
+def text_asset(build: CampaignBuild, text: str, source: Any) -> str | None:
+    """Adds a text asset once per distinct text, however many places use it."""
     return build.create_once(
         f"text:{text}", "asset", {"textAsset": {"text": text}}, label=text, source=source
     )
@@ -191,7 +191,7 @@ def add_asset_group(
         ("DESCRIPTION", group.descriptions),
     ):
         for text in texts:
-            asset = _text_asset(build, text, AssetGroupItem("text_asset", index, field_type, text))
+            asset = text_asset(build, text, AssetGroupItem("text_asset", index, field_type, text))
             _link(
                 build,
                 name,
@@ -234,12 +234,10 @@ def _add_audience_signal(
     build: CampaignBuild, group: "GoogleAdsNewAssetGroup", asset_group: str | None, index: int
 ) -> None:
     """Adds one audience of the group's own holding every segment, so Google reads them as OR."""
-    segments = []
-    for audience in group.audience_signals:
-        field, inner, collection = AUDIENCE_FIELDS[audience.kind]
-        segments.append(
-            {field: {inner: f"customers/{build.customer_id}/{collection}/{audience.key}"}}
-        )
+    segments = [
+        audience_segment(build.customer_id, audience.kind, audience.key)
+        for audience in group.audience_signals
+    ]
     label = f"{group.name}: audience signal"
     # An asset group's own audience takes no name, and Google removes it with the group.
     audience = build.create(
@@ -258,6 +256,12 @@ def _add_audience_signal(
         label=label,
         source=AssetGroupItem("audience_signal", index),
     )
+
+
+def audience_segment(customer_id: str, kind: str, key: str) -> dict[str, Any]:
+    """Returns one segment of an audience's segment dimension, as Google's JSON names it."""
+    field, inner, collection = AUDIENCE_FIELDS[kind]
+    return {field: {inner: f"customers/{customer_id}/{collection}/{key}"}}
 
 
 def _link(

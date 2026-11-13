@@ -12,6 +12,16 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads asset group changes: `google_ads_update_asset_groups` changes
+  up to 100 live Performance Max asset groups in one approval: the name,
+  final URL, headlines, long headlines, descriptions, images, videos, search
+  themes, and audience signals. Changes are made in as few steps as Google's
+  limits allow, adding before removing where needed, so a swapped headline
+  never leaves a group short. The card
+  lists the asset groups first, shows the count each change leaves against
+  Google's limits, and refuses a removal that would leave a group under a
+  minimum, naming the type and count.
+
 - Google Ads asset groups in live Performance Max campaigns:
   `google_ads_create_asset_groups` adds up to five complete asset groups to
   a campaign in one approval, all created or none. The card lists the

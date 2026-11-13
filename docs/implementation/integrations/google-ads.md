@@ -126,7 +126,10 @@ endpoint per resource type. Two seams build on it:
   signals, and audiences, in the order the build added them.
   `dry_run_build` reports each step Google rejects. `send_build` sends one
   atomic request (`partialFailure: false`), so a rejection creates nothing,
-  and maps each temporary name to its real resource name.
+  and maps each temporary name to its real resource name. A build can also
+  update a live asset group or audience (`CampaignBuild.update`) and remove
+  an asset group's asset links and signals (`CampaignBuild.remove`), in the
+  same request. Removals go last in a request.
 
 Every tool on the edit seam runs an account's approved edits through
 `run_approved_edits` in `tools/utils/edit_runs.py`. The tool supplies the
@@ -726,6 +729,70 @@ Google's rejections by group, and whole-request problems. The dry run sends
 name, kinds, and each group's outcome, reference, and counts. Audit intents are grouped by
 asset group, keyed by build step. `campaign` leads the review, with `google_ads_asset` and
 `google_ads_audience` searches on `asset_groups`.
+
+### Asset group changes
+
+`google_ads_update_asset_groups` changes up to 100 live Performance Max asset groups in
+one approval. Each entry (`GoogleAdsAssetGroupUpdate` in
+`tools/schemas/asset_group_updates.py`) names one asset group and only what changes:
+`name`, `final_url`, `add_assets` and `remove_assets` (headlines, long headlines,
+descriptions, images by shape, and videos), `add_search_themes` and
+`remove_search_themes`, and `add_audience_signals` and `remove_audience_signals`. Text is
+removed by its text, and images and videos by their asset. The schema refuses an item
+both added and removed, and an entry that changes nothing. Status and removal stay in
+`google_ads_update_status` and `google_ads_remove_objects`.
+
+`read_asset_groups` in `operations/asset_group_state.py` reads each group's name,
+status, final URLs, campaign (channel, status, and Merchant Center feed), linked assets
+with their field type, text, and source, search themes, and audience signals, then the
+audiences those signals name, with their scope and dimensions. A read that reaches its row
+limit is refused rather than checked in part.
+
+The tool plans each change against what's live. Adding an item the group has, or removing
+one it doesn't, is reported as already set or not there, without a change. Search themes
+compare without case. Before approval, it refuses on the card:
+
+- a group that is removed, in a removed campaign, or not in Performance Max
+- a removal that leaves a type under its minimum, or no description of 60 characters or
+  fewer, naming the type and the count left. A group in a campaign with a feed that would
+  hold no assets of its own is exempt, as on creation. Only assets the advertiser added
+  count; ones Google made don't.
+- an addition over a maximum (15 headlines, 5 long headlines, 5 descriptions, 20 images
+  of each shape, 15 videos, 25 search themes, 20 audiences in the signal)
+- an image the account doesn't have, or in a shape it doesn't fit, and an image or video
+  from another account
+- an audience the account doesn't have, and any audience change to a group with more than
+  one audience signal, or whose signal is a saved audience other groups can share. Changing
+  a shared audience would change every group that uses it, so that is pending.
+
+Google checks an asset group's minimums and maximums against the group as each request
+finds it, not where the request leaves it: replacing all three long headlines in one
+request fails as both too many and too few. So `_parts` splits each account's changes into
+ordered atomic builds, each sent with `partialFailure: false`. Each request takes at most
+the removals that keep a type at its minimum and the additions that keep it at its
+maximum, counted from where the previous request left the group. Settings and the audience
+signal go in the first. A swap at the minimum is two requests (additions, then removals);
+a full replacement of a type can take three. A request is sent only once the one before it
+fully applied; the rest are recorded as failed with `NOT_SENT`, so the group is never left
+under a minimum. Each build updates
+the name and final URLs together, creates each new text once and links it, links existing
+images and videos, adds search themes as `assetGroupSignal`s, and removes links and
+themes last. An audience signal rewrites the segments of the group's own
+(`ASSET_GROUP`-scoped) audience with one update that keeps its other dimensions, creates
+an audience and signal for a group with none, and removes the signal when no dimension is
+left. Only the first request can be dry run whole, because later ones rely on it applying;
+the new text in later requests is dry run on its own. While preparing the approval,
+`_checks` holds each group's name, campaign, problem,
+counts of advertiser assets and themes by type (`now`), and one row per change (`row`,
+`action`, `kind`, `item`, `before`, `state`, `problem`), with Google's first dry-run
+rejection on the changes it names. Audit intents number each step by its request and
+place (`1.4`). After approval, the tool reads the account again and
+refuses it, with nothing sent, when a change isn't one the approver saw, has a different
+state or live object (`CHANGED_SINCE_APPROVAL` wording), or was shown with a problem.
+Audit intents are grouped by asset group. The result has one row per
+change with its asset group, campaign, setting, the value it replaced, and its outcome
+(`added`, `removed`, `changed`, `already_set`, `not_found`, `failed`, or `unverified`);
+the model gets the counts and what didn't happen.
 
 ### Targeting
 
@@ -1519,6 +1586,36 @@ campaign on `ParentTable` with **Change Campaign**, then `AssetGroupsEditor` wit
 The approve button reads **Add N Asset Groups**. The result is `CampaignBuildOutcome`, as
 on the other create cards.
 
+### Change Asset Groups card
+
+`lib/update-asset-groups.ts` parses `entries` with `_accounts` and `_checks`, keeps each
+entry as received, and lists one row per change in the server's order and keys (text and
+themes with their spaces collapsed), so each row finds its check.
+`components/update-asset-groups-approval.tsx` shows, top to bottom:
+
+- `ChangeBanner`, noting that themes and signals guide Google without limiting reach.
+- The asset groups on `ParentTable` (Assets Now, Changes, Problems). Counts are per group,
+  so one group is always in view: the first, or the one clicked.
+- **Asset Group Settings**, when the name or final URL changes: Now, then New edited in
+  place.
+- **What the Asset Group Will Hold** (`kindSummary`): one row per asset type the group
+  holds, needs, or changes, with Now, Removing, Adding, After, what Google allows, and a
+  status badge. It updates live as the operator edits, cancels, or adds items. As on the
+  server, only removals answer to a minimum and only additions to a maximum, and a retail
+  group's minimums are left to the server. A type outside its limits blocks approval,
+  naming the type and the count. A click on a type filters both tables to it.
+- **Removals** and **Additions**: one `DataTable` each, with a filter tab per asset type
+  and Cancel or Undo on every row; from 10 rows, search and a bulk bar. Every addition is
+  editable in its row: text and search themes in a `CommittedInput` with a live length,
+  an audience swapped through the `google_ads_audience` search (**Change**), and an
+  image's shape through a select. **Add an Item** adds any type: typed text or a theme,
+  an audience, or an uploaded image or video through the `google_ads_asset` search.
+
+Text over its length is a problem on the card. Cancelled changes and groups are kept
+beside the request through `cancelled-rows.ts`; any edit, cancel, or addition asks for
+**Check Changes**. The result (`components/update-asset-groups-outcome.tsx`) is one table:
+Asset Group, Setting, Before, After, and Outcome, opening on Failed when anything failed.
+
 ### Update Targeting card
 
 `lib/update-targeting.ts` parses `changes` with `_accounts` and `_checks`, and keeps
@@ -2044,4 +2141,4 @@ summary or Needs Attention line clears the selection. From ten rows it
 gets search and a Needs Attention tab. A caller can draw its own cells with
 `renderCell`. Add Keywords, Update Keywords, Update Targeting, Update
 Status, the create and edit cards, Update Budgets, Remove Items, Update Negative
-Keywords, Optimise Search Terms, and Update Ad Assets use it.
+Keywords, Optimise Search Terms, Update Ad Assets, and Change Asset Groups use it.

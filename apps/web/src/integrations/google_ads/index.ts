@@ -27,6 +27,7 @@ import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presen
 import { googleAdsRemoveObjectsPresenter } from "@/integrations/google_ads/presenters/remove-objects"
 import { googleAdsUpdateKeywordsPresenter } from "@/integrations/google_ads/presenters/update-keywords"
 import { googleAdsUpdateAssetsPresenter } from "@/integrations/google_ads/presenters/update-assets"
+import { googleAdsUpdateAssetGroupsPresenter } from "@/integrations/google_ads/presenters/update-asset-groups"
 import { googleAdsResearchKeywordsPresenter } from "@/integrations/google_ads/presenters/research-keywords"
 import { googleAdsUploadMediaPresenter } from "@/integrations/google_ads/presenters/upload-media"
 
@@ -60,6 +61,7 @@ export default {
     googleAdsUpdateKeywordsPresenter,
     googleAdsRemoveObjectsPresenter,
     googleAdsUpdateAssetsPresenter,
+    googleAdsUpdateAssetGroupsPresenter,
     googleAdsResearchKeywordsPresenter,
     googleAdsUploadMediaPresenter,
   ],
