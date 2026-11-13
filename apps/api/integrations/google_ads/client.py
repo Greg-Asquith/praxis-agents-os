@@ -210,12 +210,8 @@ def _google_ads_error_detail(
         if operation == "run_report"
         else "Google Ads rejected the request."
     )
-    try:
-        payload = response.json()
-    except ValueError:
-        return fallback
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(error, dict):
+    error = _error_object(response)
+    if error is None:
         return fallback
 
     messages: list[str] = []
@@ -244,13 +240,8 @@ def _unapproved_project_error(
     """Explain the v25+ refusal for a Cloud project that only has Test access."""
     if response.status_code != 403:
         return None
-    try:
-        error = response.json().get("error")
-    except (AttributeError, ValueError):
-        return None
-    if not isinstance(error, dict):
-        return None
-    if not any(
+    error = _error_object(response)
+    if error is None or not any(
         isinstance(code := provider_error.get("errorCode"), dict)
         and code.get("authorizationError") == "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
         for provider_error in _provider_errors(error)
@@ -264,6 +255,18 @@ def _unapproved_project_error(
         error_code="cloud_project_not_approved",
         failure_disposition=IntegrationFailureDisposition.REJECTED,
     )
+
+
+def _error_object(response: httpx2.Response) -> dict[str, Any] | None:
+    """Returns Google's error, which `searchStream` wraps in a one-item array."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if isinstance(payload, list) and payload:
+        payload = payload[0]
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return error if isinstance(error, dict) else None
 
 
 def _provider_errors(error: dict[str, Any]) -> list[dict[str, Any]]:

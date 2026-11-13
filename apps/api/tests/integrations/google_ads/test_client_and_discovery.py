@@ -124,26 +124,28 @@ async def test_unapproved_cloud_project_says_how_to_fix_it_without_retrying() ->
         attempts += 1
         return httpx2.Response(
             403,
-            json={
-                "error": {
-                    "code": 403,
-                    "status": "PERMISSION_DENIED",
-                    "details": [
-                        {
-                            "errors": [
-                                {
-                                    "errorCode": {
-                                        "authorizationError": (
-                                            "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
-                                        )
-                                    },
-                                    "message": "The Google Cloud project is not approved.",
-                                }
-                            ]
-                        }
-                    ],
+            json=[
+                {
+                    "error": {
+                        "code": 403,
+                        "status": "PERMISSION_DENIED",
+                        "details": [
+                            {
+                                "errors": [
+                                    {
+                                        "errorCode": {
+                                            "authorizationError": (
+                                                "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
+                                            )
+                                        },
+                                        "message": "The Google Cloud project is not approved.",
+                                    }
+                                ]
+                            }
+                        ],
+                    }
                 }
-            },
+            ],
             request=request,
         )
 

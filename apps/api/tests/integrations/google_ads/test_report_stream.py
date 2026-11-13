@@ -111,7 +111,17 @@ async def test_report_stream_refreshes_credentials_after_rejection():
 )
 async def test_report_stream_preserves_bounded_provider_error_details(oversized):
     message = "Unrecognised report field."
-    body = json.dumps({"error": {"message": message}}).encode()
+    # searchStream wraps its error in an array, with Google's reason under details.
+    body = json.dumps(
+        [
+            {
+                "error": {
+                    "message": "Request contains an invalid argument.",
+                    "details": [{"errors": [{"message": message}]}],
+                }
+            }
+        ]
+    ).encode()
     stream = ReportStream([body[:5], body[5:]] if not oversized else [b" " * 65_537, body])
     async with httpx2.AsyncClient(
         transport=httpx2.MockTransport(lambda request: httpx2.Response(400, stream=stream))

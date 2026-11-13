@@ -522,6 +522,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Google Ads report errors include Google's reason. Google wraps a streamed
+  report's error in a list, which the client didn't read, so the agent only
+  saw "check that its fields and filters are valid GAQL".
 - Searching for Google Ads sitelinks and callouts by their text no longer
   sends a query Google Ads rejects; each text field is searched on its own.
 - Google Ads Create Ads, Create Ad Groups, and Create Campaign cards show a

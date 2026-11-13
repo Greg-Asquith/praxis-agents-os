@@ -24,6 +24,8 @@ From v25 Google refuses a real account for a Test-access project with
 raises `IntegrationPermissionError` with error code
 `cloud_project_not_approved` and a message that says to apply for Explorer
 access, for every request, and doesn't refresh the token or retry.
+`searchStream` wraps its error reply in a one-item array; the client reads
+Google's error from either shape, so report errors carry Google's reason.
 
 The Google Ads tools are available when `google_ads` is in
 `INTEGRATIONS_ENABLED_PROVIDERS`. A workspace without a Google Ads
