@@ -91,7 +91,7 @@ async def google_ads_apply_recommendations(
             default=None,
             max_length=50,
             description=(
-                "Optional v24 customization rows keyed by recommendation resource name. "
+                "Optional v26 customization rows keyed by recommendation resource name. "
                 "Omit this field to apply Google's proposed values."
             ),
         ),

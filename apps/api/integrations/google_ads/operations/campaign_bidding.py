@@ -60,7 +60,7 @@ _TYPES = {
     "TARGET_ROAS": "TARGET_ROAS",
 }
 _STRATEGIES = {value: key for key, value in _TYPES.items()}
-# Where Google offers each standard strategy, from the v24 bidding strategy types table.
+# Where Google offers each standard strategy, from the v26 bidding strategy types table.
 _CHANNELS = {
     "MANUAL_CPC": frozenset({"SEARCH", "DISPLAY", "SHOPPING"}),
     "MAXIMIZE_CLICKS": frozenset({"SEARCH", "DISPLAY", "SHOPPING"}),

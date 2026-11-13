@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/client.py
 
-"""Thin Google Ads REST client pinned to v24, verified 2026-07-22."""
+"""Thin Google Ads REST client pinned to v26, verified 2026-11-13."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -20,7 +20,7 @@ from services.integrations.http import (
     resolve_before_dispatch,
 )
 
-GOOGLE_ADS_API_VERSION = "v24"
+GOOGLE_ADS_API_VERSION = "v26"
 GOOGLE_ADS_HOST = "googleads.googleapis.com"
 GOOGLE_ADS_API_BASE_URL = f"https://{GOOGLE_ADS_HOST}/{GOOGLE_ADS_API_VERSION}"
 GOOGLE_ADS_UPLOAD_BASE_URL = f"https://{GOOGLE_ADS_HOST}/resumable/upload/{GOOGLE_ADS_API_VERSION}"

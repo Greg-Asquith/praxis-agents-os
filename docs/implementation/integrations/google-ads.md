@@ -227,7 +227,7 @@ A `TARGETS` request resolves against the live strategy
 standard Target CPA), a target ROAS needs Maximise Conversion Value (or Target
 ROAS), and a maximum click bid needs Maximise Clicks or Target Impression
 Share. A campaign on a portfolio strategy changes targets on the strategy,
-not here. Strategies are offered per channel as in Google's v24 strategy
+not here. Strategies are offered per channel as in Google's v26 strategy
 types table (`strategy_problem`), and a portfolio must exist in the
 campaign's account (`operations/list_bidding_strategies.py`, which lists
 account-owned portfolios only).
@@ -881,7 +881,7 @@ exclusion. Which levels and channels take which demographic isn't checked before
 run: Google's documentation allows campaign-level demographics only as exclusions for
 parental status, and Search usually sets them on ad groups, so Google's dry run decides
 and its reason shows on the card. Mixing campaign-level and ad group audiences in one
-campaign is left to the dry run the same way; whether v24 refuses it is a pending live
+campaign is left to the dry run the same way; whether v26 refuses it is a pending live
 check.
 
 The tool refuses these before Google's dry run:
@@ -1266,7 +1266,7 @@ and each video's title.
 no YouTube connection or YouTube API quota is involved. It sends no `channel_id`, so
 each video goes to an unlisted channel Google manages for the account.
 
-1. `POST /resumable/upload/v24/customers/{id}/youTubeVideoUploads:create` with
+1. `POST /resumable/upload/v26/customers/{id}/youTubeVideoUploads:create` with
    `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`, and
    `X-Goog-Upload-Header-Content-Length`, and the body `{customer_id,
    you_tube_video_upload: {video_title, video_description}}`. The reply's
@@ -1387,7 +1387,7 @@ model and saved in full, like reports.
 
 `google_ads_create_labels` creates 1 to 50 text labels in each selected
 account. It defaults to approval, and operators can switch it to auto. It
-pins the v24 bounds: names of 1 to 80 characters, descriptions of up to 200
+pins the v26 bounds: names of 1 to 80 characters, descriptions of up to 200
 characters, and `#RGB` or `#RRGGBB` background colours. Names must be unique
 within a request, ignoring case. The operation reads the account's enabled
 labels first and reports a name that already exists, ignoring case, as

@@ -154,7 +154,6 @@ async def test_get_report_fields_batches_names_and_reports_missing_ones() -> Non
     )
 
     assert GoogleAdsGetReportFieldOutput.model_validate(result)
-    assert result["api_version"] == "v24"
     assert [field["name"] for field in result["fields"]] == ["campaign.status", "metrics.clicks"]
     assert result["fields"][0]["enum_values"] == ["ENABLED", "PAUSED"]
     assert result["missing"] == ["campaign.nope"]

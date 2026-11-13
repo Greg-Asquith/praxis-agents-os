@@ -150,7 +150,7 @@ def test_apply_definition_is_approval_only_and_uses_recommendation_entities() ->
         ),
     ],
 )
-def test_every_supported_parameter_serializes_to_exact_v24_fields(
+def test_every_supported_parameter_serializes_to_exact_api_fields(
     parameter: GoogleAdsRecommendationApplyParameters,
     expected: tuple[str, dict],
 ) -> None:

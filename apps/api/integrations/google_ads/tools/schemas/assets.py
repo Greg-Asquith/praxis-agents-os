@@ -27,7 +27,7 @@ MAX_ASSET_LINKS = 1_000
 _MAX_OUTCOMES = MAX_ASSET_LINKS + MAX_ASSET_CHANGES
 # YouTube video links are pending.
 _LINKABLE = frozenset({"SITELINK", "CALLOUT", "STRUCTURED_SNIPPET", "CALL", "PRICE", "IMAGE"})
-# Google's English structured snippet headers, which v24 takes as text.
+# Google's English structured snippet headers, which v26 takes as text.
 STRUCTURED_SNIPPET_HEADERS = (
     "Amenities",
     "Brands",

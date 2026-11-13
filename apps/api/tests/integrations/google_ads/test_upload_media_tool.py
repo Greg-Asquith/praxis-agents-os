@@ -24,7 +24,7 @@ from core.exceptions.integration import (
     IntegrationFailureDisposition,
     IntegrationValidationError,
 )
-from integrations.google_ads.client import GoogleAdsClient
+from integrations.google_ads.client import GOOGLE_ADS_UPLOAD_BASE_URL, GoogleAdsClient
 from integrations.google_ads.operations import (
     upload_media as operation_module,
     video_upload as video_module,
@@ -47,7 +47,7 @@ from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _C = "customers/111"
 _UPLOAD_URL = (
-    "https://googleads.googleapis.com/resumable/upload/v24/customers/111/"
+    f"{GOOGLE_ADS_UPLOAD_BASE_URL}/customers/111/"
     "youTubeVideoUploads:create?upload_id=ADPycdv7&upload_protocol=resumable"
 )
 _ENTRY = replace(
