@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest==8.4.2"]
+dev = ["pytest==9.2.0"]
 
 [tool.uv]
 package = false
