@@ -19,7 +19,7 @@ from ...operations.performance_max import (
     add_performance_max_campaign,
     read_merchant_center_ids,
 )
-from ...operations.search_campaigns import CampaignItem
+from ...operations.search_campaigns import CampaignItem, asks_eu_political
 from ...operations.search_targeting import read_audiences, read_languages, read_locations
 from ...references import GoogleAdsAssetGroupReference
 from ..schemas.campaigns import performance_max_brand_problems
@@ -171,9 +171,16 @@ def compile_performance_max(
     today: date,
     indexes: Sequence[int],
     goals: Sequence[LiveAccountGoal],
+    *,
+    declare_eu_political: bool,
 ) -> None:
     name = add_performance_max_campaign(
-        build, campaign, status=request.status, today=today, account_goals=goals
+        build,
+        campaign,
+        status=request.status,
+        today=today,
+        declare_eu_political=declare_eu_political,
+        account_goals=goals,
     )
     for index in indexes:
         add_asset_group(
@@ -240,6 +247,7 @@ async def performance_max_checks(
         read_account_facts(client, **account, campaign=campaign, with_goals=True),
     )
     languages = {option.key: option.name for option in language_options}
+    eu_political_question = asks_eu_political(campaign, locations)
     answers: dict[str, list[Any]] = {
         "campaign_problems": [],
         "problems": [],
@@ -260,6 +268,7 @@ async def performance_max_checks(
                 "audiences": audiences,
             },
             goals=facts.goals,
+            declare_eu_political=eu_political_question,
         )
     every_location = (*campaign.locations, *campaign.excluded_locations)
     return {
@@ -267,6 +276,7 @@ async def performance_max_checks(
         "today": today.isoformat(),
         "locations": {key: option.name for key, option in locations.items()},
         "unknown_locations": [item.key for item in every_location if item.key not in locations],
+        "eu_political_question": eu_political_question,
         "languages": {
             item.key: languages[item.key] for item in campaign.languages if item.key in languages
         },
@@ -309,6 +319,7 @@ async def _dry_run(
     today: date,
     known: dict[str, Any],
     goals: Sequence[LiveAccountGoal],
+    declare_eu_political: bool,
 ) -> dict[str, list[Any]]:
     """Returns Google's rejections, leaving out what the card already faults."""
     campaign = request.campaign
@@ -333,7 +344,9 @@ async def _dry_run(
     # A campaign with no asset group isn't one Google can check.
     if not indexes:
         return answers
-    compile_performance_max(build, request, checked, today, indexes, goals)
+    compile_performance_max(
+        build, request, checked, today, indexes, goals, declare_eu_political=declare_eu_political
+    )
     for problem in await dry_run_build(
         client,
         build,

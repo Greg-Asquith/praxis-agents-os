@@ -157,6 +157,8 @@ type CampaignChecks =
   | {
       unavailable: false
       campaignProblems: CampaignItemProblem[]
+      // False when Google doesn't need the EU political answer for the checked locations.
+      euPoliticalQuestion: boolean
       itemProblems: ItemProblem[]
       locationNames: Map<string, string>
       // Set for a Performance Max campaign.
@@ -301,6 +303,7 @@ function parseChecks(value: unknown): CampaignChecks {
   return {
     unavailable: false,
     campaignProblems: list("campaign_problems").flatMap(parseCampaignItemProblem),
+    euPoliticalQuestion: value["eu_political_question"] !== false,
     itemProblems: parseItemProblems(value["problems"]),
     locationNames: new Map(
       Object.entries(names).flatMap(([key, name]) =>
@@ -358,6 +361,11 @@ export function biddingRules(bidding: DraftBidding): BidRules {
       bidding.strategy === "MAXIMIZE_CONVERSION_VALUE" && bidding.targetRoas.trim() !== "",
     strategyName: STRATEGY_LABELS[bidding.strategy],
   }
+}
+
+/** Whether the card asks if the ads are EU political ads. An answer of yes always shows. */
+export function asksEuPolitical(args: CreateCampaignArgs): boolean {
+  return args.campaign.political || args.checks.unavailable || args.checks.euPoliticalQuestion
 }
 
 export function locationName(location: DraftLocation, args: CreateCampaignArgs): string {

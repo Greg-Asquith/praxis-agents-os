@@ -2,6 +2,7 @@
 
 """Compiles a new campaign's budget, settings, and locations, and a whole Search campaign."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .assets import link_new_asset
 from .build import CampaignBuild
 from .search_ad_groups import SearchCampaignFacts
+from .search_targeting import LocationOption
 
 if TYPE_CHECKING:
     from ..tools.schemas.campaigns import GoogleAdsNewSearchCampaign, NewCampaign
@@ -59,18 +61,40 @@ def new_campaign_facts(campaign: "GoogleAdsNewSearchCampaign") -> SearchCampaign
     )
 
 
+def asks_eu_political(campaign: "NewCampaign", locations: Mapping[str, LocationOption]) -> bool:
+    """Checks whether the campaign must say if its ads are EU political ads.
+
+    Google leaves the answer out only for a campaign whose targeted locations are all outside
+    the EU. A location Google doesn't return counts as inside it.
+
+    Args:
+        locations: Google's locations by key, as `read_locations` returns them.
+    """
+    return (
+        campaign.contains_eu_political_advertising
+        or not campaign.locations
+        or any(
+            (option := locations.get(item.key)) is None or option.eu_political_declaration
+            for item in campaign.locations
+        )
+    )
+
+
 def add_search_campaign(
     build: CampaignBuild,
     campaign: "GoogleAdsNewSearchCampaign",
     *,
     status: str,
     today: date,
+    declare_eu_political: bool,
 ) -> str:
     """Adds the budget, campaign, locations, negative keywords, and assets; returns its name.
 
     Args:
         today: The date in the account time zone. A start on or before it starts the campaign
             when it's turned on, because Google refuses a start time in the past.
+        declare_eu_political: If true, sends the campaign's EU political answer. If false,
+            leaves it out, as Google allows for a campaign that targets only outside the EU.
     """
     budget = campaign.budget
     if budget.kind == "new":
@@ -80,7 +104,9 @@ def add_search_campaign(
             f"customers/{budget.budget.customer_id}/campaignBudgets/{budget.budget.budget_id}"
         )
     body: dict[str, Any] = {
-        **campaign_body(campaign, status=status, today=today),
+        **campaign_body(
+            campaign, status=status, today=today, declare_eu_political=declare_eu_political
+        ),
         "advertisingChannelType": "SEARCH",
         "campaignBudget": budget_name,
         "networkSettings": {
@@ -136,19 +162,30 @@ def add_campaign_budget(build: CampaignBuild, name: str, amount_micros: int) -> 
     return budget
 
 
-def campaign_body(campaign: "NewCampaign", *, status: str, today: date) -> dict[str, Any]:
+def eu_political_status(contains: bool) -> str:
+    """Google's value for the answer to whether the ads are EU political ads."""
+    return (
+        "CONTAINS_EU_POLITICAL_ADVERTISING"
+        if contains
+        else "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+    )
+
+
+def campaign_body(
+    campaign: "NewCampaign", *, status: str, today: date, declare_eu_political: bool
+) -> dict[str, Any]:
     """The settings every new campaign sets: name, status, bidding, locations, and dates."""
     body: dict[str, Any] = {
         "name": campaign.name,
         "status": status,
         "geoTargetTypeSetting": {"positiveGeoTargetType": campaign.location_setting},
-        "containsEuPoliticalAdvertising": (
-            "CONTAINS_EU_POLITICAL_ADVERTISING"
-            if campaign.contains_eu_political_advertising
-            else "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
-        ),
         **_bidding(campaign.bidding),
     }
+    # An answer of yes is always sent, so a campaign never loses it.
+    if declare_eu_political or campaign.contains_eu_political_advertising:
+        body["containsEuPoliticalAdvertising"] = eu_political_status(
+            campaign.contains_eu_political_advertising
+        )
     if campaign.start_date and campaign.start_date > today:
         body["startDateTime"] = f"{campaign.start_date.isoformat()} 00:00:00"
     if campaign.end_date:

@@ -28,7 +28,16 @@ from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _CAMPAIGN = "customers/111/campaigns/10"
-_LOCATIONS = {"2826": "United Kingdom", "1006": "Manchester", "1007": "Leeds", "2000": "Wales"}
+_LOCATIONS = {
+    "2826": "United Kingdom",
+    "1006": "Manchester",
+    "1007": "Leeds",
+    "2000": "Wales",
+    "2250": "France",
+}
+# The locations Google wants a campaign's EU political answer for.
+_EU_LOCATIONS = {"2250"}
+_NOT_POLITICAL = "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
 _LANGUAGES = {"1000": "English", "1039": "Welsh"}
 
 
@@ -122,6 +131,8 @@ class _Account:
         self.status = status
         self.strategy = strategy
         self.setting = "PRESENCE_OR_INTEREST"
+        # None is a campaign that hasn't answered, which Google returns without the field.
+        self.eu_political: str | None = _NOT_POLITICAL
         # The campaign's target restrictions, and ad group 20's criteria and restrictions.
         self.restrictions: list[dict[str, Any]] = []
         self.ad_group_criteria: list[dict[str, Any]] = []
@@ -141,7 +152,13 @@ class _Account:
         if "FROM geo_target_constant" in query:
             ids = re.search(r"IN \(([^)]*)\)", query).group(1).split(", ")
             return [
-                {"geoTargetConstant": {"id": key, "name": _LOCATIONS[key]}}
+                {
+                    "geoTargetConstant": {
+                        "id": key,
+                        "name": _LOCATIONS[key],
+                        "requireEuPoliticalAdvertisingDeclaration": key in _EU_LOCATIONS,
+                    }
+                }
                 for key in ids
                 if key in _LOCATIONS
             ]
@@ -192,6 +209,11 @@ class _Account:
                     "biddingStrategyType": self.strategy,
                     "geoTargetTypeSetting": {"positiveGeoTargetType": self.setting},
                     "targetingSetting": {"targetRestrictions": self.restrictions},
+                    **(
+                        {"containsEuPoliticalAdvertising": self.eu_political}
+                        if self.eu_political
+                        else {}
+                    ),
                 }
             }
             for campaign_id in ids
@@ -249,6 +271,8 @@ class _Account:
             update = value["update"]
             if apply and "geoTargetTypeSetting" in update:
                 self.setting = update["geoTargetTypeSetting"]["positiveGeoTargetType"]
+            if apply and "containsEuPoliticalAdvertising" in update:
+                self.eu_political = update["containsEuPoliticalAdvertising"]
             if apply and "targetingSetting" in update:
                 self.restrictions = update["targetingSetting"]["targetRestrictions"]
             for row in [*self.criteria, *self.ad_group_criteria] if apply else ():
@@ -473,6 +497,64 @@ async def test_a_radius_and_a_bid_change_send_exact_values_and_an_equal_bid_is_a
         if row["outcome"] == "updated" and row["action"] == "change_bid"
     )
     assert changed["items"][0]["previous_bid_adjustment"] == 10
+
+
+async def test_an_eu_location_on_a_campaign_that_hasnt_answered_sends_the_answer_with_it(
+    monkeypatch,
+) -> None:
+    account = _Account([_location("2826")])
+    account.eu_political = None
+    args = _args(add_locations=[{"key": "2250", "name": "France"}])
+
+    display = await _display(monkeypatch, account, args)
+    assert _check(display)["eu_political_question"] is True
+    assert _check(display)["item_problems"] == []
+
+    result, _audit = await _run(monkeypatch, account, args, display)
+
+    # The answer goes ahead of the location in one request Google applies whole.
+    sent = account.mutates[-1]
+    assert sent["validateOnly"] is False and sent["partialFailure"] is False
+    assert sent["mutateOperations"] == [
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": _CAMPAIGN,
+                    "containsEuPoliticalAdvertising": _NOT_POLITICAL,
+                },
+                "updateMask": "containsEuPoliticalAdvertising",
+            }
+        },
+        {
+            "campaignCriterionOperation": {
+                "create": {
+                    "campaign": _CAMPAIGN,
+                    "location": {"geoTargetConstant": "geoTargetConstants/2250"},
+                }
+            }
+        },
+    ]
+    assert {(row["setting"], row["action"], row["outcome"]) for row in _rows(result)} == {
+        ("contains_eu_political_advertising", "set", "updated"),
+        ("locations", "add", "updated"),
+    }
+
+
+async def test_a_campaign_that_has_answered_or_stays_outside_the_eu_isnt_asked_again(
+    monkeypatch,
+) -> None:
+    answered = _Account([_location("2826")])
+    args = _args(add_locations=[{"key": "2250"}], contains_eu_political_advertising=True)
+    display = await _display(monkeypatch, answered, args)
+    assert _check(display)["eu_political_question"] is False
+    await _run(monkeypatch, answered, args, display)
+    # The answer Google already holds is never changed.
+    assert "campaignOperation" not in str(answered.mutates)
+
+    unanswered = _Account([_location("2826")])
+    unanswered.eu_political = None
+    display = await _display(monkeypatch, unanswered, _args(add_locations=[{"key": "1006"}]))
+    assert _check(display)["eu_political_question"] is False
 
 
 async def test_a_location_swap_google_rejects_at_the_send_leaves_the_campaign_unchanged(

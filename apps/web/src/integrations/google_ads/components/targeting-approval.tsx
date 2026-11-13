@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AttentionLine } from "@/integrations/ads/components/attention-line"
 import { ChangeBanner } from "@/integrations/ads/components/change-banner"
-import { SegmentedChoice } from "@/integrations/ads/components/controls"
+import { SegmentedChoice, SwitchField } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { ParentTable, type ParentRow } from "@/integrations/ads/components/parent-table"
 import { SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
@@ -43,6 +43,7 @@ import {
 } from "@/integrations/google_ads/lib/targeting-audiences"
 import { ALL_WEEK, type ScheduleWindow } from "@/integrations/google_ads/lib/ad-schedule"
 import { LocationPaste } from "@/integrations/google_ads/components/location-paste"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { LOCATION_SETTING_LABELS } from "@/integrations/google_ads/lib/update-targeting-result"
 import {
   acceptsLanguageAdds,
@@ -58,6 +59,7 @@ import {
   editRadius,
   entryNoun,
   entryPlural,
+  euPoliticalAnswer,
   itemCount,
   keepRadius,
   languagesText,
@@ -76,6 +78,7 @@ import {
   serializeChanges,
   setBidAdjustment,
   setDevice,
+  setEuPolitical,
   setLocationSetting,
   setSchedule,
   shownLocationSetting,
@@ -222,6 +225,7 @@ export function TargetingApproval({
       shown.changes.some(changesPlaces) ||
       (!devicesOn && schedule.kind === "none" && !audiencesOn && dimensions.length === 0))
   const notes = targetingNotes(shown)
+  const euPolitical = euPoliticalAnswer(shown)
   // Campaigns in different time zones have no single zone the times can be read in.
   const timeZones = new Set(
     shown.changes.map((change) => args.accounts.get(change.key.split("/")[1] ?? "")?.timeZone)
@@ -505,6 +509,23 @@ export function TargetingApproval({
                       </Button>
                     </div>
                   )}
+                  {euPolitical.asked > 0 ? (
+                    <div className="px-3 py-2.5">
+                      <SwitchField
+                        checked={euPolitical.yes}
+                        description={`Google needs this answer before ${
+                          shown.changes.length > 1
+                            ? approvalCountLine(euPolitical.asked, "campaign")
+                            : "this campaign"
+                        } can show ads in these places. Turn on only if the ads are political and aimed at people in the EU. Google won't show them in the EU.`}
+                        disabled={disabled}
+                        label="EU Political Ads"
+                        onChange={(political) => {
+                          edit((changes) => setEuPolitical(shown, changes, political))
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </section>
               <LanguageSection

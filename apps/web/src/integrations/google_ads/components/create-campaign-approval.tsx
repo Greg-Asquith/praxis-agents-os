@@ -47,6 +47,7 @@ import {
   type DraftAdGroup,
 } from "@/integrations/google_ads/lib/create-ad-groups"
 import {
+  asksEuPolitical,
   biddingRules,
   biddingSummary,
   budgetSummary,
@@ -395,7 +396,7 @@ function CampaignSettings({
       ) : null}
       <SettingRow
         rowKey="more"
-        summary={moreSummary(campaign)}
+        summary={moreSummary(args)}
         title="More Settings"
         tone={
           campaignProblems(args).some(isAssetProblem) ||
@@ -412,7 +413,7 @@ function CampaignSettings({
             onEdit={editPerformanceMax}
           />
         ) : null}
-        <MoreFields campaign={campaign} disabled={disabled} onEdit={onEdit} />
+        <MoreFields args={args} disabled={disabled} onEdit={onEdit} />
         {performanceMax ? (
           <VideoPagesField
             disabled={disabled}
@@ -800,7 +801,14 @@ function LocationChips({
   )
 }
 
-function moreSummary(campaign: DraftCampaign): string {
+function moreSummary(args: CreateCampaignArgs): string {
+  const { campaign } = args
+  // Named only when the card asks, so a campaign outside the EU shows nothing about it.
+  const political = asksEuPolitical(args)
+    ? campaign.political
+      ? "EU political ads"
+      : "not political"
+    : null
   const start = campaign.startDate.trim() ? `starts ${campaign.startDate.trim()}` : "starts when on"
   const end = campaign.endDate.trim() ? `ends ${campaign.endDate.trim()}` : "no end date"
   const performanceMax = campaign.performanceMax
@@ -808,7 +816,7 @@ function moreSummary(campaign: DraftCampaign): string {
     return [
       `Final URL expansion ${performanceMax.finalUrlExpansion ? "on" : "off"}`,
       `${start}, ${end}`,
-      campaign.political ? "EU political ads" : "not political",
+      political,
       performanceMax.merchant
         ? `products from ${performanceMax.merchant.merchantId || "a feed"}`
         : null,
@@ -832,7 +840,7 @@ function moreSummary(campaign: DraftCampaign): string {
   return [
     networks,
     `${start}, ${end}`,
-    campaign.political ? "EU political ads" : "not political",
+    political,
     campaign.negatives.length > 0 ? approvalCountLine(campaign.negatives.length, "negative") : null,
     campaign.assets.length > 0 ? assetSummary(campaign.assets) : null,
   ]
@@ -841,14 +849,15 @@ function moreSummary(campaign: DraftCampaign): string {
 }
 
 function MoreFields({
-  campaign,
+  args,
   disabled,
   onEdit,
 }: {
-  campaign: DraftCampaign
+  args: CreateCampaignArgs
   disabled: boolean
   onEdit: (patch: Partial<DraftCampaign>) => void
 }) {
+  const { campaign } = args
   const search = campaign.type === "search"
   return (
     <div className="grid min-w-0 gap-4">
@@ -894,15 +903,17 @@ function MoreFields({
           value={campaign.endDate}
         />
       </div>
-      <SwitchField
-        checked={campaign.political}
-        description="Turn on only if the ads are political and aimed at people in the EU. Google won't show them in the EU."
-        disabled={disabled}
-        label="EU Political Ads"
-        onChange={(political) => {
-          onEdit({ political })
-        }}
-      />
+      {asksEuPolitical(args) ? (
+        <SwitchField
+          checked={campaign.political}
+          description="Turn on only if the ads are political and aimed at people in the EU. Google won't show them in the EU."
+          disabled={disabled}
+          label="EU Political Ads"
+          onChange={(political) => {
+            onEdit({ political })
+          }}
+        />
+      ) : null}
       {search ? (
         <>
           <KeywordPaste

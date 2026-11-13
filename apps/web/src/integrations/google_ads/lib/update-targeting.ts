@@ -102,6 +102,8 @@ export type TargetingChange = {
   radius: RadiusTarget[]
   removeAudiences: AudienceTarget[]
   removeRadius: string[]
+  // The answer to whether the ads are EU political ads, sent only when the check asks for it.
+  political: boolean
   // The whole week after the change, or null when the schedule doesn't change.
   schedule: ScheduleWindow[] | null
   setting: LocationSetting | null
@@ -132,6 +134,8 @@ export type TargetingCheck =
       demographics: LiveDemographic[]
       // Live adjustments by device, as percents; EXCLUDED means excluded.
       devices: Map<Device, number>
+      // True when Google needs the campaign's EU political answer with this change.
+      euPoliticalQuestion: boolean
       itemProblems: ItemProblem[]
       languages: { key: string; name: string }[]
       locationSetting: LocationSetting | null
@@ -363,6 +367,7 @@ function parseChange(value: unknown): TargetingChange | null {
     demographics: parseDemographics(value["demographics"]),
     devices: parseDevices(value["devices"]),
     entry: value,
+    political: value["contains_eu_political_advertising"] === true,
     radius: parseRadius(value["add_radius"]),
     removeAudiences: parseAudiences(value["remove_audiences"]),
     removeRadius: Array.isArray(value["remove_radius"])
@@ -410,6 +415,7 @@ function parseCheck(value: unknown): TargetingCheck {
         return bid === null ? [] : [[item["device"], bid] as const]
       })
     ),
+    euPoliticalQuestion: value["eu_political_question"] === true,
     itemProblems: problems.flatMap((item) => {
       if (!isRecord(item)) return []
       const [field, key, message] = [
@@ -806,6 +812,30 @@ export function setBidAdjustment(
   )
 }
 
+function asksEuPolitical(args: UpdateTargetingArgs, change: TargetingChange): boolean {
+  const check = args.checks.get(change.key)
+  return check !== undefined && !check.unavailable && check.euPoliticalQuestion
+}
+
+/** The campaigns Google needs the EU political answer for, and whether every one says yes. */
+export function euPoliticalAnswer(args: UpdateTargetingArgs): { asked: number; yes: boolean } {
+  const asked = args.changes.filter((change) => asksEuPolitical(args, change))
+  return { asked: asked.length, yes: asked.length > 0 && asked.every((change) => change.political) }
+}
+
+/** Answers for every campaign Google asks, and leaves the rest as they are. */
+export function setEuPolitical(
+  args: UpdateTargetingArgs,
+  changes: readonly TargetingChange[],
+  political: boolean
+): TargetingChange[] {
+  return changes.map((change) =>
+    asksEuPolitical(args, change)
+      ? withEntry(change, { contains_eu_political_advertising: political })
+      : change
+  )
+}
+
 export function setLocationSetting(
   changes: readonly TargetingChange[],
   setting: LocationSetting | null
@@ -1131,6 +1161,7 @@ export function clearedChange(change: TargetingChange): TargetingChange {
     remove_audiences: [],
     audience_mode: null,
     demographics: [],
+    contains_eu_political_advertising: null,
   })
 }
 

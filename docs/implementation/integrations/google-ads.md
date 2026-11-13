@@ -630,10 +630,21 @@ The `campaign` argument holds the settings, as follows:
 | `location_setting` | `PRESENCE` (the default) or `PRESENCE_OR_INTEREST`. |
 | `start_date`, `end_date` | Dates in the account time zone. A start on or before today, or none, starts the campaign when it's turned on, because Google refuses a start time in the past. The end is the end of that day. |
 | `negative_keywords` | Campaign negative keywords, up to 1,000. |
-| `contains_eu_political_advertising` | Google's required declaration; false unless the operator says the ads are political and aimed at the EU. |
+| `contains_eu_political_advertising` | Google's declaration; false unless the operator says the ads are political and aimed at the EU. Sent only when Google needs it. |
 | `assets` | Up to 20 new sitelinks and callouts, linked to the campaign so every ad group can use them. Each ad group takes its own `assets` too. |
 
 Languages aren't part of a Search campaign, because Google matches each ad's language.
+
+Google needs the EU political declaration unless every targeted location is outside
+the EU. The approval check reads
+`geo_target_constant.require_eu_political_advertising_declaration` for the targeted
+locations and returns `eu_political_question` in `_checks`. The question is true when
+a targeted location needs the declaration, when Google doesn't return a targeted
+location, or when the answer is yes. The card shows **EU Political Ads** only then.
+The dry run and the build leave `containsEuPoliticalAdvertising` out when the approved
+check's question is false, so a later change that adds an EU location asks the
+operator. An answer of yes is always sent, and so is the declaration when the approved
+check is missing. Excluded locations don't count.
 
 The tool refuses, before approval and again after it, a campaign with no location, an
 ad group with no keyword or no ad, and ad group bids the new bidding doesn't use. The bid
@@ -887,8 +898,10 @@ the model gets the counts and what didn't happen.
 returns the keys `google_ads_update_targeting` takes. It takes up to 25 location or
 language names per call, which is Google's limit for `geoTargetConstants:suggest`, and
 one selected account runs it, because those keys are the same for every account. A
-location option has its key, name, type, region, and Google's estimated reach. Audit
-records the kind and count, never the search text.
+location option has its key, name, type, region, Google's estimated reach, and
+`eu_political_declaration`, which is true when Google needs a campaign's EU political
+declaration before it targets the location. Audit records the kind and count, never the
+search text.
 
 `kind: audience` takes up to 5 names and needs exactly one selected account, because
 lists belong to an account. Each name searches four sources with
@@ -923,6 +936,7 @@ follows:
 | `remove_audiences` | Removes an audience. Campaign or ad group. |
 | `audience_mode` | `OBSERVATION` (bids only; who sees the ads doesn't change) or `TARGETING` (ads show only to the audiences). Campaign or ad group. |
 | `demographics` | Sets a `dimension` (`AGE_RANGE`, `GENDER`, `PARENTAL_STATUS`, `INCOME_RANGE`) and Google's `value` to a `bid_adjustment` percent (0 clears it, and includes an excluded value again) or `excluded`. Campaign or ad group. |
+| `contains_eu_political_advertising` | The campaign's EU political declaration, sent only when Google needs it with a new location or radius. Campaign only. |
 
 Google doesn't let a criterion's value or excluded flag change, so moving a location
 between the included and excluded lists sends a removal and an add, in that order, in
@@ -931,6 +945,22 @@ exclusion, and radius changes form one atomic group. If Google rejects an add at
 that passed the dry run, the campaign keeps its locations, while other campaigns and
 language changes still apply. A bid adjustment is a percent on the card and in the request, and the tool
 compiles it to Google's modifier.
+
+Google refuses a new EU location or radius on a campaign with no EU political
+declaration (`CriterionError.MISSING_EU_POLITICAL_ADVERTISING_SELF_DECLARATION`). The
+read selects `campaign.contains_eu_political_advertising`, and a campaign Google
+returns without it counts as `UNSPECIFIED`. When such a campaign's entry adds a radius,
+or a location whose constant has `require_eu_political_advertising_declaration`, the
+check returns `eu_political_question: true` and the card shows **EU Political Ads** in
+Where Ads Can Show. The plan then adds `containsEuPoliticalAdvertising` to the
+campaign's one update, ahead of the adds, and puts that update and the campaign's
+location, exclusion, and radius changes in one atomic group. Google applies the
+declaration and the places together or not at all. With no answer in the entry, the
+tool declares that the ads aren't political, as the card's switch shows. A campaign
+that already holds a declaration is never asked, and the tool never changes one. The
+result reports the declaration as a `contains_eu_political_advertising` row. Whether
+Google's dry run accepts the add after the declaration in one request is unverified
+live.
 
 A device is a criterion with a fixed ID per device. A device with a criterion gets a
 `bidModifier` update; one without gets a create, unless the request asks for no
@@ -1845,7 +1875,7 @@ budget and about a month's spend (30.4 days, Google's monthly charging limit), t
 `StatusChoice`, then `SettingRows`: Name, Budget (an amount, or a shared budget from the
 budget lookup), Bidding (`ChoiceCards` and the chosen strategy's fields), Locations (chips
 for shown and excluded places, search or paste with `LocationPaste`, and Who Counts), and
-More Settings (networks, dates, the EU political declaration, campaign negatives with
+More Settings (networks, dates, the EU political declaration when `asksEuPolitical` says Google needs it, campaign negatives with
 `KeywordPaste`, and sitelinks and callouts for every ad group with `NewAssetsEditor`). The ad groups follow with `AdGroupSummary` and `NewAdGroups`, as on Create
 Ad Groups, with the same Cancel These N and Restore. The approve button reads **Create
 Campaign**.
@@ -1922,6 +1952,8 @@ The card (`components/targeting-approval.tsx`) shows each change once:
   **Removing**, or **No Change**. Each added place has its own `BidAdjustment`, and ×
   cancels that change on every campaign shown. With more than one campaign, each row says how
   many it reaches. Eight or more places of one type collapse to one row with **Review**.
+  When a shown campaign's check has `eu_political_question`, the list ends with an
+  **EU Political Ads** switch, which `setEuPolitical` writes to those campaigns only.
 - **Add or Exclude a Location** opens the tools: search, `LocationPaste` (up to 500 lines
   at a time; lines Google doesn't recognise are skipped and counted, and a failed lookup
   keeps what it already found), and a distance around a place.

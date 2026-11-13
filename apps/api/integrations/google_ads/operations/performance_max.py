@@ -63,17 +63,22 @@ def add_performance_max_campaign(
     *,
     status: str,
     today: date,
+    declare_eu_political: bool,
     account_goals: Sequence[LiveAccountGoal] = (),
 ) -> str:
     """Adds the budget, campaign, locations, languages, brand, and goals; returns its name.
 
     Args:
+        declare_eu_political: If true, sends the campaign's EU political answer. If false,
+            leaves it out, as Google allows for a campaign that targets only outside the EU.
         account_goals: The account's conversion goals. With `conversion_goals` set, each one
             is set to bid in this campaign or not; Google makes them with the campaign.
     """
     budget = add_campaign_budget(build, campaign.name, campaign.budget.amount_micros)
     body: dict[str, Any] = {
-        **campaign_body(campaign, status=status, today=today),
+        **campaign_body(
+            campaign, status=status, today=today, declare_eu_political=declare_eu_political
+        ),
         "advertisingChannelType": "PERFORMANCE_MAX",
         "campaignBudget": budget,
         # The business name and logos then belong to the campaign, not each asset group.

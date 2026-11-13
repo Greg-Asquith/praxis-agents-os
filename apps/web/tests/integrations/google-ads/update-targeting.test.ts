@@ -23,6 +23,7 @@ import {
   campaignsByDifference,
   clearedChange,
   editInScope,
+  euPoliticalAnswer,
   itemCount,
   needsCheck,
   parseBidAdjustment,
@@ -32,6 +33,7 @@ import {
   serializeChanges,
   EXCLUDED,
   setDevice,
+  setEuPolitical,
   setSchedule,
   targetingApproveLabel,
   targetingBlock,
@@ -162,6 +164,32 @@ describe("targeting edits", () => {
       removeTarget(changes, "add_locations", "1006")
     )
     expect(removed.map((change) => change.key)).toEqual([key("10"), key("12")])
+  })
+
+  it("answers the EU political question only for the campaigns Google asks about", () => {
+    const args = parsed(
+      raw({
+        changes: ["10", "11"].map((id) => ({
+          campaign: campaign(id),
+          add_locations: [{ key: "2250" }],
+        })),
+        _checks: {
+          entries: {
+            [key("10")]: check({ eu_political_question: true }),
+            [key("11")]: check(),
+          },
+          names: {},
+        },
+      })
+    )
+    expect(euPoliticalAnswer(args)).toEqual({ asked: 1, yes: false })
+
+    const answered = setEuPolitical(args, args.changes, true)
+
+    expect(
+      serializeChanges(answered).map((entry) => entry["contains_eu_political_advertising"])
+    ).toEqual([true, undefined])
+    expect(euPoliticalAnswer({ ...args, changes: answered })).toEqual({ asked: 1, yes: true })
   })
 
   it("takes a campaign out of the request when its last change is cancelled", () => {

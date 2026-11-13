@@ -54,6 +54,9 @@ AD_GROUP_TYPES: tuple[CriterionType, ...] = (
 _MAX_CRITERIA = 50_000
 _SETTING_PATH = "geoTargetTypeSetting.positiveGeoTargetType"
 RESTRICTIONS_PATH = "targetingSetting.targetRestrictions"
+EU_POLITICAL_PATH = "containsEuPoliticalAdvertising"
+# Google's value for a campaign that hasn't said whether its ads are EU political ads.
+EU_POLITICAL_UNANSWERED = "UNSPECIFIED"
 BID_MODIFIER_PATH = "bidModifier"
 # Google's quarter-hour minutes, by the minutes they stand for.
 SCHEDULE_MINUTES = {0: "ZERO", 15: "FIFTEEN", 30: "THIRTY", 45: "FORTY_FIVE"}
@@ -152,6 +155,8 @@ class LiveTargeting:
     campaign_id: str | None = None
     campaign_name: str | None = None
     campaign_status: str | None = None
+    # The campaign's answer to whether its ads are EU political ads; None for an ad group.
+    eu_political: str | None = None
 
     def ignores_device_bids(self) -> bool:
         strategy = self.bidding_strategy
@@ -175,6 +180,7 @@ class LiveTargeting:
             self.resource_name: {
                 _SETTING_PATH: self.location_setting,
                 RESTRICTIONS_PATH: [dict(item) for item in self.restrictions],
+                EU_POLITICAL_PATH: self.eu_political,
             }
         }
         for key, criterion in self.criteria.items():
@@ -409,7 +415,8 @@ async def _read_campaigns(
                 "campaign.maximize_conversions.target_cpa_micros, "
                 "bidding_strategy.maximize_conversions.target_cpa_micros, "
                 "campaign.geo_target_type_setting.positive_geo_target_type, "
-                "campaign.targeting_setting.target_restrictions "
+                "campaign.targeting_setting.target_restrictions, "
+                "campaign.contains_eu_political_advertising "
                 f"FROM campaign WHERE campaign.id IN ({', '.join(sorted(set(campaign_ids)))})"
             )
         },
@@ -432,6 +439,8 @@ async def _read_campaigns(
             bidding_strategy=campaign.get("biddingStrategyType"),
             target_cpa=_target_cpa(campaign) or _target_cpa(row.get("biddingStrategy")),
             restrictions=restrictions(campaign.get("targetingSetting")),
+            # Google leaves the field out of a campaign that hasn't answered.
+            eu_political=campaign.get(EU_POLITICAL_PATH) or EU_POLITICAL_UNANSWERED,
         )
     return live
 

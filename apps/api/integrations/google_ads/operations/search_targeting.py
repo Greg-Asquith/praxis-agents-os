@@ -29,6 +29,8 @@ class LocationOption:
     reach: int | None = None
     # The name this option matched, when found by name.
     search_term: str | None = None
+    # Google wants the campaign's EU political answer before it targets this location.
+    eu_political_declaration: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,7 @@ def _location_option(
         country_code=constant.get("countryCode"),
         reach=int(reach) if str(reach).isdigit() else None,
         search_term=search_term if isinstance(search_term, str) else None,
+        eu_political_declaration=constant.get("requireEuPoliticalAdvertisingDeclaration") is True,
     )
 
 
@@ -106,7 +109,9 @@ async def read_locations(
                 "query": (
                     "SELECT geo_target_constant.id, geo_target_constant.name, "  # noqa: S608 -- digit-only ids
                     "geo_target_constant.canonical_name, geo_target_constant.target_type, "
-                    "geo_target_constant.country_code FROM geo_target_constant "
+                    "geo_target_constant.country_code, "
+                    "geo_target_constant.require_eu_political_advertising_declaration "
+                    "FROM geo_target_constant "
                     f"WHERE geo_target_constant.id IN ({', '.join(batch)})"
                 )
             },

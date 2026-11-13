@@ -15,6 +15,7 @@ export type TargetingSetting =
   | "audiences"
   | "audience_mode"
   | "demographics"
+  | "contains_eu_political_advertising"
 type TargetingAction = "add" | "remove" | "change_bid" | "set"
 
 type OutcomeItem = {
@@ -49,6 +50,7 @@ const SETTINGS = [
   "audiences",
   "audience_mode",
   "demographics",
+  "contains_eu_political_advertising",
 ]
 const ACTIONS = ["add", "remove", "change_bid", "set"]
 
@@ -56,6 +58,7 @@ export const SETTING_TITLES: Record<TargetingSetting, string> = {
   ad_schedule: "Ad Schedule",
   audience_mode: "Audience Use",
   audiences: "Audiences",
+  contains_eu_political_advertising: "EU Political Ads",
   demographics: "Demographics",
   devices: "Devices",
   excluded_locations: "Excluded",
@@ -74,6 +77,8 @@ const SET_LABELS: Record<string, string> = {
   ...LOCATION_SETTING_LABELS,
   OBSERVATION: "Observation",
   TARGETING: "Targeting",
+  CONTAINS_EU_POLITICAL_ADVERTISING: "Political ads aimed at the EU",
+  DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING: "Not political",
 }
 
 function parseItem(value: unknown): OutcomeItem | null {

@@ -25,6 +25,8 @@ from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _C = "customers/111"
 _KNOWN_LOCATIONS = {"2826": "United Kingdom", "1006886": "London"}
+# Locations beside them: one outside the EU, and one Google wants the EU political answer for.
+_OTHER_LOCATIONS = {"2840": "United States", "2250": "France"}
 # Image assets by ID: a landscape image, a square one that also fits as a logo.
 _IMAGES = {
     "301": {"widthPixels": 1200, "heightPixels": 628},
@@ -126,8 +128,14 @@ class _Account:
         if "FROM language_constant" in query:
             return [{"languageConstant": {"id": "1000", "name": "English", "code": "en"}}]
         return [
-            {"geoTargetConstant": {"id": key, "name": name}}
-            for key, name in _KNOWN_LOCATIONS.items()
+            {
+                "geoTargetConstant": {
+                    "id": key,
+                    "name": name,
+                    "requireEuPoliticalAdvertisingDeclaration": key == "2250",
+                }
+            }
+            for key, name in (_KNOWN_LOCATIONS | _OTHER_LOCATIONS).items()
             if key in query
         ]
 
@@ -191,13 +199,21 @@ async def _display(monkeypatch, account: _Account, args: dict[str, Any]) -> dict
     return await tool_module._approval_display_args(deps, args)
 
 
-async def _run(monkeypatch, account: _Account, args: dict[str, Any], *, approved_entry=None):
+async def _run(
+    monkeypatch,
+    account: _Account,
+    args: dict[str, Any],
+    *,
+    approved_entry=None,
+    checks: dict[str, Any] | None = None,
+):
     entry = _entry()
     monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=account))
+    display = {"_accounts": approval_accounts([approved_entry or entry])}
     monkeypatch.setattr(
         tool_module,
         "approved_display_args",
-        lambda _ctx: {"_accounts": approval_accounts([approved_entry or entry])},
+        lambda _ctx: display if checks is None else {**display, "_checks": checks},
     )
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
@@ -440,6 +456,47 @@ async def test_approval_names_locations_and_reports_google_per_item_leaving_know
         }
     ]
     assert checks["problems"] == [] and checks["request_problems"] == []
+
+
+def _sent_campaign(account: _Account) -> dict[str, Any]:
+    return account.mutates[-1]["mutateOperations"][1]["campaignOperation"]["create"]
+
+
+async def test_the_eu_political_answer_is_sent_only_when_a_location_needs_it(monkeypatch) -> None:
+    account = _Account()
+    outside = {"campaign": _campaign(locations=[{"key": "2840"}]), "ad_groups": [_ad_group()]}
+
+    checks = (await _display(monkeypatch, account, outside))["_checks"]
+    assert checks["eu_political_question"] is False
+    # Google checks the request it would be sent.
+    assert "containsEuPoliticalAdvertising" not in _sent_campaign(account)
+    await _run(monkeypatch, account, outside, checks=checks)
+    assert "containsEuPoliticalAdvertising" not in _sent_campaign(account)
+
+    inside = {
+        "campaign": _campaign(locations=[{"key": "2840"}, {"key": "2250"}]),
+        "ad_groups": [_ad_group()],
+    }
+    checks = (await _display(monkeypatch, account, inside))["_checks"]
+    assert checks["eu_political_question"] is True
+    await _run(monkeypatch, account, inside, checks=checks)
+    assert _sent_campaign(account)["containsEuPoliticalAdvertising"] == (
+        "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+    )
+
+
+async def test_an_answer_of_yes_is_sent_even_when_the_card_did_not_ask(monkeypatch) -> None:
+    account = _Account()
+    args = {
+        "campaign": _campaign(locations=[{"key": "2840"}], contains_eu_political_advertising=True),
+        "ad_groups": [_ad_group()],
+    }
+
+    await _run(monkeypatch, account, args, checks={"eu_political_question": False})
+
+    assert _sent_campaign(account)["containsEuPoliticalAdvertising"] == (
+        "CONTAINS_EU_POLITICAL_ADVERTISING"
+    )
 
 
 def _image(asset_id: str, field_type: str, customer_id: str = "111") -> dict[str, Any]:

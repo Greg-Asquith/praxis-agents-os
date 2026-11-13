@@ -4,7 +4,7 @@
 
 import asyncio
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Annotated, Any, Literal
 
@@ -46,7 +46,12 @@ from ..operations.build import BuildResult, BuildStep, CampaignBuild, dry_run_bu
 from ..operations.conversion_settings import LiveAccountGoal
 from ..operations.performance_max import AssetGroupItem
 from ..operations.search_ad_groups import AdGroupItem, add_search_ad_group
-from ..operations.search_campaigns import CampaignItem, add_search_campaign, new_campaign_facts
+from ..operations.search_campaigns import (
+    CampaignItem,
+    add_search_campaign,
+    asks_eu_political,
+    new_campaign_facts,
+)
 from ..operations.search_targeting import read_locations
 from ..references import (
     GoogleAdsAdGroupReference,
@@ -153,9 +158,10 @@ async def google_ads_create_campaign(
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
             nonlocal client, pending
-            accounts = approved_display_args(ctx).get("_accounts")
-            if accounts != approval_accounts([entry]):
+            display = approved_display_args(ctx)
+            if display.get("_accounts") != approval_accounts([entry]):
                 raise ModelRetry(_ACCOUNT_CHANGED)
+            checks = display.get("_checks")
             today = account_facts(entry).today()
             # The card can change every setting, so check the rules again as approved.
             refusal = " ".join(_problems(request, entry.external_id, today))
@@ -167,7 +173,17 @@ async def google_ads_create_campaign(
                 )
             client = await google_ads_client(ctx, entry)
             goals = await _account_goals(client, entry, request)
-            _compile(build, request, request.campaign, today, range(_group_count(request)), goals)
+            _compile(
+                build,
+                request,
+                request.campaign,
+                today,
+                range(_group_count(request)),
+                goals,
+                # The EU political answer is left out only when the approved card didn't ask.
+                declare_eu_political=not isinstance(checks, Mapping)
+                or checks.get("eu_political_question") is not False,
+            )
             pending = _pending_detail(entry, request, build)
             return pending
 
@@ -328,11 +344,27 @@ def _compile(
     today: date,
     indexes: Sequence[int],
     goals: Sequence[LiveAccountGoal] = (),
+    *,
+    declare_eu_political: bool,
 ) -> None:
     if campaign.type == "performance_max":
-        compile_performance_max(build, request, campaign, today, indexes, goals)
+        compile_performance_max(
+            build,
+            request,
+            campaign,
+            today,
+            indexes,
+            goals,
+            declare_eu_political=declare_eu_political,
+        )
         return
-    name = add_search_campaign(build, campaign, status=request.status, today=today)
+    name = add_search_campaign(
+        build,
+        campaign,
+        status=request.status,
+        today=today,
+        declare_eu_political=declare_eu_political,
+    )
     for index in indexes:
         add_search_ad_group(
             build, request.ad_groups[index], index=index, campaign=name, status=request.status
@@ -566,7 +598,10 @@ async def _checks(
             login_customer_id=login_customer_id(entry),
             keys=[item.key for item in (*campaign.locations, *campaign.excluded_locations)],
         )
-        answers = await _dry_run(client, entry, request, today, set(names))
+        eu_political_question = asks_eu_political(campaign, names)
+        answers = await _dry_run(
+            client, entry, request, today, set(names), declare_eu_political=eu_political_question
+        )
     except (IntegrationError, LookupError, ModelRetry):
         return {"unavailable": True}
     facts = new_campaign_facts(request.campaign)
@@ -580,6 +615,7 @@ async def _checks(
             for item in (*request.campaign.locations, *request.campaign.excluded_locations)
             if item.key not in names
         ],
+        "eu_political_question": eu_political_question,
         **answers,
     }
 
@@ -590,6 +626,8 @@ async def _dry_run(
     request: GoogleAdsCreateCampaignRequest,
     today: date,
     known: set[str],
+    *,
+    declare_eu_political: bool,
 ) -> dict[str, list[Any]]:
     """Returns Google's rejections for the campaign, for each ad group, and for the request."""
     campaign = request.campaign
@@ -614,6 +652,7 @@ async def _dry_run(
             for index, ad_group in enumerate(request.ad_groups)
             if not ad_group_problems(ad_group, facts) and not _serving_problems(ad_group)
         ],
+        declare_eu_political=declare_eu_political,
     )
     answers: dict[str, list[Any]] = {
         "campaign_problems": [],
@@ -667,7 +706,8 @@ DEFINITION = RuntimeToolDefinition(
         "default, or PRESENCE_OR_INTEREST), start_date and end_date as YYYY-MM-DD in the account "
         "time zone (leave start_date out to start when it's turned on), and "
         "contains_eu_political_advertising, true only when the user says the ads are political "
-        "and aimed at the EU. "
+        "and aimed at the EU; the card asks the user only when Google needs the answer, which "
+        "it doesn't for a campaign whose locations are all outside the EU. "
         "SEARCH: ad_groups is 1 to 20 ad groups, each with keywords and 1 to 3 responsive search "
         "ads, as google_ads_create_ad_groups takes them. budget is {kind: 'new', daily_amount} in "
         "the account currency, or {kind: 'shared', budget} with a shared budget reference. "

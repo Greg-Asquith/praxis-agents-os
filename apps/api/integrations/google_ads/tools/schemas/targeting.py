@@ -33,6 +33,7 @@ type GoogleAdsTargetingSetting = Literal[
     "audiences",
     "audience_mode",
     "demographics",
+    "contains_eu_political_advertising",
 ]
 type GoogleAdsDevice = Literal["MOBILE", "DESKTOP", "TABLET"]
 type GoogleAdsDay = Literal[
@@ -90,6 +91,8 @@ class GoogleAdsTargetingOption(GoogleAdsStrictModel):
     country_code: str | None = Field(default=None, max_length=8)
     reach: int | None = Field(default=None, ge=0)
     search_term: str | None = Field(default=None, max_length=500)
+    # True for a location Google wants a campaign's EU political answer for.
+    eu_political_declaration: bool = False
 
 
 class GoogleAdsAudienceOption(GoogleAdsStrictModel):
@@ -245,6 +248,8 @@ class GoogleAdsTargetingChange(GoogleAdsStrictModel):
     remove_audiences: list[GoogleAdsAudience] = Field(default_factory=list)
     audience_mode: GoogleAdsAudienceMode | None = None
     demographics: list[GoogleAdsDemographicTarget] = Field(default_factory=list, max_length=20)
+    # Sent only when Google needs the answer with a new location or radius.
+    contains_eu_political_advertising: bool | None = None
 
     @property
     def reference(self) -> GoogleAdsCampaignReference | GoogleAdsAdGroupReference:

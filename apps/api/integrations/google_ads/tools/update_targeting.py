@@ -37,6 +37,8 @@ from ..operations.criteria import (
     AUDIENCE_FIELDS,
     BID_MODIFIER_PATH,
     DEMOGRAPHIC_FIELDS,
+    EU_POLITICAL_PATH,
+    EU_POLITICAL_UNANSWERED,
     RESTRICTIONS_PATH,
     SCHEDULE_MINUTES,
     CriterionKind,
@@ -58,6 +60,7 @@ from ..operations.edits import (
     FieldChange,
     prepare_edits,
 )
+from ..operations.search_campaigns import eu_political_status
 from ..operations.search_targeting import read_audiences, read_languages, read_locations
 from .schemas.targeting import (
     MAX_TARGETING_CHANGES,
@@ -92,7 +95,14 @@ _MAX_EDITS = 2_500
 _MAX_SHOWN = 100
 _DEVICE_NAMES = {"MOBILE": "Mobile Phones", "DESKTOP": "Computers", "TABLET": "Tablets"}
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
-_NO_NAMES: dict[str, dict[str, str]] = {"locations": {}, "languages": {}, "audiences": {}}
+# `eu_locations` names the locations Google wants a campaign's EU political answer for.
+_NO_NAMES: dict[str, dict[str, str]] = {
+    "locations": {},
+    "languages": {},
+    "audiences": {},
+    "eu_locations": {},
+}
+_EU_POLITICAL = "contains_eu_political_advertising"
 
 _MISSING = "This no longer exists in Google Ads."
 _REMOVED = "This campaign has been removed, so its targeting can't change."
@@ -224,9 +234,18 @@ def _plan(
 
     Google can't change a criterion's value or its excluded flag, so moving a place between
     the included and excluded lists is a removal and an add, sent in that order. `settings`
-    holds the live location setting and target restrictions.
+    holds the live location setting, target restrictions, and EU political answer.
     """
     owner = _Owner.of(change)
+    # Google refuses an EU location or a radius on a campaign that hasn't given its answer.
+    declares = (
+        change.campaign is not None
+        and settings.get(EU_POLITICAL_PATH) == EU_POLITICAL_UNANSWERED
+        and (
+            bool(change.add_radius)
+            or any(item.key in names["eu_locations"] for item in change.add_locations)
+        )
+    )
     planned = [
         *_location_plan(change, owner, criteria, names["locations"]),
         *_radius_plan(change, owner, criteria),
@@ -235,10 +254,13 @@ def _plan(
         *_schedule_plan(change, owner, criteria),
         *_audience_plan(change, owner, criteria, names["audiences"]),
         *_demographic_plan(change, owner, criteria),
-        *_settings_plan(change, owner, settings),
+        *_settings_plan(change, owner, settings, declares=declares),
     ]
-    # Sorting is stable, so each removal stays in request order ahead of every add.
-    planned.sort(key=lambda item: item.action != "remove")
+    # Sorting is stable, so each removal stays in request order ahead of every add, and the
+    # EU political answer goes ahead of the places that need it.
+    planned.sort(
+        key=lambda item: 0 if item.action == "remove" else 1 if item.field == _EU_POLITICAL else 2
+    )
     keys = [item.edit.key for item in planned if item.path is None]
     if len(set(keys)) != len(keys):
         raise ModelRetry("A radius is being both added and removed. Keep one of those changes.")
@@ -247,26 +269,34 @@ def _plan(
 
 def _grouped_places(planned: list[_Planned], campaign: str) -> list[_Planned]:
     """Sends a campaign's place changes together when it loses a place, so a rejected add
-    can't leave the removals applied."""
+    can't leave the removals applied, or with the EU political answer they need."""
     places = {"locations", "excluded_locations", "radius"}
-    if not any(
+    declares = any(item.field == _EU_POLITICAL for item in planned)
+    if not declares and not any(
         item.action == "remove" and item.setting in {"locations", "radius"} for item in planned
     ):
         return planned
     return [
         replace(item, edit=replace(item.edit, atomic_group=campaign))
-        if isinstance(item.edit, CriterionChange) and item.setting in places
+        # The answer shares the campaign's one update with its other settings.
+        if (isinstance(item.edit, CriterionChange) and item.setting in places)
+        or (declares and item.path is not None)
         else item
         for item in planned
     ]
 
 
 def _settings_plan(
-    change: GoogleAdsTargetingChange, owner: _Owner, live: Mapping[str, Any]
+    change: GoogleAdsTargetingChange, owner: _Owner, live: Mapping[str, Any], *, declares: bool
 ) -> list[_Planned]:
-    """The location setting and audience mode, as one update to the campaign or ad group."""
+    """The location setting, audience mode, and EU political answer, as one update to the
+    campaign or ad group."""
     requested: dict[str, Any] = {}
     items: list[tuple[str, str, str]] = []
+    if declares:
+        status = eu_political_status(change.contains_eu_political_advertising is True)
+        requested[EU_POLITICAL_PATH] = status
+        items.append((_EU_POLITICAL, status, EU_POLITICAL_PATH))
     if change.location_setting is not None:
         requested[_SETTING_PATH] = change.location_setting
         items.append(("location_setting", change.location_setting, _SETTING_PATH))
@@ -883,6 +913,9 @@ async def _read_names(
         "audiences": {
             audience_value(kind, key): option.name for (kind, key), option in audiences.items()
         },
+        "eu_locations": {
+            key: option.name for key, option in locations.items() if option.eu_political_declaration
+        },
     }
 
 
@@ -930,6 +963,7 @@ def _live_settings(live: LiveTargeting | None) -> dict[str, Any]:
     return {
         _SETTING_PATH: live.location_setting,
         RESTRICTIONS_PATH: [dict(item) for item in live.restrictions],
+        EU_POLITICAL_PATH: live.eu_political,
     }
 
 
@@ -1027,6 +1061,7 @@ def _approved_plan(
     settings = {
         _SETTING_PATH: check.get("location_setting"),
         RESTRICTIONS_PATH: check.get("restrictions") or [],
+        EU_POLITICAL_PATH: check.get("eu_political"),
     }
     names = {**_NO_NAMES, **names}
     planned = _plan(change, criteria, settings, names)
@@ -1243,6 +1278,9 @@ def _check(
         "problem": problem,
         "location_setting": live.location_setting if live else None,
         "restrictions": [dict(item) for item in live.restrictions] if live else [],
+        "eu_political": live.eu_political if live else None,
+        # True when the card must ask whether the ads are EU political ads.
+        "eu_political_question": any(item.field == _EU_POLITICAL for item in planned),
         "audience_mode": live.audience_mode() if live else None,
         **_shown_criteria(criteria, names),
         "note": _bidding_note(change, live),
@@ -1373,7 +1411,10 @@ DEFINITION = RuntimeToolDefinition(
         "remove_languages take language keys. Search campaigns can't add languages because "
         "Google matches each ad's language; a language left on one from before can be removed. "
         "A change that would leave a campaign with no location is refused, because its ads "
-        "could then show anywhere. devices sets MOBILE, DESKTOP, or TABLET to a bid_adjustment "
+        "could then show anywhere. contains_eu_political_advertising, on a campaign entry, is "
+        "true only when the user says the ads are political and aimed at the EU; Google needs "
+        "the answer when a campaign that hasn't given it adds an EU location or a radius, and "
+        "the card then asks the user. devices sets MOBILE, DESKTOP, or TABLET to a bid_adjustment "
         "percent (0 clears it) or excluded true. ad_schedule is the campaign's whole weekly "
         "schedule after the change: windows of day (MONDAY to SUNDAY), start and end as HH:MM "
         "in quarter hours in the account's time zone (end may be 24:00), and an optional "

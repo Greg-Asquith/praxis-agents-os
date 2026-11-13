@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
+  asksEuPolitical,
   campaignAdGroupRows,
   campaignAssetGroupRows,
   campaignProblems,
@@ -177,6 +178,15 @@ describe("Google Ads create campaign arguments", () => {
     // The card can already see a past start date, so asking Google can wait.
     const past = parsed(args({ campaign: campaign({ start_date: "2026-11-01" }) }))
     expect(canCheckCampaign(past)).toBe(false)
+  })
+
+  it("asks the EU political question only when Google needs it or the answer is yes", () => {
+    const outside = { eu_political_question: false }
+    expect(asksEuPolitical(parsed(args({}, outside)))).toBe(false)
+    // An answer of yes is never hidden, and neither is a question Google couldn't settle.
+    const yes = campaign({ contains_eu_political_advertising: true })
+    expect(asksEuPolitical(parsed(args({ campaign: yes }, outside)))).toBe(true)
+    expect(asksEuPolitical(parsed(args({ _checks: { unavailable: true } })))).toBe(true)
   })
 
   it("sends only the chosen strategy's fields and a ROAS percentage as a ratio", () => {
