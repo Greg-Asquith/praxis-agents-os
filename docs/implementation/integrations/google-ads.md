@@ -222,7 +222,8 @@ The agent receives `counts` and only the failed and unverified objects, up to
 
 `google_ads_update_campaigns` changes up to 50 live campaigns of any type in
 one approval. Each entry names one campaign and only the settings that change.
-Conversion goals and Performance Max and Shopping settings are pending. The
+Conversion goals, Shopping settings, and the other Performance Max settings
+(final URL expansion, text customisation, and brand guidelines) are pending. The
 fields are as follows:
 
 | Field | What it does |
@@ -232,6 +233,7 @@ fields are as follows:
 | `end_date` | Sets the end date, sent as `endDateTime` at `23:59:59`, or `"none"` to run with no end date. |
 | `url_options` | `final_url_suffix`, `tracking_template`, and `custom_parameters` (up to 8 pairs, replacing the list). An empty value or list clears it. |
 | `networks` | `search_partners` (Search and Shopping) and `display_expansion` (Search) on or off. |
+| `video_pages` | Performance Max only. Up to 20 pages Google may take the advertiser's videos from, replacing the campaign's list. An empty list turns that off. See [Video pages](#video-pages). |
 | `bidding` | One of `MANUAL_CPC`; `MAXIMIZE_CLICKS` with an optional `max_cpc`; `MAXIMIZE_CONVERSIONS` with an optional `target_cpa`; `MAXIMIZE_CONVERSION_VALUE` with an optional `target_roas` ratio; `TARGET_IMPRESSION_SHARE` with `location`, `share_percent`, and `max_cpc`; `PORTFOLIO` with a `google_ads_bidding_strategy` reference from the campaign's account; or `TARGETS` with `target_cpa`, `target_roas`, or `max_cpc`, changing only targets on the current strategy. Leaving out an optional target removes it. |
 
 `operations/campaign_settings.py` reads each campaign's settings by ID,
@@ -240,6 +242,37 @@ JSON field path, which the edit seam compares and masks, and the card's, with
 dates as `YYYY-MM-DD` and no end date as null. A `FieldChange` path whose
 requested value is null stays in the update mask and out of the body, which
 is how Google clears a field, such as the end date.
+
+#### Video pages
+
+Google calls this automated video crawl: it finds videos on pages the advertiser lists and
+uses them in a Performance Max campaign's ads. It's off unless a campaign lists pages, which
+is Google's default. Listing a page confirms the advertiser owns the rights to its videos
+and can share them with Google for advertising, so both tool descriptions tell the agent
+never to set it unless the user explicitly asks, and both cards show that sentence beside
+the pages. It's kept out of the way on both cards: a switch at the bottom of the collapsed
+**More Settings** row on the create card, which reveals the pages only when on, and **Video Pages (Advanced)** under **Add a Change** on
+Update Campaigns.
+
+`operations/asset_automation.py` holds the contract. The pages are one entry of the
+campaign's `assetAutomationSettings`: `{assetAutomationType: AUTOMATED_VIDEO_CRAWL,
+assetAutomationStatus: OPTED_IN, automatedVideoCrawlSetting: {automatedVideoCrawlInfos:
+[{url, sourcePlatform, enabled: true}]}}`. `video_source_platform` works out
+`sourcePlatform` from the address, so the operator only gives addresses: `YOUTUBE` for
+`youtube.com` and `youtu.be`, `SOCIAL` for Facebook, Instagram, LinkedIn, TikTok, and X,
+and `LANDING_PAGE` otherwise. The pages are kept sorted, in the request and on the card,
+so the same pages always compare equal.
+
+Google replaces the whole `assetAutomationSettings` list on an update. `with_video_pages`
+therefore sends back every other setting as `read_campaign_settings` returned it, with only
+the video entry replaced. That keeps, for example, a campaign's final URL expansion opt-out.
+A change to any automation setting in Google Ads after the check makes the approved change
+stale, and the edit seam refuses it. An empty list sends the entry as `OPTED_OUT`; a
+campaign that already has video crawl off is Already Set and nothing is sent. The card
+shows only pages that are on (`OPTED_IN`, with `enabled` true).
+
+That Google accepts every other setting sent back unchanged, and returns the pages as they
+were sent, isn't verified on a real account yet.
 
 #### Bidding
 
@@ -655,6 +688,7 @@ declaration work as for Search. The campaign also takes these fields:
 | `languages` | Language keys from `google_ads_search_targeting`, as campaign criteria. None means every language. |
 | `business_name`, `logos` | The brand. Brand guidelines are always on (`brandGuidelinesEnabled`), so one business name (25 characters) and 1 to 5 logos are linked to the campaign with `campaignAsset`, at least one of them a square `LOGO`; `LANDSCAPE_LOGO` is optional. Logos are image assets from `google_ads_upload_media`. |
 | `final_url_expansion` | On by default, as Google sets it. Off sends `FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION` as `OPTED_OUT`. |
+| `video_pages` | Up to 20 pages Google may take the advertiser's videos from. None by default, which leaves video crawl off as Google sets it. With pages, the campaign's `assetAutomationSettings` gains the `AUTOMATED_VIDEO_CRAWL` entry described under [Video pages](#video-pages). |
 | `conversion_goals` | Left out, the campaign bids for the account's goals. A list of `{category, origin}` sets each account goal's `campaignConversionGoal` to bid or not, in the same request. |
 | `merchant` | `{merchant_id, feed_label}` for a retailer: `shoppingSetting` on the campaign, and one root listing filter (`UNIT_INCLUDED`, `SHOPPING`) per asset group, so it advertises every product in the feed. Narrower filters are pending. |
 
@@ -733,7 +767,11 @@ search themes, audience signals, product filters, languages, and goal updates as
 
 The card (`components/create-campaign-approval.tsx`) shows the Search card's rows plus
 **Goals** and **Brand**, with languages under **Locations** and final URL expansion and the
-product feed under **More Settings**. `components/asset-groups-editor.tsx` lists the asset
+product feed under **More Settings**. At the bottom of More Settings is the **Let Google
+Find Videos on These Pages** switch, off unless the request lists pages. Turning it on
+reveals the pages (addresses as chips, added by typing or pasting), and nothing is sent
+until a page is added; turning it off clears them. The row's summary names it only when
+pages are listed. `components/asset-groups-editor.tsx` lists the asset
 groups with each text type and the images counted against Google's minimums ("2 of 3" in
 red), and the open group below: its final URL, text pasted one per line, images with
 their shape, search themes, and **Audience Signals**, both labelled as guidance that
@@ -1573,6 +1611,7 @@ has its own module for arguments (`update-budgets.ts`) and one for results
 | `accounts.ts` | Account facts, the account overview parser, `parseCheckedEntries` for an argument list with its checks, and `accountsText`. |
 | `field-values.ts` | Scalar and URL validation: `parseGoogleAdsMoney`, `isGoogleAdsUrl`, `parseGoogleAdsUrlList`, and `textOrNull`. Callers own normalisation, defaults, and clears. |
 | `setting-changes.ts` | What the cards that change settings share (Update Campaigns, Update Ad Groups, Update Keywords): URL options and custom parameters, writing a setting into an entry, cancel and restore, and `settingsNeedCheck`, which compares the request with the one Google checked. A requested null differs from a setting the entry doesn't name. |
+| `video-pages.ts` | The pages Google may take videos from, for the Performance Max create card and Update Campaigns: reading pasted addresses, the server's limit, and the rights sentence both cards show. |
 | `edit-outcomes.ts` | The edit seam's outcomes: `EditOutcome`, `isEditOutcome`, labels, badges, result tabs, and `editOutcomeSummary`. |
 | `campaign-bidding.ts` | Bidding values, `canonicalMoney`, and `scaledMoney`, the percentage rule for bids and budgets. |
 | `copy.ts` | Card wording shared across cards, such as `unavailableProblem` and `applyChangesLabel`. |
@@ -2099,7 +2138,9 @@ The card (`components/update-campaigns-approval.tsx`) shows the banner with the
 count of changes, then each row as the live value, an arrow, and an inline
 editor: an On/Off choice for networks, a date field for dates (an empty end date
 means no end date), and a text field otherwise. Custom parameters are edited as
-`key=value, key=value`. Bidding has its own editor (`components/bidding-editor.tsx`).
+`key=value, key=value`. Video pages are edited as addresses separated by commas, read as
+Off when empty; the row is offered under **Add a Change**, as **Video Pages (Advanced)**,
+only for a Performance Max campaign, and an address that doesn't start with `http://` or `https://` blocks approval. Bidding has its own editor (`components/bidding-editor.tsx`).
 With one campaign, `BiddingChange` is a section beside the list of other settings: a
 **Now** panel with the live strategy and its targets, and the new strategy as a labelled
 select with each target as its own labelled field. A sentence says what the new bidding

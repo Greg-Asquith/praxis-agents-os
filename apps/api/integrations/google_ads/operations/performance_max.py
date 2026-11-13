@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .asset_automation import video_crawl_setting
 from .asset_group_state import URL_OPTION_PATHS
 from .build import CampaignBuild
 from .campaign_settings import api_value
@@ -78,13 +79,18 @@ def add_performance_max_campaign(
         # The business name and logos then belong to the campaign, not each asset group.
         "brandGuidelinesEnabled": True,
     }
+    automation: list[dict[str, Any]] = []
     if not campaign.final_url_expansion:
-        body["assetAutomationSettings"] = [
+        automation.append(
             {
                 "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
                 "assetAutomationStatus": "OPTED_OUT",
             }
-        ]
+        )
+    if campaign.video_pages:
+        automation.append(video_crawl_setting(campaign.video_pages))
+    if automation:
+        body["assetAutomationSettings"] = automation
     if campaign.merchant is not None:
         body["shoppingSetting"] = {"merchantId": campaign.merchant.merchant_id}
         if campaign.merchant.feed_label:

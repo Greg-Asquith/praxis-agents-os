@@ -47,6 +47,11 @@ import {
   withUrlOption,
   type UrlParameter,
 } from "@/integrations/google_ads/lib/setting-changes"
+import {
+  parseVideoPages,
+  videoPagesFromText,
+  videoPagesProblem,
+} from "@/integrations/google_ads/lib/video-pages"
 import { isRecord } from "@/lib/guards"
 
 export const CAMPAIGN_SETTINGS = [
@@ -58,12 +63,13 @@ export const CAMPAIGN_SETTINGS = [
   "custom_parameters",
   "search_partners",
   "display_expansion",
+  "video_pages",
   "bidding",
 ] as const
 
 export type CampaignSetting = (typeof CAMPAIGN_SETTINGS)[number]
-// Card terms, as the server sends them: dates as YYYY-MM-DD, and null for none.
-export type SettingValue = string | boolean | UrlParameter[] | Bidding | null
+// Card terms, as the server sends them: dates as YYYY-MM-DD, null for none, video pages as addresses.
+export type SettingValue = string | boolean | UrlParameter[] | string[] | Bidding | null
 
 export const SETTING_TITLES: Record<CampaignSetting, string> = {
   bidding: "Bidding",
@@ -75,6 +81,7 @@ export const SETTING_TITLES: Record<CampaignSetting, string> = {
   search_partners: "Search Partners",
   start_date: "Start Date",
   tracking_template: "Tracking Template",
+  video_pages: "Video Pages",
 }
 
 const NETWORK_SETTINGS = new Set<CampaignSetting>(["search_partners", "display_expansion"])
@@ -151,6 +158,7 @@ const UNAVAILABLE_PROBLEM = unavailableProblem("campaign")
 
 function settingValue(setting: CampaignSetting, value: unknown): SettingValue | undefined {
   if (setting === "bidding") return parseBidding(value) ?? undefined
+  if (setting === "video_pages") return parseVideoPages(value ?? []) ?? undefined
   if (value === null) return setting === "custom_parameters" ? [] : null
   if (NETWORK_SETTINGS.has(setting)) return typeof value === "boolean" ? value : undefined
   if (setting === "custom_parameters") return parseUrlParameters(value) ?? undefined
@@ -172,6 +180,8 @@ function requestedOf(
     const value = networks[setting]
     if (typeof value === "boolean") values[setting] = value
   }
+  const pages = parseVideoPages(entry["video_pages"])
+  if (pages) values.video_pages = videoPagesFromText(pages.join(" "))
   const bidding = parseBidding(entry["bidding"])
   if (bidding) values.bidding = bidding
   return values
@@ -235,6 +245,14 @@ export function sameValue(a: SettingValue | undefined, b: SettingValue | undefin
   return JSON.stringify(comparable(a)) === JSON.stringify(comparable(b))
 }
 
+/** Whether a setting's value is the list of pages Google may take videos from. */
+export function isVideoPages(
+  setting: CampaignSetting,
+  value: SettingValue | undefined
+): value is string[] {
+  return setting === "video_pages" && Array.isArray(value)
+}
+
 export function isBidding(value: SettingValue | undefined): value is Bidding {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -261,7 +279,11 @@ function rowOf(
   // Google answered for the value it was checked with, so an edited value waits for a new check.
   const checked = live !== null && sameValue(live.requested[setting], value)
   const result = rowResult({ value, was })
-  const local = isBidding(value) ? biddingProblem(value) : null
+  const local = isBidding(value)
+    ? biddingProblem(value)
+    : isVideoPages(setting, value)
+      ? videoPagesProblem(value)
+      : null
   return {
     campaignName: live?.name ?? label,
     cancelled: change === null,
@@ -371,10 +393,11 @@ export function editedChanges(
   return editedSettingChanges(CARD, args.changes, ids, value)
 }
 
-// The channels on which each network can change, as on the server.
-const NETWORK_CHANNELS: Partial<Record<CampaignSetting, readonly string[]>> = {
+// The channels on which each setting can change, as on the server.
+const SETTING_CHANNELS: Partial<Record<CampaignSetting, readonly string[]>> = {
   display_expansion: ["SEARCH"],
   search_partners: ["SEARCH", "SHOPPING"],
+  video_pages: ["PERFORMANCE_MAX"],
 }
 
 /** Today's date in a time zone, as `YYYY-MM-DD`. */
@@ -388,8 +411,8 @@ function today(timeZone: string | undefined): string {
 
 /** Settings the request doesn't change on a campaign yet, each starting at its live value.
 
-Networks are offered only on channels that take them, a start date only before the campaign
-starts, and bidding only from a standard strategy the card can write back.
+Networks and video pages are offered only on channels that take them, a start date only
+before the campaign starts, and bidding only from a standard strategy the card can write back.
  */
 export function addableCampaignSettings(
   args: UpdateCampaignsArgs,
@@ -405,8 +428,10 @@ export function addableCampaignSettings(
     typeof check.current.start_date !== "string" ||
     check.current.start_date <= today(args.accounts.get(change.customerId)?.timeZone)
   return CAMPAIGN_SETTINGS.flatMap((setting) => {
-    const live = check.current[setting] ?? (setting === "custom_parameters" ? [] : null)
-    const channels = NETWORK_CHANNELS[setting]
+    const live =
+      check.current[setting] ??
+      (setting === "custom_parameters" || setting === "video_pages" ? [] : null)
+    const channels = SETTING_CHANNELS[setting]
     if (
       present.has(setting) ||
       (channels && !channels.includes(check.channel ?? "")) ||
@@ -518,6 +543,7 @@ export function valueText(
   if (value === undefined) return "—"
   if (isBidding(value)) return biddingText(value, context)
   if (typeof value === "boolean") return value ? "On" : "Off"
+  if (isVideoPages(setting, value)) return value.length > 0 ? value.join(", ") : "Off"
   if (Array.isArray(value)) return value.length > 0 ? parametersText(value) : "None"
   if (value === null) return setting === "end_date" ? "No end date" : "None"
   return setting === "start_date" || setting === "end_date" ? dateText(value) : value
@@ -555,6 +581,8 @@ export function campaignsApproveLabel(args: UpdateCampaignsArgs): string {
     if (sole.setting === "end_date") return sole.value === null ? "Remove End Date" : "Set End Date"
     if (typeof sole.value === "boolean")
       return `Turn ${sole.value ? "On" : "Off"} ${SETTING_TITLES[sole.setting]}`
+    if (isVideoPages(sole.setting, sole.value) && sole.value.length === 0)
+      return "Turn Off Video Pages"
     if (isBidding(sole.value)) return biddingApproveLabel(sole)
     return `Change ${SETTING_TITLES[sole.setting]}`
   }

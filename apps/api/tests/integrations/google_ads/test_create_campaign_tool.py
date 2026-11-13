@@ -505,6 +505,7 @@ async def test_performance_max_builds_brand_on_the_campaign_and_complete_asset_g
     args = {
         "campaign": _pmax(
             final_url_expansion=False,
+            video_pages=["https://www.instagram.com/northwind"],
             conversion_goals=[{"category": "PURCHASE", "origin": "WEBSITE"}],
         ),
         "asset_groups": [_asset_group(headlines=["Rain Jackets", "Northwind Outdoor", "Dry"])],
@@ -525,7 +526,20 @@ async def test_performance_max_builds_brand_on_the_campaign_and_complete_asset_g
         {
             "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
             "assetAutomationStatus": "OPTED_OUT",
-        }
+        },
+        {
+            "assetAutomationType": "AUTOMATED_VIDEO_CRAWL",
+            "assetAutomationStatus": "OPTED_IN",
+            "automatedVideoCrawlSetting": {
+                "automatedVideoCrawlInfos": [
+                    {
+                        "url": "https://www.instagram.com/northwind",
+                        "sourcePlatform": "SOCIAL",
+                        "enabled": True,
+                    }
+                ]
+            },
+        },
     ]
     # Text assets come before the campaign, one per distinct text, the business name included.
     assert [

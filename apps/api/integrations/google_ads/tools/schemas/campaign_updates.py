@@ -23,6 +23,7 @@ from .campaigns import (
     GoogleAdsTargetCpa,
     GoogleAdsTargetImpressionShare,
 )
+from .performance_max import GoogleAdsVideoPages
 from .url_options import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 
 MAX_CAMPAIGN_UPDATES = 50
@@ -90,6 +91,8 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
     end_date: date | Literal["none"] | None = None
     url_options: GoogleAdsUrlOptions | None = None
     networks: GoogleAdsCampaignNetworks | None = None
+    # Replaces the pages Google may take videos from; an empty list turns video crawl off.
+    video_pages: GoogleAdsVideoPages | None = None
     bidding: GoogleAdsCampaignBidding | None = None
 
     @field_validator("name", mode="before")
@@ -136,6 +139,8 @@ class GoogleAdsCampaignUpdate(GoogleAdsStrictModel):
                 values["search_partners"] = networks.search_partners
             if networks.display_expansion is not None:
                 values["display_expansion"] = networks.display_expansion
+        if self.video_pages is not None:
+            values["video_pages"] = list(self.video_pages)
         if self.bidding is not None:
             values["bidding"] = card_request(self.bidding)
         return values
@@ -168,7 +173,9 @@ class GoogleAdsBiddingValue(GoogleAdsStrictModel):
     type: str | None = Field(default=None, max_length=64)
 
 
-type GoogleAdsSettingValue = str | bool | list[GoogleAdsUrlParameter] | GoogleAdsBiddingValue | None
+type GoogleAdsSettingValue = (
+    str | bool | list[GoogleAdsUrlParameter] | list[str] | GoogleAdsBiddingValue | None
+)
 
 
 class GoogleAdsCampaignSettingOutcome(GoogleAdsStrictModel):
@@ -186,7 +193,7 @@ class GoogleAdsCampaignUpdateOutcome(GoogleAdsStrictModel):
     campaign_id: str
     name: str
     read_back: bool
-    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=9)
+    settings: list[GoogleAdsCampaignSettingOutcome] = Field(max_length=10)
     error_code: str | None = None
     message: str | None = None
 

@@ -162,6 +162,35 @@ describe("adding a change", () => {
       end_date: "none",
     })
   })
+
+  it("offers video pages on Performance Max, in the server's order, and blocks a bad address", () => {
+    const pages = ["https://youtube.com/@trail", "https://example.com/films"]
+    const live = { ...check().current, video_pages: [...pages].sort() }
+    const args = parsed(
+      raw({
+        changes: [
+          { campaign: campaign("10"), name: "Trail Shoes" },
+          { campaign: campaign("11"), video_pages: pages },
+          { campaign: campaign("12"), video_pages: ["example.com/films"] },
+        ],
+        _checks: {
+          [key("10")]: check({ channel: "PERFORMANCE_MAX", requested: { name: "Trail Shoes" } }),
+          [key("11")]: check({ current: live, requested: { video_pages: live.video_pages } }),
+          [key("12")]: check({ requested: { video_pages: ["example.com/films"] } }),
+        },
+      })
+    )
+    const rows = campaignRows(args, args)
+
+    expect(
+      addableCampaignSettings(args, args, rows, key("10")).find(
+        (item) => item.setting === "video_pages"
+      )
+    ).toEqual({ setting: "video_pages", value: [] })
+    // The same pages in another order change nothing.
+    expect(rows[1]).toMatchObject({ problem: null, unchanged: true })
+    expect(rows[2]?.problem).toContain("http://")
+  })
 })
 
 describe("bidding", () => {

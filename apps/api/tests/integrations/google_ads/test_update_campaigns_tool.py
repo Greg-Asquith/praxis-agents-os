@@ -244,7 +244,7 @@ async def test_dates_and_networks_google_refuses_block_the_campaign_before_any_r
         {"start_date": tool_module._STARTED},
         {
             "end_date": tool_module._END_PAST,
-            "search_partners": tool_module._NETWORK["search_partners"],
+            "search_partners": tool_module._WRONG_CHANNEL["search_partners"],
         },
         {"start_date": tool_module._START_PAST},
     ]
@@ -252,6 +252,75 @@ async def test_dates_and_networks_google_refuses_block_the_campaign_before_any_r
 
     assert account.mutates == []
     assert {campaign.settings[0].outcome for campaign in data.campaigns} == {"failed"}
+
+
+async def test_video_pages_keep_the_campaign_s_other_automation_and_are_refused_on_search(
+    monkeypatch,
+) -> None:
+    expansion_off = {
+        "assetAutomationType": "FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION",
+        "assetAutomationStatus": "OPTED_OUT",
+    }
+    pmax = "customers/111/campaigns/15"
+    account = _Account(
+        _campaign("10", "SEARCH"),
+        _campaign("15", "PERFORMANCE_MAX", assetAutomationSettings=[expansion_off]),
+    )
+    pages = ["https://www.youtube.com/@northwind", "https://northwind.example/films"]
+    changes = _changes(
+        {"campaign": "10", "video_pages": pages}, {"campaign": "15", "video_pages": pages}
+    )
+    display = await _display(monkeypatch, account, changes)
+
+    data, _audit = await _run(monkeypatch, account, changes, display)
+
+    assert display["_checks"][_SEARCH]["problems"] == {
+        "video_pages": tool_module._WRONG_CHANNEL["video_pages"]
+    }
+    # Google replaces the whole list, so the opt-out the campaign already has goes back with it.
+    assert account.mutates[-1]["mutateOperations"] == [
+        {
+            "campaignOperation": {
+                "update": {
+                    "resourceName": pmax,
+                    "assetAutomationSettings": [
+                        {
+                            "assetAutomationType": "AUTOMATED_VIDEO_CRAWL",
+                            "assetAutomationStatus": "OPTED_IN",
+                            "automatedVideoCrawlSetting": {
+                                "automatedVideoCrawlInfos": [
+                                    {
+                                        "url": "https://northwind.example/films",
+                                        "sourcePlatform": "LANDING_PAGE",
+                                        "enabled": True,
+                                    },
+                                    {
+                                        "url": "https://www.youtube.com/@northwind",
+                                        "sourcePlatform": "YOUTUBE",
+                                        "enabled": True,
+                                    },
+                                ]
+                            },
+                        },
+                        expansion_off,
+                    ],
+                },
+                "updateMask": "assetAutomationSettings",
+            }
+        }
+    ]
+    search, performance_max = data.campaigns
+    assert search.settings[0].outcome == "failed"
+    row = performance_max.settings[0]
+    assert (row.before, row.after, row.outcome) == ([], sorted(pages), "updated")
+
+    off = _changes({"campaign": "15", "video_pages": []})
+    await _run(monkeypatch, account, off, await _display(monkeypatch, account, off))
+
+    assert account.campaigns[pmax]["assetAutomationSettings"] == [
+        {"assetAutomationType": "AUTOMATED_VIDEO_CRAWL", "assetAutomationStatus": "OPTED_OUT"},
+        expansion_off,
+    ]
 
 
 async def test_a_change_the_approval_check_did_not_cover_is_refused(monkeypatch) -> None:

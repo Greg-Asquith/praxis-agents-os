@@ -29,6 +29,7 @@ from .performance_max import (
     GoogleAdsCampaignLogo,
     GoogleAdsCreatedAssetGroup,
     GoogleAdsNewAssetGroup,
+    GoogleAdsVideoPages,
 )
 
 MAX_CAMPAIGN_LOCATIONS = 1_000
@@ -265,6 +266,8 @@ class GoogleAdsNewPerformanceMaxCampaign(NewCampaign):
     business_name: str | None = Field(default=None, max_length=25)
     logos: list[GoogleAdsCampaignLogo] = Field(default_factory=list, max_length=MAX_LOGOS)
     final_url_expansion: bool = True
+    # Google looks for videos on these pages; none leaves that off, as Google does.
+    video_pages: GoogleAdsVideoPages = Field(default_factory=list)
     # None bids for the account's goals; a list bids for those goals in this campaign only.
     conversion_goals: list[GoogleAdsCampaignGoal] | None = Field(default=None, max_length=100)
     merchant: GoogleAdsMerchantFeed | None = None

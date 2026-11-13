@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/tools/update_campaigns.py
 
-"""Approval-only tool that changes the names, dates, URL options, networks, and bidding of Google Ads campaigns."""
+"""Approval-only tool that changes the names, dates, URL options, networks, video pages, and bidding of Google Ads campaigns."""
 
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -33,6 +33,7 @@ from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
 
 from ..client import GoogleAdsClient
+from ..operations.asset_automation import with_video_pages
 from ..operations.campaign_bidding import (
     BIDDING_GUARDS,
     AdGroupBids,
@@ -77,10 +78,11 @@ from .utils.routing import login_customer_id
 
 _OPERATION = "update_campaigns"
 _OUTCOMES = {"applied": "updated", "failed": "failed", "unverified": "unverified"}
-# The channels on which each network can change. Search campaigns always show on Google Search.
-_NETWORK_CHANNELS: dict[CampaignSetting, frozenset[str]] = {
+# The channels on which each setting can change. Search campaigns always show on Google Search.
+_SETTING_CHANNELS: dict[CampaignSetting, frozenset[str]] = {
     "search_partners": frozenset({"SEARCH", "SHOPPING"}),
     "display_expansion": frozenset({"SEARCH"}),
+    "video_pages": frozenset({"PERFORMANCE_MAX"}),
 }
 
 _MISSING = "This campaign no longer exists in Google Ads."
@@ -89,9 +91,10 @@ _STARTED = "This campaign has already started, so Google Ads won't change its st
 _START_PAST = "Choose a start date after today."
 _END_PAST = "Choose an end date of today or later."
 _END_BEFORE_START = "The end date must be on or after the start date ({start})."
-_NETWORK = {
+_WRONG_CHANNEL = {
     "search_partners": "Search Partners can only change on Search and Shopping campaigns.",
     "display_expansion": "Display expansion can only change on Search campaigns.",
+    "video_pages": "Google only finds videos on pages for Performance Max campaigns.",
 }
 _PORTFOLIO_MISSING = "This portfolio strategy no longer exists in Google Ads."
 
@@ -121,13 +124,24 @@ def _effective(
     return values
 
 
-def _edit(change: GoogleAdsCampaignUpdate, current: Mapping[str, Any]) -> FieldChange:
-    """Builds the edit against the campaign's settings in card terms, which bidding paths need."""
+def _edit(
+    change: GoogleAdsCampaignUpdate, current: Mapping[str, Any], values: Mapping[str, Any]
+) -> FieldChange:
+    """Builds the edit against the campaign's live settings.
+
+    Args:
+        current: The settings in card terms, which bidding paths need.
+        values: The settings as Google stores them, by path. Video pages are one entry of
+            the automation list, which Google replaces whole.
+    """
     requested = {
         SETTING_PATHS[setting]: api_value(setting, value)
         for setting, value in change.requested.items()
-        if setting != "bidding"
+        if setting not in {"bidding", "video_pages"}
     }
+    if "video_pages" in change.requested:
+        path = SETTING_PATHS["video_pages"]
+        requested[path] = with_video_pages(values.get(path), change.requested["video_pages"])
     bidding, problem = _bidding(change, current)
     if bidding is not None and problem is None:
         requested.update(bidding_paths(bidding, current.get("bidding") or {}))
@@ -177,9 +191,9 @@ def _setting_problems(
         setting: CampaignSetting = "end_date" if "end_date" in changing else "start_date"
         if setting in changing:
             problems[setting] = _END_BEFORE_START.format(start=start)
-    for network, channels in _NETWORK_CHANNELS.items():
-        if network in changing and live.channel not in channels:
-            problems[network] = _NETWORK[network]
+    for limited, channels in _SETTING_CHANNELS.items():
+        if limited in changing and live.channel not in channels:
+            problems[limited] = _WRONG_CHANNEL[limited]
     if bidding := _bidding_problem(change, live, portfolios):
         problems["bidding"] = bidding
     return problems
@@ -256,16 +270,16 @@ def _approved_edit(change: GoogleAdsCampaignUpdate, check: Any) -> FieldChange:
         or check.get("requested") != change.requested
         or not isinstance(check.get("current"), Mapping)
     ):
-        return replace(_edit(change, {}), refused=NOT_SHOWN)
-    edit = _edit(change, check["current"])
+        return replace(_edit(change, {}, {}), refused=NOT_SHOWN)
+    values = check.get("values")
+    values = values if isinstance(values, Mapping) else {}
+    edit = _edit(change, check["current"], values)
     problems = check.get("problems")
     problem = check.get("problem") or next(
         iter(problems.values() if isinstance(problems, Mapping) else ()), None
     )
     if problem:
         return replace(edit, refused=str(problem))
-    values = check.get("values")
-    values = values if isinstance(values, Mapping) else {}
     return replace(edit, before=edit.live(values) or {})
 
 
@@ -481,7 +495,7 @@ async def _dry_run(
 ) -> dict[str, str]:
     """Returns Google's rejection per campaign, asking only about campaigns with no problem yet."""
     checked = [
-        _edit(change, live[change.resource_name].settings())
+        _edit(change, live[change.resource_name].settings(), live[change.resource_name].values)
         for change in changes
         if _campaign_problem(live.get(change.resource_name)) is None
         and not problems.get(change.resource_name)
@@ -561,7 +575,7 @@ def _check(
         "current": current,
         "requested": change.requested,
         # What approval plans against, in Google's terms, for the paths the change reads.
-        "values": (_edit(change, current).live(live.values) or {}) if live else {},
+        "values": (_edit(change, current, live.values).live(live.values) or {}) if live else {},
         "problem": _campaign_problem(live) or rejected,
         "problems": dict(problems),
         "notes": {"bidding": list(notes)} if notes else {},
@@ -584,7 +598,12 @@ DEFINITION = RuntimeToolDefinition(
         "tracking_template, and custom_parameters (up to 8 key and value pairs, replacing the "
         "campaign's list), where an empty value clears it; networks with search_partners "
         "(Search and Shopping campaigns) and display_expansion (Search campaigns), each on or "
-        "off; and bidding. bidding is one of MANUAL_CPC; MAXIMIZE_CLICKS with optional "
+        "off; video_pages (Performance Max campaigns), up to 20 pages on the site, a YouTube "
+        "channel, or a social profile that Google may take the advertiser's own videos from, "
+        "replacing the campaign's list, where an empty list turns that off; never add pages "
+        "unless the user explicitly asks, because listing a page confirms the advertiser owns "
+        "the rights to its videos; and bidding. "
+        "bidding is one of MANUAL_CPC; MAXIMIZE_CLICKS with optional "
         "max_cpc; MAXIMIZE_CONVERSIONS with optional target_cpa; MAXIMIZE_CONVERSION_VALUE "
         "with optional target_roas (a ratio, so 3.5 is 350%); TARGET_IMPRESSION_SHARE "
         "(Search only) with location, share_percent, and max_cpc; PORTFOLIO with a portfolio "

@@ -32,6 +32,8 @@ function value(raw: unknown): SettingValue | undefined {
   if (raw === null || typeof raw === "string" || typeof raw === "boolean") return raw
   if (isRecord(raw)) return parseBidding(raw) ?? undefined
   if (!Array.isArray(raw)) return undefined
+  // Video pages are addresses; custom parameters are key and value pairs.
+  if (raw.length > 0 && raw.every((item) => typeof item === "string")) return raw
   const items: UrlParameter[] = []
   for (const item of raw) {
     if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string")

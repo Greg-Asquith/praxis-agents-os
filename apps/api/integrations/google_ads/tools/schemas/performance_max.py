@@ -5,7 +5,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Literal, Protocol, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
@@ -24,6 +24,8 @@ MAX_SEARCH_THEMES = 25
 # Segments in one asset group's audience signal; enough for any signal an operator reads.
 MAX_AUDIENCE_SEGMENTS = 20
 MAX_LOGOS = 5
+# Pages Google may take videos from; Google documents no limit, and no campaign needs more.
+MAX_VIDEO_PAGES = 20
 # The longest description Google accepts; at least one must also fit the short length.
 SHORT_DESCRIPTION = 60
 
@@ -52,6 +54,18 @@ ASSET_NOUNS: Mapping[str, str] = {
     "MARKETING_IMAGE": "landscape image",
     "SQUARE_MARKETING_IMAGE": "square image",
 }
+
+
+def _distinct_pages(value: list[str]) -> list[str]:
+    if len(set(value)) != len(value):
+        raise ValueError("List each video page once.")
+    # Google returns the pages in its own order, so the card and the request keep one order.
+    return sorted(value)
+
+
+type GoogleAdsVideoPages = Annotated[
+    list[GoogleAdsFinalUrl], Field(max_length=MAX_VIDEO_PAGES), AfterValidator(_distinct_pages)
+]
 
 
 def single_spaced(value: object) -> object:

@@ -1,9 +1,13 @@
 // apps/web/src/integrations/google_ads/components/performance-max-settings.tsx
 
+import { useState } from "react"
+
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import {
   Chip,
   ChoiceCards,
+  FormField,
   SelectField,
   SwitchField,
   TextField,
@@ -16,6 +20,12 @@ import {
   type DraftPerformanceMax,
   type PerformanceMaxChecks,
 } from "@/integrations/google_ads/lib/performance-max"
+import {
+  VIDEO_PAGES_HELP,
+  VIDEO_PAGES_RIGHTS,
+  VIDEO_PAGES_TITLE,
+  videoPagesFromText,
+} from "@/integrations/google_ads/lib/video-pages"
 
 const TOOL_NAME = "google_ads_create_campaign"
 
@@ -196,6 +206,85 @@ export function LanguageFields({
         placeholder="Search languages"
         toolName={TOOL_NAME}
       />
+    </div>
+  )
+}
+
+/** A switch, off unless pages are listed, that reveals the pages Google may take videos from. */
+export function VideoPagesField({
+  disabled,
+  onChange,
+  pages,
+}: {
+  disabled: boolean
+  onChange: (pages: string[]) => void
+  pages: readonly string[]
+}) {
+  // On with no pages yet sends nothing, so Google stays off until a page is added.
+  const [open, setOpen] = useState(pages.length > 0)
+  // Typing stays here until Enter or leaving the field, so a pasted list is added whole.
+  const [draft, setDraft] = useState("")
+  const add = () => {
+    const added = videoPagesFromText(draft)
+    setDraft("")
+    if (added.length > 0) onChange(videoPagesFromText([...pages, ...added].join(" ")))
+  }
+  const on = open || pages.length > 0
+  return (
+    <div className="grid min-w-0 gap-3">
+      <SwitchField
+        checked={on}
+        description={VIDEO_PAGES_HELP}
+        disabled={disabled}
+        label={VIDEO_PAGES_TITLE}
+        onChange={(next) => {
+          setOpen(next)
+          setDraft("")
+          if (!next && pages.length > 0) onChange([])
+        }}
+      />
+      {on ? (
+        <FormField label="Pages">
+          {(id) => (
+            <>
+              {pages.length > 0 ? (
+                <div className="flex min-w-0 flex-wrap gap-1.5">
+                  {pages.map((page) => (
+                    <Chip
+                      key={page}
+                      disabled={disabled}
+                      label={page}
+                      onRemove={() => {
+                        onChange(pages.filter((item) => item !== page))
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <Input
+                className="text-sm"
+                disabled={disabled}
+                id={id}
+                onBlur={add}
+                onChange={(event) => {
+                  setDraft(event.currentTarget.value)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    add()
+                  }
+                }}
+                placeholder="https://example.com/videos"
+                value={draft}
+              />
+              <p className="text-muted-foreground text-xs">
+                {pages.length > 0 ? VIDEO_PAGES_RIGHTS : "Add a page to turn this on."}
+              </p>
+            </>
+          )}
+        </FormField>
+      ) : null}
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   requestedUrlOptions,
   type UrlParameter,
 } from "@/integrations/google_ads/lib/setting-changes"
+import { parseVideoPages, videoPagesProblem } from "@/integrations/google_ads/lib/video-pages"
 import { isRecord } from "@/lib/guards"
 
 const MAX_ASSET_GROUPS = 5
@@ -99,6 +100,8 @@ export type DraftPerformanceMax = {
   conversionGoals: DraftGoal[] | null
   finalUrlExpansion: boolean
   languages: { key: string; name: string }[]
+  // Pages Google may take videos from; none leaves that off.
+  videoPages: string[]
   logos: DraftImage<LogoType>[]
   merchant: { feedLabel: string; merchantId: string } | null
 }
@@ -215,7 +218,8 @@ export function parsePerformanceMax(value: Record<string, unknown>): DraftPerfor
   const goals = value["conversion_goals"]
   const conversionGoals = goals === undefined || goals === null ? null : parseEach(goals, parseGoal)
   const merchant = value["merchant"]
-  if (languages === null || logos === null) return null
+  const videoPages = parseVideoPages(value["video_pages"] ?? [])
+  if (languages === null || logos === null || videoPages === null) return null
   if (goals !== undefined && goals !== null && conversionGoals === null) return null
   if (merchant !== undefined && merchant !== null && !isRecord(merchant)) return null
   return {
@@ -227,6 +231,7 @@ export function parsePerformanceMax(value: Record<string, unknown>): DraftPerfor
     merchant: isRecord(merchant)
       ? { feedLabel: text(merchant["feed_label"]), merchantId: text(merchant["merchant_id"]) }
       : null,
+    videoPages,
   }
 }
 
@@ -344,6 +349,7 @@ export function serializePerformanceMax(fields: DraftPerformanceMax): Record<str
     business_name: fields.businessName || null,
     logos: fields.logos.map(imageValue),
     final_url_expansion: fields.finalUrlExpansion,
+    video_pages: fields.videoPages,
     conversion_goals: fields.conversionGoals,
     merchant: fields.merchant
       ? {
@@ -557,6 +563,8 @@ export function performanceMaxProblems(
     if (checks?.unknownLanguages.has(language.key))
       problems.push(`Google doesn't recognise ${language.name || language.key}. Remove it.`)
   }
+  const pages = videoPagesProblem(fields.videoPages)
+  if (pages) problems.push(pages)
   return problems
 }
 

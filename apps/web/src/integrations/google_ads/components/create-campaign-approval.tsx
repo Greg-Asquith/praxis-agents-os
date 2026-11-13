@@ -31,6 +31,7 @@ import {
   GoalsFields,
   LanguageFields,
   PerformanceMaxMoreFields,
+  VideoPagesField,
 } from "@/integrations/google_ads/components/performance-max-settings"
 import {
   AdGroupSummary,
@@ -84,6 +85,7 @@ import {
   type DraftAssetGroup,
   type DraftPerformanceMax,
 } from "@/integrations/google_ads/lib/performance-max"
+import { videoPagesProblem } from "@/integrations/google_ads/lib/video-pages"
 
 const TOOL_NAME = "google_ads_create_campaign"
 // Chips shown per list before Show All, so a long paste doesn't fill the card.
@@ -395,7 +397,12 @@ function CampaignSettings({
         rowKey="more"
         summary={moreSummary(campaign)}
         title="More Settings"
-        tone={campaignProblems(args).some(isAssetProblem) ? "error" : "neutral"}
+        tone={
+          campaignProblems(args).some(isAssetProblem) ||
+          videoPagesProblem(performanceMax?.videoPages ?? [])
+            ? "error"
+            : "neutral"
+        }
       >
         {performanceMax ? (
           <PerformanceMaxMoreFields
@@ -406,6 +413,15 @@ function CampaignSettings({
           />
         ) : null}
         <MoreFields campaign={campaign} disabled={disabled} onEdit={onEdit} />
+        {performanceMax ? (
+          <VideoPagesField
+            disabled={disabled}
+            onChange={(videoPages) => {
+              editPerformanceMax({ videoPages })
+            }}
+            pages={performanceMax.videoPages}
+          />
+        ) : null}
       </SettingRow>
     </SettingRows>
   )
@@ -795,6 +811,10 @@ function moreSummary(campaign: DraftCampaign): string {
       campaign.political ? "EU political ads" : "not political",
       performanceMax.merchant
         ? `products from ${performanceMax.merchant.merchantId || "a feed"}`
+        : null,
+      // Named only when on, so a campaign that leaves it off shows nothing about it.
+      performanceMax.videoPages.length > 0
+        ? `Google finds videos on ${approvalCountLine(performanceMax.videoPages.length, "page")}`
         : null,
     ]
       .filter(Boolean)

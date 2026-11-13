@@ -9,6 +9,7 @@ from typing import Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .asset_automation import live_automation, video_pages
 from .campaign_bidding import BIDDING_FIELDS, bidding_values, card_bidding
 from .utils import stream_rows
 
@@ -21,11 +22,13 @@ type CampaignSetting = Literal[
     "custom_parameters",
     "search_partners",
     "display_expansion",
+    "video_pages",
     "bidding",
 ]
 
 # Each setting's field path in Google's JSON names, as the edit seam compares and masks it.
-# Bidding has several paths, which `campaign_bidding` works out from the change.
+# Bidding has several paths, which `campaign_bidding` works out from the change. Video pages
+# are one entry of the automation list, which `asset_automation` merges into the live list.
 SETTING_PATHS: dict[CampaignSetting, str] = {
     "name": "name",
     "start_date": "startDateTime",
@@ -35,6 +38,7 @@ SETTING_PATHS: dict[CampaignSetting, str] = {
     "custom_parameters": "urlCustomParameters",
     "search_partners": "networkSettings.targetSearchNetwork",
     "display_expansion": "networkSettings.targetContentNetwork",
+    "video_pages": "assetAutomationSettings",
 }
 _FIELDS = (
     "campaign.resource_name",
@@ -49,6 +53,7 @@ _FIELDS = (
     "campaign.url_custom_parameters",
     "campaign.network_settings.target_search_network",
     "campaign.network_settings.target_content_network",
+    "campaign.asset_automation_settings",
     *BIDDING_FIELDS,
 )
 
@@ -82,6 +87,8 @@ def card_value(setting: CampaignSetting, value: Any) -> Any:
         ]
     if setting in {"search_partners", "display_expansion"}:
         return value is True
+    if setting == "video_pages":
+        return video_pages(value)
     return value if isinstance(value, str) and value else None
 
 
@@ -165,5 +172,6 @@ def _values(campaign: Mapping[str, Any]) -> dict[str, Any]:
         # A flag Google leaves out is off.
         "networkSettings.targetSearchNetwork": networks.get("targetSearchNetwork") is True,
         "networkSettings.targetContentNetwork": networks.get("targetContentNetwork") is True,
+        "assetAutomationSettings": live_automation(campaign.get("assetAutomationSettings")),
         **bidding_values(campaign),
     }

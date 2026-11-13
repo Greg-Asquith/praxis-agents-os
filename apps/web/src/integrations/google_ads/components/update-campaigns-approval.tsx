@@ -45,6 +45,7 @@ import {
   canCheckCampaigns,
   editedChanges,
   isBidding,
+  isVideoPages,
   needsCheck,
   parseCancelled,
   restoredChanges,
@@ -55,6 +56,7 @@ import {
   type UpdateCampaignsArgs,
   valueText,
 } from "@/integrations/google_ads/lib/update-campaigns"
+import { VIDEO_PAGES_RIGHTS, videoPagesFromText } from "@/integrations/google_ads/lib/video-pages"
 
 // Below this many changes the summary and the table tools only add noise.
 const TOOLS_FROM = 10
@@ -378,7 +380,7 @@ export function UpdateCampaignsApproval({
             name: rows.find((row) => row.key === change.key)?.campaignName ?? change.label,
             options: addableCampaignSettings(args, checked, rows, change.key),
           }))}
-        titles={SETTING_TITLES}
+        titles={{ ...SETTING_TITLES, video_pages: "Video Pages (Advanced)" }}
       />
       {needsCheck(args, checked) && args.changes.length > 0 ? (
         <CheckChanges
@@ -468,6 +470,9 @@ function ChangeCell({
         value={row.value}
       />
       {row.unchanged ? <Badge variant="secondary">Already Set</Badge> : null}
+      {isVideoPages(row.setting, row.value) && row.value.length > 0 && !row.unchanged ? (
+        <p className="text-muted-foreground basis-full text-xs">{VIDEO_PAGES_RIGHTS}</p>
+      ) : null}
     </div>
   )
 }
@@ -496,6 +501,19 @@ function SettingEditor({
         }}
         options={ON_OFF}
         value={value ? "on" : "off"}
+      />
+    )
+  if (isVideoPages(setting, value))
+    return (
+      <CommittedInput
+        ariaLabel={label}
+        className="h-7 min-w-48 flex-1 text-sm"
+        disabled={disabled}
+        onCommit={(next) => {
+          onChange(videoPagesFromText(next))
+        }}
+        placeholder="Off. Add page addresses, separated by commas"
+        value={value.join(", ")}
       />
     )
   if (Array.isArray(value))
