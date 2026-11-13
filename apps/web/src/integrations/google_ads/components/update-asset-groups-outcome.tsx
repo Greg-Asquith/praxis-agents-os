@@ -35,7 +35,8 @@ export function UpdateAssetGroupsOutcome({ result }: { result: UpdateAssetGroups
       result.rows.map((row) => {
         const removed = row.action === "remove"
         return {
-          after: removed ? "" : row.item,
+          // A setting with nothing in it is a URL option the change cleared.
+          after: removed ? "" : row.item || "Cleared",
           before: row.action === "set" ? (row.before ?? "") : removed ? row.item : "",
           details: [row.message, row.errorCode ? googleAdsTokenLabel(row.errorCode) : null]
             .filter(Boolean)

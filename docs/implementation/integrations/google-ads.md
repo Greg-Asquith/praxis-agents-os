@@ -677,6 +677,13 @@ the count. In a retail campaign, a group that links none of its own assets is ex
 because Google makes its assets from the feed, and the brand is then optional too. A
 group that links some assets must meet every minimum, as Google requires.
 
+An asset group also takes `url_options` (`GoogleAdsUrlOptions` in
+`tools/schemas/url_options.py`, the model campaigns, ad groups, and keywords use):
+`final_url_suffix`, `tracking_template`, and up to 8 `custom_parameters`. They're sent as
+`finalUrlSuffix`, `trackingUrlTemplate`, and `urlCustomParameters` on the `assetGroup`
+create. An empty option on a new group is left out. Google added these fields to
+`AssetGroup` in v25.2.
+
 `operations/performance_max.py` compiles the campaign (`add_performance_max_campaign`,
 which reuses `add_campaign_budget`, `campaign_body`, and `add_campaign_locations` from
 `operations/search_campaigns.py`) and each asset group (`add_asset_group`). Text assets
@@ -770,15 +777,21 @@ asset group, keyed by build step. `campaign` leads the review, with `google_ads_
 `google_ads_update_asset_groups` changes up to 100 live Performance Max asset groups in
 one approval. Each entry (`GoogleAdsAssetGroupUpdate` in
 `tools/schemas/asset_group_updates.py`) names one asset group and only what changes:
-`name`, `final_url`, `add_assets` and `remove_assets` (headlines, long headlines,
+`name`, `final_url`, `url_options`, `add_assets` and `remove_assets` (headlines, long headlines,
 descriptions, images by shape, and videos), `add_search_themes` and
 `remove_search_themes`, and `add_audience_signals` and `remove_audience_signals`. Text is
 removed by its text, and images and videos by their asset. The schema refuses an item
 both added and removed, and an entry that changes nothing. Status and removal stay in
 `google_ads_update_status` and `google_ads_remove_objects`.
 
+Each URL option set in `url_options` replaces the group's value, and an empty value or
+list clears it. The name, final URL, and URL options go in one `assetGroup` update in the
+first request, with an update mask that names only the settings that differ from what's
+live. A cleared option is sent as null under the mask. The card and result show custom
+parameters as `key=value, key=value`.
+
 `read_asset_groups` in `operations/asset_group_state.py` reads each group's name,
-status, final URLs, campaign (channel, status, and Merchant Center feed), linked assets
+status, final URLs, URL options, campaign (channel, status, and Merchant Center feed), linked assets
 with their field type, text, and source, search themes, and audience signals, then the
 audiences those signals name, with their scope and dimensions. A read that reaches its row
 limit is refused rather than checked in part.
@@ -1762,6 +1775,9 @@ already uses. The campaign's checks apply only while the operator keeps the chec
 campaign. `components/create-asset-groups-approval.tsx` shows `StatusChoice`, then the
 campaign on `ParentTable` with **Change Campaign**, then `AssetGroupsEditor` with
 `toolName` set to `google_ads_create_asset_groups`, and **Check Changes** after an edit.
+`AssetGroupsEditor` ends each group with a collapsed **URL Options** row (final URL suffix,
+tracking template, and custom parameters as `key=value, key=value`), on this card and on
+Create Campaign for Performance Max. It sends only the options a group has.
 The approve button reads **Add N Asset Groups**. The result is `CampaignBuildOutcome`, as
 on the other create cards.
 
@@ -1775,8 +1791,10 @@ themes with their spaces collapsed), so each row finds its check.
 - `ChangeBanner`, noting that themes and signals guide Google without limiting reach.
 - The asset groups on `ParentTable` (Assets Now, Changes, Problems). Counts are per group,
   so one group is always in view: the first, or the one clicked.
-- **Asset Group Settings**, when the name or final URL changes: Now, then New edited in
-  place.
+- **Asset Group Settings**, when the name, final URL, or a URL option changes: Now, then
+  New edited in place. Custom parameters are edited as `key=value, key=value`, and an
+  empty URL option clears the live one. **Add a Change** (`AddChange`) adds a URL option
+  the request doesn't change, starting from its live value in the check's `url_options`.
 - **What the Asset Group Will Hold** (`kindSummary`): one row per asset type the group
   holds, needs, or changes, with Now, Removing, Adding, After, what Google allows, and a
   status badge. It updates live as the operator edits, cancels, or adds items. As on the
@@ -1790,7 +1808,8 @@ themes with their spaces collapsed), so each row finds its check.
   image's shape through a select. **Add an Item** adds any type: typed text or a theme,
   an audience, or an uploaded image or video through the `google_ads_asset` search.
 
-Text over its length is a problem on the card. Cancelled changes and groups are kept
+Text over its length is a problem on the card, and so are custom parameters the server
+would refuse (`parametersProblem` in `lib/setting-changes.ts`). Cancelled changes and groups are kept
 beside the request through `cancelled-rows.ts`; any edit, cancel, or addition asks for
 **Check Changes**. The result (`components/update-asset-groups-outcome.tsx`) is one table:
 Asset Group, Setting, Before, After, and Outcome, opening on Failed when anything failed.

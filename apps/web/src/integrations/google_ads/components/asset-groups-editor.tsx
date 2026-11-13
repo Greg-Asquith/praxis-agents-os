@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { CommittedInput } from "@/integrations/ads/components/committed-input"
+import { FormField, TextField } from "@/integrations/ads/components/controls"
 import { EntitySearch } from "@/integrations/ads/components/entity-search"
 import { SettingLine, SettingRow, SettingRows } from "@/integrations/ads/components/setting-rows"
 import { ImageTiles } from "@/integrations/google_ads/components/image-tiles"
@@ -32,7 +33,13 @@ import {
   type DraftAudienceSignal,
   type PerformanceMaxChecks,
   type TextKind,
+  urlOptionsSummary,
 } from "@/integrations/google_ads/lib/performance-max"
+import {
+  parametersProblem,
+  parametersText,
+  parseParametersText,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { cn } from "@/lib/utils"
 
 const COLUMNS: DataColumn[] = [
@@ -391,6 +398,47 @@ function AssetGroupFields({
             signals={group.audienceSignals}
             toolName={toolName}
           />
+        </SettingRow>
+        <SettingRow
+          rowKey="urlOptions"
+          summary={urlOptionsSummary(group)}
+          title="URL Options"
+          tone={parametersProblem(group.customParameters) ? "error" : "neutral"}
+        >
+          <TextField
+            disabled={disabled}
+            label="Final URL Suffix"
+            onChange={(finalUrlSuffix) => {
+              onEdit({ finalUrlSuffix })
+            }}
+            placeholder="utm_source=google&utm_medium=cpc"
+            value={group.finalUrlSuffix}
+          />
+          <TextField
+            disabled={disabled}
+            label="Tracking Template"
+            onChange={(trackingTemplate) => {
+              onEdit({ trackingTemplate })
+            }}
+            placeholder="{lpurl}?source=google"
+            value={group.trackingTemplate}
+          />
+          <FormField label="Custom Parameters">
+            {(id) => (
+              <CommittedInput
+                ariaLabel="Custom parameters"
+                className="text-sm"
+                disabled={disabled}
+                id={id}
+                onCommit={(next) => {
+                  const customParameters = parseParametersText(next)
+                  if (customParameters) onEdit({ customParameters })
+                }}
+                placeholder="key=value, key=value"
+                value={parametersText(group.customParameters)}
+              />
+            )}
+          </FormField>
         </SettingRow>
       </SettingRows>
       {row.problems.length > 1 ? (

@@ -168,7 +168,12 @@ async def test_one_atomic_request_adds_a_group_with_one_audience_signal_holding_
         {"kind": "user_interest", "key": "80432"},
         {"kind": "custom_audience", "key": "612"},
     ]
-    args = _args(_asset_group(audience_signals=signals))
+    url_options = {
+        "final_url_suffix": "utm_source=google",
+        "tracking_template": "",
+        "custom_parameters": [{"key": "season", "value": "winter"}],
+    }
+    args = _args(_asset_group(audience_signals=signals, url_options=url_options))
 
     entry, audit = await _run(monkeypatch, account, args)
 
@@ -181,6 +186,9 @@ async def test_one_atomic_request_adds_a_group_with_one_audience_signal_holding_
         "campaign": f"{_C}/campaigns/10",
         "finalUrls": ["https://shop.test/rain-jackets"],
         "status": "PAUSED",
+        # An empty tracking template is one the new group doesn't have.
+        "finalUrlSuffix": "utm_source=google",
+        "urlCustomParameters": [{"key": "season", "value": "winter"}],
         "resourceName": group,
     }
     # A campaign without a feed takes no listing filter.

@@ -43,6 +43,7 @@ from services.integrations.operations import (
 
 from ..client import GoogleAdsClient
 from ..operations.asset_group_state import (
+    URL_OPTION_PATHS,
     LiveAssetGroup,
     LiveAssetGroups,
     LiveAudience,
@@ -50,6 +51,7 @@ from ..operations.asset_group_state import (
     segment_key,
 )
 from ..operations.build import CampaignBuild, dry_run_build, send_build
+from ..operations.campaign_settings import api_value
 from ..operations.edits import STALE_MESSAGE
 from ..operations.mutation_outcomes import (
     GoogleAdsMutationLedger,
@@ -101,6 +103,8 @@ _MAX_MODEL_OUTCOMES = 50
 _TEXT_KINDS = ("HEADLINE", "LONG_HEADLINE", "DESCRIPTION")
 _IMAGE_KINDS = ("MARKETING_IMAGE", "SQUARE_MARKETING_IMAGE", "PORTRAIT_MARKETING_IMAGE")
 _LINK_KINDS = (*_TEXT_KINDS, *_IMAGE_KINDS, "YOUTUBE_VIDEO")
+# Each setting's field in Google's JSON names, in the order an update masks them.
+_SETTING_PATHS: Mapping[str, str] = {"name": "name", "final_url": "finalUrls", **URL_OPTION_PATHS}
 # Each kind's minimum and maximum in one asset group.
 _LIMITS: Mapping[str, tuple[int, int]] = {
     **ASSET_GROUP_LIMITS,
@@ -153,7 +157,8 @@ class _Row:
     group: str
     action: _Action
     kind: str
-    # The text, URL, name, asset ID, theme, or `kind:key` audience the change is about.
+    # The text, URL, name, asset ID, theme, or `kind:key` audience the change is about; a URL
+    # option as the card shows it, empty when it's cleared.
     value: str
     # What the card and result call it, such as an image's name.
     item: str
@@ -161,6 +166,8 @@ class _Row:
     # The live link, signal, name, or URL the change was checked against.
     before: str | None = None
     problem: str | None = None
+    # A URL option in card terms, which is what Google is sent and compared with.
+    option: Any = None
 
     @property
     def row(self) -> str:
@@ -197,6 +204,9 @@ def _requested(update: GoogleAdsAssetGroupUpdate) -> list[_Row]:
         rows.append(_Row(group, "set", "name", update.name, update.name))
     if update.final_url is not None:
         rows.append(_Row(group, "set", "final_url", update.final_url, update.final_url))
+    for setting, option in (update.url_options.requested if update.url_options else {}).items():
+        text = _option_text(option)
+        rows.append(_Row(group, "set", setting, text, text, option=option))
     for action, assets in (("remove", update.remove_assets), ("add", update.add_assets)):
         labels = {image.asset.asset_id: image.asset for image in assets.images}
         labels.update({video.asset_id: video for video in assets.videos})
@@ -237,6 +247,13 @@ def _requested(update: GoogleAdsAssetGroupUpdate) -> list[_Row]:
     return rows
 
 
+def _option_text(option: Any) -> str:
+    """Shows a URL option as the card does: its text, or custom parameters as `key=value`."""
+    if isinstance(option, list):
+        return ", ".join(f"{item['key']}={item['value']}" for item in option)
+    return option or ""
+
+
 def _group_problem(group: LiveAssetGroup | None) -> str | None:
     if group is None or group.status == "REMOVED":
         return _MISSING
@@ -270,6 +287,9 @@ def _settle(row: _Row, group: LiveAssetGroup, audience: LiveAudience | None) -> 
     if row.kind == "final_url":
         now = group.final_urls[0] if group.final_urls else None
         return replace(row, before=now, state=_set_state(group.final_urls == (row.value,)))
+    if row.kind in URL_OPTION_PATHS:
+        live = group.url_options.get(row.kind)
+        return replace(row, before=_option_text(live) or None, state=_set_state(live == row.option))
     found: str | None = None
     if row.kind in _LINK_KINDS:
         found = next(
@@ -431,17 +451,22 @@ def _compile(
     changing = [
         row for row in rows if row.changes and (parts is None or parts.get(row.source, 0) == part)
     ]
-    settings = {row.kind: row.value for row in changing if row.action == "set"}
+    settings = {row.kind: row for row in changing if row.action == "set"}
     if settings:
         body: dict[str, Any] = {"resourceName": group.resource_name}
-        if "name" in settings:
-            body["name"] = settings["name"]
-        if "final_url" in settings:
-            body["finalUrls"] = [settings["final_url"]]
+        for kind, path in _SETTING_PATHS.items():
+            if kind not in settings:
+                continue
+            row = settings[kind]
+            if kind in URL_OPTION_PATHS:
+                # A null value in the mask clears the option.
+                body[path] = api_value(kind, row.option)
+            else:
+                body[path] = [row.value] if kind == "final_url" else row.value
         build.update(
             "assetGroup",
             body,
-            update_mask=",".join(field for field in ("name", "finalUrls") if field in body),
+            update_mask=",".join(path for path in _SETTING_PATHS.values() if path in body),
             label=f"{group.name}: settings",
             source=f"{group.resource_name}|settings",
         )
@@ -982,6 +1007,7 @@ def _group_check(
         "name": group.name if group else update.asset_group.label,
         "campaign_name": group.campaign_name if group else None,
         "retail": bool(group and group.retail),
+        "url_options": dict(group.url_options) if group else {},
         "problem": problem,
         "now": dict(now),
         "rows": [
@@ -1004,7 +1030,9 @@ DEFINITION = RuntimeToolDefinition(
     function=google_ads_update_asset_groups,
     description=(
         "Change up to 100 live Performance Max asset groups in one approval. Each entry names "
-        "one asset_group and only what changes: name; final_url; add_assets and remove_assets "
+        "one asset_group and only what changes: name; final_url; url_options (final_url_suffix, "
+        "tracking_template, and up to 8 custom_parameters [{key, value}], each replacing the "
+        "group's value, with an empty value or list clearing it); add_assets and remove_assets "
         "({headlines (30 characters), long_headlines (90), descriptions (90), images [{asset, "
         "field_type}], videos}); add_search_themes and remove_search_themes (80 characters); "
         "and add_audience_signals and remove_audience_signals [{kind, key, name}] (user_list, "

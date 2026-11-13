@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING, Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .asset_group_state import URL_OPTION_PATHS
 from .build import CampaignBuild
+from .campaign_settings import api_value
 from .conversion_settings import LiveAccountGoal
 from .criteria import AUDIENCE_FIELDS
 from .search_campaigns import (
@@ -161,20 +163,25 @@ def add_asset_group(
     status: str,
     retail: bool,
 ) -> None:
-    """Adds an asset group with its text, images, videos, and search themes.
+    """Adds an asset group with its URL options, text, images, videos, and search themes.
 
     Args:
         retail: True for a campaign with a Merchant Center feed, whose groups show every
             product in the feed until listing filters narrow them.
     """
+    body: dict[str, Any] = {
+        "name": group.name,
+        "campaign": campaign,
+        "finalUrls": [group.final_url],
+        "status": status,
+    }
+    for setting, value in (group.url_options.requested if group.url_options else {}).items():
+        # An empty option on a new group is one it doesn't have.
+        if value:
+            body[URL_OPTION_PATHS[setting]] = api_value(setting, value)
     name = build.create(
         "assetGroup",
-        {
-            "name": group.name,
-            "campaign": campaign,
-            "finalUrls": [group.final_url],
-            "status": status,
-        },
+        body,
         label=group.name,
         source=AssetGroupItem("asset_group", index),
     )

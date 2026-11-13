@@ -17,11 +17,22 @@ import {
 } from "@/integrations/google_ads/lib/copy"
 import { characterCount } from "@/integrations/google_ads/lib/create-ads"
 import { googleAdsId, textOrNull } from "@/integrations/google_ads/lib/field-values"
+import {
+  parametersProblem,
+  parametersText,
+  parseParametersText,
+  parseUrlParameters,
+  requestedUrlOptions,
+  URL_OPTION_SETTINGS,
+  type UrlParameter,
+  withUrlOption,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { isRecord } from "@/lib/guards"
 
 export type GroupChangeKind =
   | "name"
   | "final_url"
+  | UrlOptionKind
   | "HEADLINE"
   | "LONG_HEADLINE"
   | "DESCRIPTION"
@@ -32,7 +43,9 @@ export type GroupChangeKind =
   | "search_theme"
   | "audience_signal"
 
-export type ItemKind = Exclude<GroupChangeKind, "name" | "final_url">
+export type UrlOptionKind = (typeof URL_OPTION_SETTINGS)[number]
+export type UrlOptionValue = string | UrlParameter[] | null
+export type ItemKind = Exclude<GroupChangeKind, "name" | "final_url" | UrlOptionKind>
 type Action = "add" | "remove" | "set"
 // `unchecked` waits for a check of an edit; `unavailable` is a check that gave no answer.
 type RowState = "change" | "already_set" | "not_found" | "unchecked" | "unavailable"
@@ -62,8 +75,10 @@ const ASSET_LISTS: Partial<Record<ItemKind, string>> = {
 }
 
 export const GROUP_CHANGE_LABELS: Record<GroupChangeKind, string> = {
+  custom_parameters: "Custom Parameters",
   DESCRIPTION: "Description",
   final_url: "Final URL",
+  final_url_suffix: "Final URL Suffix",
   HEADLINE: "Headline",
   LONG_HEADLINE: "Long Headline",
   MARKETING_IMAGE: "Landscape Image",
@@ -72,6 +87,7 @@ export const GROUP_CHANGE_LABELS: Record<GroupChangeKind, string> = {
   search_theme: "Search Theme",
   SQUARE_MARKETING_IMAGE: "Square Image",
   audience_signal: "Audience Signal",
+  tracking_template: "Tracking Template",
   YOUTUBE_VIDEO: "Video",
 }
 
@@ -139,6 +155,8 @@ type GroupCheck =
       retail: boolean
       problem: string | null
       rows: CheckRow[]
+      // The group's live URL options, which one added on the card starts from.
+      urlOptions: Record<UrlOptionKind, UrlOptionValue>
     }
 
 export type UpdateAssetGroupsArgs = {
@@ -205,6 +223,15 @@ function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0
 }
 
+function parseLiveUrlOptions(value: unknown): Record<UrlOptionKind, UrlOptionValue> {
+  const live = isRecord(value) ? value : {}
+  return {
+    custom_parameters: parseUrlParameters(live["custom_parameters"]) ?? [],
+    final_url_suffix: textOrNull(live["final_url_suffix"]),
+    tracking_template: textOrNull(live["tracking_template"]),
+  }
+}
+
 function parseCheck(value: unknown): GroupCheck {
   if (!isRecord(value) || value["unavailable"] !== false) return { unavailable: true }
   const now = isRecord(value["now"]) ? value["now"] : {}
@@ -217,6 +244,7 @@ function parseCheck(value: unknown): GroupCheck {
     retail: value["retail"] === true,
     problem: textOrNull(value["problem"]),
     rows: rows.flatMap((row) => parseCheckRow(row) ?? []),
+    urlOptions: parseLiveUrlOptions(value["url_options"]),
   }
 }
 
@@ -308,7 +336,23 @@ function rowId(targetKey: string, action: Action, row: string): string {
   return `${targetKey}|${action}|${row}`
 }
 
-type Requested = { action: Action; item: Item | null; kind: GroupChangeKind; value: string }
+type Requested = {
+  action: Action
+  item: Item | null
+  kind: GroupChangeKind
+  // A URL option as sent, so Undo can put it back.
+  option?: UrlOptionValue
+  value: string
+}
+
+function isUrlOptionKind(kind: GroupChangeKind): kind is UrlOptionKind {
+  return URL_OPTION_SETTINGS.some((item) => item === kind)
+}
+
+/** A URL option as the card shows it; empty when it's cleared. */
+function optionText(option: UrlOptionValue): string {
+  return Array.isArray(option) ? parametersText(option) : (option ?? "")
+}
 
 /** Every change the entry asks for, in the server's order. */
 function requested(entry: Record<string, unknown>): Requested[] {
@@ -316,6 +360,12 @@ function requested(entry: Record<string, unknown>): Requested[] {
   for (const kind of ["name", "final_url"] as const) {
     const value = textOrNull(entry[kind])
     if (value !== null) changes.push({ action: "set", item: null, kind, value })
+  }
+  const options = requestedUrlOptions(entry)
+  for (const kind of URL_OPTION_SETTINGS) {
+    const option = options[kind]
+    if (option !== undefined)
+      changes.push({ action: "set", item: null, kind, option, value: optionText(option) })
   }
   for (const action of ["remove", "add"] as const)
     for (const kind of ITEM_KINDS)
@@ -335,6 +385,7 @@ function groupName(checked: UpdateAssetGroupsArgs, entry: GroupEntry): string {
 
 /** A problem the card knows before Google answers, such as a headline over 30 characters. */
 function localProblem(change: Requested): string | null {
+  if (Array.isArray(change.option)) return parametersProblem(change.option)
   const limit = TEXT_LIMITS[change.kind]
   if (change.action === "remove" || limit === undefined) return null
   if (change.value.length === 0)
@@ -380,7 +431,7 @@ export function groupChangeRows(
         problem:
           localProblem(change) ??
           (unavailable ? UNAVAILABLE : (known?.problem ?? answer?.problem ?? null)),
-        raw: change.item?.raw ?? change.value,
+        raw: change.item?.raw ?? (change.option === undefined ? change.value : change.option),
         row,
         state: unavailable ? "unavailable" : (answer?.state ?? "unchecked"),
         targetKey: entry.key,
@@ -505,6 +556,7 @@ export function groupParents(
 
 /** The entry without the row's change. */
 function withoutRow(entry: Record<string, unknown>, row: GroupChangeRow): Record<string, unknown> {
+  if (isUrlOptionKind(row.kind)) return withUrlOption(entry, row.kind, undefined)
   if (row.action === "set")
     return Object.fromEntries(Object.entries(entry).filter(([key]) => key !== row.kind))
   const kind = row.kind as ItemKind
@@ -544,16 +596,18 @@ function withRow(entry: GroupEntry, row: GroupChangeRow): GroupEntry | null {
       change.action === row.action && rowKey(change.action, change.kind, change.value) === row.row
   )
   if (held) return null
+  if (isUrlOptionKind(row.kind))
+    return { ...entry, entry: withUrlOption(entry.entry, row.kind, row.raw) }
   if (row.action === "set") return { ...entry, entry: { ...entry.entry, [row.kind]: row.raw } }
   const kind = row.kind as ItemKind
   const list = listOf(entry.entry, row.action, kind)
   return { ...entry, entry: withList(entry.entry, row.action, kind, [...list, row.raw]) }
 }
 
-/** Puts `next` in place of the item the row adds, or sets the row's name or URL.
+/** Puts `next` in place of the item the row adds, or sets the row's name, URL, or URL option.
  *
- * `next` is the new text for text and themes, the audience as searched, or the image with
- * its new shape. */
+ * `next` is the new text for text, themes, and settings, the audience as searched, or the
+ * image with its new shape. Custom parameters that don't read as `key=value` change nothing. */
 export function editGroupChange(
   args: UpdateAssetGroupsArgs,
   row: GroupChangeRow,
@@ -561,6 +615,13 @@ export function editGroupChange(
 ): GroupEntry[] {
   return args.entries.map((entry) => {
     if (entry.key !== row.targetKey) return entry
+    if (isUrlOptionKind(row.kind)) {
+      const option =
+        row.kind === "custom_parameters" ? parseParametersText(String(next)) : String(next)
+      return option === null
+        ? entry
+        : { ...entry, entry: withUrlOption(entry.entry, row.kind, option) }
+    }
     if (row.action === "set") return { ...entry, entry: { ...entry.entry, [row.kind]: next } }
     const kind = row.kind as ItemKind
     const list = listOf(entry.entry, "add", kind).map((raw) =>
@@ -584,6 +645,36 @@ export function addGroupItem(
     if (list.some((item) => itemOf(kind, item)?.value === added.value)) return entry
     return { ...entry, entry: withList(entry.entry, "add", kind, [...list, raw]) }
   })
+}
+
+/** The URL options a group doesn't change yet, each at its live value; none before a check. */
+export function addableUrlOptions(
+  args: UpdateAssetGroupsArgs,
+  checked: UpdateAssetGroupsArgs,
+  targetKey: string
+): { setting: UrlOptionKind; value: UrlOptionValue }[] {
+  const check = checked.checks.get(targetKey)
+  const entry = args.entries.find((item) => item.key === targetKey)
+  if (!entry || !check || check.unavailable || check.problem !== null) return []
+  const held = requestedUrlOptions(entry.entry)
+  return URL_OPTION_SETTINGS.filter((setting) => held[setting] === undefined).map((setting) => ({
+    setting,
+    value: check.urlOptions[setting],
+  }))
+}
+
+/** Adds a URL option to a group already in the request. */
+export function addGroupUrlOption(
+  args: UpdateAssetGroupsArgs,
+  targetKey: string,
+  setting: UrlOptionKind,
+  value: UrlOptionValue
+): GroupEntry[] {
+  return args.entries.map((entry) =>
+    entry.key === targetKey
+      ? { ...entry, entry: withUrlOption(entry.entry, setting, value) }
+      : entry
+  )
 }
 
 /** What the server refuses whatever Google answers: the request's size. */

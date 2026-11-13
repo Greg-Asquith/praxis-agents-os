@@ -30,11 +30,13 @@ type CheckedSettings<S extends string, V> = {
   checks: ReadonlyMap<string, { unavailable: boolean }>
 }
 
-const URL_OPTIONS: ReadonlySet<string> = new Set([
+export const URL_OPTION_SETTINGS = [
   "final_url_suffix",
   "tracking_template",
   "custom_parameters",
-])
+] as const
+
+const URL_OPTIONS: ReadonlySet<string> = new Set(URL_OPTION_SETTINGS)
 
 export function isUrlOption(setting: string): boolean {
   return URL_OPTIONS.has(setting)
@@ -69,6 +71,18 @@ export function parseParametersText(value: string): UrlParameter[] | null {
     items.push({ key, value: split === -1 ? "" : pair.slice(split + 1).trim() })
   }
   return items
+}
+
+/** Why Google refuses the custom parameters, as the server checks them, or null. */
+export function parametersProblem(parameters: readonly UrlParameter[]): string | null {
+  if (parameters.length > 8) return "Google takes at most 8 custom parameters."
+  const names = parameters.map((item) => item.key.toLowerCase())
+  if (parameters.some((item) => !/^[A-Za-z0-9]{1,16}$/.test(item.key)))
+    return "Custom parameter names take 1 to 16 letters or numbers."
+  if (new Set(names).size !== names.length) return "Give each custom parameter a different name."
+  return parameters.some((item) => new TextEncoder().encode(item.value).length > 200)
+    ? "A custom parameter value is too long."
+    : null
 }
 
 /** The URL options an entry changes, read the way the server reads them. */

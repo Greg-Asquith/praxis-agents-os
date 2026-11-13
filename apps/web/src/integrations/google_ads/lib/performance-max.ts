@@ -4,6 +4,11 @@ import type { EntityChoice } from "@/features/tools/types"
 import { parseEach, text } from "@/integrations/google_ads/lib/create-ad-groups"
 import { characterCount } from "@/integrations/google_ads/lib/create-ads"
 import { googleAdsId, isGoogleAdsUrl } from "@/integrations/google_ads/lib/field-values"
+import {
+  parametersProblem,
+  requestedUrlOptions,
+  type UrlParameter,
+} from "@/integrations/google_ads/lib/setting-changes"
 import { isRecord } from "@/lib/guards"
 
 const MAX_ASSET_GROUPS = 5
@@ -72,13 +77,16 @@ export type DraftAudienceSignal = { key: string; kind: SignalAudienceKind; name:
 
 export type DraftAssetGroup = {
   audienceSignals: DraftAudienceSignal[]
+  customParameters: UrlParameter[]
   descriptions: string[]
   finalUrl: string
+  finalUrlSuffix: string
   headlines: string[]
   images: DraftImage[]
   longHeadlines: string[]
   name: string
   searchThemes: string[]
+  trackingTemplate: string
   // YouTube video references, as received.
   videos: Record<string, unknown>[]
 }
@@ -171,15 +179,19 @@ export function parseAssetGroup(value: unknown): DraftAssetGroup | null {
   if (!headlines || !longHeadlines || !descriptions || !searchThemes || !images || !videos)
     return null
   if (!audienceSignals) return null
+  const urlOptions = requestedUrlOptions(value)
   return {
     audienceSignals,
+    customParameters: urlOptions.custom_parameters ?? [],
     descriptions,
     finalUrl: text(value["final_url"]),
+    finalUrlSuffix: urlOptions.final_url_suffix ?? "",
     headlines,
     images,
     longHeadlines,
     name: value["name"],
     searchThemes,
+    trackingTemplate: urlOptions.tracking_template ?? "",
     videos,
   }
 }
@@ -293,9 +305,16 @@ function imageValue(image: DraftImage<string>): Record<string, unknown> {
 /** The asset group's argument value; blank text lines are left out. */
 function serializeAssetGroup(group: DraftAssetGroup): Record<string, unknown> {
   const lines = (items: readonly string[]) => items.map((item) => item.trim()).filter(Boolean)
+  // Only the URL options the group has, since an empty one on a new group means nothing.
+  const urlOptions = {
+    ...(group.finalUrlSuffix.trim() ? { final_url_suffix: group.finalUrlSuffix.trim() } : {}),
+    ...(group.trackingTemplate.trim() ? { tracking_template: group.trackingTemplate.trim() } : {}),
+    ...(group.customParameters.length > 0 ? { custom_parameters: group.customParameters } : {}),
+  }
   return {
     name: group.name,
     final_url: group.finalUrl.trim(),
+    ...(Object.keys(urlOptions).length > 0 ? { url_options: urlOptions } : {}),
     headlines: lines(group.headlines),
     long_headlines: lines(group.longHeadlines),
     descriptions: lines(group.descriptions),
@@ -488,6 +507,8 @@ function assetGroupProblems(
     problems.push(`Takes at most ${String(MAX_SEARCH_THEMES)} search themes.`)
   if (themes.some((theme) => characterCount(theme) > SEARCH_THEME_LENGTH))
     problems.push(`A search theme is over ${String(SEARCH_THEME_LENGTH)} characters.`)
+  const parameters = parametersProblem(group.customParameters)
+  if (parameters) problems.push(parameters)
   return [...problems, ...audienceProblems(group, checks), ...googleGroupProblems(group, checks)]
 }
 
@@ -583,18 +604,32 @@ export function assetGroupsObjectCount(groups: readonly DraftAssetGroup[]): numb
   )
 }
 
+/** The group's URL options on one line, such as "Suffix, 2 custom parameters". */
+export function urlOptionsSummary(group: DraftAssetGroup): string {
+  const parameters = group.customParameters.length
+  const parts = [
+    group.finalUrlSuffix.trim() ? "Suffix" : null,
+    group.trackingTemplate.trim() ? "Tracking template" : null,
+    parameters > 0 ? `${String(parameters)} custom parameter${parameters === 1 ? "" : "s"}` : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(", ") : "None · optional"
+}
+
 export function blankAssetGroup(groups: readonly DraftAssetGroup[]): DraftAssetGroup | null {
   if (groups.length >= MAX_ASSET_GROUPS) return null
   const finalUrl = groups[0]?.finalUrl ?? ""
   return {
     audienceSignals: [],
+    customParameters: [],
     descriptions: [],
     finalUrl,
+    finalUrlSuffix: "",
     headlines: [],
     images: [],
     longHeadlines: [],
     name: `Asset Group ${String(groups.length + 1)}`,
     searchThemes: [],
+    trackingTemplate: "",
     videos: [],
   }
 }

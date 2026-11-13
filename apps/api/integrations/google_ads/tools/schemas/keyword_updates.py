@@ -13,8 +13,8 @@ from ...operations.keyword_settings import KeywordSetting
 from ...references import GoogleAdsKeywordReference
 from ..utils.money import money_to_micros
 from .base import GoogleAdsStrictModel
-from .campaign_updates import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 from .positive_keywords import GoogleAdsCpcBid, GoogleAdsFinalUrl
+from .url_options import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 
 MAX_KEYWORD_UPDATES = 500
 

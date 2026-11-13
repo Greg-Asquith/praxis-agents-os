@@ -35,11 +35,14 @@ import {
   retainCancelled,
   serializeCancelled,
 } from "@/integrations/ads/lib/cancelled-rows"
+import { AddChange } from "@/integrations/google_ads/components/add-change"
 import { CheckChanges } from "@/integrations/google_ads/components/check-changes"
 import { ProblemList } from "@/integrations/google_ads/components/new-ad-groups"
 import { characterCount } from "@/integrations/google_ads/lib/create-ads"
 import {
+  addableUrlOptions,
   addGroupItem,
+  addGroupUrlOption,
   canCheckGroups,
   cancelGroupChanges,
   editGroupChange,
@@ -90,7 +93,7 @@ const SUMMARY_COLUMNS: DataColumn[] = [
 ]
 
 const SETTING_COLUMNS: DataColumn[] = [
-  { key: "setting", kind: "text", label: "Setting", width: 120 },
+  { key: "setting", kind: "text", label: "Setting", width: 160 },
   { key: "now", kind: "text", label: "Now", width: 240 },
   { key: "value", kind: "text", label: "New", width: 320 },
   { key: "cancel", kind: "text", label: "Cancel", width: 70 },
@@ -108,6 +111,13 @@ const ADDITION_COLUMNS: DataColumn[] = [
   { key: "length", kind: "text", label: "Length", width: 80 },
   { key: "cancel", kind: "text", label: "Cancel", width: 70 },
 ]
+
+// What an empty URL option's field says: left empty, the change clears the option.
+const SETTING_PLACEHOLDERS: Partial<Record<GroupChangeRow["kind"], string>> = {
+  custom_parameters: "key=value, key=value",
+  final_url_suffix: "Nothing set",
+  tracking_template: "Nothing set",
+}
 
 const AUDIENCE_KINDS: readonly unknown[] = ["user_list", "user_interest", "custom_audience"]
 
@@ -214,6 +224,21 @@ export function UpdateAssetGroupsApproval({
             onEdit={edit}
             onUndo={undo}
             rows={groupRows.filter((row) => row.action === "set")}
+          />
+          <AddChange
+            disabled={disabled}
+            noun="Asset Group"
+            onAdd={(key, setting, value) => {
+              save(addGroupUrlOption(args, key, setting, value))
+            }}
+            targets={[
+              {
+                key: group,
+                name: parents.find((parent) => parent.key === group)?.name ?? group,
+                options: addableUrlOptions(args, checked, group),
+              },
+            ]}
+            titles={GROUP_CHANGE_LABELS}
           />
           {summary ? (
             <Section
@@ -390,7 +415,7 @@ function LimitBadge({ item }: { item: KindSummary }) {
   )
 }
 
-/** The asset group's new name and final URL, each edited in place. */
+/** The asset group's new name, final URL, and URL options, each edited in place. */
 function Settings({
   disabled,
   onCancel,
@@ -626,6 +651,7 @@ function ItemCell({
           onCommit={(value) => {
             onEdit(row, value)
           }}
+          placeholder={SETTING_PLACEHOLDERS[row.kind] ?? ""}
           value={row.value}
         />
         <Problem row={row} />

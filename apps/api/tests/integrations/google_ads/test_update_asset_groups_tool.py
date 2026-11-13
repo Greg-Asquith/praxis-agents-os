@@ -128,6 +128,8 @@ class _Account:
                         "name": "Rain Jackets",
                         "status": "ENABLED",
                         "finalUrls": ["https://shop.test/rain"],
+                        "trackingUrlTemplate": "{lpurl}?src=old",
+                        "urlCustomParameters": [{"key": "season", "value": "winter"}],
                     },
                     "campaign": {
                         "name": "PMax Hiking UK",
@@ -261,6 +263,52 @@ async def test_a_swap_at_the_minimum_adds_first_then_removes_and_extends_the_sig
     assert ("HEADLINE", "Grip on Every Trail", "added") in outcomes
     # A theme the group has, in another case, is reported without a change.
     assert ("search_theme", "Rain Jacket", "already_set") in outcomes
+
+
+async def test_url_options_replace_and_clear_in_one_update_naming_only_what_changes(
+    monkeypatch,
+) -> None:
+    account = _Account()
+    args = _args(
+        url_options={
+            "final_url_suffix": "utm_source=google",
+            "tracking_template": "",
+            "custom_parameters": [{"key": "season", "value": "winter"}],
+        }
+    )
+    display = await _display(monkeypatch, account, args)
+    shown = [
+        (row["row"], row["before"], row["state"]) for row in display["_checks"][_GROUP]["rows"]
+    ]
+    assert shown == [
+        ("final_url_suffix", None, "change"),
+        ("tracking_template", "{lpurl}?src=old", "change"),
+        ("custom_parameters", "season=winter", "already_set"),
+    ]
+    account.mutates.clear()
+
+    entry = await _run(monkeypatch, account, args, display)
+
+    (sent,) = account.mutates
+    # The parameters are live already, so the mask leaves them out; null clears the template.
+    assert _operations(sent) == [
+        (
+            "assetGroupOperation",
+            {
+                "update": {
+                    "resourceName": _GROUP,
+                    "finalUrlSuffix": "utm_source=google",
+                    "trackingUrlTemplate": None,
+                },
+                "updateMask": "finalUrlSuffix,trackingUrlTemplate",
+            },
+        )
+    ]
+    assert [(row.kind, row.outcome) for row in entry.data.outcomes] == [
+        ("final_url_suffix", "changed"),
+        ("tracking_template", "changed"),
+        ("custom_parameters", "already_set"),
+    ]
 
 
 async def test_a_rejected_first_request_leaves_the_removals_unsent(monkeypatch) -> None:

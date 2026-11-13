@@ -6,12 +6,13 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from .campaign_settings import card_value
 from .criteria import AUDIENCE_FIELDS
 from .utils import stream_rows
 
@@ -20,6 +21,13 @@ MAX_ASSET_GROUP_READ = 100
 _MAX_LINKS = 20_000
 _MAX_SIGNALS = 5_000
 _TOO_MANY = "These asset groups hold too much to check at once. Change fewer asset groups."
+type UrlOption = Literal["final_url_suffix", "tracking_template", "custom_parameters"]
+# Each URL option's field in Google's JSON names, by the name the tools and cards use.
+URL_OPTION_PATHS: Mapping[UrlOption, str] = {
+    "final_url_suffix": "finalUrlSuffix",
+    "tracking_template": "trackingUrlTemplate",
+    "custom_parameters": "urlCustomParameters",
+}
 # Each audience segment's JSON field, back to the kind the tools name it by.
 _SEGMENT_KINDS = {
     field: (kind, inner) for kind, (field, inner, _collection) in AUDIENCE_FIELDS.items()
@@ -83,6 +91,8 @@ class LiveAssetGroup:
     themes: tuple[tuple[str, str], ...] = ()
     # Each audience signal's resource name and the audience it names.
     audience_signals: tuple[tuple[str, str], ...] = ()
+    # Each URL option in card terms: text or None, and custom parameters as a list.
+    url_options: Mapping[UrlOption, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +123,9 @@ async def read_asset_groups(
     groups, links, signals = await asyncio.gather(
         reader.rows(
             "SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.final_urls, "  # noqa: S608 -- digit-only ids
-            "campaign.name, campaign.status, campaign.advertising_channel_type, "
+            "asset_group.final_url_suffix, asset_group.tracking_url_template, "
+            "asset_group.url_custom_parameters, campaign.name, campaign.status, "
+            "campaign.advertising_channel_type, "
             f"campaign.shopping_setting.merchant_id FROM asset_group WHERE {within}",
             max_rows=len(ids),
         ),
@@ -175,6 +187,10 @@ async def _assemble(
             links=tuple(linked[name]),
             themes=tuple(themes[name]),
             audience_signals=tuple(audiences[name]),
+            url_options={
+                setting: card_value(setting, group.get(path))
+                for setting, path in URL_OPTION_PATHS.items()
+            },
         )
     named = sorted({audience for items in audiences.values() for _, audience in items})
     return LiveAssetGroups(groups=live, audiences=await _audiences(reader, named))

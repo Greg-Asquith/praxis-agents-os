@@ -17,6 +17,7 @@ from ...references import (
 from .ad_groups import MAX_OBJECTS, MAX_RESULT_PROBLEMS
 from .base import GoogleAdsStrictModel
 from .positive_keywords import GoogleAdsFinalUrl
+from .url_options import GoogleAdsUrlOptions
 
 MAX_NEW_ASSET_GROUPS = 5
 MAX_SEARCH_THEMES = 25
@@ -154,6 +155,13 @@ class GoogleAdsNewAssetGroup(GoogleAdsStrictModel):
     name: str = Field(min_length=1, max_length=255)
     final_url: GoogleAdsFinalUrl = Field(
         description="A live page on the advertiser's own site. Never guess a domain."
+    )
+    url_options: GoogleAdsUrlOptions | None = Field(
+        default=None,
+        description=(
+            "Tracking for this asset group only: final_url_suffix, tracking_template, and up "
+            "to 8 custom_parameters. Leave out unless the operator asks for tracking."
+        ),
     )
     headlines: list[AssetGroupHeadline] = Field(default_factory=list, max_length=15)
     long_headlines: list[AssetGroupLongText] = Field(default_factory=list, max_length=5)

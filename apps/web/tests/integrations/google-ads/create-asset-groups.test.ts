@@ -118,6 +118,15 @@ describe("Google Ads add asset groups arguments", () => {
     expect(createAssetGroupRows(removed)[0]?.problems).toEqual([])
   })
 
+  it("sends only the URL options a new group has", () => {
+    const options = { final_url_suffix: " utm_source=google ", tracking_template: "" }
+    const groups = parsed(args([assetGroup({ url_options: options }), assetGroup()])).assetGroups
+    const [tracked, plain] = serializeAssetGroups(groups)
+
+    expect(tracked?.["url_options"]).toEqual({ final_url_suffix: "utm_source=google" })
+    expect(plain).not.toHaveProperty("url_options")
+  })
+
   it("sends each audience signal with its kind and key", () => {
     expect(serializeAssetGroups(parsed(args()).assetGroups)[0]?.["audience_signals"]).toEqual([
       { kind: "user_list", key: "401", name: "Buyers" },

@@ -166,6 +166,44 @@ describe("Google Ads update asset groups arguments", () => {
     expect(restored[0]?.entry).toEqual(entry())
   })
 
+  it("edits custom parameters as text, and Undo restores a URL option that clears", () => {
+    const options = {
+      final_url_suffix: "",
+      custom_parameters: [{ key: "season", value: "winter" }],
+    }
+    const value = parsed(args([entry({ url_options: options })]))
+    const rows = groupChangeRows(value, value)
+    const [suffix, parameters] = rows.filter((row) => row.action === "set")
+    if (!suffix || !parameters) throw new Error("expected both URL options")
+    // The server names each setting by its kind, and shows a cleared option as empty.
+    expect([suffix.row, suffix.value, parameters.row, parameters.value]).toEqual([
+      "final_url_suffix",
+      "",
+      "custom_parameters",
+      "season=winter",
+    ])
+
+    const edited = editGroupChange(value, parameters, "season=summer, promo=x")
+    expect(edited[0]?.entry["url_options"]).toEqual({
+      final_url_suffix: "",
+      custom_parameters: [
+        { key: "season", value: "summer" },
+        { key: "promo", value: "x" },
+      ],
+    })
+
+    const edit = cancelGroupChanges(value, rows, new Set([suffix.id]))
+    expect(edit.entries[0]?.entry["url_options"]).toEqual({
+      custom_parameters: options.custom_parameters,
+    })
+    const restored = restoreRow(GROUP_CANCEL_CARD, edit.entries, edit.departed, {
+      ...suffix,
+      cancelled: true,
+    })
+    // An empty suffix still asks Google to clear the one that's live.
+    expect(restored[0]?.entry["url_options"]).toMatchObject({ final_url_suffix: "" })
+  })
+
   it("lets a group whose only change is cancelled leave the request, kept for Undo", () => {
     const only = entry({ add_assets: {}, remove_assets: { headlines: ["Built for the Hills"] } })
     const value = parsed(args([only]))

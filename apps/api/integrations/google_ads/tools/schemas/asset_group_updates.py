@@ -26,12 +26,16 @@ from .performance_max import (
     tidy_texts,
 )
 from .positive_keywords import GoogleAdsFinalUrl
+from .url_options import GoogleAdsUrlOptions
 
 MAX_ASSET_GROUP_UPDATES = MAX_ASSET_GROUP_READ
 
 type GoogleAdsAssetGroupChangeKind = Literal[
     "name",
     "final_url",
+    "final_url_suffix",
+    "tracking_template",
+    "custom_parameters",
     "HEADLINE",
     "LONG_HEADLINE",
     "DESCRIPTION",
@@ -83,6 +87,13 @@ class GoogleAdsAssetGroupUpdate(GoogleAdsStrictModel):
     final_url: GoogleAdsFinalUrl | None = Field(
         default=None, description="A live page on the advertiser's own site. Never guess one."
     )
+    url_options: GoogleAdsUrlOptions | None = Field(
+        default=None,
+        description=(
+            "final_url_suffix, tracking_template, and custom_parameters. Each one set replaces "
+            "the asset group's value; an empty value or list clears it."
+        ),
+    )
     add_assets: GoogleAdsAssetGroupAssets = Field(default_factory=GoogleAdsAssetGroupAssets)
     remove_assets: GoogleAdsAssetGroupAssets = Field(default_factory=GoogleAdsAssetGroupAssets)
     add_search_themes: list[SearchThemeText] = Field(
@@ -111,7 +122,9 @@ class GoogleAdsAssetGroupUpdate(GoogleAdsStrictModel):
     @model_validator(mode="after")
     def _one_way(self) -> Self:
         label = self.asset_group.label or self.asset_group.asset_group_id
-        if self.item_count == 0 and self.name is None and self.final_url is None:
+        url_options = self.url_options.requested if self.url_options else {}
+        settings = self.name is not None or self.final_url is not None or bool(url_options)
+        if self.item_count == 0 and not settings:
             raise ValueError(f"{label}: say what changes in the asset group.")
         for noun, added, removed in (
             ("asset", self.add_assets.items, self.remove_assets.items),
@@ -172,9 +185,9 @@ class GoogleAdsAssetGroupChangeRow(GoogleAdsStrictModel):
     campaign_name: str | None = None
     action: Literal["add", "remove", "set"]
     kind: GoogleAdsAssetGroupChangeKind
-    # The text, URL, name, or asset the change is about.
+    # The text, URL, name, or asset the change is about; empty for a URL option that's cleared.
     item: str
-    # The name or URL it replaces, for a setting.
+    # The value it replaces, for a setting.
     before: str | None = None
     outcome: GoogleAdsAssetGroupChangeOutcome
     error_code: str | None = None

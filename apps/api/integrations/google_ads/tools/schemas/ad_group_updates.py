@@ -13,8 +13,8 @@ from ...operations.campaign_bidding import money
 from ...references import GoogleAdsAdGroupReference
 from ..utils.money import money_to_micros
 from .base import GoogleAdsStrictModel, money_validator
-from .campaign_updates import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 from .campaigns import GoogleAdsTargetCpa
+from .url_options import GoogleAdsUrlOptions, GoogleAdsUrlParameter
 
 MAX_AD_GROUP_UPDATES = 50
 
