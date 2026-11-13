@@ -1202,16 +1202,20 @@ tool refuses until video links are built.
 
 ### Media uploads
 
-`google_ads_upload_media` uploads up to 20 workspace image Files as `IMAGE` assets and
-links up to 20 YouTube videos as `YOUTUBE_VIDEO` assets, in the one writable account in
-Active Context. It needs exactly one, because tool arguments name an account only through
-references. `files` takes File references; `youtube_videos` takes links or 11-character
-IDs, read by `youtube_video_id` from `youtube.com` and `youtu.be` addresses only. Video
-Files aren't uploaded to YouTube. Like Meta's upload, the tool may run unattended,
-because it sets up no spend.
+`google_ads_upload_media` uploads up to 20 workspace Files, in the one writable account in
+Active Context: images become `IMAGE` assets, and videos go to YouTube through Google Ads
+and become `YOUTUBE_VIDEO` assets once Google has processed them. It also links up to 20
+YouTube videos as `YOUTUBE_VIDEO` assets. It needs exactly one account, because tool
+arguments name an account only through references. `files` takes File references;
+`youtube_videos` takes links or 11-character IDs, read by `youtube_video_id` from
+`youtube.com` and `youtu.be` addresses only. `video_details` gives each video File a
+title and description, and `video_uploads` takes the upload IDs of earlier uploads that
+were still processing. Like Meta's upload, the tool may run unattended, because it sets up
+no spend. Its timeout is 10 minutes, for a 1 GB upload and the processing wait.
 
-`operations/media.py` applies Google's rules: JPEG, PNG, or GIF whose MIME type and
-extension agree, and at most 5,120 KB. It also reads the image's width and height from
+`operations/media.py` resolves each File as a `VideoSource` when its MIME type is
+`video/*`, and as an `ImageSource` otherwise. For images it applies Google's rules: JPEG,
+PNG, or GIF whose MIME type and extension agree, and at most 5,120 KB. It also reads the image's width and height from
 its header with Pillow, and `image_fits` names the field types it fits. An image fits a
 shape when its ratio is within 1% of the shape's and it meets the minimum size:
 
@@ -1226,13 +1230,23 @@ shape when its ratio is within 1% of the shape's and it meets the minimum size:
 An image with a shape's ratio but under its minimum is listed in `too_small`. Fit doesn't
 block an upload; Google checks the field type when an asset is linked.
 
+A video File must be MP4, MOV, or WebM with a matching extension, and at most 1 GB.
+Google publishes no size or format limits for this service, so the limit bounds one
+call's transfer. Its title defaults to the File name without `<` or `>`, cut to 100
+characters. Titles (1 to 100 characters) and descriptions (up to 5,000) can't contain `<`
+or `>`, and the tool refuses one that does before approval. Neither can change after the
+upload. The video's length comes from the revision's `media_metadata` when the media
+renderer measured it.
+
 The trusted `_accounts` display argument pins the account, as on the other write cards,
-and `_files` pins each File's revision and content hash with its name, size, width,
-height, `fits`, `too_small`, and `problem`. A File Google won't take carries a problem
+and `_files` pins each File's revision and content hash with its `kind`, name, size, and
+`problem`, plus an image's width, height, `fits`, and `too_small`, or a video's
+`duration_ms` and `default_title`. A video isn't read before approval. A File Google won't take carries a problem
 on the card instead of a retry for the agent. The tool declares `files` in
 `approval_review_fields`, so an edited File list is checked and pinned again. Execution
 refuses the whole request before any upload when a File has the wrong type or size, the
-account changed, or a File's revision isn't the one pinned. The stored type is only
+account changed, a File's revision isn't the one pinned, or a title is given for a File
+that isn't a video. `GoogleAdsUploadMediaRequest` checks an edited approval whole. The stored type is only
 declared, so each image's bytes are read as that format before they're sent; a File that
 isn't a readable image fails on its own and the rest still upload. The pin check and the
 verified read are shared with Meta's upload, in `services/integrations/files`.
@@ -1246,10 +1260,57 @@ recovered when found, or unconfirmed otherwise, and never sends it again. Google
 the existing asset for content it already has. A read-back fills in Google's dimensions
 and each video's title.
 
-The audit record holds each image's File, revision, content hash, MIME type, and size,
-and each video ID, never image bytes. Each result row has the item's outcome
-(`uploaded`, `linked`, `failed`, or `unverified`), its `GoogleAdsAssetReference`, and an
-image's size, dimensions, and fits.
+#### Video uploads
+
+`operations/video_upload.py` uses `YouTubeVideoUploadService`'s resumable REST upload, so
+no YouTube connection or YouTube API quota is involved. It sends no `channel_id`, so
+each video goes to an unlisted channel Google manages for the account.
+
+1. `POST /resumable/upload/v24/customers/{id}/youTubeVideoUploads:create` with
+   `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`, and
+   `X-Goog-Upload-Header-Content-Length`, and the body `{customer_id,
+   you_tube_video_upload: {video_title, video_description}}`. The reply's
+   `x-goog-upload-url` and `x-goog-upload-chunk-granularity` headers give the upload
+   address and chunk size.
+2. The session's `upload_id`, from the address, is checkpointed against the File's
+   `video:upload` intent before the first chunk.
+3. `RevisionStream` (in `services/integrations/files`, shared with Meta) reads the pinned
+   revision once, in chunks of about 8 MB that are whole multiples of Google's
+   granularity. Each chunk is a `PUT` with `X-Goog-Upload-Offset` and
+   `X-Goog-Upload-Command: upload`. The content hash is checked before the last chunk,
+   which is sent with `upload, finalize` and returns the `youTubeVideoUploads` resource
+   name. That ID is checkpointed too.
+4. After an unclear chunk reply, a `query` command returns
+   `x-goog-upload-size-received`, and the upload resumes from there, up to three times.
+   It never starts again. An upload that stops before the last chunk is cancelled, so
+   Google makes no video from part of a File, and is reported as failed. One that stops
+   after the last chunk was sent is unconfirmed.
+
+`GoogleAdsClient.upload_request` sends these requests once each, without retries, and
+only to `https://googleads.googleapis.com`. An upload address on any other host is
+refused before dispatch, so the bearer token and developer token never leave Google.
+
+The run then reads `you_tube_video_upload` (`video_upload_id`, `video_id`, `state`)
+every 5 seconds for up to 2 minutes. A `PROCESSED` upload with its video ID becomes a
+`youtubeVideoAsset`, looked up by video ID first so an asset already made is reused. A
+`FAILED`, `REJECTED`, or `UNAVAILABLE` upload fails. One still processing at the end is
+reported as `processing` with its `upload_id`, and no asset is made. Passing that ID in
+`video_uploads` later reads the state once more and makes the asset when it's ready;
+finishing the same upload twice names the same asset. An earlier upload Google doesn't
+return isn't in the account, and fails. Uploading the same File again makes a second
+YouTube video, because Google has no lookup of uploads by content. Removing uploads
+(which also deletes them from YouTube) is out of scope.
+
+Performance Max asset groups take only `YOUTUBE_VIDEO` asset references, so a video
+still processing can't reach them until a later call has made its asset.
+
+The audit record holds each image's and each video's File, revision, content hash, MIME
+type, and size, a video's title, each linked video ID, and each finished upload ID, never
+bytes. A video has two effects: the upload, with the `youTubeVideoUploads` resource name,
+and the asset. An earlier upload still processing is recorded as skipped. Each result row
+has the item's outcome (`uploaded`, `linked`, `processing`, `failed`, or `unverified`),
+its `GoogleAdsAssetReference`, an image's size, dimensions, and fits, and a video's
+`upload_id` and length.
 
 ### Conversions
 
@@ -1774,20 +1835,30 @@ asset and target, tabs per outcome, opening on Failed when anything failed.
 
 ### Upload Media card
 
-`lib/upload-media.ts` parses `files`, `youtube_videos`, `_accounts`, and `_files`.
-`youtubeVideoId` reads a link the same way the server does. The card blocks approval for
-an image with a problem, a File list the server hasn't checked, an unreadable video link,
-and a repeated video.
+`lib/upload-media.ts` parses `files`, `youtube_videos`, `video_details`,
+`video_uploads`, `_accounts`, and `_files`. `youtubeVideoId` reads a link the same way
+the server does. The card blocks approval for a File with a problem, a File list the
+server hasn't checked, a video title or description YouTube won't take, an unreadable
+video link, a repeated video, and an upload ID that isn't one.
 
-The card (`components/upload-media-approval.tsx`) has a `ChangeSummary` (images,
-videos, and Needs Attention with **Cancel These N**), then one `DataTable` row per image
-with its thumbnail, size, dimensions, and fits. Tabs filter by Landscape, Square,
-Portrait, Logo, and Needs Attention. **Cancel This Change** removes an image from
-`files`, and the card keeps it in `retained` so **Undo** survives the **Check Files**
-review. **Add Images** searches workspace Files, and each YouTube link is its own field.
+The card (`components/upload-media-approval.tsx`) has a `ChangeSummary` (images, video
+uploads, video links, earlier uploads, and Needs Attention with **Cancel These N**), then
+one `DataTable` row per File with its thumbnail, size, dimensions or length, and fits.
+The table shows a YouTube Title column only when there are videos, and Fits only when
+there are images. A video's title cell opens a popover with the title, counted to 100
+characters, and the description. A title edit writes `video_details` for every video
+File, so the others keep their default titles; cancelling a video drops its title. Every
+argument is a secondary field, so the card can add Files to a request that had only
+links, and an emptied list is sent as null. Tabs filter by Landscape, Square, Portrait, Logo, Videos, and Needs
+Attention. **Cancel This Change** removes a File from `files`, and the card keeps it in
+`retained` so **Undo** survives the **Check Files** review. **Add Files** searches
+workspace Files, each YouTube link is its own field, and **Finish Earlier Uploads** lists
+`video_uploads`. With a video File, the card says videos go to an unlisted YouTube
+channel Google manages, and that titles can't change later.
 
 The result (`components/upload-media-outcome.tsx`) is one `DataTable` with Name, Kind,
-Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed.
+Size, Fits, and Status, tabs per outcome, opening on Failed when anything failed. A
+processing video says Google is still processing it, with its upload ID.
 
 ### Update Conversions card
 

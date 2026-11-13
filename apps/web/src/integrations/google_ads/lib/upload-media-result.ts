@@ -4,10 +4,13 @@ import { outcomeTabs } from "@/integrations/google_ads/lib/edit-outcomes"
 import { FIELD_TYPES, type ImageFieldType } from "@/integrations/google_ads/lib/upload-media"
 import { isNonEmptyString, isNonNegativeInteger, isOneOf, isRecord } from "@/lib/guards"
 
-export type MediaOutcome = "uploaded" | "linked" | "failed" | "unverified"
+export type MediaOutcome = "uploaded" | "linked" | "processing" | "failed" | "unverified"
+
+// A `video` is a video File uploaded to YouTube, or an earlier upload finished.
+export type MediaKind = "image" | "youtube_video" | "video"
 
 export type MediaUploadRow = {
-  kind: "image" | "youtube_video"
+  kind: MediaKind
   name: string
   outcome: MediaOutcome
   recovered: boolean
@@ -17,6 +20,8 @@ export type MediaUploadRow = {
   sizeBytes: number | null
   fits: ImageFieldType[]
   videoId: string | null
+  // A video upload's ID, which finishes it later while Google processes it.
+  uploadId: string | null
   errorCode: string | null
   message: string | null
 }
@@ -26,6 +31,7 @@ export type UploadMediaResult = { accountId: string; uploads: MediaUploadRow[] }
 export const MEDIA_OUTCOME_LABELS: Record<MediaOutcome, string> = {
   uploaded: "Uploaded",
   linked: "Linked",
+  processing: "Processing",
   failed: "Failed",
   unverified: "Unconfirmed",
 }
@@ -33,11 +39,19 @@ export const MEDIA_OUTCOME_LABELS: Record<MediaOutcome, string> = {
 export const MEDIA_OUTCOME_BADGES = {
   uploaded: "success",
   linked: "success",
+  processing: "secondary",
   failed: "destructive",
   unverified: "warning",
 } as const
 
-const OUTCOMES: ReadonlySet<MediaOutcome> = new Set(["uploaded", "linked", "failed", "unverified"])
+const OUTCOMES: ReadonlySet<MediaOutcome> = new Set([
+  "uploaded",
+  "linked",
+  "processing",
+  "failed",
+  "unverified",
+])
+const KINDS: ReadonlySet<MediaKind> = new Set(["image", "youtube_video", "video"])
 
 function text(value: unknown): string | null {
   return isNonEmptyString(value) ? value : null
@@ -46,7 +60,7 @@ function text(value: unknown): string | null {
 function parseUpload(value: unknown): MediaUploadRow | null {
   if (
     !isRecord(value) ||
-    (value["kind"] !== "image" && value["kind"] !== "youtube_video") ||
+    !isOneOf(KINDS, value["kind"]) ||
     !isNonEmptyString(value["name"]) ||
     !isOneOf(OUTCOMES, value["outcome"]) ||
     typeof value["recovered"] !== "boolean"
@@ -65,6 +79,7 @@ function parseUpload(value: unknown): MediaUploadRow | null {
     sizeBytes: isNonNegativeInteger(value["size_bytes"]) ? value["size_bytes"] : null,
     fits: fits.filter((item) => isOneOf(FIELD_TYPES, item)),
     videoId: text(value["video_id"]),
+    uploadId: text(value["upload_id"]),
     errorCode: text(value["error_code"]),
     message: text(value["message"]),
   }
@@ -95,6 +110,7 @@ export function mediaOutcomeSummary(uploads: readonly MediaUploadRow[]): string 
 export const MEDIA_OUTCOME_TABS = outcomeTabs(MEDIA_OUTCOME_LABELS, [
   "uploaded",
   "linked",
+  "processing",
   "failed",
   "unverified",
 ])

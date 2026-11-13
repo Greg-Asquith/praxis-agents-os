@@ -6,12 +6,13 @@ import { WorkspaceFileThumbnail } from "@/components/tool-ui/workspace-file-thum
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn } from "@/components/ui/data-table"
 import { cellText } from "@/integrations/ads/lib/cell-text"
-import { fitsText, kilobytes } from "@/integrations/google_ads/lib/upload-media"
+import { fileSize, fitsText } from "@/integrations/google_ads/lib/upload-media"
 import {
   MEDIA_OUTCOME_BADGES,
   MEDIA_OUTCOME_LABELS,
   MEDIA_OUTCOME_TABS,
   mediaOutcomeSummary,
+  type MediaKind,
   type MediaOutcome,
   type UploadMediaResult,
 } from "@/integrations/google_ads/lib/upload-media-result"
@@ -24,12 +25,20 @@ const COLUMNS: DataColumn[] = [
   { key: "fits", kind: "text", label: "Fits", width: 180 },
   { key: "outcome", kind: "text", label: "Status", width: 130 },
   { key: "assetId", kind: "text", label: "Asset ID", hidden: true },
+  { key: "uploadId", kind: "text", label: "Upload ID", hidden: true },
   { key: "details", kind: "text", label: "Details", hidden: true },
 ]
 
 const RECOVERED = "Google's reply was lost, so the asset was found in the account."
+const KIND_LABELS: Record<MediaKind, string> = {
+  image: "Image",
+  youtube_video: "YouTube video",
+  video: "Video upload",
+}
 
-/** One row per image and video, opening on the failures when anything failed. */
+/** One row per image and video, opening on the failures when anything failed.
+
+A video still processing names its upload, so a later call can finish it. */
 export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
   const [tab, setTab] = useState(
     result.uploads.some((upload) => upload.outcome === "failed") ? "failed" : "all"
@@ -38,6 +47,7 @@ export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
     () =>
       result.uploads.map((upload, index) => ({
         assetId: upload.assetId ?? "",
+        uploadId: upload.uploadId ?? "",
         details: [
           upload.message,
           upload.errorCode ? googleAdsTokenLabel(upload.errorCode) : null,
@@ -52,10 +62,13 @@ export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
               ? fitsText(upload.fits)
               : "—",
         index,
-        kind: upload.kind === "image" ? "Image" : "YouTube video",
+        kind: KIND_LABELS[upload.kind],
         name: upload.name,
         outcome: MEDIA_OUTCOME_LABELS[upload.outcome],
-        size: upload.sizeBytes === null ? "" : kilobytes(upload.sizeBytes),
+        size:
+          upload.sizeBytes === null
+            ? ""
+            : fileSize(upload.kind === "image" ? "image" : "video", upload.sizeBytes),
         token: upload.outcome,
       })),
     [result.uploads]
@@ -82,14 +95,19 @@ export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
               <WorkspaceFileThumbnail
                 className="size-8"
                 fileId={upload.fileId}
-                kind="image"
+                kind={upload.kind === "image" ? "image" : "video"}
                 label={upload.name}
                 revisionId={upload.revisionId}
               />
             ) : null}
             <span className="grid gap-0.5 whitespace-normal">
               <span className="wrap-anywhere">{upload.name}</span>
-              {upload.outcome !== "uploaded" && upload.outcome !== "linked" && row["details"] ? (
+              {upload.outcome === "processing" ? (
+                <span className="text-muted-foreground text-xs wrap-anywhere">
+                  {cellText(row["details"])}
+                  {upload.uploadId ? ` Upload ID ${upload.uploadId}.` : ""}
+                </span>
+              ) : upload.outcome !== "uploaded" && upload.outcome !== "linked" && row["details"] ? (
                 <span className="text-destructive text-xs wrap-anywhere">
                   {cellText(row["details"])}
                 </span>

@@ -1,6 +1,6 @@
 # apps/api/tests/integrations/google_ads/test_upload_media_tool.py
 
-"""Google Ads media uploads: the approval check, pins, exact payloads, and unclear replies."""
+"""Google Ads media uploads: the approval check, pins, payloads, videos, and unclear replies."""
 
 import asyncio
 import base64
@@ -13,19 +13,43 @@ from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx2
 import pytest
 from PIL import Image
+from pydantic import SecretStr
+from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
-from integrations.google_ads.operations.media import ImageSource, image_fits, youtube_video_id
+from core.exceptions.integration import (
+    IntegrationConnectionError,
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
+from integrations.google_ads.client import GoogleAdsClient
+from integrations.google_ads.operations import (
+    upload_media as operation_module,
+    video_upload as video_module,
+)
+from integrations.google_ads.operations.media import (
+    ImageSource,
+    VideoSource,
+    image_fits,
+    youtube_video_id,
+)
 from integrations.google_ads.tools import upload_media as tool_module
-from integrations.google_ads.tools.schemas.media import GoogleAdsMediaUploadOutput
+from integrations.google_ads.tools.schemas.media import (
+    GoogleAdsMediaUploadOutput,
+    GoogleAdsVideoDetails,
+)
 from integrations.google_ads.tools.utils.accounts import approval_accounts
 from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.files import FileReference
 from tests.integrations.google_ads.support import _writable_google_ads_entry
 
 _C = "customers/111"
+_UPLOAD_URL = (
+    "https://googleads.googleapis.com/resumable/upload/v24/customers/111/"
+    "youTubeVideoUploads:create?upload_id=ADPycdv7&upload_protocol=resumable"
+)
 _ENTRY = replace(
     _writable_google_ads_entry(),
     permissions_metadata={
@@ -54,17 +78,78 @@ def _source(name: str, data: bytes, *, size_bytes: int | None = None) -> ImageSo
     return ImageSource(SimpleNamespace(id=uuid4(), name=name), revision)
 
 
+def _video(name: str, data: bytes) -> VideoSource:
+    revision = SimpleNamespace(
+        id=uuid4(),
+        content_hash=hashlib.sha256(data).hexdigest(),
+        size_bytes=len(data),
+        content_type="video/mp4",
+        extension=".mp4",
+        data=data,
+        media_metadata={"duration_ms": 12_000, "has_audio": True, "rotation": 0},
+    )
+    return VideoSource(SimpleNamespace(id=uuid4(), name=name), revision)
+
+
 class _Google:
-    """Serves asset creates and searches.
+    """Serves asset creates, searches, and resumable video uploads.
 
     `lose` drops the reply to the first create; `cancel_read` cancels the run at the read-back.
+    `cut_at` loses the reply to the chunk at that offset after Google kept two of its bytes.
+    `state` is what Google reports for upload 555 once it's finalised.
     """
 
-    def __init__(self, *, lose: bool = False, cancel_read: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        lose: bool = False,
+        cancel_read: bool = False,
+        cut_at: int | None = None,
+        state: str = "PROCESSED",
+    ) -> None:
         self.lose = lose
         self.cancel_read = cancel_read
+        self.cut_at = cut_at
+        self.state = state
         self.creates: list[dict[str, Any]] = []
         self.assets: dict[str, dict[str, Any]] = {}
+        self.uploads: list[tuple[str, str, dict[str, str], Any]] = []
+        self.received = b""
+        self.finalised = False
+
+    async def upload_request(self, method: str, url: str, **kwargs: Any) -> httpx2.Response:
+        headers = kwargs["headers"]
+        command = headers["X-Goog-Upload-Command"]
+        self.uploads.append((method, command, headers, kwargs.get("json", kwargs.get("content"))))
+        if command == "start":
+            return httpx2.Response(
+                200,
+                headers={"x-goog-upload-url": _UPLOAD_URL, "x-goog-upload-chunk-granularity": "4"},
+            )
+        assert url == _UPLOAD_URL
+        if command == "query":
+            return httpx2.Response(
+                200,
+                headers={
+                    "x-goog-upload-status": "active",
+                    "x-goog-upload-size-received": str(len(self.received)),
+                },
+            )
+        offset = int(headers["X-Goog-Upload-Offset"])
+        assert offset == len(self.received)
+        self.received += kwargs["content"]
+        if offset == self.cut_at:
+            self.cut_at = None
+            self.received = self.received[: offset + 2]
+            raise IntegrationConnectionError(
+                "Google Ads didn't reply.",
+                provider_key="google_ads",
+                failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+            )
+        if command == "upload, finalize":
+            self.finalised = True
+            return httpx2.Response(200, json={"resourceName": f"{_C}/youTubeVideoUploads/555"})
+        return httpx2.Response(200, headers={"x-goog-upload-status": "active"})
 
     async def post(self, path: str, **kwargs: Any) -> Any:
         body = kwargs["json"]
@@ -88,6 +173,16 @@ class _Google:
     def _search(self, query: str) -> list[dict[str, Any]]:
         if self.cancel_read and "asset.id IN" in query:
             raise asyncio.CancelledError
+        if "FROM you_tube_video_upload" in query:
+            video_id = "Vj3hTq9kLm0" if self.state == "PROCESSED" else None
+            upload = {"videoUploadId": "555", "state": self.state, "videoId": video_id}
+            return [{"youTubeVideoUpload": upload}] if self.finalised else []
+        if "youtube_video_id = " in query:
+            return [
+                {"asset": {"id": key}}
+                for key, asset in self.assets.items()
+                if f"'{asset['youtubeVideoAsset']['youtubeVideoId']}'" in query
+            ]
         if "asset.name = " in query:
             return [
                 {"asset": {"id": key}}
@@ -101,7 +196,7 @@ class _Google:
         ]
 
 
-def _deps(sources: list[ImageSource], monkeypatch) -> SimpleNamespace:
+def _deps(sources: list[ImageSource | VideoSource], monkeypatch) -> SimpleNamespace:
     by_id = {source.file.id: source for source in sources}
 
     async def resolve(_db, *, workspace_id, file_id):
@@ -110,9 +205,24 @@ def _deps(sources: list[ImageSource], monkeypatch) -> SimpleNamespace:
     async def read(revision):
         return revision.data
 
-    monkeypatch.setattr(tool_module, "resolve_image_source", resolve)
+    monkeypatch.setattr(tool_module, "resolve_media_source", resolve)
     reader = importlib.import_module("services.integrations.files.read_pinned_file_source")
     monkeypatch.setattr(reader, "read_file_source", read)
+
+    class Storage:
+        async def stat_object(self, revision):
+            return SimpleNamespace(size_bytes=len(revision.data))
+
+        async def stream_object(self, revision):
+            for start in range(0, len(revision.data), 3):
+                yield revision.data[start : start + 3]
+
+    streamer = importlib.import_module("services.integrations.files.stream_file_source")
+    monkeypatch.setattr(streamer, "get_storage_provider", Storage)
+    monkeypatch.setattr(streamer, "file_revision_ref", lambda revision: revision)
+    # Chunks of Google's 4-byte granularity, and no waiting for processing.
+    monkeypatch.setattr(video_module, "_CHUNK_BYTES", 4)
+    monkeypatch.setattr(operation_module, "PROCESSING_WAIT_SECONDS", 0)
     return SimpleNamespace(
         active_context=ResolvedActiveContext(entries=(_ENTRY,)),
         db=None,
@@ -123,18 +233,29 @@ def _deps(sources: list[ImageSource], monkeypatch) -> SimpleNamespace:
     )
 
 
-def _files(sources: list[ImageSource]) -> list[FileReference]:
+def _files(sources: list[ImageSource | VideoSource]) -> list[FileReference]:
     return [FileReference(entity_id=source.file.id, label=source.file.name) for source in sources]
 
 
-def _display(*sources: ImageSource) -> dict[str, Any]:
+def _display(*sources: ImageSource | VideoSource) -> dict[str, Any]:
     return {
         "_accounts": approval_accounts([_ENTRY]),
         "_files": [source.approval_details() for source in sources],
     }
 
 
-async def _run(monkeypatch, deps, google: _Google, *, display, files, videos=None, audits=None):
+async def _run(
+    monkeypatch,
+    deps,
+    google: _Google,
+    *,
+    display,
+    files,
+    videos=None,
+    audits=None,
+    details=None,
+    uploads=None,
+):
     audits = [] if audits is None else audits
 
     async def audit(**kwargs):
@@ -152,7 +273,7 @@ async def _run(monkeypatch, deps, google: _Google, *, display, files, videos=Non
         tool_name="google_ads_upload_media",
         tool_call_id="upload-media-call",
     )
-    result = await tool_module.google_ads_upload_media(ctx, files, videos)
+    result = await tool_module.google_ads_upload_media(ctx, files, videos, details, uploads)
     GoogleAdsMediaUploadOutput.model_validate(result)
     return result["results"][0], audits
 
@@ -296,6 +417,152 @@ async def test_unclear_reply_is_settled_by_finding_the_asset_and_never_resent(mo
     assert upload["asset"]["asset_id"] == "901"
     assert upload["fits"] == ["MARKETING_IMAGE"]
     assert len(google.creates) == 1
+
+
+async def test_video_file_streams_in_googles_chunks_and_becomes_one_asset(monkeypatch):
+    video = _video("trail-fit-launch.mp4", b"VIDEOBYTES")
+    deps = _deps([video], monkeypatch)
+    google = _Google()
+    details = [
+        GoogleAdsVideoDetails(
+            file_id=video.file.id, title="Trail Fit Launch", description="Our autumn range."
+        )
+    ]
+
+    entry, audits = await _run(
+        monkeypatch,
+        deps,
+        google,
+        display=_display(video),
+        files=_files([video]),
+        details=details,
+    )
+
+    start, *chunks = google.uploads
+    assert start == (
+        "POST",
+        "start",
+        {
+            "X-Goog-Upload-Protocol": "resumable",
+            "X-Goog-Upload-Command": "start",
+            "X-Goog-Upload-Header-Content-Length": "10",
+        },
+        {
+            "customer_id": "111",
+            "you_tube_video_upload": {
+                "video_title": "Trail Fit Launch",
+                "video_description": "Our autumn range.",
+            },
+        },
+    )
+    assert [
+        (command, headers["X-Goog-Upload-Offset"], body) for _m, command, headers, body in chunks
+    ] == [
+        ("upload", "0", b"VIDE"),
+        ("upload", "4", b"OBYT"),
+        ("upload, finalize", "8", b"ES"),
+    ]
+    assert google.creates == [
+        {"type": "YOUTUBE_VIDEO", "youtubeVideoAsset": {"youtubeVideoId": "Vj3hTq9kLm0"}}
+    ]
+    (upload,) = entry["data"]["uploads"]
+    assert (upload["kind"], upload["outcome"], upload["upload_id"]) == ("video", "uploaded", "555")
+    assert upload["asset"]["asset_id"] == "901"
+    # The session is recorded before the first chunk, then the upload once Google names it.
+    checkpoints = [c for audit in audits for c in audit.get("checkpoints") or ()]
+    assert checkpoints[0].references == {"upload_session": "ADPycdv7"}
+    assert checkpoints[-1].references["video_upload_id"] == "555"
+    detail = audits[-1]["operation_detail"]
+    intent = detail.intent_groups[0].items[0].fields
+    assert intent["content_hash"] == video.revision.content_hash
+    assert intent["revision_id"] == str(video.revision.id)
+    assert "VIDEOBYTES" not in str(detail.model_dump())
+
+
+async def test_unclear_chunk_reply_resumes_from_what_google_received(monkeypatch):
+    video = _video("trail-fit-launch.mp4", b"VIDEOBYTES")
+    deps = _deps([video], monkeypatch)
+    google = _Google(cut_at=4)
+
+    entry, _audits = await _run(monkeypatch, deps, google, display=None, files=_files([video]))
+
+    sent = [
+        (command, headers.get("X-Goog-Upload-Offset"), body)
+        for _m, command, headers, body in google.uploads
+    ]
+    assert sent[1:] == [
+        ("upload", "0", b"VIDE"),
+        ("upload", "4", b"OBYT"),
+        ("query", None, None),
+        # Google kept "OB", so only the rest of that chunk goes again.
+        ("upload", "6", b"YT"),
+        ("upload, finalize", "8", b"ES"),
+    ]
+    assert [command for _m, command, _h, _b in google.uploads].count("start") == 1
+    assert google.received == b"VIDEOBYTES"
+    assert entry["data"]["uploads"][0]["outcome"] == "uploaded"
+
+
+async def test_video_still_processing_is_finished_by_a_later_call_once(monkeypatch):
+    video = _video("trail-fit-launch.mp4", b"VIDEOBYTES")
+    deps = _deps([video], monkeypatch)
+    google = _Google(state="UPLOADED")
+
+    entry, _audits = await _run(monkeypatch, deps, google, display=None, files=_files([video]))
+
+    (upload,) = entry["data"]["uploads"]
+    assert (upload["outcome"], upload["upload_id"], upload["asset"]) == ("processing", "555", None)
+    assert google.creates == []
+
+    google.state = "PROCESSED"
+    for _call in range(2):
+        entry, _audits = await _run(
+            monkeypatch,
+            deps,
+            google,
+            display=None,
+            files=None,
+            uploads=[f"{_C}/youTubeVideoUploads/555"],
+        )
+        (upload,) = entry["data"]["uploads"]
+        assert (upload["outcome"], upload["asset"]["asset_id"]) == ("uploaded", "901")
+    # The second call finds the asset the first one made.
+    assert len(google.creates) == 1
+    assert [command for _m, command, _h, _b in google.uploads].count("start") == 1
+
+
+async def test_video_title_with_angle_brackets_is_refused_before_any_request(monkeypatch):
+    video = _video("trail-fit-launch.mp4", b"VIDEOBYTES")
+    deps = _deps([video], monkeypatch)
+    google = _Google()
+    details = [GoogleAdsVideoDetails(file_id=video.file.id, title="<b>Trail Fit</b>")]
+
+    with pytest.raises(ModelRetry, match="< or >"):
+        await _run(monkeypatch, deps, google, display=None, files=_files([video]), details=details)
+
+    assert google.uploads == []
+
+
+async def test_upload_address_off_googles_host_never_gets_the_token() -> None:
+    sent: list[httpx2.Request] = []
+    transport = httpx2.MockTransport(lambda request: sent.append(request) or httpx2.Response(200))
+    async with httpx2.AsyncClient(transport=transport) as http:
+        client = GoogleAdsClient(_token, developer_token=SecretStr("dev-token"), client=http)
+        with pytest.raises(IntegrationValidationError) as raised:
+            await client.upload_request(
+                "PUT",
+                "https://uploads.example.com/upload?upload_id=ADPycdv7",
+                operation="upload_media",
+                headers={"X-Goog-Upload-Command": "upload"},
+                content=b"VIDE",
+            )
+
+    assert raised.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
+    assert sent == []
+
+
+async def _token(_force: bool) -> str:
+    return "access-token"
 
 
 @pytest.mark.parametrize(

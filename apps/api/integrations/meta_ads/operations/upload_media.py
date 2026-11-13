@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from services.audit_events import IntegrationOperationCheckpoint
-from services.integrations.files import read_pinned_file_source
+from services.integrations.files import RevisionStream, read_pinned_file_source
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.operations import checkpoint_integration_operation
 from services.integrations.report_results import ReportResultBudget
@@ -20,7 +20,7 @@ from ..client import MetaAdsClient, ad_account_path
 from ..references import MetaAdsMediaReference
 from ..throttle import ensure_account_available
 from .list_assets import read_image_references, video_reference, video_status
-from .media_source import MediaSource, RevisionStream
+from .media_source import MediaSource
 from .mutations import (
     NOT_DISPATCHED_CODE,
     NOT_DISPATCHED_MESSAGE,
@@ -231,7 +231,10 @@ async def _upload_video(
     client: MetaAdsClient, account_id: str, upload: MediaUpload, intent_index: int
 ) -> None:
     path = f"{ad_account_path(account_id)}/advideos"
-    async with RevisionStream(upload.source.revision) as stream:
+    revision = upload.source.revision
+    async with RevisionStream(
+        revision, provider_key="meta_ads", operation="media_source"
+    ) as stream:
         session_id = await _transfer_video(client, account_id, path, stream, upload, intent_index)
     if session_id is None:
         return

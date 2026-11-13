@@ -21,7 +21,9 @@ from services.integrations.http import (
 )
 
 GOOGLE_ADS_API_VERSION = "v24"
-GOOGLE_ADS_API_BASE_URL = f"https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}"
+GOOGLE_ADS_HOST = "googleads.googleapis.com"
+GOOGLE_ADS_API_BASE_URL = f"https://{GOOGLE_ADS_HOST}/{GOOGLE_ADS_API_VERSION}"
+GOOGLE_ADS_UPLOAD_BASE_URL = f"https://{GOOGLE_ADS_HOST}/resumable/upload/{GOOGLE_ADS_API_VERSION}"
 AccessTokenFn = Callable[[bool], Awaitable[str]]
 
 
@@ -75,6 +77,41 @@ class GoogleAdsClient:
             max_response_bytes=max_response_bytes,
         )
 
+    async def upload_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        operation: str,
+        headers: dict[str, str],
+        login_customer_id: str | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Sends one resumable upload request once, and only to Google Ads' own host.
+
+        Upload addresses come from Google's reply headers, so the bearer token is never sent
+        anywhere else. The caller reads the reply's headers and resumes after an unclear reply.
+        """
+        parsed = httpx2.URL(url)
+        if parsed.scheme != "https" or parsed.host != GOOGLE_ADS_HOST or parsed.port:
+            raise IntegrationValidationError(
+                "Google Ads returned an upload address that isn't on its own host.",
+                provider_key="google_ads",
+                operation=operation,
+                error_code="invalid_upload_address",
+                failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
+            )
+        return await self._send_with_refresh(
+            method,
+            url,
+            operation=operation,
+            policy=IntegrationRequestPolicy.MUTATION,
+            login_customer_id=login_customer_id,
+            extra_headers=headers,
+            follow_redirects=False,
+            **kwargs,
+        )
+
     async def _request(
         self,
         method: str,
@@ -85,28 +122,14 @@ class GoogleAdsClient:
         login_customer_id: str | None,
         **kwargs: Any,
     ) -> Any:
-        token = await resolve_before_dispatch(lambda: self._access_token(False))
-        try:
-            response = await self._send(
-                method,
-                path,
-                operation=operation,
-                policy=policy,
-                token=token,
-                login_customer_id=login_customer_id,
-                **kwargs,
-            )
-        except IntegrationAuthError:
-            token = await resolve_before_dispatch(lambda: self._access_token(True))
-            response = await self._send(
-                method,
-                path,
-                operation=operation,
-                policy=policy,
-                token=token,
-                login_customer_id=login_customer_id,
-                **kwargs,
-            )
+        response = await self._send_with_refresh(
+            method,
+            f"{GOOGLE_ADS_API_BASE_URL}/{path.lstrip('/')}",
+            operation=operation,
+            policy=policy,
+            login_customer_id=login_customer_id,
+            **kwargs,
+        )
         try:
             return response.json()
         except ValueError as exc:
@@ -122,19 +145,29 @@ class GoogleAdsClient:
                 ),
             ) from exc
 
+    async def _send_with_refresh(self, method: str, url: str, **kwargs: Any) -> httpx2.Response:
+        token = await resolve_before_dispatch(lambda: self._access_token(False))
+        try:
+            return await self._send(method, url, token=token, **kwargs)
+        except IntegrationAuthError:
+            token = await resolve_before_dispatch(lambda: self._access_token(True))
+            return await self._send(method, url, token=token, **kwargs)
+
     async def _send(
         self,
         method: str,
-        path: str,
+        url: str,
         *,
         operation: str,
         policy: IntegrationRequestPolicy,
         token: str,
         login_customer_id: str | None,
         max_response_bytes: int | None = None,
+        extra_headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> httpx2.Response:
         headers = {
+            **(extra_headers or {}),
             "Authorization": f"Bearer {token}",
             "developer-token": self._developer_token.get_secret_value(),
         }
@@ -144,7 +177,7 @@ class GoogleAdsClient:
         try:
             return await request_with_retries(
                 method,
-                f"{GOOGLE_ADS_API_BASE_URL}/{path.lstrip('/')}",
+                url,
                 operation=operation,
                 provider_key="google_ads",
                 policy=policy,

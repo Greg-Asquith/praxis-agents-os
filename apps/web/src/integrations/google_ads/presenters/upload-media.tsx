@@ -39,7 +39,7 @@ export const googleAdsUploadMediaPresenter = createIntegrationWritePresenter({
           // An edited File list must be checked and pinned before it can be approved.
           validateArgs: (value) => uploadBlock(parseUploadMediaArgs(value)),
           renderInvalidDraft: true,
-          // The card draws its own image table and video fields.
+          // The card draws its own File table, video titles, and link fields.
           renderFields: false,
           renderSummary: (value, fallback, onFieldEdit, disabled, controls) => (
             <UploadMediaApproval
@@ -67,9 +67,9 @@ export const googleAdsUploadMediaPresenter = createIntegrationWritePresenter({
           ) : (
             <GoogleAdsFailureTargets
               targets={[
-                ...(args?.images.filter((image) => !image.cancelled).map((image) => image.label) ??
-                  []),
+                ...(args?.files.filter((file) => !file.cancelled).map((file) => file.label) ?? []),
                 ...(args?.videos ?? []),
+                ...(args?.uploads.map((upload) => `Upload ${upload}`) ?? []),
               ]}
               description={description}
             />

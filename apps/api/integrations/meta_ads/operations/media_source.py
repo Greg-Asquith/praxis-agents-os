@@ -2,7 +2,7 @@
 
 """Applies Meta's media policy to workspace Files and reads their reviewed revisions."""
 
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,13 +11,8 @@ from core.exceptions.integration import IntegrationValidationError
 from models.files import File, FileRevision
 from services.files.contract import require_matching_pair
 from services.integrations.files import (
-    StorageNotFoundError,
-    StoragePreconditionError,
     require_pinned_file,
     resolve_workspace_file_source,
-    source_changed_error,
-    source_unavailable_error,
-    stream_file_source,
 )
 
 from ..models import MetaAdsMediaType
@@ -101,59 +96,3 @@ def _media_type(revision: FileRevision) -> MetaAdsMediaType | None:
 def require_pinned(source: MediaSource, pinned: Mapping[str, Any] | None) -> None:
     """Fails when the File's current revision isn't the one the approver saw."""
     require_pinned_file(source.approval_details(), pinned, **_SEAM)
-
-
-class RevisionStream:
-    """Reads a revision in caller-sized pieces, so a large video never sits in memory whole.
-
-    `verify` must pass before the upload is published, because a changed File is only
-    detected once every byte has been read. Use it as an async context manager so storage
-    is released when the upload stops early.
-    """
-
-    def __init__(self, revision: FileRevision) -> None:
-        self._revision = revision
-        self._chunks: AsyncGenerator[bytes] | None = None
-        self._buffer = bytearray()
-
-    async def __aenter__(self) -> "RevisionStream":
-        return self
-
-    async def __aexit__(self, *_exc: object) -> None:
-        await self.aclose()
-
-    async def aclose(self) -> None:
-        if self._chunks is not None:
-            await self._chunks.aclose()
-
-    @property
-    def size(self) -> int:
-        return self._revision.size_bytes
-
-    async def read(self, size: int) -> bytes:
-        """Returns exactly `size` bytes, or fails when the stored content is shorter."""
-        while len(self._buffer) < size:
-            chunk = await self._next_chunk()
-            if chunk is None:
-                raise source_changed_error(**_SEAM)
-            self._buffer.extend(chunk)
-        data = bytes(self._buffer[:size])
-        del self._buffer[:size]
-        return data
-
-    async def verify(self) -> None:
-        """Fails unless every stored byte was read and they match the revision's hash."""
-        if self._buffer or await self._next_chunk() is not None:
-            raise source_changed_error(**_SEAM)
-
-    async def _next_chunk(self) -> bytes | None:
-        if self._chunks is None:
-            self._chunks = stream_file_source(self._revision)
-        try:
-            return await anext(self._chunks)
-        except StopAsyncIteration:
-            return None
-        except StorageNotFoundError:
-            raise source_unavailable_error(**_SEAM) from None
-        except StoragePreconditionError:
-            raise source_changed_error(**_SEAM) from None

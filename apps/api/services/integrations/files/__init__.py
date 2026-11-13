@@ -8,6 +8,7 @@ from services.storage.errors import StorageNotFoundError, StoragePreconditionErr
 from .read_file_source import read_file_source
 from .read_pinned_file_source import read_pinned_file_source
 from .resolve_workspace_file_source import resolve_workspace_file_source
+from .revision_stream import RevisionStream
 from .stream_file_source import stream_file_source
 from .utils import (
     pinned_files,
@@ -18,6 +19,7 @@ from .utils import (
 
 __all__ = [
     "FileReference",
+    "RevisionStream",
     "StorageNotFoundError",
     "StoragePreconditionError",
     "pinned_files",

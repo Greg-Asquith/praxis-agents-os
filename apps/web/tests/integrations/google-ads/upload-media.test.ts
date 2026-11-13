@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import {
-  editImages,
+  editFiles,
+  editVideoText,
   parseUploadMediaArgs,
   serializeCancelled,
   uploadBlock,
@@ -17,6 +18,19 @@ import { googleAdsUploadMediaPresenter } from "@/integrations/google_ads/present
 
 const SQUARE = { entity_kind: "file", entity_id: "f-1", label: "logo-mark.png" }
 const LARGE = { entity_kind: "file", entity_id: "f-2", label: "trail-hero-wide.png" }
+const VIDEO = { entity_kind: "file", entity_id: "f-3", label: "trail-fit-launch.mp4" }
+const VIDEO_CHECK = {
+  kind: "video",
+  file_id: "f-3",
+  revision_id: "r-f-3",
+  content_hash: "def",
+  name: "trail-fit-launch.mp4",
+  content_type: "video/mp4",
+  size_bytes: 48_000_000,
+  duration_ms: 32_000,
+  default_title: "trail-fit-launch.mp4",
+  problem: null,
+}
 
 function check(fileId: string, extra: Record<string, unknown> = {}) {
   return {
@@ -55,20 +69,32 @@ function raw() {
 describe("upload media approval", () => {
   it("blocks an image Google won't take until it's cancelled, then asks for a check", () => {
     const args = parseUploadMediaArgs(raw())
-    expect(uploadBlock(args)).toBe("Fix or cancel 1 image to continue.")
+    expect(uploadBlock(args)).toBe("Fix or cancel 1 File to continue.")
 
-    const edit = editImages(args?.images ?? [], new Set(["f-2"]), true)
+    const edit = editFiles(args?.files ?? [], new Set(["f-2"]), true)
     const edited = parseUploadMediaArgs(
       { ...raw(), files: edit.files },
       serializeCancelled(edit.rows)
     )
     // The cancelled row stays for Undo, and the shorter list needs the server's pin again.
-    expect(edited?.images.map((image) => [image.id, image.cancelled])).toEqual([
+    expect(edited?.files.map((file) => [file.id, file.cancelled])).toEqual([
       ["f-1", false],
       ["f-2", true],
     ])
     expect(uploadBlock(edited)).toBe(
       "Click Check Files so the changed Files are checked, then approve."
+    )
+  })
+
+  it("blocks a video title YouTube won't take, and keeps the default for other videos", () => {
+    const value = { ...raw(), files: [SQUARE, VIDEO], _files: [check("f-1"), VIDEO_CHECK] }
+    const args = parseUploadMediaArgs(value)
+    expect(uploadBlock(args)).toBeNull()
+
+    const details = args ? editVideoText(args, "f-3", { title: "<b>Trail Fit</b>" }) : []
+    expect(details).toEqual([{ file_id: "f-3", title: "<b>Trail Fit</b>" }])
+    expect(uploadBlock(parseUploadMediaArgs({ ...value, video_details: details }))).toBe(
+      "Fix the title of 1 video to continue."
     )
   })
 
@@ -133,7 +159,13 @@ describe("presenter", () => {
   })
 
   it("renders the approval and the result", () => {
-    expect(approval(raw())).toContain("Square, Logo")
+    const card = approval({
+      ...raw(),
+      files: [SQUARE, LARGE, VIDEO],
+      _files: [...raw()._files, VIDEO_CHECK],
+    })
+    expect(card).toContain("Square, Logo")
+    expect(card).toContain("YouTube title for trail-fit-launch.mp4")
 
     const result = html(
       googleAdsUploadMediaPresenter.render(
@@ -162,6 +194,16 @@ describe("presenter", () => {
                       video_id: "dQw4w9WgXcQ",
                       fits: [],
                     },
+                    {
+                      kind: "video",
+                      name: "Trail Fit Launch",
+                      outcome: "processing",
+                      recovered: false,
+                      asset: null,
+                      upload_id: "555",
+                      fits: [],
+                      message: "Google is still processing this video.",
+                    },
                   ],
                 },
               },
@@ -171,5 +213,6 @@ describe("presenter", () => {
       )
     )
     expect(result).toContain("Trail Fit 2026")
+    expect(result).toContain("Upload ID 555")
   })
 })

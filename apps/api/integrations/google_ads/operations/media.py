@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/media.py
 
-"""Applies Google's image asset rules to workspace Files and reads YouTube video IDs."""
+"""Applies Google's image and video upload rules to workspace Files and reads YouTube IDs."""
 
 import re
 from dataclasses import dataclass
@@ -20,6 +20,10 @@ from services.integrations.files import resolve_workspace_file_source
 _OPERATION = "upload_media"
 MAX_IMAGE_BYTES = 5_120 * 1024
 _FORMATS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/gif": "GIF"}
+# Google publishes no limits for uploads to YouTube; this bounds one tool call's transfer.
+MAX_VIDEO_BYTES = 1024 * 1024 * 1024
+_VIDEO_TYPES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
+MAX_VIDEO_TITLE = 100
 # Google takes an image for a shape when its ratio is within 1% of the shape's.
 _RATIO_TOLERANCE = 0.01
 _YOUTUBE_ID = re.compile(r"[A-Za-z0-9_-]{11}")
@@ -94,8 +98,63 @@ class ImageSource:
         }
 
 
-async def resolve_image_source(db, *, workspace_id: UUID, file_id: UUID) -> ImageSource:
-    """Resolves a workspace File's current revision; `problem` says whether Google takes it."""
+@dataclass(frozen=True, slots=True)
+class VideoSource:
+    file: File
+    revision: FileRevision
+
+    @property
+    def problem(self) -> str | None:
+        """Why the File can't go to YouTube through Google Ads, or None."""
+        revision = self.revision
+        try:
+            require_matching_pair(revision.content_type, revision.extension)
+        except AppValidationError:
+            return f"{self.file.name} isn't an MP4, MOV, or WebM video."
+        if revision.content_type not in _VIDEO_TYPES:
+            return f"{self.file.name} isn't an MP4, MOV, or WebM video."
+        if revision.size_bytes == 0:
+            return f"{self.file.name} is empty."
+        if revision.size_bytes > MAX_VIDEO_BYTES:
+            return f"{self.file.name} is larger than the 1 GB limit for video uploads."
+        return None
+
+    @property
+    def default_title(self) -> str:
+        """The File's name without `<` or `>`, which YouTube titles can't contain."""
+        name = " ".join(self.file.name.replace("<", " ").replace(">", " ").split())
+        return name[:MAX_VIDEO_TITLE] or "Video"
+
+    @property
+    def duration_ms(self) -> int | None:
+        """The video's length when the media renderer has measured it."""
+        metadata = self.revision.media_metadata
+        duration = metadata.get("duration_ms") if isinstance(metadata, dict) else None
+        if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0:
+            return duration
+        return None
+
+    def approval_details(self) -> dict[str, Any]:
+        """Returns what the approval pins and shows; the video is never read before approval."""
+        return {
+            "file_id": str(self.file.id),
+            "revision_id": str(self.revision.id),
+            "content_hash": self.revision.content_hash,
+            "name": self.file.name[:500],
+            "content_type": self.revision.content_type,
+            "size_bytes": self.revision.size_bytes,
+            "problem": self.problem,
+        }
+
+
+type MediaSource = ImageSource | VideoSource
+
+
+async def resolve_media_source(db, *, workspace_id: UUID, file_id: UUID) -> MediaSource:
+    """Resolves a workspace File's current revision as a video when it is one, else an image.
+
+    `problem` says whether Google takes it.
+    """
     try:
         file, revision = await resolve_workspace_file_source(
             db, workspace_id=workspace_id, file_id=file_id
@@ -104,7 +163,18 @@ async def resolve_image_source(db, *, workspace_id: UUID, file_id: UUID) -> Imag
         raise media_error(
             "Choose a File that is available in this workspace.", "source_unavailable"
         ) from None
+    if revision.content_type.startswith("video/"):
+        return VideoSource(file, revision)
     return ImageSource(file, revision)
+
+
+def video_text_problem(value: str, *, label: str) -> str | None:
+    """Says why a YouTube title or description can't be used, or None."""
+    if not value.strip():
+        return f"Enter a {label}."
+    if "<" in value or ">" in value:
+        return f"The {label} can't contain < or >."
+    return None
 
 
 def image_size(data: bytes, content_type: str) -> tuple[int, int] | None:
