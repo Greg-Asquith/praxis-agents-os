@@ -75,7 +75,7 @@ describe("upload media approval", () => {
     const edit = editFiles(args?.files ?? [], new Set(["f-2"]), true)
     const edited = parseUploadMediaArgs(
       { ...raw(), files: edit.files },
-      serializeCancelled(edit.rows)
+      serializeCancelled(edit.rows, new Set())
     )
     // The cancelled row stays for Undo, and the shorter list needs the server's pin again.
     expect(edited?.files.map((file) => [file.id, file.cancelled])).toEqual([
@@ -107,6 +107,15 @@ describe("upload media approval", () => {
 
     const cancelled = editFiles(args.files, new Set(["f-1"]), true)
     expect(madeWithAiIds(args, cancelled.rows)).toEqual([])
+
+    // Undo brings the File back with the mark it had.
+    const kept = parseUploadMediaArgs(
+      { ...value, files: cancelled.files, made_with_ai: null },
+      serializeCancelled(cancelled.rows, args.madeWithAi)
+    )
+    if (!kept) throw new Error("The cancelled arguments didn't parse")
+    const restored = editFiles(kept.files, new Set(["f-1"]), false)
+    expect(madeWithAiIds(kept, restored.rows)).toEqual(["f-1"])
   })
 
   it("reads video IDs only from YouTube links", () => {

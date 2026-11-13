@@ -24,6 +24,7 @@ import {
   VIDEO_PAGES_HELP,
   VIDEO_PAGES_RIGHTS,
   VIDEO_PAGES_TITLE,
+  sortedVideoPages,
   videoPagesFromText,
 } from "@/integrations/google_ads/lib/video-pages"
 
@@ -227,7 +228,7 @@ export function VideoPagesField({
   const add = () => {
     const added = videoPagesFromText(draft)
     setDraft("")
-    if (added.length > 0) onChange(videoPagesFromText([...pages, ...added].join(" ")))
+    if (added.length > 0) onChange(sortedVideoPages([...pages, ...added]))
   }
   const on = open || pages.length > 0
   return (

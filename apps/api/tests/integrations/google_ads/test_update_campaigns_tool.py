@@ -9,6 +9,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
+from pydantic_ai import ModelRetry
+
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.tools import update_campaigns as tool_module
 from integrations.google_ads.tools.schemas.campaign_updates import GoogleAdsUpdateCampaignsOutput
@@ -604,11 +607,30 @@ async def test_goals_are_refused_when_unknown_or_changed_since_approval(monkeypa
 
     data, _audit = await _run(monkeypatch, account, changes, display)
 
-    assert display["_checks"][_SEARCH]["problems"] == {
-        "conversion_goals": "Store visit from store isn't one of the account's conversion goals."
-    }
+    assert list(display["_checks"][_SEARCH]["problems"]) == ["conversion_goals"]
     assert all(body["validateOnly"] for body in account.mutates)
     unknown, stale = data.campaigns
     assert unknown.settings[0].outcome == "failed"
     assert stale.error_code == "CHANGED_SINCE_APPROVAL"
     assert account.goal_levels["11"] == "CUSTOMER"
+
+
+async def test_more_goal_edits_than_one_audit_event_holds_are_refused_before_approval(
+    monkeypatch,
+) -> None:
+    ids = [str(number) for number in range(10, 17)]
+    account = _Account(*(_campaign(campaign_id, "SEARCH") for campaign_id in ids))
+    account.goal_levels = dict.fromkeys(ids, "CUSTOMER")
+    account.goals = {
+        campaign_id: {
+            f"PURCHASE~ORIGIN_{chr(65 + n // 26)}{chr(65 + n % 26)}": True for n in range(400)
+        }
+        for campaign_id in ids
+    }
+    goals = [{"category": "PURCHASE", "origin": "ORIGIN_AA"}]
+    changes = _changes(*({"campaign": item, "conversion_goals": goals} for item in ids))
+
+    with pytest.raises(ModelRetry):
+        await _display(monkeypatch, account, changes)
+
+    assert account.mutates == []

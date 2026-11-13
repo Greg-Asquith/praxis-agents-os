@@ -502,6 +502,8 @@ def _require_unique(edits: Sequence[Edit]) -> None:
     keys = [edit.key for edit in edits]
     if len(set(keys)) != len(keys):
         raise ValueError("Google Ads edits must name each object once")
+    if any(edit.resource in _NO_PARTIAL_FAILURE and edit.atomic_group is None for edit in edits):
+        raise ValueError("Google Ads conversion goal edits need an atomic group")
 
 
 def _set_path(body: dict[str, Any], path: str, value: Any) -> None:

@@ -29,12 +29,9 @@ type CampaignSetting = Literal[
     "bidding",
 ]
 
-# Each setting's field path in Google's JSON names, as the edit seam compares and masks it.
-# Bidding has several paths, which `campaign_bidding` works out from the change. Video pages,
-# final URL expansion, and text customisation are entries of the automation list, which
-# `asset_automation` merges into the live list. Conversion goals are their own objects, which
-# `campaign_goals` reads.
 AUTOMATION_PATH = "assetAutomationSettings"
+# Each setting's field path in Google's JSON names, as the edit seam compares and masks it.
+# Bidding and conversion goals have their own modules; the automation settings share one list.
 SETTING_PATHS: dict[CampaignSetting, str] = {
     "name": "name",
     "start_date": "startDateTime",

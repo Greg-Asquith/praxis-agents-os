@@ -536,8 +536,8 @@ function SettingEditor({
         onCommit={(next) => {
           onChange(videoPagesFromText(next))
         }}
-        placeholder="Off. Add page addresses, separated by commas"
-        value={value.join(", ")}
+        placeholder="Off. Add page addresses, separated by spaces"
+        value={value.join(" ")}
       />
     )
   if (Array.isArray(value))

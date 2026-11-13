@@ -409,6 +409,7 @@ function applyOutcome(
     affected_campaigns: ["Summer campaign"],
     error_code: null,
     external_ref: outcome === "applied" ? recommendationName(id) : null,
+    change: null,
     impact: null,
     message: null,
     outcome,

@@ -545,12 +545,19 @@ async def test_a_campaign_that_has_answered_or_stays_outside_the_eu_isnt_asked_a
     monkeypatch,
 ) -> None:
     answered = _Account([_location("2826")])
-    args = _args(add_locations=[{"key": "2250"}], contains_eu_political_advertising=True)
+    args = _args(add_locations=[{"key": "2250"}])
     display = await _display(monkeypatch, answered, args)
     assert _check(display)["eu_political_question"] is False
     await _run(monkeypatch, answered, args, display)
     # The answer Google already holds is never changed.
     assert "campaignOperation" not in str(answered.mutates)
+    # A yes that can't be sent is refused, not dropped.
+    with pytest.raises(ModelRetry):
+        await _display(
+            monkeypatch,
+            answered,
+            _args(add_locations=[{"key": "2250"}], contains_eu_political_advertising=True),
+        )
 
     unanswered = _Account([_location("2826")])
     unanswered.eu_political = None

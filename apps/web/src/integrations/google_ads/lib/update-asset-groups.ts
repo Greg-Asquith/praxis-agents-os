@@ -349,11 +349,6 @@ function isUrlOptionKind(kind: GroupChangeKind): kind is UrlOptionKind {
   return URL_OPTION_SETTINGS.some((item) => item === kind)
 }
 
-/** A URL option as the card shows it; empty when it's cleared. */
-function optionText(option: UrlOptionValue): string {
-  return Array.isArray(option) ? parametersText(option) : (option ?? "")
-}
-
 /** Every change the entry asks for, in the server's order. */
 function requested(entry: Record<string, unknown>): Requested[] {
   const changes: Requested[] = []
@@ -364,8 +359,10 @@ function requested(entry: Record<string, unknown>): Requested[] {
   const options = requestedUrlOptions(entry)
   for (const kind of URL_OPTION_SETTINGS) {
     const option = options[kind]
-    if (option !== undefined)
-      changes.push({ action: "set", item: null, kind, option, value: optionText(option) })
+    if (option === undefined) continue
+    // The card shows a cleared option as empty text.
+    const value = Array.isArray(option) ? parametersText(option) : (option ?? "")
+    changes.push({ action: "set", item: null, kind, option, value })
   }
   for (const action of ["remove", "add"] as const)
     for (const kind of ITEM_KINDS)

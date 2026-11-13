@@ -138,7 +138,8 @@ export function parseUploadMediaArgs(value: unknown, retained?: unknown): Upload
     })
   }
   const live = new Set(files.map((file) => file.id))
-  const cancelled = parseCancelled(retained).filter((file) => !live.has(file.id))
+  const kept = parseCancelled(retained).filter(({ row }) => !live.has(row.id))
+  const cancelled = kept.map(({ row }) => row)
   const checkedIds = checks ? [...checks.keys()] : []
   const [account] = parseApprovalAccounts(value["_accounts"]).values()
   return {
@@ -146,7 +147,11 @@ export function parseUploadMediaArgs(value: unknown, retained?: unknown): Upload
     videos,
     videoText,
     uploads,
-    madeWithAi: new Set(madeWithAi),
+    // A cancelled File keeps its mark, so Undo brings it back as it was.
+    madeWithAi: new Set([
+      ...madeWithAi,
+      ...kept.filter(({ marked }) => marked).map(({ row }) => row.id),
+    ]),
     accountName: account?.label ?? null,
     needsReview:
       checkedIds.length !== files.length ||
@@ -283,7 +288,7 @@ function parseChecks(value: unknown): Map<string, FileCheck> | null {
   return checks
 }
 
-function parseCancelled(value: unknown): FileRow[] {
+function parseCancelled(value: unknown): { row: FileRow; marked: boolean }[] {
   if (!isRecord(value) || !Array.isArray(value["files"])) return []
   return value["files"].flatMap((item: unknown) => {
     if (!isRecord(item) || !isRecord(item["ref"])) return []
@@ -292,22 +297,32 @@ function parseCancelled(value: unknown): FileRow[] {
     const ref = item["ref"]
     return [
       {
-        id,
-        label: isNonEmptyString(ref["label"]) ? ref["label"] : "Workspace File",
-        check: parseCheck(item["check"]),
-        cancelled: true,
-        raw: ref,
+        marked: item["made_with_ai"] === true,
+        row: {
+          id,
+          label: isNonEmptyString(ref["label"]) ? ref["label"] : "Workspace File",
+          check: parseCheck(item["check"]),
+          cancelled: true,
+          raw: ref,
+        },
       },
     ]
   })
 }
 
-/** What the card keeps across a review: each cancelled File with its last check. */
-export function serializeCancelled(files: readonly FileRow[]): Record<string, unknown> {
+/** What the card keeps across a review: each cancelled File with its last check and AI mark. */
+export function serializeCancelled(
+  files: readonly FileRow[],
+  madeWithAi: ReadonlySet<string>
+): Record<string, unknown> {
   return {
     files: files
       .filter((file) => file.cancelled)
-      .map((file) => ({ ref: file.raw, check: file.check?.raw ?? null })),
+      .map((file) => ({
+        ref: file.raw,
+        check: file.check?.raw ?? null,
+        made_with_ai: madeWithAi.has(file.id),
+      })),
   }
 }
 

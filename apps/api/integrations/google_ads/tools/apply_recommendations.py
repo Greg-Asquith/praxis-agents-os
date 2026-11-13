@@ -30,6 +30,7 @@ from services.audit_events import (
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
+from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
@@ -113,6 +114,8 @@ async def google_ads_apply_recommendations(
     parameters_by_name = {
         parameter.recommendation_resource_name: parameter for parameter in parameters or ()
     }
+    checks = approved_display_args(ctx).get("_checks")
+    shown: Mapping[str, Any] = checks if isinstance(checks, Mapping) else {}
 
     async def operation(
         entry: ResolvedContextEntry,
@@ -132,6 +135,7 @@ async def google_ads_apply_recommendations(
                 entry=entry,
                 references=selected,
             )
+            _require_shown_changes(selected, shown, live_rows, currency=_currency(entry))
             provider_parameters = _provider_parameters(selected, parameters_by_name, live_rows)
             provider_operations = [
                 (
@@ -241,6 +245,26 @@ def _validate_args(
         raise ModelRetry(
             "Each parameter row must name one of the selected Google Ads recommendations."
         )
+
+
+def _require_shown_changes(
+    references: Sequence[GoogleAdsRecommendationReference],
+    shown: Mapping[str, Any],
+    live_rows: Mapping[str, Mapping[str, Any]],
+    *,
+    currency: str | None,
+) -> None:
+    """Refuses a recommendation whose values Google changed after the card showed them."""
+    for reference in references:
+        check = shown.get(reference.resource_name)
+        if not isinstance(check, Mapping):
+            continue
+        live = recommendation_change(live_rows[reference.resource_name], currency=currency)
+        if check.get("change") != live:
+            raise ModelRetry(
+                f"Google changed what it recommends for {reference.label} since approval. "
+                "Run the recommendation report again before retrying."
+            )
 
 
 def _provider_parameters(

@@ -9,7 +9,7 @@ from datetime import date
 from typing import Annotated, Any
 
 from pydantic import Field
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
@@ -27,6 +27,7 @@ from services.audit_events import (
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
+from services.audit_events.integration_operation_detail import MAX_INTEGRATION_OPERATION_ITEMS
 from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
@@ -98,6 +99,10 @@ _SETTING_CHANNELS: dict[CampaignSetting, frozenset[str]] = {
 _AUTOMATION = frozenset({"video_pages", *AUTOMATION_SWITCHES})
 
 _MISSING = "This campaign no longer exists in Google Ads."
+_TOO_MANY = (
+    f"This would make more than {MAX_INTEGRATION_OPERATION_ITEMS:,} changes in one account. "
+    "Change the conversion goals of fewer campaigns in one request."
+)
 _REMOVED = "This campaign has been removed, so its settings can't change."
 _STARTED = "This campaign has already started, so Google Ads won't change its start date."
 _START_PAST = "Choose a start date after today."
@@ -414,7 +419,7 @@ def _pending_detail(
 ) -> PendingIntegrationOperationDetail:
     """Records which settings change on each campaign; URL values stay out of the audit record.
 
-    A campaign's goals are objects of their own, so each one that the change sets is recorded.
+    A campaign's goals are objects of their own, so each one the campaign has is recorded.
     """
     campaigns, goals = [], []
     for change, edits in planned:
@@ -562,6 +567,13 @@ async def _account_checks(
         live = await read_campaign_settings(client, **account, campaign_ids=campaign_ids)
         # Read for every campaign, so the card can offer goals on one that doesn't change them.
         goals = await read_campaign_goals(client, **account, campaign_ids=campaign_ids)
+        # Each goal is an edit with its own audit record, and one audit event holds this many.
+        edits = sum(
+            len(_edits(change, {}, {}, goals.get(change.campaign.campaign_id)))
+            for change in changes
+        )
+        if edits > MAX_INTEGRATION_OPERATION_ITEMS:
+            raise ModelRetry(_TOO_MANY)
         portfolios = await _read_portfolios(client, entry, changes, live)
         problems = {
             change.resource_name: _setting_problems(

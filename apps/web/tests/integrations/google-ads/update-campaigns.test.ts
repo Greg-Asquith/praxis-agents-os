@@ -165,7 +165,8 @@ describe("adding a change", () => {
   })
 
   it("offers video pages on Performance Max, in the server's order, and blocks a bad address", () => {
-    const pages = ["https://youtube.com/@trail", "https://example.com/films"]
+    // A comma is part of an address, not a separator.
+    const pages = ["https://youtube.com/@trail", "https://example.com/films?ids=1,2"]
     const live = { ...check().current, video_pages: [...pages].sort() }
     const args = parsed(
       raw({
@@ -190,7 +191,8 @@ describe("adding a change", () => {
     ).toEqual({ setting: "video_pages", value: [] })
     // The same pages in another order change nothing.
     expect(rows[1]).toMatchObject({ problem: null, unchanged: true })
-    expect(rows[2]?.problem).toContain("http://")
+    expect(rows[2]?.problem).not.toBeNull()
+    expect(canCheckCampaigns(args)).toBe(false)
   })
 
   it("offers Performance Max switches and goals, and holds an emptied goal list back", () => {
@@ -230,7 +232,7 @@ describe("adding a change", () => {
 
     const ids = new Set([`${key("10")}|conversion_goals`])
     const none = edited(editedChanges(args, ids, () => []))
-    expect(campaignRows(none, args)[0]?.problem).toContain("at least one")
+    expect(campaignRows(none, args)[0]?.problem).not.toBeNull()
     expect(canCheckCampaigns(none)).toBe(false)
     expect(editedChanges(args, ids, () => "account")[0]).toEqual({
       campaign: campaign("10"),

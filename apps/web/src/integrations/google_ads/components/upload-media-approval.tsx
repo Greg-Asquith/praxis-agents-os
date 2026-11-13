@@ -116,7 +116,7 @@ export function UploadMediaApproval({
 
   const edit = (ids: Iterable<string>, cancelled: boolean) => {
     const next = editFiles(args.files, new Set(ids), cancelled)
-    controls.onRetain?.(serializeCancelled(next.rows))
+    controls.onRetain?.(serializeCancelled(next.rows, args.madeWithAi))
     // Empty lists go as null, since every field is optional.
     onFieldEdit("files", next.files.length > 0 ? next.files : null)
     // A cancelled video's title would name a File the request no longer has.

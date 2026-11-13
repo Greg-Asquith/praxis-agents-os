@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/campaign-goals.ts
 
+import { humanizeKey } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 // A conversion goal by Google's category and origin tokens, such as PURCHASE and WEBSITE.
@@ -45,8 +46,7 @@ export function parseGoalOptions(value: unknown): GoalOption[] {
 
 /** A goal in words, such as "Purchase from website", as the server names it. */
 export function goalName(goal: CampaignGoal): string {
-  const text = `${goal.category} from ${goal.origin}`.replaceAll("_", " ").toLowerCase()
-  return text.charAt(0).toUpperCase() + text.slice(1)
+  return humanizeKey(`${goal.category} from ${goal.origin}`)
 }
 
 export function goalsText(value: string | readonly CampaignGoal[]): string {

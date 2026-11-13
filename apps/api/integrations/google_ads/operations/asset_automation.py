@@ -29,7 +29,7 @@ def _on(host: str, sites: Sequence[str]) -> bool:
     return any(host == site or host.endswith(f".{site}") for site in sites)
 
 
-def video_source_platform(url: str) -> str:
+def _source_platform(url: str) -> str:
     """Google's source platform for a page: a YouTube channel, a social profile, or a landing page."""
     host = (urlsplit(url).hostname or "").lower()
     if _on(host, _YOUTUBE_HOSTS):
@@ -44,7 +44,7 @@ def video_crawl_setting(urls: Sequence[str]) -> dict[str, Any]:
         "assetAutomationStatus": "OPTED_IN",
         "automatedVideoCrawlSetting": {
             "automatedVideoCrawlInfos": [
-                {"url": url, "sourcePlatform": video_source_platform(url), "enabled": True}
+                {"url": url, "sourcePlatform": _source_platform(url), "enabled": True}
                 for url in sorted(urls)
             ]
         },

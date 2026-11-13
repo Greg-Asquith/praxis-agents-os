@@ -428,12 +428,10 @@ function parseApplyOutcome(value: unknown): ApplyRecommendationOutcome | null {
   const parameters =
     value["requested_parameters"] === null ? null : parseParameters(value["requested_parameters"])
   const impact = value["impact"] === null ? null : parseImpact(value["impact"])
-  // Results stored before the change was reported have no `change`.
-  const rawChange = value["change"] ?? null
-  const change = rawChange === null ? null : parseRecommendationChange(rawChange)
+  const change = value["change"] === null ? null : parseRecommendationChange(value["change"])
   if (parameters === null && value["requested_parameters"] !== null) return null
   if (impact === null && value["impact"] !== null) return null
-  if (change === null && rawChange !== null) return null
+  if (change === null && value["change"] !== null) return null
   return { ...common, change, parameters, impact }
 }
 

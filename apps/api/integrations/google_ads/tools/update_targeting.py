@@ -118,6 +118,12 @@ _PMAX_DEMOGRAPHIC_BIDS = (
     "Performance Max campaigns can exclude a group, but can't adjust bids for one. Exclude it "
     "or leave it as it is."
 )
+# This tool never changes an answer Google holds, so a yes it can't send is refused, not dropped.
+_ANSWERED_NOT_POLITICAL = (
+    "{name} has already told Google its ads aren't EU political ads, and this tool can't "
+    "change that answer. Leave contains_eu_political_advertising out, and tell the user to "
+    "change the declaration in Google Ads."
+)
 _UNKNOWN_LOCATION = "Google Ads doesn't recognise this location."
 _UNKNOWN_LANGUAGE = "Google Ads doesn't recognise this language."
 _UNKNOWN_AUDIENCE = "Google Ads doesn't recognise this audience in this account."
@@ -242,12 +248,16 @@ def _plan(
     holds the live location setting, target restrictions, and EU political answer.
     """
     owner = _Owner.of(change)
+    political = change.contains_eu_political_advertising is True
+    if political and settings.get(EU_POLITICAL_PATH) == eu_political_status(False):
+        raise ModelRetry(_ANSWERED_NOT_POLITICAL.format(name=change.reference.label))
     # Google refuses an EU location or a radius on a campaign that hasn't given its answer.
     declares = (
         change.campaign is not None
         and settings.get(EU_POLITICAL_PATH) == EU_POLITICAL_UNANSWERED
         and (
-            bool(change.add_radius)
+            political
+            or bool(change.add_radius)
             or any(item.key in names["eu_locations"] for item in change.add_locations)
         )
     )
@@ -1427,7 +1437,8 @@ DEFINITION = RuntimeToolDefinition(
         "could then show anywhere. contains_eu_political_advertising, on a campaign entry, is "
         "true only when the user says the ads are political and aimed at the EU; Google needs "
         "the answer when a campaign that hasn't given it adds an EU location or a radius, and "
-        "the card then asks the user. devices sets MOBILE, DESKTOP, or TABLET to a bid_adjustment "
+        "the card then asks the user. A campaign that has already answered no can't be "
+        "changed to yes here. devices sets MOBILE, DESKTOP, or TABLET to a bid_adjustment "
         "percent (0 clears it) or excluded true. ad_schedule is the campaign's whole weekly "
         "schedule after the change: windows of day (MONDAY to SUNDAY), start and end as HH:MM "
         "in quarter hours in the account's time zone (end may be 24:00), and an optional "

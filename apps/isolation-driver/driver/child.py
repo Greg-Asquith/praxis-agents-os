@@ -123,7 +123,8 @@ def _live_processes(uid: int, keep: set[int]) -> list[int]:
             continue
         try:
             status = (entry / "status").read_text()
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # The process exited during the scan; a read then fails with ESRCH.
             continue
         if int(_status_field(status, "Uid:")) == uid and _status_field(status, "State:") != "Z":
             found.append(int(entry.name))

@@ -59,7 +59,7 @@ import {
 } from "@/integrations/google_ads/lib/setting-changes"
 import {
   parseVideoPages,
-  videoPagesFromText,
+  sortedVideoPages,
   videoPagesProblem,
 } from "@/integrations/google_ads/lib/video-pages"
 import { isRecord } from "@/lib/guards"
@@ -211,7 +211,7 @@ function requestedOf(
     if (typeof value === "boolean") values[setting] = value
   }
   const pages = parseVideoPages(entry["video_pages"])
-  if (pages) values.video_pages = videoPagesFromText(pages.join(" "))
+  if (pages) values.video_pages = sortedVideoPages(pages)
   for (const setting of AUTOMATION_SWITCHES) {
     const value = entry[setting]
     if (typeof value === "boolean") values[setting] = value
@@ -537,13 +537,14 @@ export function parseCancelled(value: unknown): CancelledSetting[] {
   })
 }
 
-/** Whether Google can check the request: every bidding change is complete and has a goal. */
+/** Whether Google can check the request: bidding, goals, and video pages the server will read. */
 export function canCheckCampaigns(args: UpdateCampaignsArgs): boolean {
   return args.changes.every((change) => {
-    const { bidding, conversion_goals: goals } = change.requested
+    const { bidding, conversion_goals: goals, video_pages: pages } = change.requested
     return (
       (!isBidding(bidding) || biddingProblem(bidding) === null) &&
-      (!isGoals("conversion_goals", goals) || goalsProblem(goals) === null)
+      (!isGoals("conversion_goals", goals) || goalsProblem(goals) === null) &&
+      (!isVideoPages("video_pages", pages) || videoPagesProblem(pages) === null)
     )
   })
 }

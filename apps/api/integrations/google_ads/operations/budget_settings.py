@@ -41,7 +41,6 @@ _BUDGET_FIELDS = (
 # Read only for a network order change, so no other budget change depends on these fields.
 _NETWORK_FIELDS = (
     "campaign_budget.budget_network_settings.settings",
-    "campaign_budget.budget_network_eligibility.eligible",
     "campaign_budget.budget_network_eligibility.ineligible_reasons",
 )
 _CAMPAIGN_FIELDS = (

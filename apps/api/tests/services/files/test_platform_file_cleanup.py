@@ -210,4 +210,6 @@ async def test_workspace_sweepers_leave_platform_tombstones_and_grants(
         assert await db.get(File, file.id) is file
         assert await db.get(FileUpload, upload.id) is upload
         assert await db.get(KBDocument, document.id) is document
-        provider.delete_object.assert_not_awaited()
+        # The sweep also sees workspace rows other tests left behind.
+        swept = [call.args[0].key for call in provider.delete_object.await_args_list]
+        assert not [key for key in swept if key.startswith("platform/")]

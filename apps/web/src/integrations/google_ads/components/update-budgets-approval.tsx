@@ -609,7 +609,9 @@ function AmountCell({
   if (row.cancelled)
     return (
       <span className="text-muted-foreground text-sm line-through">
-        {was} → {moneyText(row.amount, currency)}
+        {row.amount !== null || row.networkPriority === null
+          ? `${was} → ${moneyText(row.amount, currency)}`
+          : `Networks: ${networkOrderText(row.was?.networkPriority ?? null)} → ${networkOrderText(requestedNetworkOrder(row))}`}
       </span>
     )
   const symbol = currency ? currencySymbol(currency) : null

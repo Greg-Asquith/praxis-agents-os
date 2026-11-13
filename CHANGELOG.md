@@ -12,6 +12,43 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads campaign goals and Performance Max switches:
+  `google_ads_update_campaigns` sets which conversion goals a campaign bids
+  for, the account's or a list of its own, and turns final URL expansion and
+  text customisation on or off on Performance Max campaigns. Each campaign's
+  goals change together or not at all, and the card edits them in a popover.
+  A campaign on a custom conversion goal is refused.
+- Google Ads network order on budgets: `google_ads_update_budgets` sets which
+  networks a budget spends on first and caps the share the others may take,
+  or returns the budget to the account's order. Google offers this to some
+  accounts only; a budget Google can't order networks for is refused on the
+  card.
+- Google Ads household income exclusions on Performance Max:
+  `google_ads_update_targeting` excludes income ranges from a Performance Max
+  campaign, and refuses a demographic bid adjustment there, because
+  Performance Max sets every bid itself.
+- The EU political advertising question only when Google needs it:
+  `google_ads_create_campaign` leaves the declaration out for a campaign
+  whose locations are all outside the EU, and `google_ads_update_targeting`
+  asks for it in the same approval when a campaign that hasn't answered adds
+  an EU location or a radius.
+- Four more Google Ads recommendation types on
+  `google_ads_apply_recommendations`: raise a target CPA or lower a target
+  ROAS where bids are too low, raise a budget that holds performance back,
+  and optimise for new customers. The card shows the setting now and after
+  for the bid and budget types, and the tool refuses a recommendation Google
+  changed after the card was shown.
+- Google Ads video pages on Performance Max: `google_ads_create_campaign` and
+  `google_ads_update_campaigns` take up to 20 pages Google may take the
+  advertiser's videos from. It's off unless pages are listed, and both cards
+  show Google's condition that the advertiser owns the rights to the videos.
+- Google Ads URL options on asset groups: new Performance Max asset groups
+  and `google_ads_update_asset_groups` take a final URL suffix, a tracking
+  template, and up to 8 custom parameters.
+- Made With AI on Google Ads media uploads: `google_ads_upload_media` takes
+  the Files that were made or changed with AI and declares them to Google, on
+  the image asset or the YouTube upload. The card has a checkbox per File and
+  the result shows what Google was told.
 - Google Ads invoices: `google_ads_list_invoices` lists the monthly invoices
   Google issued to the selected accounts for up to 12 months, with totals,
   tax, adjustments, purchase order numbers, and invalid activity credits in
@@ -544,6 +581,20 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- `google_ads_update_targeting` no longer drops a yes to the EU political
+  advertising question. A campaign with no declaration gets it whatever the
+  change adds, and a yes for a campaign that has already answered no is
+  refused before approval, because the tool never changes a stored answer.
+- `google_ads_update_campaigns` refuses, before approval, a request whose
+  conversion goal changes come to more than 2,500 edits in one account. It
+  used to pass the card and fail after approval.
+- Google Ads Upload Media keeps a File's Made With AI mark when the File is
+  cancelled and restored on the card. The mark was lost, so the File went to
+  Google with no declaration.
+- Google Ads video page addresses that contain a comma are kept whole. The
+  cards split addresses on commas, which blocked approval.
+- The isolation driver's stray process check no longer fails when a process
+  exits while it is being read.
 - Google Ads accounts paid by card or bank transfer that hold a spending
   limit with no ceiling were reported as on monthly invoicing with an
   active limit. `google_ads_get_accounts` now asks Google whether the
@@ -582,6 +633,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- `soupsieve` is on 4.1, which fixes two denial of service advisories in CSS
+  selector matching (CVE-2026-126190 and CVE-2026-126192). It's a dependency
+  of the HTML to Markdown conversion.
 - Converting an uploaded, fetched, or attached document to text can no
   longer run the API or jobs worker out of memory. Every conversion runs in
   the document worker, which has no secrets and a memory, CPU, and time

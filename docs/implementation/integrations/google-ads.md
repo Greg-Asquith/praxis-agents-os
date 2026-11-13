@@ -305,8 +305,9 @@ A change is several edits on the edit seam, built by `LiveCampaignGoals.edits`: 
 config's level, then `biddable` on each of the campaign's goals, true for the ones
 listed and false for the rest. Going back to the account's goals is the level edit
 alone. The edits share an atomic group (`goals:{campaign_id}`), so each campaign's goals
-go in their own all-or-nothing request, after the request that holds every campaign's own
-fields. Goals already at their value aren't sent, but every one is compared with what the
+go in their own all-or-nothing request, apart from the request that holds every campaign's
+own fields. One account's entries can hold at most 2,500 edits, counting each goal, which
+is what one audit event records; more is refused before approval. Goals already at their value aren't sent, but every one is compared with what the
 card showed, so a goal or a level that changed since approval refuses the whole group
 (`CHANGED_SINCE_APPROVAL`). The level edit also compares `customConversionGoal`.
 
@@ -495,7 +496,8 @@ to do to Google's message.
 
 Google stores one setting per campaign type on a budget. The tool takes the
 type from the campaigns the budget funds, so a budget with no campaign, or
-with campaigns of several types, is a problem on the card. `first` becomes
+with campaigns of several types, is a problem on the card when it sets an order.
+`account_default` on such a budget takes every type's order off. `first` becomes
 `TIER1` and `then` becomes `TIER2` in `channelPriorities`, and each cap
 becomes `capPercentMillis` in `budgetCaps` (20% is `20000`). The edit sends
 the budget's whole settings list under the mask
@@ -943,8 +945,8 @@ both added and removed, and an entry that changes nothing. Status and removal st
 Each URL option set in `url_options` replaces the group's value, and an empty value or
 list clears it. The name, final URL, and URL options go in one `assetGroup` update in the
 first request, with an update mask that names only the settings that differ from what's
-live. A cleared option is sent as null under the mask. The card and result show custom
-parameters as `key=value, key=value`.
+live. A cleared option is sent under the mask as null, or as an empty list for custom
+parameters. The card and result show custom parameters as `key=value, key=value`.
 
 `read_asset_groups` in `operations/asset_group_state.py` reads each group's name,
 status, final URLs, URL options, campaign (channel, status, and Merchant Center feed), linked assets
@@ -1063,8 +1065,10 @@ Where Ads Can Show. The plan then adds `containsEuPoliticalAdvertising` to the
 campaign's one update, ahead of the adds, and puts that update and the campaign's
 location, exclusion, and radius changes in one atomic group. Google applies the
 declaration and the places together or not at all. With no answer in the entry, the
-tool declares that the ads aren't political, as the card's switch shows. A campaign
-that already holds a declaration is never asked, and the tool never changes one. The
+tool declares that the ads aren't political, as the card's switch shows. A yes in the
+entry is also sent for a campaign with no declaration, whatever it adds. A campaign
+that already holds a declaration is never asked, and the tool never changes one: a yes
+for a campaign that has answered no is refused before approval. The
 result reports the declaration as a `contains_eu_political_advertising` row. Whether
 Google's dry run accepts the add after the declaration in one request is unverified
 live.
@@ -1730,7 +1734,9 @@ Google's recommended value without a parameter row. Each result row carries it
 as `change`. The trusted `_checks` display argument, keyed by recommendation
 resource name, holds Google's recommended `change` for accounts the run may
 write to; an account that can't be read leaves it out and the card still
-works. Google's reference has no current value for the new customer type, so
+works. After approval the tool works the change out again from the live
+recommendation and refuses, with nothing sent, when it differs from the one the
+card showed, because Google can refresh a recommendation's values. Google's reference has no current value for the new customer type, so
 it has no `change`. The tool reports Google's apply outcome and doesn't
 re-read the campaign afterwards.
 
@@ -2223,7 +2229,7 @@ File, so the others keep their default titles; cancelling a video drops its titl
 argument is a secondary field, so the card can add Files to a request that had only
 links, and an emptied list is sent as null. Tabs filter by Landscape, Square, Portrait, Logo, Videos, and Needs
 Attention. **Cancel This Change** removes a File from `files`, and the card keeps it in
-`retained` so **Undo** survives the **Check Files** review. **Add Files** searches
+`retained` with its Made With AI mark, so **Undo** survives the **Check Files** review and brings the mark back. **Add Files** searches
 workspace Files, each YouTube link is its own field, and **Finish Earlier Uploads** lists
 `video_uploads`. With a video File, the card says videos go to an unlisted YouTube
 channel Google manages, and that titles can't change later. Each File row has a **Made
@@ -2334,9 +2340,9 @@ The card (`components/update-campaigns-approval.tsx`) shows the banner with the
 count of changes, then each row as the live value, an arrow, and an inline
 editor: an On/Off choice for networks, a date field for dates (an empty end date
 means no end date), and a text field otherwise. Custom parameters are edited as
-`key=value, key=value`. Video pages are edited as addresses separated by commas, read as
+`key=value, key=value`. Video pages are edited as addresses separated by spaces, since an address can hold a comma, and read as
 Off when empty; the row is offered under **Add a Change**, as **Video Pages (Advanced)**,
-only for a Performance Max campaign, and an address that doesn't start with `http://` or `https://` blocks approval. Final URL expansion and text customisation are On/Off choices,
+only for a Performance Max campaign, and an address that doesn't start with `http://` or `https://` blocks approval and **Check Changes**. Final URL expansion and text customisation are On/Off choices,
 offered under **Add a Change** only for a Performance Max campaign. Conversion goals are
 one line, such as "Account goals" or "Purchase from website only", that opens a popover
 (`components/campaign-goals-editor.tsx`): **Account Goals** or **Only These Goals**, then a

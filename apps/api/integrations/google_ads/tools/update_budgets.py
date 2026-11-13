@@ -649,16 +649,13 @@ async def _dry_run(
         read=read,
         operation=_OPERATION,
     )
+    # Google's message for an order that leaves a network out doesn't say what to do.
     return {
-        edit.key: f"Google says: {edit.refused}{_networks_hint(edit.refused)}"
+        edit.key: f"Google says: {edit.refused}"
+        + (_ALL_NETWORKS if "must be assigned to a priority tier" in edit.refused else "")
         for edit in prepared
         if edit.refused
     }
-
-
-def _networks_hint(refused: str) -> str:
-    """What to do about an order that leaves a network out, which Google's message doesn't say."""
-    return _ALL_NETWORKS if "must be assigned to a priority tier" in refused else ""
 
 
 def _check(

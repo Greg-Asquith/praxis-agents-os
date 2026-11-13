@@ -578,6 +578,10 @@ async def test_apply_tool_accounts_for_every_intent_on_provider_exception(
     provider_client = SimpleNamespace(post=AsyncMock(side_effect=provider_error))
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
+        "integrations.google_ads.tools.apply_recommendations.approved_display_args",
+        lambda _ctx: {"_checks": {}},
+    )
+    monkeypatch.setattr(
         "integrations.google_ads.tools.apply_recommendations.google_ads_client",
         AsyncMock(return_value=provider_client),
     )
@@ -625,6 +629,10 @@ async def test_live_verification_failure_is_audited_before_pending_or_mutation(m
     mutation = AsyncMock()
     audit = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(
+        "integrations.google_ads.tools.apply_recommendations.approved_display_args",
+        lambda _ctx: {"_checks": {}},
+    )
+    monkeypatch.setattr(
         "integrations.google_ads.tools.apply_recommendations.google_ads_client",
         AsyncMock(return_value=provider_client),
     )
@@ -650,6 +658,51 @@ async def test_live_verification_failure_is_audited_before_pending_or_mutation(m
     assert terminal["status"] is AuditStatus.FAILURE
     assert terminal["operation_detail"] is None
     assert terminal["related_event_id"] is None
+
+
+async def test_recommended_value_changed_since_approval_sends_nothing(monkeypatch) -> None:
+    entry = _entry()
+    reference = _reference(entry, "one", "RAISE_BUDGET_PERFORMANCE_TOO_LOW")
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=DEFINITION.name,
+        tool_call_id="call-moved-recommendation",
+    )
+    live = {
+        reference.resource_name: {
+            "resourceName": reference.resource_name,
+            "type": reference.recommendation_type,
+            "dismissed": False,
+            "raiseBudgetPerformanceTooLowRecommendation": {
+                "currentBudgetAmountMicros": "50000000",
+                "recommendedBudgetAmountMicros": "120000000",
+            },
+        }
+    }
+    shown = {"setting": "daily_budget", "now": 50.0, "after": 80.0, "currency": None}
+    mutation = AsyncMock()
+    module = "integrations.google_ads.tools.apply_recommendations"
+    monkeypatch.setattr(
+        f"{module}.approved_display_args",
+        lambda _ctx: {"_checks": {reference.resource_name: {"change": shown}}},
+    )
+    monkeypatch.setattr(f"{module}.google_ads_client", AsyncMock(return_value=object()))
+    monkeypatch.setattr(f"{module}.verify_recommendations", AsyncMock(return_value=live))
+    monkeypatch.setattr(f"{module}.apply_recommendations", mutation)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_apply_recommendations(ctx, [reference])
+
+    assert result["results"][0]["status"] == "error"
+    mutation.assert_not_awaited()
 
 
 async def test_apply_tool_rejects_duplicate_and_unselected_parameter_rows(monkeypatch) -> None:

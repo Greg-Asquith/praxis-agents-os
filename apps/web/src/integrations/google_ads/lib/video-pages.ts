@@ -20,13 +20,14 @@ export function parseVideoPages(value: unknown): string[] | null {
   return value as string[]
 }
 
-/** The pages in typed or pasted text, each once, in the order the server keeps them. */
-export function videoPagesFromText(text: string): string[] {
-  const pages = text
-    .split(/[\s,]+/)
-    .map((page) => page.trim())
-    .filter(Boolean)
+/** The pages each once, in the order the server keeps them. */
+export function sortedVideoPages(pages: readonly string[]): string[] {
   return [...new Set(pages)].sort()
+}
+
+/** The pages in typed or pasted text. An address can hold a comma, so only spaces separate. */
+export function videoPagesFromText(text: string): string[] {
+  return sortedVideoPages(text.split(/\s+/).filter(Boolean))
 }
 
 /** Why the server refuses the pages, or null. */
