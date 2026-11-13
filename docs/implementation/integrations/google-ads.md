@@ -51,11 +51,19 @@ returns null costs and billing.
 For every other account, `data.billing` comes from
 `operations/account_billing.py`, which reads `billing_setup` and then, when
 the account has a setup that isn't cancelled, `account_budget`. Each read
-takes the newest 200 rows. Only accounts paid by monthly invoice have
-spending limits. An account with no billing setup, or with an approved setup
-and no spending limit of any status, returns `monthly_invoicing: false` and
-state `not_monthly_invoicing`, and its card says **Managed in Google Ads**;
-this isn't an error. When Google refuses the billing read, such as for a
+takes the newest 200 rows. Google has no field that says how an account
+pays, and an account paid by card or bank transfer can hold a spending limit
+with no ceiling. So for an approved setup with a limit, the read asks Google
+for this month's invoices (`list_invoice_month` in
+`operations/invoice_requests.py`): a `BILLING_SETUP_NOT_ON_MONTHLY_INVOICING`
+or `NOT_INVOICED_CUSTOMER` refusal means the account isn't invoiced. Any
+other refusal leaves the answer unknown and the limits are reported. An
+account with no billing setup, with an approved setup and no spending limit
+of any status, or whose setup gets no invoices, returns
+`monthly_invoicing: false` and state `not_monthly_invoicing`, and its card
+says **Managed in Google Ads**; this isn't an error. The Google Ads API has
+no payment history, receipts, or statements for these accounts; use monthly
+cost from `google_ads_run_report` instead. When Google refuses the billing read, such as for a
 sign-in with no billing access, the account still returns its settings and
 costs with `billing: null`, and the card says **Not available**. The fields
 are as follows:
@@ -1412,6 +1420,73 @@ variants. Text from Google is cut to 200 characters. The audit record
 holds counts only, not the agent's search text. Large results are previewed for the
 model and saved in full, like reports.
 
+### Invoices
+
+`google_ads_list_invoices` lists the monthly invoices Google issued to every
+selected account, for a range of up to 12 issue months. It calls
+`InvoiceService.ListInvoices`
+(`GET customers/{customer_id}/invoices`) once per month and billing setup,
+because Google takes one issue month per request. Only accounts paid by
+monthly invoice get invoices through the API.
+
+The tool refuses a range that is backwards, starts before January 2019 (the
+first month Google keeps), ends after the current month, or covers more than
+12 months, before any request. For each account it then works as follows:
+
+1. A manager account returns `state: manager_account` with no request,
+   because managers own no billing setup.
+2. `read_billing_setups` in `operations/account_billing.py`, which the
+   accounts read shares, returns the account's setups. Both reads send the
+   month request through `operations/invoice_requests.py`, so they agree
+   on which accounts are invoiced. The tool lists
+   invoices for up to five `APPROVED` setups, newest first, because a payer
+   switch leaves the earlier setup approved.
+3. Google's `NOT_INVOICED_CUSTOMER`, `NON_SERVING_CUSTOMER`,
+   `BILLING_SETUP_NOT_ON_MONTHLY_INVOICING`, and `BILLING_SETUP_NOT_APPROVED`
+   refusals skip that setup. An account with no setup left returns
+   `state: not_monthly_invoicing`, which isn't an error.
+4. `ACTION_NOT_PERMITTED` raises `IntegrationPermissionError` with error
+   code `invoices_not_permitted`. Google shows invoices only through the
+   paying manager, which can differ from the `login_customer_id` that
+   discovery stores, and only to a sign-in with billing access.
+
+Invoices are kept once by invoice number, newest first, up to 500 per
+account. An invoice for a payments account that several accounts share lists
+every account it covers, and can come back under each selected account. Each
+invoice has its type (`invoice` or `credit_memo`), issue and due dates,
+service period, and subtotal, tax, and total, with the same three amounts
+for adjustments, regulatory costs, and export charges. `budget_lines` has
+one row per account spending limit with the purchase order number, served
+and billed amounts, and invalid activity credits. `account_lines` has each
+account's corrections and adjustments. Each list holds up to 1,000 rows, and
+`lines_truncated` says when Google sent more. Money is exact decimal strings
+in the invoice's own currency, and credits are negative. Google reports no
+payment status, so the result has none. Large results are previewed for the
+model and saved in full, like reports, so reconciliation runs in `run_code`.
+
+`invoice_ids` keeps only the named invoices. `save_pdf` saves each listed
+invoice's PDF to workspace Files through `create_copy`, optionally in
+`folder`, and the invoice then carries `pdf.file`. Because the tool can
+write Files, it is an internal write with auto approval by default, like
+`sharepoint_copy_to_files`. The rules for PDFs are as follows:
+
+- Google's `pdf_url` stays in the operation and never reaches the model, the
+  transcript, or the audit record.
+- `GoogleAdsClient.download` sends the bearer token only to HTTPS addresses
+  on `google.com` or `googleapis.com`, without `login-customer-id`. It
+  follows at most three redirects itself and checks each one, so a redirect
+  to another host is refused with error code `invalid_download_address`.
+- A PDF over 25 MiB, or a reply that doesn't start with `%PDF-`, isn't saved.
+- A PDF that can't be saved sets `pdf_error` on its invoice and the rest
+  still save. Each File is created in its own savepoint.
+- An invoice listed under two selected accounts is downloaded and saved
+  once per call.
+- One call saves up to 100 PDFs, because downloads run in turn inside the
+  tool's timeout. Each invoice past that carries a `pdf_error` that says to
+  call again with its number in `invoice_ids`.
+
+The audit record holds the month, invoice, and saved PDF counts.
+
 ### Labels
 
 `google_ads_create_labels` creates 1 to 50 text labels in each selected
@@ -1926,6 +2001,26 @@ asks for approval as usual. The button takes up to 100 keywords, one ad group's 
 It is unavailable where the conversation can't take a turn, such as a shared
 transcript, and the card has no selection while only the preview of a large result
 has loaded.
+
+### List Invoices card
+
+`lib/invoices.ts` parses the result and refuses a saved PDF whose File ID
+isn't a File's, and an invoice number with characters other than letters,
+digits, `.`, `-`, and `_`. `components/invoices-table.tsx` is one `DataTable`
+per account: Month (the month of service), Billing Setup, Invoice, Type,
+Amount, Due, and PDF, with the issue date, service period, tax, adjustments,
+purchase orders, and accounts as hidden columns. Amounts are in each
+invoice's own currency. `invoiceTabs` adds a tab per billing setup when the
+invoices come from several, and **Credit Memos** when there are any. The
+card has no paid or unpaid status, because Google reports none.
+
+A saved PDF's cell links its File. For the others, **Save N PDFs to Files**
+sends the selected invoice numbers as the operator's own governed turn
+(`savePdfsInstruction`), up to 100 at once, and the agent calls the tool
+again with `invoice_ids` and `save_pdf`. The card has no selection while
+only the preview of a large result has loaded, or when every PDF is saved.
+An account with no invoices says why: none issued, not on monthly
+invoicing, or a manager account.
 
 ### Optimise Search Terms card
 

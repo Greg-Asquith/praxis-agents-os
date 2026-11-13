@@ -30,6 +30,7 @@ import { googleAdsUpdateAssetsPresenter } from "@/integrations/google_ads/presen
 import { googleAdsUpdateAssetGroupsPresenter } from "@/integrations/google_ads/presenters/update-asset-groups"
 import { googleAdsResearchKeywordsPresenter } from "@/integrations/google_ads/presenters/research-keywords"
 import { googleAdsUploadMediaPresenter } from "@/integrations/google_ads/presenters/upload-media"
+import { googleAdsListInvoicesPresenter } from "@/integrations/google_ads/presenters/list-invoices"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -64,5 +65,6 @@ export default {
     googleAdsUpdateAssetGroupsPresenter,
     googleAdsResearchKeywordsPresenter,
     googleAdsUploadMediaPresenter,
+    googleAdsListInvoicesPresenter,
   ],
 } satisfies IntegrationUiModule

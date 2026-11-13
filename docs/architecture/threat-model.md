@@ -162,6 +162,15 @@ strings. Workspace scoping,
 bounded report rows, typed output validation, audit, write approvals, and run
 envelopes remain enforced; the operator explicitly rejected per-cell or
 per-result prompt-injection warnings for this provider.
+`google_ads_list_invoices` follows the same posture for invoice numbers,
+account names, and purchase order numbers. It can also save Google's invoice
+PDFs as workspace Files; their text reaches the model only when a File tool
+reads it, as any File's does. Google's PDF address needs the connection's
+bearer token, so it stays in the operation and never reaches the model, the
+transcript, or audit, and the client sends the token only to HTTPS addresses
+on `google.com` and `googleapis.com`, checking each redirect.
+`test_list_invoices_tool.py` covers the refused host and the address staying
+out of the result.
 
 Meta Ads follows the Google Ads posture for typed account, object, conversion,
 change-history, and Insights data. Post text is the exception and uses

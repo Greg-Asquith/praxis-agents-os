@@ -17,6 +17,7 @@ from core.exceptions.integration import (
     IntegrationPermissionError,
     IntegrationValidationError,
 )
+from integrations.google_ads.client import GoogleAdsRequestRejectedError
 from integrations.google_ads.operations.get_account import get_account
 from integrations.google_ads.operations.get_report_field import (
     get_report_field,
@@ -409,6 +410,21 @@ class _AccountClient:
         self.setups = list(setups)
         self.budgets = list(budgets)
         self.queries: list[str] = []
+        self.invoice_refusal: str | None = None
+        self.invoice_requests: list[dict] = []
+
+    async def get(self, path: str, **kwargs):
+        assert path == "customers/333/invoices"
+        self.invoice_requests.append(kwargs["params"])
+        if self.invoice_refusal is not None:
+            raise GoogleAdsRequestRejectedError(
+                "Google Ads rejected the request.",
+                failure={
+                    "details": [{"errors": [{"errorCode": {"invoiceError": self.invoice_refusal}}]}]
+                },
+                operation="list_invoices",
+            )
+        return {}
 
     async def post(self, _path: str, **kwargs):
         query = kwargs["json"]["query"]
@@ -598,6 +614,32 @@ async def test_account_billing_reports_a_setup_with_no_limits_as_not_monthly_inv
 
     assert billing["monthly_invoicing"] is False
     assert billing["state"] == "not_monthly_invoicing"
+
+
+async def test_account_billing_asks_google_whether_a_setup_with_a_limit_is_invoiced() -> None:
+    # A card account can hold a spending limit with no ceiling, so the limit proves nothing.
+    budget = {
+        "id": "9",
+        "status": "APPROVED",
+        "approvedSpendingLimitType": "INFINITE",
+        "amountServedMicros": "156360580000",
+        "proposedStartDateTime": "2017-01-27 15:37:27",
+        "approvedEndTimeType": "FOREVER",
+    }
+    client = _AccountClient(_CUSTOMER, [], setups=[_APPROVED_SETUP], budgets=[budget])
+    client.invoice_refusal = "BILLING_SETUP_NOT_ON_MONTHLY_INVOICING"
+
+    billing = await _billing(client, datetime(2026, 11, 11, 12, tzinfo=UTC))
+
+    assert client.invoice_requests == [
+        {
+            "billingSetup": f"customers/333/billingSetups/{_APPROVED_SETUP['id']}",
+            "issueYear": "2026",
+            "issueMonth": "NOVEMBER",
+        }
+    ]
+    assert billing["state"] == "not_monthly_invoicing"
+    assert billing["active_limit"] is None
 
 
 async def test_get_account_keeps_settings_and_costs_when_billing_is_refused() -> None:

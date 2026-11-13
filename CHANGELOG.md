@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Google Ads invoices: `google_ads_list_invoices` lists the monthly invoices
+  Google issued to the selected accounts for up to 12 months, with totals,
+  tax, adjustments, purchase order numbers, and invalid activity credits in
+  the invoice currency, and saves the invoice PDFs to workspace Files when
+  asked. The card shows one row per invoice, links each saved PDF, and
+  **Save N PDFs to Files** saves the selected ones. The PDF address never
+  reaches the model, and the client sends the Google sign-in to Google's own
+  hosts only. Accounts that aren't paid by monthly invoice say so.
 - Google Ads asset group changes: `google_ads_update_asset_groups` changes
   up to 100 live Performance Max asset groups in one approval: the name,
   final URL, headlines, long headlines, descriptions, images, videos, search
@@ -536,6 +544,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Google Ads accounts paid by card or bank transfer that hold a spending
+  limit with no ceiling were reported as on monthly invoicing with an
+  active limit. `google_ads_get_accounts` now asks Google whether the
+  billing setup is invoiced, and reports these accounts as managed in
+  Google Ads.
 - Google Ads Performance Max cards show Google's dry-run rejection on the
   asset or change it is about. The answer was shown once for the whole
   request, and on Change Asset Groups against every change.

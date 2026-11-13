@@ -9,6 +9,7 @@ import httpx2
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationDownloadTooLargeError,
     IntegrationError,
     IntegrationFailureDisposition,
     IntegrationPermissionError,
@@ -16,6 +17,7 @@ from core.exceptions.integration import (
 )
 from services.integrations.http import (
     IntegrationRequestPolicy,
+    consume_stream_with_retries,
     request_with_retries,
     resolve_before_dispatch,
 )
@@ -24,6 +26,9 @@ GOOGLE_ADS_API_VERSION = "v26"
 GOOGLE_ADS_HOST = "googleads.googleapis.com"
 GOOGLE_ADS_API_BASE_URL = f"https://{GOOGLE_ADS_HOST}/{GOOGLE_ADS_API_VERSION}"
 GOOGLE_ADS_UPLOAD_BASE_URL = f"https://{GOOGLE_ADS_HOST}/resumable/upload/{GOOGLE_ADS_API_VERSION}"
+# Google serves the documents its API links to, such as invoice PDFs, from these domains.
+_DOWNLOAD_DOMAINS = ("google.com", "googleapis.com")
+_MAX_DOWNLOAD_REDIRECTS = 3
 AccessTokenFn = Callable[[bool], Awaitable[str]]
 
 
@@ -57,6 +62,7 @@ class GoogleAdsClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         login_customer_id: str | None = None,
+        params: dict[str, str] | None = None,
         max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
@@ -66,6 +72,7 @@ class GoogleAdsClient:
             policy=policy,
             login_customer_id=login_customer_id,
             max_response_bytes=max_response_bytes,
+            **({"params": params} if params else {}),
         )
 
     async def post(
@@ -123,6 +130,56 @@ class GoogleAdsClient:
             **kwargs,
         )
 
+    async def download(self, url: str, *, operation: str, max_bytes: int) -> bytes:
+        """Downloads a document Google Ads linked to, such as an invoice PDF.
+
+        The address comes from Google's reply, so every hop is checked: the bearer token goes to
+        Google's own hosts over HTTPS and nowhere else.
+
+        Raises:
+            IntegrationValidationError: When an address isn't on a Google host, or the redirects
+                don't end.
+            IntegrationDownloadTooLargeError: When the document is larger than `max_bytes`.
+        """
+
+        async def consume(response: httpx2.Response) -> tuple[str | None, bytes]:
+            if response.is_redirect:
+                return response.headers.get("Location"), b""
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                if len(body) + len(chunk) > max_bytes:
+                    raise IntegrationDownloadTooLargeError(
+                        "The document is too large to save.",
+                        provider_key="google_ads",
+                        operation=operation,
+                    )
+                body.extend(chunk)
+            return None, bytes(body)
+
+        target: httpx2.URL | None = _google_address(url)
+        for _ in range(_MAX_DOWNLOAD_REDIRECTS + 1):
+            if target is None:
+                break
+            location, body = await self._send_with_refresh(
+                "GET",
+                str(target),
+                operation=operation,
+                policy=IntegrationRequestPolicy.READ,
+                login_customer_id=None,
+                consume=consume,
+                follow_redirects=False,
+            )
+            if location is None:
+                return body
+            target = _google_address(location, base=target)
+        raise IntegrationValidationError(
+            "Google Ads returned a document address that isn't on a Google host.",
+            provider_key="google_ads",
+            operation=operation,
+            error_code="invalid_download_address",
+            failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
+        )
+
     async def _request(
         self,
         method: str,
@@ -156,7 +213,7 @@ class GoogleAdsClient:
                 ),
             ) from exc
 
-    async def _send_with_refresh(self, method: str, url: str, **kwargs: Any) -> httpx2.Response:
+    async def _send_with_refresh(self, method: str, url: str, **kwargs: Any) -> Any:
         token = await resolve_before_dispatch(lambda: self._access_token(False))
         try:
             return await self._send(method, url, token=token, **kwargs)
@@ -175,8 +232,11 @@ class GoogleAdsClient:
         login_customer_id: str | None,
         max_response_bytes: int | None = None,
         extra_headers: dict[str, str] | None = None,
+        consume: Callable[[httpx2.Response], Awaitable[Any]] | None = None,
         **kwargs: Any,
-    ) -> httpx2.Response:
+    ) -> Any:
+        """Sends one request, returning the reply or, with `consume`, what it reads from the
+        stream."""
         headers = {
             **(extra_headers or {}),
             "Authorization": f"Bearer {token}",
@@ -184,31 +244,50 @@ class GoogleAdsClient:
         if login_customer_id:
             headers["login-customer-id"] = normalize_customer_id(login_customer_id)
 
-        try:
-            return await request_with_retries(
-                method,
-                url,
+        request: dict[str, Any] = {
+            "operation": operation,
+            "provider_key": "google_ads",
+            "client": self._client,
+            "headers": headers,
+            "validation_error_detail": lambda response: _google_ads_error_detail(
+                response,
                 operation=operation,
-                provider_key="google_ads",
-                policy=policy,
-                max_response_bytes=max_response_bytes,
-                client=self._client,
-                headers=headers,
-                validation_error_detail=lambda response: _google_ads_error_detail(
-                    response,
-                    operation=operation,
-                ),
-                response_error_mapper=lambda response: _mapped_error(
-                    response,
-                    operation=operation,
-                ),
-                **kwargs,
+            ),
+            "response_error_mapper": lambda response: _mapped_error(
+                response,
+                operation=operation,
+            ),
+            **kwargs,
+        }
+        try:
+            if consume is not None:
+                return await consume_stream_with_retries(
+                    method,
+                    url,
+                    policy=policy,
+                    consume=consume,
+                    include_original_error=False,
+                    **request,
+                )
+            return await request_with_retries(
+                method, url, policy=policy, max_response_bytes=max_response_bytes, **request
             )
         except IntegrationError as exc:
             # httpx request objects retain headers; never carry the bearer
             # token beyond this provider boundary in exception context.
             exc.original_error = None
             raise
+
+
+def _google_address(value: str, *, base: httpx2.URL | None = None) -> httpx2.URL | None:
+    """Returns the address when it's HTTPS on one of Google's download domains."""
+    try:
+        url = base.join(value) if base is not None else httpx2.URL(value)
+    except httpx2.InvalidURL:
+        return None
+    host = url.host.lower()
+    on_google = any(host == name or host.endswith(f".{name}") for name in _DOWNLOAD_DOMAINS)
+    return url if url.scheme == "https" and not url.port and on_google else None
 
 
 def _google_ads_error_detail(
@@ -228,7 +307,7 @@ def _google_ads_error_detail(
         return fallback
 
     messages: list[str] = []
-    for provider_error in _provider_errors(error):
+    for provider_error in provider_errors(error):
         normalized = _bounded_provider_message(provider_error.get("message"))
         if normalized and normalized not in messages:
             messages.append(normalized)
@@ -269,7 +348,7 @@ def _unapproved_project_error(
     if not any(
         isinstance(code := provider_error.get("errorCode"), dict)
         and code.get("authorizationError") == "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
-        for provider_error in _provider_errors(error)
+        for provider_error in provider_errors(error)
     ):
         return None
     return IntegrationPermissionError(
@@ -294,7 +373,8 @@ def _error_object(response: httpx2.Response) -> dict[str, Any] | None:
     return error if isinstance(error, dict) else None
 
 
-def _provider_errors(error: dict[str, Any]) -> list[dict[str, Any]]:
+def provider_errors(error: dict[str, Any]) -> list[dict[str, Any]]:
+    """Returns each error Google lists inside one refusal."""
     details = error.get("details")
     if not isinstance(details, list):
         return []

@@ -6,11 +6,13 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Literal
 
+from core.exceptions.integration import IntegrationError
 from services.integrations.http import IntegrationRequestPolicy
 
-from ..client import GoogleAdsClient
+from ..client import GoogleAdsClient, GoogleAdsRequestRejectedError
 from ..references import GoogleAdsAccountBudgetReference, GoogleAdsBillingSetupReference
 from ..tools.utils.money import micros_to_money
+from .invoice_requests import list_invoice_month, refused_as_not_invoiced
 from .utils import nonnegative_int, stream_rows
 
 type BillingState = Literal[
@@ -72,6 +74,40 @@ LIMIT 200
 """.strip()
 
 
+async def read_billing_setups(
+    client: GoogleAdsClient,
+    *,
+    customer_id: str,
+    login_customer_id: str,
+    max_response_bytes: int,
+    operation: str = _OPERATION,
+) -> list[Mapping[str, Any]]:
+    """Returns the account's billing setups that aren't cancelled, newest first."""
+    rows = await _search(
+        client, customer_id, login_customer_id, _SETUP_QUERY, max_response_bytes, operation
+    )
+    return _newest_first(
+        row["billingSetup"]
+        for row in rows
+        if isinstance(row.get("billingSetup"), Mapping)
+        and row["billingSetup"].get("status") != "CANCELLED"
+    )
+
+
+def billing_setup_reference(
+    setup: Mapping[str, Any], *, customer_id: str, account_name: str
+) -> GoogleAdsBillingSetupReference:
+    """Builds the setup's reference, labelled with the payments account that pays."""
+    payments = setup.get("paymentsAccountInfo")
+    name = _text(payments.get("paymentsAccountName")) if isinstance(payments, Mapping) else None
+    return GoogleAdsBillingSetupReference(
+        customer_id=customer_id,
+        billing_setup_id=str(setup.get("id")),
+        label=name or f"Billing setup {setup.get('id')}",
+        scope_label=account_name,
+    )
+
+
 async def read_account_billing(
     client: GoogleAdsClient,
     *,
@@ -85,26 +121,14 @@ async def read_account_billing(
     """Returns the payer, the spending limits, and any change waiting for Google's review.
 
     `local_now` is in the account time zone. Only accounts on monthly invoicing have spending
-    limits; an account with no billing setup, or with a setup and no limit of any status, is
-    reported as paid another way.
+    limits that mean anything; an account with no billing setup, with a setup and no limit of
+    any status, or whose setup Google issues no invoices for, is reported as paid another way.
     """
-
-    async def search(query: str) -> list[dict[str, Any]]:
-        payload = await client.post(
-            f"customers/{customer_id}/googleAds:searchStream",
-            operation=_OPERATION,
-            policy=IntegrationRequestPolicy.READ,
-            login_customer_id=login_customer_id,
-            json={"query": query},
-            max_response_bytes=max_response_bytes,
-        )
-        return stream_rows(payload, max_rows=_MAX_ROWS)
-
-    setups = _newest_first(
-        row["billingSetup"]
-        for row in await search(_SETUP_QUERY)
-        if isinstance(row.get("billingSetup"), Mapping)
-        and row["billingSetup"].get("status") != "CANCELLED"
+    setups = await read_billing_setups(
+        client,
+        customer_id=customer_id,
+        login_customer_id=login_customer_id,
+        max_response_bytes=max_response_bytes,
     )
     if not setups:
         return _billing("not_monthly_invoicing", monthly_invoicing=False)
@@ -117,10 +141,17 @@ async def read_account_billing(
     )
     all_budgets = _newest_first(
         row["accountBudget"]
-        for row in await search(_BUDGET_QUERY)
+        for row in await _search(
+            client, customer_id, login_customer_id, _BUDGET_QUERY, max_response_bytes, _OPERATION
+        )
         if isinstance(row.get("accountBudget"), Mapping)
     )
-    if not all_budgets and setup.get("status") == "APPROVED":
+    if setup.get("status") == "APPROVED" and not (
+        all_budgets
+        and await _invoiced(
+            client, customer_id, login_customer_id, setup, local_now, max_response_bytes
+        )
+    ):
         return _billing("not_monthly_invoicing", monthly_invoicing=False)
     # Pending budgets are new limits waiting for Google; cancelled ones never served.
     budgets = [item for item in all_budgets if item.get("status") in ("APPROVED", "PENDING")]
@@ -143,11 +174,8 @@ async def read_account_billing(
     payments = payments if isinstance(payments, Mapping) else {}
     return {
         **_billing(state, monthly_invoicing=True),
-        "billing_setup": GoogleAdsBillingSetupReference(
-            customer_id=customer_id,
-            billing_setup_id=str(setup.get("id")),
-            label=_text(payments.get("paymentsAccountName")) or f"Billing setup {setup.get('id')}",
-            scope_label=account_name,
+        "billing_setup": billing_setup_reference(
+            setup, customer_id=customer_id, account_name=account_name
         ).model_dump(mode="json"),
         "billing_setup_status": str(setup.get("status") or "UNKNOWN"),
         "payments_account_id": _text(payments.get("paymentsAccountId")),
@@ -171,6 +199,56 @@ async def read_account_billing(
             and item["pendingProposal"].get("accountBudgetProposal")
         ],
     }
+
+
+async def _invoiced(
+    client: GoogleAdsClient,
+    customer_id: str,
+    login_customer_id: str,
+    setup: Mapping[str, Any],
+    local_now: datetime,
+    max_response_bytes: int,
+) -> bool:
+    """Checks whether Google issues invoices for the setup, by asking for this month's.
+
+    Accounts paid by card or bank transfer can hold a spending limit with no ceiling, so a
+    limit alone doesn't mean monthly invoicing. A request Google refuses for another reason
+    leaves the answer unknown, and the limits are still reported.
+    """
+    try:
+        await list_invoice_month(
+            client,
+            customer_id=customer_id,
+            login_customer_id=login_customer_id,
+            billing_setup=f"customers/{customer_id}/billingSetups/{setup.get('id')}",
+            year=local_now.year,
+            month=local_now.month - 1,
+            max_response_bytes=max_response_bytes,
+        )
+    except GoogleAdsRequestRejectedError as exc:
+        return not refused_as_not_invoiced(exc)
+    except IntegrationError:
+        return True
+    return True
+
+
+async def _search(
+    client: GoogleAdsClient,
+    customer_id: str,
+    login_customer_id: str,
+    query: str,
+    max_response_bytes: int,
+    operation: str,
+) -> list[dict[str, Any]]:
+    payload = await client.post(
+        f"customers/{customer_id}/googleAds:searchStream",
+        operation=operation,
+        policy=IntegrationRequestPolicy.READ,
+        login_customer_id=login_customer_id,
+        json={"query": query},
+        max_response_bytes=max_response_bytes,
+    )
+    return stream_rows(payload, max_rows=_MAX_ROWS)
 
 
 def _billing(state: BillingState, *, monthly_invoicing: bool) -> dict[str, Any]:
