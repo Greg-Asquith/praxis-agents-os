@@ -17,6 +17,7 @@ from services.agent_runs.renew_lease import renew_agent_run_lease
 from services.agents.runtime.execution_control import (
     ExecutionControl,
     ExecutionInterruptedError,
+    ExecutionPhase,
     InterruptionReason,
 )
 
@@ -92,6 +93,12 @@ async def heartbeat_agent_run_lease(
             )
             if asyncio.get_running_loop().time() >= control.lease_deadline:
                 _cancel_revoked_execution(control, InterruptionReason.LEASE_LOST, cancel_target)
+                return
+            continue
+        # A run settling its own stop has nothing left to interrupt, and a cancel would cut
+        # the settlement short once the run's terminal status stops the lease renewing.
+        if control.phase == ExecutionPhase.FINALISING and control.reason is not None:
+            if not renewed:
                 return
             continue
         try:

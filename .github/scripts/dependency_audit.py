@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,9 @@ PIP_AUDIT_VERSION = "2.10.1"
 ECOSYSTEMS = {"python", "npm"}
 # Git-pinned packages have no hash or PyPI advisories; their own dependencies are still audited.
 GIT_PINNED_PACKAGES = {"data-science": ("timestral",)}
+# A pin from another index carries a local version, such as `torch==2.15.0+cpu`, that PyPI
+# doesn't list. Its public version is audited instead, without the other index's hashes.
+LOCAL_VERSION_PIN = re.compile(r"^(?P<pin>[A-Za-z0-9._-]+==[^+\s;]+)\+[^\s;]+(?P<marker>[^\\]*)")
 REQUIRED_EXCEPTION_FIELDS = {
     "ecosystem",
     "package",
@@ -127,20 +131,48 @@ def run_python_audit(app: str, ignored_advisories: list[str]) -> None:
             cwd=project_dir,
             check=True,
         )
-        command = [
-            "uvx",
-            "--from",
-            f"pip-audit=={PIP_AUDIT_VERSION}",
-            "pip-audit",
-            "--strict",
-            "--disable-pip",
-            "--require-hashes",
-            "--requirement",
-            str(requirements_path),
-        ]
-        for advisory in ignored_advisories:
-            command.extend(("--ignore-vuln", advisory))
-        subprocess.run(command, cwd=project_dir, check=True)
+        audits = [("--require-hashes", requirements_path)]
+        hashed, public = split_local_version_pins(requirements_path.read_text())
+        if public:
+            requirements_path.write_text(hashed)
+            public_path = Path(temp_dir) / "public-versions.txt"
+            public_path.write_text(public)
+            audits.append(("--no-deps", public_path))
+        for mode, path in audits:
+            command = [
+                "uvx",
+                "--from",
+                f"pip-audit=={PIP_AUDIT_VERSION}",
+                "pip-audit",
+                "--strict",
+                "--disable-pip",
+                mode,
+                "--requirement",
+                str(path),
+            ]
+            for advisory in ignored_advisories:
+                command.extend(("--ignore-vuln", advisory))
+            subprocess.run(command, cwd=project_dir, check=True)
+
+
+def split_local_version_pins(requirements: str) -> tuple[str, str]:
+    """Splits exported requirements into the hashed pins and the local-version pins.
+
+    The second part holds each local-version pin as its public version with its marker.
+    """
+    hashed: list[str] = []
+    public: list[str] = []
+    local = False
+    for line in requirements.splitlines():
+        # A requirement starts at the margin; its hashes follow on indented lines.
+        if not line.startswith((" ", "\t")):
+            match = LOCAL_VERSION_PIN.match(line)
+            local = match is not None
+            if match:
+                public.append(f"{match['pin']}{match['marker']}".rstrip())
+        if not local:
+            hashed.append(line)
+    return "\n".join(hashed) + "\n", "".join(f"{pin}\n" for pin in public)
 
 
 def run_web_audit(ignored_advisories: list[str]) -> None:
