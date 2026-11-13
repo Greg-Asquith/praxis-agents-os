@@ -319,7 +319,7 @@ def load_enabled_providers() -> None:
 
 - `INTEGRATIONS_ENABLED_PROVIDERS: list[str] = []` — the boot-time
   enablement list. Empty default: integrations are opt-in per deployment.
-- Per-provider operational settings (OAuth client ids, developer tokens)
+- Per-provider operational settings (OAuth client ids and secrets)
   live in provider-owned `BaseSettings` inside `integrations/PROVIDER_KEY/`.
   Provider configuration is deployment state, but keeping its schema in the
   package preserves the import boundary. These values are prerequisites for

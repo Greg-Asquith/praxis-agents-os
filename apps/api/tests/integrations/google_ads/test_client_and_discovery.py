@@ -4,7 +4,6 @@
 
 import httpx2
 import pytest
-from pydantic import SecretStr
 
 from core.exceptions.integration import (
     IntegrationError,
@@ -21,7 +20,7 @@ from tests.integrations.google_ads.support import (
 )
 
 
-async def test_client_routes_login_customer_id_from_each_request() -> None:
+async def test_client_sends_login_customer_id_and_no_developer_token() -> None:
     seen_headers: list[httpx2.Headers] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -31,7 +30,6 @@ async def test_client_routes_login_customer_id_from_each_request() -> None:
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         client = GoogleAdsClient(
             _static_token,
-            developer_token=SecretStr("developer-secret"),
             client=http_client,
         )
         await client.post(
@@ -43,7 +41,7 @@ async def test_client_routes_login_customer_id_from_each_request() -> None:
         )
 
     assert seen_headers[0]["login-customer-id"] == "1111111111"
-    assert seen_headers[0]["developer-token"] == "developer-secret"
+    assert "developer-token" not in seen_headers[0]
 
 
 @pytest.mark.parametrize(
@@ -70,7 +68,6 @@ async def test_google_ads_mutation_ambiguous_or_retryable_failures_attempt_once(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         client = GoogleAdsClient(
             _static_token,
-            developer_token=SecretStr("developer-secret"),
             client=http_client,
         )
         with pytest.raises(IntegrationError):
@@ -100,7 +97,6 @@ async def test_google_ads_mutation_retries_exactly_once_after_auth_rejection() -
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         client = GoogleAdsClient(
             token,
-            developer_token=SecretStr("developer-secret"),
             client=http_client,
         )
         await client.post(
@@ -121,7 +117,6 @@ async def test_google_ads_malformed_mutation_response_is_ambiguous() -> None:
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
         client = GoogleAdsClient(
             _static_token,
-            developer_token=SecretStr("developer-secret"),
             client=http_client,
         )
         with pytest.raises(IntegrationValidationError) as exc_info:

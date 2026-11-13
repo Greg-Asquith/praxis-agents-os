@@ -9,7 +9,6 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from pydantic import SecretStr
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolReturnPart
 from sqlalchemy import select
 
@@ -87,7 +86,6 @@ async def test_search_term_report_retains_every_row_outside_model_context(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         client = GoogleAdsClient(
             AsyncMock(return_value="test-token"),
-            developer_token=SecretStr("test-developer"),
             client=http,
         )
         monkeypatch.setattr(
@@ -180,9 +178,7 @@ async def test_combined_report_limit_fails_nested_call_without_partial_results(
     call = ToolCall(RUN_CODE_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"})
     seen = []
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        client = GoogleAdsClient(
-            AsyncMock(return_value="test-token"), developer_token=SecretStr("test"), client=http
-        )
+        client = GoogleAdsClient(AsyncMock(return_value="test-token"), client=http)
         monkeypatch.setattr(
             "integrations.google_ads.tools.run_report.google_ads_client",
             AsyncMock(return_value=client),

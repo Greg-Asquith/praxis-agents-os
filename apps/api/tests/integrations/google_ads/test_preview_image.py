@@ -7,7 +7,6 @@ from io import BytesIO
 import httpx2
 import pytest
 from PIL import Image
-from pydantic import SecretStr
 
 from core.exceptions.integration import IntegrationValidationError
 from integrations.google_ads.client import GoogleAdsClient
@@ -42,7 +41,7 @@ async def _preview(*, image_url: str, fetched: list[str], queries: list[str]):
         httpx2.AsyncClient(transport=httpx2.MockTransport(serve)) as download,
     ):
         return await preview_image(
-            GoogleAdsClient(_token, developer_token=SecretStr("dev"), client=http),
+            GoogleAdsClient(_token, client=http),
             customer_id="123-456-7890",
             login_customer_id="111",
             asset_id="301",

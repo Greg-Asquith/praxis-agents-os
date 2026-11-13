@@ -60,7 +60,7 @@ REGION=europe-west4              # = GCP_REGION
       value every request records the same proxy address, so the login rate
       limit locks out every user together.
 - [ ] For each integration in `INTEGRATIONS_ENABLED_PROVIDERS`, add its
-      OAuth client ID, client secret, and any developer token to
+      OAuth client ID and client secret to
       `RUNTIME_SECRET_BINDINGS` (the example file shows the Google Ads set).
       Integrations read these values only from the environment, and the
       manifests pass through no other integration settings.
@@ -121,7 +121,7 @@ printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versio
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-oauth-client-secret --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 # seed only the secrets bound in RUNTIME_SECRET_BINDINGS, including each
 # enabled login provider's OAuth client-secret binding and every integration
-# binding (client IDs, client secrets, and developer tokens)
+# binding (client IDs and client secrets)
 ```
 
       Bootstrap creates every bound secret and grants the API and worker

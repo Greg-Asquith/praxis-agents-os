@@ -7,6 +7,23 @@ relative to `apps/api/`; frontend paths to `apps/web/`.
 Start with the [backend package](../../../apps/api/integrations/google_ads/)
 and [frontend module](../../../apps/web/src/integrations/google_ads/index.ts).
 
+## API access
+
+The deployment sets `GOOGLE_ADS_OAUTH_CLIENT_ID` and
+`GOOGLE_ADS_OAUTH_CLIENT_SECRET` for OAuth connections. A service account
+connection needs neither. Google retired developer tokens on 2026-09-09, so
+the client sends only the bearer token and, for manager routing,
+`login-customer-id`.
+
+API access belongs to the Google Cloud project that owns the OAuth client or
+the service account. Check it on the Google Ads API page in Cloud Console. A
+project with Test access can only reach test accounts, so a service account
+key from a customer's own project needs Explorer or Basic access there too.
+
+The Google Ads tools are available when `google_ads` is in
+`INTEGRATIONS_ENABLED_PROVIDERS`. A workspace without a Google Ads
+connection can't run them.
+
 ## Account facts
 
 Discovery stores each account's `currency_code` and `time_zone` in
@@ -1288,7 +1305,7 @@ each video goes to an unlisted channel Google manages for the account.
 
 `GoogleAdsClient.upload_request` sends these requests once each, without retries, and
 only to `https://googleads.googleapis.com`. An upload address on any other host is
-refused before dispatch, so the bearer token and developer token never leave Google.
+refused before dispatch, so the bearer token never leaves Google.
 
 The run then reads `you_tube_video_upload` (`video_upload_id`, `video_id`, `state`)
 every 5 seconds for up to 2 minutes. A `PROCESSED` upload with its video ID becomes a
@@ -1360,7 +1377,7 @@ filtered by words in their label, on one page.
 (`KeywordPlanIdeaService`) in one account: the ad groups' account when the agent passes
 `ad_groups`, or else the first selected account that isn't a manager account. Bids are
 in that account's currency.
-The developer token needs Basic access, which the deployment's token has.
+Keyword Planner needs Basic access on the Cloud project.
 
 The arguments are as follows:
 

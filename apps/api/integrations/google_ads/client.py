@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx2
-from pydantic import SecretStr
 
 from core.exceptions.integration import (
     IntegrationAuthError,
@@ -32,11 +31,9 @@ class GoogleAdsClient:
         self,
         access_token: AccessTokenFn,
         *,
-        developer_token: SecretStr,
         client: httpx2.AsyncClient | None = None,
     ) -> None:
         self._access_token = access_token
-        self._developer_token = developer_token
         self._client = client
 
     async def get(
@@ -169,7 +166,6 @@ class GoogleAdsClient:
         headers = {
             **(extra_headers or {}),
             "Authorization": f"Bearer {token}",
-            "developer-token": self._developer_token.get_secret_value(),
         }
         if login_customer_id:
             headers["login-customer-id"] = normalize_customer_id(login_customer_id)

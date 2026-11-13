@@ -2,11 +2,10 @@
 
 """Google Ads runtime credential resolution and client construction."""
 
-from pydantic import SecretStr
 from pydantic_ai import ModelRetry, RunContext
 
+from core.settings import settings
 from integrations.google_ads.client import GoogleAdsClient
-from integrations.google_ads.settings import google_ads_settings
 from models.integrations import ExternalCredential
 from services.agents.runtime.context import RuntimeDeps
 from services.integrations.connections.utils import refresh_oauth_credential
@@ -79,15 +78,11 @@ async def google_ads_client_for_principal(
             _SERVICE_ACCOUNT_PROVIDERS[cache_key] = provider
         return await provider.access_token(force)
 
-    developer_token = google_ads_settings.GOOGLE_ADS_DEVELOPER_TOKEN
-    if developer_token is None or not developer_token.get_secret_value().strip():
-        raise ModelRetry("Google Ads is not configured for provider operations.")
-    return GoogleAdsClient(access_token, developer_token=developer_token)
+    return GoogleAdsClient(access_token)
 
 
 def google_ads_available() -> bool:
-    value: SecretStr | None = google_ads_settings.GOOGLE_ADS_DEVELOPER_TOKEN
-    return value is not None and bool(value.get_secret_value().strip())
+    return "google_ads" in settings.INTEGRATIONS_ENABLED_PROVIDERS
 
 
 def _credential_reference(credential: ExternalCredential) -> SecretReference:

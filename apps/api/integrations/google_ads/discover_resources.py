@@ -16,7 +16,6 @@ from services.integrations.plugin import DiscoveredIntegrationResource
 
 from .client import GoogleAdsClient, normalize_customer_id
 from .operations.utils import stream_rows
-from .settings import google_ads_settings
 
 _HIERARCHY_QUERY = """
 SELECT
@@ -58,15 +57,8 @@ async def discover_resources(
             return credential_value
 
         principal_email = principal_label
-    developer_token = google_ads_settings.GOOGLE_ADS_DEVELOPER_TOKEN
-    if developer_token is None or not developer_token.get_secret_value().strip():
-        raise IntegrationValidationError(
-            "Google Ads provider operations are not configured",
-            provider_key="google_ads",
-            operation="discover_resources",
-        )
     return await discover_google_ads_resources(
-        GoogleAdsClient(access_token, developer_token=developer_token),
+        GoogleAdsClient(access_token),
         principal_email=principal_email,
     )
 

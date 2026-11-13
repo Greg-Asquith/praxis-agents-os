@@ -489,6 +489,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Removed
 
+- `GOOGLE_ADS_DEVELOPER_TOKEN` and the `developer-token` header. Google retired
+  developer tokens on 2026-09-09; access now belongs to the Google Cloud project
+  that owns the OAuth client or service account. Remove the setting and its
+  secret binding from deployments.
 - `google_ads_update_campaign_status`, replaced by `google_ads_update_status`.
 - `google_ads_create_keywords`'s `ad_groups` and `keywords` arguments, which added
   every keyword to every ad group, with per-keyword status, bid adjustments,

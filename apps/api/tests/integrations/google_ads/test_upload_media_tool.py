@@ -16,7 +16,6 @@ from uuid import uuid4
 import httpx2
 import pytest
 from PIL import Image
-from pydantic import SecretStr
 from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import (
@@ -547,7 +546,7 @@ async def test_upload_address_off_googles_host_never_gets_the_token() -> None:
     sent: list[httpx2.Request] = []
     transport = httpx2.MockTransport(lambda request: sent.append(request) or httpx2.Response(200))
     async with httpx2.AsyncClient(transport=transport) as http:
-        client = GoogleAdsClient(_token, developer_token=SecretStr("dev-token"), client=http)
+        client = GoogleAdsClient(_token, client=http)
         with pytest.raises(IntegrationValidationError) as raised:
             await client.upload_request(
                 "PUT",
