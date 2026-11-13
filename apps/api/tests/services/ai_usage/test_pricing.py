@@ -37,7 +37,7 @@ def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 11, 10)
+    on_date = date(2026, 11, 13)
     missing = [
         model.qualified_id
         for model in list_models()

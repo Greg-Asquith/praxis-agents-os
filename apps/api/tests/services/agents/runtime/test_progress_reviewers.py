@@ -13,9 +13,9 @@ from pydantic import SecretStr
 from pydantic_ai.models import override_allow_model_requests
 
 from core.settings import settings
-from services.agents.models import factory
+from services.agents.models import factory, resolve_progress_review_model
 from services.agents.models.utils import _build_retrying_http_client
-from services.agents.runtime.progress_review import openai_decisions, review
+from services.agents.runtime.progress_review import decisions, review
 from services.agents.runtime.progress_review.digest import ProgressDigest
 from services.agents.runtime.progress_review.verdict import VERDICT_DESCRIPTIONS
 from tests.support.anthropic import anthropic_message_response
@@ -55,9 +55,9 @@ def _decision(answer: dict) -> dict:
         (
             {"type": "choice", "name": "verdict", "choice": "continue", "confidence": 0.4},
             "ask_person",
-            openai_decisions.LOW_CONFIDENCE_REASON,
+            decisions.LOW_CONFIDENCE_REASON,
         ),
-        ({"type": "refusal", "name": "verdict"}, "ask_person", openai_decisions.REFUSED_REASON),
+        ({"type": "refusal", "name": "verdict"}, "ask_person", decisions.REFUSED_REASON),
     ],
 )
 async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict, reason):
@@ -85,7 +85,7 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
         return httpx.Response(200, json=_decision(body))
 
     async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
-        monkeypatch.setattr(openai_decisions, "retrying_http_client", lambda: client)
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
         with override_allow_model_requests(True):
             result = await review.review_progress(_deps(), DIGEST)
 
@@ -106,6 +106,69 @@ async def test_decisions_request_and_answer_mapping(monkeypatch, answer, verdict
         1200,
         1000,
     )
+
+
+async def test_gemini_decisions_request_and_answer_mapping(monkeypatch):
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_PROVIDER", "google")
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("test-key"))
+    meter = AsyncMock()
+    monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", meter)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        probabilities = dict.fromkeys(VERDICT_DESCRIPTIONS, 0.025)
+        probabilities["steer_refocus"] = 0.9
+        return httpx.Response(
+            200,
+            json={
+                "answers": {
+                    "q0": {
+                        "type": "choice",
+                        "choice": "steer_refocus",
+                        "confidence": 0.9,
+                        "probabilities": probabilities,
+                    }
+                },
+                "usage": {
+                    "total_input_tokens": 900,
+                    "input_tokens_by_modality": [{"modality": "TEXT", "tokens": 900}],
+                    "total_output_tokens": 0,
+                    "total_tokens": 900,
+                },
+            },
+        )
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
+        with override_allow_model_requests(True):
+            result = await review.review_progress(_deps(), DIGEST)
+
+    assert (result.verdict, result.reason) == (
+        "steer_refocus",
+        VERDICT_DESCRIPTIONS["steer_refocus"],
+    )
+    assert (result.provider, result.model) == ("google", "gemini-decision-1")
+    [request] = requests
+    assert request.url.path == "/v1beta/decisions"
+    sent = json.loads(request.content)
+    assert (sent["model"], sent["input"]) == ("gemini-decision-1", DIGEST.text)
+    [question] = sent["questions"].values()
+    assert question["type"] == "choice"
+    assert list(question["criteria"]) == list(VERDICT_DESCRIPTIONS)
+    event = meter.call_args.args[0]
+    assert (event.provider, event.model, event.input_tokens) == ("google", "gemini-decision-1", 900)
+
+
+def test_google_reviewer_on_vertex_uses_structured_output(monkeypatch):
+    # Gemini Decisions isn't on Vertex, so a Vertex-only deployment keeps its configured model.
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_PROVIDER", "google")
+    monkeypatch.setattr(settings, "AGENT_RUN_PROGRESS_REVIEW_MODEL", "gemini-3.8-flash")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
+
+    assert resolve_progress_review_model().model == "gemini-3.8-flash"
 
 
 async def test_structured_reviewer_returns_a_bounded_verdict_without_caching(monkeypatch):

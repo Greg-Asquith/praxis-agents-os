@@ -15,15 +15,18 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, Field, create_model
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
+from pydantic_ai.models.decision import ChoiceAnswer, ChoiceQuestion, DecisionRequest
 
 from core.settings import settings
 from services.agents.models import build_model
 from services.agents.models.domain import (
+    GEMINI_DECISION_MODEL,
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
     ResolvedModel,
 )
+from services.agents.models.registry import find_decision_model
 from services.agents.models.resolution import (
     configured_helper_providers,
     format_provider_list,
@@ -31,6 +34,7 @@ from services.agents.models.resolution import (
     require_configured_provider,
     require_helper_model,
 )
+from services.agents.models.utils import is_model_available
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EFFECT_READ,
@@ -46,7 +50,10 @@ from services.agents.runtime.tools.native.classifier_contract import (
     SUPPORTED_CLASSIFIER_PROVIDERS,
     ClassifierProvider,
 )
-from services.agents.runtime.tools.native.run_native_helper import run_native_helper
+from services.agents.runtime.tools.native.run_native_helper import (
+    run_native_decision,
+    run_native_helper,
+)
 from services.agents.runtime.tools.registry import runtime_tool
 from services.ai_usage.domain import PURPOSE_CLASSIFICATION
 from utils.validation import normalize_optional_text
@@ -54,8 +61,10 @@ from utils.validation import normalize_optional_text
 DEFAULT_CLASSIFIER_MODELS = {
     PROVIDER_OPENAI: "gpt-6-luna",
     PROVIDER_ANTHROPIC: "claude-haiku-5-5",
-    PROVIDER_GOOGLE: "gemini-3.5-flash-lite",
+    PROVIDER_GOOGLE: GEMINI_DECISION_MODEL,
 }
+# Gemini Decisions isn't on Vertex, so Google falls back to a structured-output model there.
+_VERTEX_GOOGLE_CLASSIFIER_MODEL = "gemini-3.5-flash-lite"
 
 CLASSIFIER_MAX_LABEL_CHARS = 100
 CLASSIFIER_BATCH_SIZE = 100
@@ -84,13 +93,20 @@ class ClassifyOutput(BaseModel):
     model: str = Field(description="Model used by the helper model.")
 
 
+def classifier_default_models() -> dict[str, str]:
+    """Returns each provider's default classifier model for this deployment's transport."""
+    decision_model = find_decision_model(PROVIDER_GOOGLE, GEMINI_DECISION_MODEL)
+    if decision_model is not None and is_model_available(decision_model):
+        return DEFAULT_CLASSIFIER_MODELS
+    return {**DEFAULT_CLASSIFIER_MODELS, PROVIDER_GOOGLE: _VERTEX_GOOGLE_CLASSIFIER_MODEL}
+
+
 def configured_classifier_providers() -> tuple[str, ...]:
     """Returns configured providers supported by the classifier helper."""
+    defaults = classifier_default_models()
     return configured_helper_providers(
         SUPPORTED_CLASSIFIER_PROVIDERS,
-        is_configured=lambda provider: has_available_helper_model(
-            provider, DEFAULT_CLASSIFIER_MODELS
-        ),
+        is_configured=lambda provider: has_available_helper_model(provider, defaults),
     )
 
 
@@ -228,44 +244,42 @@ def resolve_classifier_model(
             supported=SUPPORTED_CLASSIFIER_PROVIDERS,
             tool_name="classify",
         )
-        return replace(
-            require_helper_model(
-                provider=normalized_provider,
-                model=requested_model,
-                supported=SUPPORTED_CLASSIFIER_PROVIDERS,
-                defaults=DEFAULT_CLASSIFIER_MODELS,
-                tool_name="classify",
-                require_structured_output=True,
-            ),
-            max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
-        )
+        return _require_classifier_model(normalized_provider, requested_model)
     if requested_model is not None:
         raise ModelRetry("classify model requires model_provider.")
 
     configured_providers = configured_classifier_providers()
     default_provider = settings.NATIVE_CLASSIFIER_PROVIDER.strip().lower()
     if default_provider in configured_providers:
-        return replace(
-            require_helper_model(
-                provider=default_provider,
-                model=settings.NATIVE_CLASSIFIER_MODEL,
-                supported=SUPPORTED_CLASSIFIER_PROVIDERS,
-                defaults=DEFAULT_CLASSIFIER_MODELS,
-                tool_name="classify",
-                require_structured_output=True,
-            ),
-            max_steps=settings.NATIVE_CLASSIFIER_MAX_STEPS,
-        )
+        return _require_classifier_model(default_provider, settings.NATIVE_CLASSIFIER_MODEL)
     if not configured_providers:
         raise ModelRetry("No native classify providers are configured.")
+    return _require_classifier_model(configured_providers[0], None)
 
-    fallback_provider = configured_providers[0]
+
+def _require_classifier_model(provider: str, model: str | None) -> ResolvedModel:
+    defaults = classifier_default_models()
+    resolved_model = model or defaults.get(provider)
+    decision_model = find_decision_model(provider, resolved_model) if resolved_model else None
+    if decision_model is not None:
+        if not is_model_available(decision_model):
+            raise ModelRetry(
+                f"{decision_model.display_name} isn't available on this deployment. "
+                "Choose another model or omit model."
+            )
+        return ResolvedModel(
+            provider=provider,
+            model=decision_model.model,
+            transport_model=decision_model.model,
+            settings={},
+            max_steps=1,
+        )
     return replace(
         require_helper_model(
-            provider=fallback_provider,
-            model=None,
+            provider=provider,
+            model=model,
             supported=SUPPORTED_CLASSIFIER_PROVIDERS,
-            defaults=DEFAULT_CLASSIFIER_MODELS,
+            defaults=defaults,
             tool_name="classify",
             require_structured_output=True,
         ),
@@ -314,7 +328,13 @@ async def _run_classification_batch(
     model_spec: ResolvedModel,
     event_details: dict[str, object],
 ) -> list[ClassifiedItem]:
-    """Runs one metered structured-output classification helper call."""
+    """Runs one metered structured-output or Decisions classification helper call."""
+    details = {**event_details, "item_count": len(items), "label_count": len(labels)}
+    prompt = _classification_prompt(items=items, labels=labels, instructions=instructions)
+    if find_decision_model(model_spec.provider, model_spec.model) is not None:
+        return await _decide_classification_batch(
+            deps, items=items, labels=labels, prompt=prompt, model_spec=model_spec, details=details
+        )
     output_model = _classification_output_model(labels)
     helper = PydanticAgent(
         build_model(model_spec),
@@ -322,18 +342,51 @@ async def _run_classification_batch(
         output_type=output_model,
         instructions=CLASSIFIER_INSTRUCTIONS,
     )
-    prompt = _classification_prompt(items=items, labels=labels, instructions=instructions)
-
     result = await run_native_helper(
         deps,
         helper,
         prompt,
         model_spec=model_spec,
         purpose=PURPOSE_CLASSIFICATION,
-        details={**event_details, "item_count": len(items), "label_count": len(labels)},
+        details=details,
     )
     raw_results = getattr(result.output, "results", None)
     return _validate_classification_results(raw_results, items=items, labels=labels)
+
+
+async def _decide_classification_batch(
+    deps: RuntimeDeps,
+    *,
+    items: list[str],
+    labels: list[str],
+    prompt: str,
+    model_spec: ResolvedModel,
+    details: dict[str, object],
+) -> list[ClassifiedItem]:
+    """Asks one Decisions choice question per item; the shared prompt is billed once."""
+    criteria = dict.fromkeys(labels, "")
+    request = DecisionRequest(
+        state=prompt,
+        questions={
+            f"item_{index}": ChoiceQuestion(
+                criteria=criteria,
+                instructions=f"Which allowed label best fits the item with index {index}?",
+            )
+            for index in range(len(items))
+        },
+    )
+    response = await run_native_decision(
+        deps, request, model_spec=model_spec, purpose=PURPOSE_CLASSIFICATION, details=details
+    )
+    # decide() rejects an answer outside its question's labels.
+    return [
+        ClassifiedItem(
+            index=index,
+            value=item,
+            label=cast(ChoiceAnswer, response.answers[f"item_{index}"]).choice,
+        )
+        for index, item in enumerate(items)
+    ]
 
 
 def _classification_output_model(labels: list[str]) -> type[BaseModel]:

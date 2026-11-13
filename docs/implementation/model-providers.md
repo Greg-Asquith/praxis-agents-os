@@ -81,6 +81,59 @@ the Standard default. Terra accepts `none` to `max` reasoning efforts with
 `medium` as the default. Pydantic AI 2.66 profiles it like GPT-6 Sol. Live
 access hasn't been checked with a Praxis key.
 
+### Gemini 4 Hydrogen
+
+The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen),
+[release notes](https://ai.google.dev/gemini-api/docs/changelog), and
+[Google Cloud model page](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-hydrogen),
+checked on 13 November 2026, list `gemini-4-hydrogen` as generally available
+from 12 November 2026. Both transports use the same ID. On 13 November 2026,
+the Gemini API model list with the Praxis key returned Hydrogen with a
+1,048,576-token input limit and a 65,536-token output limit. Vertex access
+hasn't been checked. Hydrogen is a **Standard** model listed after
+`gemini-3.8-flash`, so 3.8 Flash remains Google's Standard default.
+
+Hydrogen accepts text, images, audio, video, and PDFs, and supports function
+calls and structured output. Vertex supports `global`, `us`, and `eu`;
+`GOOGLE_VERTEX_LOCATION=auto` selects `eu`. Google documents `low`, `medium`,
+`high` (the default), and `xhigh` thinking. It rejects `minimal` and
+`thinking_budget`. Pydantic AI 2.68 doesn't profile Hydrogen and sends `xhigh`
+as `HIGH`, so `provider_model_profile` adds always-on thinking and the `low`,
+`medium`, and `high` levels. The UI's `minimal` preference and disabled
+thinking both send `low`.
+
+The [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-hydrogen)
+lists standard prices of $1.50 input, $0.075 cache read, and $7.50 output per
+million tokens, with no dated change. Thinking tokens count as output. Implicit
+caching has no separate write charge. Long decode is pending, as it is for
+Carbon and Argon.
+
+### Gemini Decision 1
+
+`gemini-decision-1` serves only the
+[Gemini Decisions API](https://ai.google.dev/gemini-api/docs/decisions-api),
+launched on 11 November 2026 on the Gemini Developer API (`v1beta`). It isn't
+on Vertex and isn't a selectable agent model. Praxis uses it, through Pydantic
+AI 2.68's `GoogleDecisionsModel`, for progress reviews (see
+[agent runs](agent-runs.md)) and as Google's default classifier model (see
+[native tools](native-tools.md)). The registry keeps it in a separate
+Decisions-only list. It takes up to 262,144 input tokens, returns zero
+output tokens, and has no context caching or Batch API support. The
+[pricing page](https://ai.google.dev/gemini-api/docs/pricing#gemini-decision),
+checked on 13 November 2026, lists $0.10 per million input tokens.
+
+### Gemini 3.1 Pro retirement
+
+The Gemini API serves Gemini 3.1 Pro only as `gemini-3.1-pro-preview`. On 13
+November 2026, its model list had no `gemini-3.1-pro`, so the catalogue alias
+returned 404 on the direct transport. The catalogue drops it for
+`gemini-4-argon`, which is GA, has the same **Powerful** type, and costs less
+for output. Migration `core_0079` moves saved agent selections and Google
+workspace defaults to Argon, including inactive and deleted agents. Both
+models accept `low`, `medium`, and `high` thinking, so saved settings stay
+valid. Downgrading leaves Argon selections in place. Historical price rows
+remain.
+
 ### Gemini 4 Carbon
 
 The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-carbon),

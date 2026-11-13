@@ -251,10 +251,10 @@ async def test_google_vertex_clients_share_only_matching_locations(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
     try:
         flash = get_google_vertex_client("gemini-3.8-flash")
-        pro = get_google_vertex_client("gemini-3.1-pro")
+        image = get_google_vertex_client("gemini-nano-banana-2.1")
         assert flash is get_google_vertex_client("gemini-4-argon")
-        assert flash is not pro
-        assert get_google_vertex_client() is pro
+        assert flash is not image
+        assert get_google_vertex_client() is image
         monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "us")
         override = get_google_vertex_client("gemini-3.8-flash")
         assert override is not flash

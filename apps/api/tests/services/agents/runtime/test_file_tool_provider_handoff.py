@@ -72,7 +72,7 @@ async def test_anthropic_maps_image_inside_tool_result() -> None:
 
 async def test_google_maps_image_inside_tool_result() -> None:
     model = GoogleModel(
-        "gemini-3.1-pro",
+        "gemini-4-argon",
         provider=GoogleProvider(api_key="test"),
     )
 

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from core.settings import settings
 from models.classifiers import Classifier
 from services.agents.models.domain import ModelConfigurationError
-from services.agents.models.registry import get_model
+from services.agents.models.registry import find_decision_model, get_model
 from services.agents.runtime.tools.native.classifier_contract import (
     CLASSIFIER_MAX_INSTRUCTIONS_CHARS,
     SUPPORTED_CLASSIFIER_PROVIDERS,
@@ -136,6 +136,8 @@ class _ClassifierWriteBase(BaseModel):
             raise ValueError("model_provider and model must be supplied together")
         if provider not in SUPPORTED_CLASSIFIER_PROVIDERS:
             raise ValueError("model_provider must be openai, anthropic, or google")
+        if find_decision_model(provider, model) is not None:
+            return self
         try:
             info = get_model(provider, model)
         except ModelConfigurationError as exc:

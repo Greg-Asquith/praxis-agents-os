@@ -39,6 +39,8 @@ class ModelCatalogDefaults(BaseModel):
 class ModelCatalogResponse(BaseModel):
     providers: list[ModelCatalogProvider]
     models: list[ModelCatalogEntry]
+    # Decisions-only models, which only helper tools such as classifiers can select.
+    decision_models: list[ModelCatalogEntry]
     defaults: ModelCatalogDefaults
     # The composer accepts video attachments only when this is true.
     video_tools_available: bool

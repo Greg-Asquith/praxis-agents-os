@@ -136,6 +136,12 @@ _GOOGLE_PRICES = (
     # https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
     _price("google", "gemini-4-argon", date(2026, 10, 13), "2", "0.1", "0", "10"),
     _price("google", "gemini-4-argon", date(2026, 12, 1), "4", "0.2", "0", "20"),
+    # Hydrogen standard rates checked 2026-11-13; implicit caching has no write charge.
+    # https://ai.google.dev/gemini-api/docs/pricing#gemini-4-hydrogen
+    _price("google", "gemini-4-hydrogen", date(2026, 11, 12), "1.5", "0.075", "0", "7.5"),
+    # Checked 2026-11-13: input only, as Decisions writes no output and has no caching.
+    # https://ai.google.dev/gemini-api/docs/pricing#gemini-decision
+    _price("google", "gemini-decision-1", date(2026, 11, 11), "0.1", "0", "0", "0"),
     _price("google", "gemini-3.8-flash", date(2026, 9, 2), "0.75", "0.075", "0.75", "3.75"),
     _price("google", "gemini-3.8-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.7-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),

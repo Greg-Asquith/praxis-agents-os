@@ -276,20 +276,26 @@ Environment settings choose the reviewer, like the other utility models:
 - `AGENT_RUN_PROGRESS_REVIEW_PROVIDER` (default `openai`) and
   `AGENT_RUN_PROGRESS_REVIEW_MODEL` (default `gpt-6-luna`). The production
   credentials check includes this provider.
-- Provider `openai` asks the OpenAI Decisions API one `choice` question over
-  the five verdicts through Pydantic AI's `OpenAIDecisionsModel`, which
-  validates the answer and honours `ALLOW_MODEL_REQUESTS`. Decisions supports
-  `gpt-6-luna` only, so this provider always uses it, whatever the model
-  setting says. Decisions returns no text, so the reason is the chosen
-  verdict's description. A refusal, or a confidence below
-  `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6), asks a person.
-- Other providers, such as `anthropic` with `claude-haiku-5-5` or `google`
-  with `gemini-3.8-flash`, return a structured verdict, a reason, and optional
-  guidance of 300 characters at most.
+- Providers `openai` and `google` ask their Decisions API one `choice`
+  question over the five verdicts. They use Pydantic AI's
+  `OpenAIDecisionsModel` and `GoogleDecisionsModel`, which validate the
+  answer. `ALLOW_MODEL_REQUESTS` blocks both. Each API serves one model, so
+  `openai` always uses `gpt-6-luna` and `google` always uses
+  `gemini-decision-1`, whatever the model setting says. Decisions returns no
+  text, so the reason is the chosen verdict's description. A confidence below
+  `AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE` (default 0.6) asks a person, and
+  so does an OpenAI refusal. Gemini reports a safety block as an HTTP error,
+  which asks a person through the reviewer-failure path.
+- Gemini Decisions is only on the Gemini Developer API. With
+  `GOOGLE_VERTEX_AI=true`, provider `google` uses the model setting, such as
+  `gemini-3.8-flash`, with structured output instead.
+- Structured-output reviewers, such as `anthropic` with `claude-haiku-5-5`,
+  return a verdict, a reason, and optional guidance of 300 characters at most.
 
 Reviewer calls don't use prompt caching, because each digest is unique and a
-cache write would never be read back. Decisions requests set
-`prompt_cache_options.mode` to `explicit` with no breakpoints, and structured
+cache write would never be read back. OpenAI Decisions requests set
+`prompt_cache_options.mode` to `explicit` with no breakpoints. Gemini
+Decisions has no context caching. Structured
 reviewers override the agent default with `cache: False`.
 
 Steer messages start with fixed Praxis text, add the strongest signal, and

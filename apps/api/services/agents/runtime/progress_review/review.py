@@ -6,8 +6,9 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent
 
 from services.agents.models import build_model, resolve_progress_review_model
-from services.agents.models.domain import PROVIDER_OPENAI, ResolvedModel
+from services.agents.models.domain import DECISIONS_MODELS, ResolvedModel
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.progress_review.decisions import decide
 from services.agents.runtime.progress_review.digest import ProgressDigest
 from services.agents.runtime.progress_review.verdict import (
     GUIDANCE_MAX_CHARS,
@@ -46,11 +47,8 @@ class ReviewerVerdict(BaseModel):
 async def review_progress(deps: RuntimeDeps, digest: ProgressDigest) -> ProgressReview:
     """Returns the reviewer's verdict. The checkpoint maps every failure to asking a person."""
     model_spec = resolve_progress_review_model()
-    if model_spec.provider == PROVIDER_OPENAI:
-        # Loads the OpenAI SDK only when a review uses it.
-        from services.agents.runtime.progress_review.openai_decisions import decide_with_openai
-
-        review = await decide_with_openai(deps, digest.text, model_spec)
+    if model_spec.model == DECISIONS_MODELS.get(model_spec.provider):
+        review = await decide(deps, digest.text, model_spec)
     else:
         review = await _review_with_structured_output(deps, digest.text, model_spec)
     return review.model_copy(update={"provider": model_spec.provider, "model": model_spec.model})

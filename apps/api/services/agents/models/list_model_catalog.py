@@ -13,7 +13,7 @@ from services.agents.models.domain import (
     PROVIDER_XAI,
     ModelInfo,
 )
-from services.agents.models.registry import list_models
+from services.agents.models.registry import list_decision_models, list_models
 from services.agents.models.resolution import workspace_default_model
 from services.agents.models.schemas import (
     ModelCatalogDefaults,
@@ -72,6 +72,9 @@ def list_model_catalog(workspace: Workspace | None = None) -> ModelCatalogRespon
             for provider in _PROVIDER_ORDER
         ],
         models=[_catalog_entry(model) for model in available_models],
+        decision_models=[
+            _catalog_entry(model) for model in list_decision_models() if is_model_available(model)
+        ],
         defaults=ModelCatalogDefaults(
             agent_model=_default_if_available(
                 *workspace_default_model(workspace),

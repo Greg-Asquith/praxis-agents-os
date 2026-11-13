@@ -1,12 +1,15 @@
 # apps/api/services/agents/runtime/tools/native/run_native_helper.py
 
-"""Runs one native helper agent turn with step limits and a metered usage record."""
+"""Runs one native helper agent turn or Decisions request with a metered usage record."""
 
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.agent import AgentRunResult
+from pydantic_ai.models import check_allow_model_requests
+from pydantic_ai.models.decision import DecisionRequest, DecisionResponse
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from services.agents.models.domain import ResolvedModel
+from services.agents.models.factory import build_decision_model
 from services.agents.runtime.context import RuntimeDeps
 from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
@@ -30,17 +33,45 @@ async def run_native_helper[T](
             usage=usage,
         )
 
-    return await run_metered_helper(
-        AIUsageEventData(
-            workspace_id=deps.workspace.id,
-            provider=model_spec.provider,
-            model=model_spec.model,
-            purpose=purpose,
-            agent_id=deps.agent.id,
-            user_id=deps.user.id,
-            run_id=deps.run.id,
-            conversation_id=deps.conversation.id,
-            details=details,
-        ),
-        call,
+    return await run_metered_helper(_usage_event(deps, model_spec, purpose, details), call)
+
+
+async def run_native_decision(
+    deps: RuntimeDeps,
+    request: DecisionRequest,
+    *,
+    model_spec: ResolvedModel,
+    purpose: str,
+    details: dict[str, object] | None = None,
+) -> DecisionResponse:
+    """Sends one Decisions request for the calling agent and records one usage row."""
+    model, model_settings = build_decision_model(model_spec)
+
+    async def call(usage: RunUsage) -> DecisionResponse:
+        # decide() skips the guard that Agent runs apply.
+        check_allow_model_requests()
+        usage.requests = 1
+        response = await model.decide(request, model_settings)
+        usage.incr(response.usage)
+        return response
+
+    return await run_metered_helper(_usage_event(deps, model_spec, purpose, details), call)
+
+
+def _usage_event(
+    deps: RuntimeDeps,
+    model_spec: ResolvedModel,
+    purpose: str,
+    details: dict[str, object] | None,
+) -> AIUsageEventData:
+    return AIUsageEventData(
+        workspace_id=deps.workspace.id,
+        provider=model_spec.provider,
+        model=model_spec.model,
+        purpose=purpose,
+        agent_id=deps.agent.id,
+        user_id=deps.user.id,
+        run_id=deps.run.id,
+        conversation_id=deps.conversation.id,
+        details=details,
     )

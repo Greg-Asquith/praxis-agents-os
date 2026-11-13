@@ -15,6 +15,7 @@ from pydantic_ai import ModelRetry
 
 from core.settings import settings
 from services.agents.models.domain import (
+    DECISIONS_MODELS,
     DEFAULT_MAX_STEPS,
     PROVIDER_AZURE,
     PROVIDER_OPENAI,
@@ -25,7 +26,7 @@ from services.agents.models.domain import (
     ResolvedModel,
     has_vertex_model_id,
 )
-from services.agents.models.registry import find_model, get_model
+from services.agents.models.registry import find_decision_model, find_model, get_model
 from services.agents.models.utils import (
     has_provider_api_key,
     is_model_available,
@@ -37,8 +38,6 @@ from services.agents.models.utils import (
 from services.agents.models.validate_vertex_configuration import (
     validate_vertex_configuration,
 )
-
-_DECISIONS_MODEL = "gpt-6-luna"
 
 
 def _require_active(provider: str, model: str) -> ModelInfo:
@@ -113,7 +112,7 @@ def configured_helper_providers(
 def has_available_helper_model(provider: str, defaults: Mapping[str, str]) -> bool:
     """Returns whether a provider's default helper model can run on this deployment."""
     model = defaults.get(provider)
-    info = find_model(provider, model) if model else None
+    info = (find_model(provider, model) or find_decision_model(provider, model)) if model else None
     return info is not None and not info.deprecated and is_model_available(info)
 
 
@@ -261,14 +260,18 @@ def resolve_history_summary_model() -> ResolvedModel:
 def resolve_progress_review_model() -> ResolvedModel:
     """Resolve the fixed model that reviews a run's progress at its step limit."""
     provider = settings.AGENT_RUN_PROGRESS_REVIEW_PROVIDER
-    # The OpenAI Decisions API only serves gpt-6-luna, so any other OpenAI model falls back to it.
-    model = (
-        _DECISIONS_MODEL
-        if provider == PROVIDER_OPENAI
-        else settings.AGENT_RUN_PROGRESS_REVIEW_MODEL
-    )
+    # A provider with Decisions always uses its one Decisions model, which isn't on Vertex.
+    decisions_model = DECISIONS_MODELS.get(provider)
+    if decisions_model and provider_transport(provider) == "direct":
+        return ResolvedModel(
+            provider=provider,
+            model=decisions_model,
+            transport_model=decisions_model,
+            settings={},
+            max_steps=1,
+        )
     # Structured output can need one retry after an invalid verdict.
-    return resolve_catalog_model(provider, model, max_steps=2)
+    return resolve_catalog_model(provider, settings.AGENT_RUN_PROGRESS_REVIEW_MODEL, max_steps=2)
 
 
 def resolve_model_context_budget(resolved_model: ResolvedModel) -> ModelContextBudget:

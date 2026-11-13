@@ -71,10 +71,10 @@ export function buildClassifierModelOptions(
   )
   const options: ClassifierModelOption[] = [
     { label: "Automatic (recommended)", value: AUTOMATIC_CLASSIFIER_MODEL },
-    ...catalog.models
+    ...[...catalog.decision_models, ...catalog.models]
       .filter(
         (model) =>
-          model.supports_structured_output &&
+          (model.supports_structured_output || catalog.decision_models.includes(model)) &&
           SUPPORTED_CLASSIFIER_PROVIDERS.has(model.provider) &&
           configuredProviders.has(model.provider)
       )

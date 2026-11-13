@@ -135,11 +135,17 @@ class AgentRunSettingsMixin:
     )
     AGENT_RUN_PROGRESS_REVIEW_PROVIDER: str = Field(
         default="openai",
-        description="Provider for the step-limit progress reviewer; openai uses the Decisions API.",
+        description=(
+            "Provider for the step-limit progress reviewer; openai, and google off Vertex, "
+            "use their Decisions APIs."
+        ),
     )
     AGENT_RUN_PROGRESS_REVIEW_MODEL: str = Field(
         default="gpt-6-luna",
-        description="Model for the step-limit progress reviewer; provider openai always uses gpt-6-luna.",
+        description=(
+            "Structured-output model for the step-limit progress reviewer; unused when the "
+            "provider uses its Decisions API."
+        ),
     )
     AGENT_RUN_PROGRESS_REVIEW_MIN_CONFIDENCE: float = Field(
         default=0.6,

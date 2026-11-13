@@ -11,6 +11,8 @@ Each provider's SDK is imported inside the builder that uses it, so a cold
 start loads none of them and a deployment only ever loads the providers it calls.
 """
 
+from typing import TYPE_CHECKING
+
 from pydantic_ai.models import Model
 
 from core.settings import settings
@@ -37,6 +39,11 @@ from services.agents.models.vertex_clients import (
 from services.agents.models.vertex_meta_profile import VertexMetaJsonSchemaTransformer
 from services.agents.models.vertex_mistral_client import get_vertex_mistral_client
 from services.agents.models.vertex_openai_client import get_vertex_openai_client, partner_base_url
+
+if TYPE_CHECKING:
+    from pydantic_ai.models.decision import DecisionModel, DecisionModelSettings
+    from pydantic_ai.providers.google import GoogleProvider
+    from pydantic_ai.providers.openai import OpenAIProvider
 
 
 def build_model(spec: ResolvedModel) -> Model:
@@ -94,8 +101,8 @@ def _build_anthropic_model(spec: ResolvedModel, model_settings) -> Model:
     return model
 
 
-def _build_openai_model(spec: ResolvedModel, model_settings) -> Model:
-    from pydantic_ai.models.openai import OpenAIResponsesModel
+def openai_provider() -> "OpenAIProvider":
+    """Direct OpenAI provider whose retries belong to the shared HTTP client."""
     from pydantic_ai.providers.openai import OpenAIProvider
 
     provider = OpenAIProvider(
@@ -104,9 +111,48 @@ def _build_openai_model(spec: ResolvedModel, model_settings) -> Model:
         http_client=retrying_http_client(),
     )
     provider.client.max_retries = 0
+    return provider
+
+
+def google_api_provider() -> "GoogleProvider":
+    """Gemini Developer API provider whose retries belong to the shared HTTP client."""
+    from google.genai.types import HttpRetryOptions
+    from pydantic_ai.providers.google import GoogleProvider
+
+    return GoogleProvider(
+        api_key=provider_api_key(PROVIDER_GOOGLE),
+        retry_options=HttpRetryOptions(attempts=1),
+        http_client=retrying_http_client(),
+    )
+
+
+def build_decision_model(spec: ResolvedModel) -> "tuple[DecisionModel, DecisionModelSettings]":
+    """Build a Decisions API model and the request settings its callers send."""
+    if spec.provider == PROVIDER_OPENAI:
+        from pydantic_ai.models.openai_decisions import OpenAIDecisionsModel
+
+        # Each request is unique, so OpenAI's implicit cache write would never be read back.
+        no_cache: DecisionModelSettings = {
+            "extra_body": {"prompt_cache_options": {"mode": "explicit"}}
+        }
+        return OpenAIDecisionsModel(spec.transport_model, provider=openai_provider()), no_cache
+    if spec.provider == PROVIDER_GOOGLE and not settings.GOOGLE_VERTEX_AI:
+        from pydantic_ai.models.google_decisions import GoogleDecisionsModel
+
+        # Gemini Decisions has no context caching.
+        return GoogleDecisionsModel(spec.transport_model, provider=google_api_provider()), {}
+    raise ModelConfigurationError(
+        f"No Decisions API serves '{spec.qualified_id}' on this deployment.",
+        details={"provider": spec.provider, "model": spec.model},
+    )
+
+
+def _build_openai_model(spec: ResolvedModel, model_settings) -> Model:
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+
     return OpenAIResponsesModel(
         spec.transport_model,
-        provider=provider,
+        provider=openai_provider(),
         profile=provider_model_profile(spec.provider, spec.transport_model),
         settings=model_settings,
     )
@@ -114,18 +160,13 @@ def _build_openai_model(spec: ResolvedModel, model_settings) -> Model:
 
 def _build_google_model(spec: ResolvedModel, model_settings) -> Model:
     """Gemini Developer API by default; Vertex AI (ADC) when configured."""
-    from google.genai.types import HttpRetryOptions
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider
 
     if settings.GOOGLE_VERTEX_AI:
         provider = GoogleProvider(client=get_google_vertex_client(spec.model))
     else:
-        provider = GoogleProvider(
-            api_key=provider_api_key(PROVIDER_GOOGLE),
-            retry_options=HttpRetryOptions(attempts=1),
-            http_client=retrying_http_client(),
-        )
+        provider = google_api_provider()
     return GoogleModel(
         spec.transport_model,
         provider=provider,

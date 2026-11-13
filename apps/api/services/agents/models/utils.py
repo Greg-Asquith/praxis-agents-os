@@ -48,6 +48,12 @@ def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
     if provider == PROVIDER_GOOGLE and model in {"gemini-4-argon", "gemini-4-carbon"}:
         # Pydantic AI supplies the supported levels but lacks always-on thinking.
         return {"thinking_always_enabled": True}
+    if provider == PROVIDER_GOOGLE and model == "gemini-4-hydrogen":
+        # Pydantic AI 2.68 lacks Hydrogen, which rejects MINIMAL and sends XHIGH as HIGH.
+        return {
+            "thinking_always_enabled": True,
+            "google_thinking_levels": frozenset({"LOW", "MEDIUM", "HIGH"}),
+        }
     if provider == PROVIDER_GOOGLE and model == "gemini-nano-banana-2.1":
         # Pydantic AI detects image models by an `image` substring in their IDs.
         return {

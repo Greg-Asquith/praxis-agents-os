@@ -21,6 +21,9 @@ PROVIDER_MISTRAL = "mistral"
 PROVIDER_XAI = "xai"
 
 VERTEX_PARTNER_PROVIDERS = frozenset({PROVIDER_META, PROVIDER_MISTRAL, PROVIDER_XAI})
+# The one model each provider's Decisions API serves, on its direct API only.
+GEMINI_DECISION_MODEL = "gemini-decision-1"
+DECISIONS_MODELS = {PROVIDER_OPENAI: "gpt-6-luna", PROVIDER_GOOGLE: GEMINI_DECISION_MODEL}
 ALL_PROVIDERS = frozenset(
     {
         PROVIDER_ANTHROPIC,

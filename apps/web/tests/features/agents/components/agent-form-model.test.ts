@@ -108,6 +108,7 @@ function catalogModel({
 const modelCatalog: ModelCatalogResponse = {
   defaults: { agent_model: "openai:gpt-6-luna" },
   video_tools_available: false,
+  decision_models: [],
   models: [
     catalogModel({ displayName: "GPT-6 Luna", id: "openai:gpt-6-luna", modelType: "standard" }),
     catalogModel({ displayName: "GPT-5.4 Nano", id: "openai:gpt-5.4-nano", modelType: "light" }),
@@ -460,6 +461,7 @@ describe("buildModelOptions", () => {
   it("keeps a saved model override when it is absent from the catalog", () => {
     const catalog: ModelCatalogResponse = {
       providers: [],
+      decision_models: [],
       models: [
         {
           id: "openai:gpt-5.4",

@@ -86,6 +86,8 @@ The following contracts apply in this area:
   attributed to the run that reached its step limit. OpenAI Decisions rows,
   refusals included, carry the reported input, cached, and output tokens and
   price at `gpt-6-luna` token rates; Decisions-specific rates are pending.
+  Gemini Decisions rows carry input tokens only and price at
+  `gemini-decision-1`'s $0.10 per million input tokens.
 - Video helpers record under `video_understanding`, `video_generation`, or
   `video_transcription`, with tokens as the provider reports them. Video
   generation tools are pending, so no tool records `video_generation` rows.

@@ -41,7 +41,11 @@ results do not qualify these versions.
 ## Classification and workspace tools
 
 The OpenAI classification default and provider fallback use `gpt-6-luna`.
-An explicit classifier model or environment override takes precedence.
+The Google default is `gemini-decision-1` through the Gemini Decisions API.
+With `GOOGLE_VERTEX_AI=true`, where Decisions isn't served, it is
+`gemini-3.5-flash-lite` with structured output. An explicit classifier model or
+environment override takes precedence. A saved `gemini-decision-1` selection on
+a Vertex deployment returns a model-visible retry instead of falling back.
 
 The following contracts apply in this area:
 
@@ -56,6 +60,14 @@ The following contracts apply in this area:
   helper-step bounds settings-owned; the internal 100-item batch size stays a
   runtime constant. Adding helper-authored rationale or confidence output
   reopens the trust decision.
+- Classification on `gemini-decision-1` sends each batch as one Decisions
+  request. The escaped item prompt is the shared input, billed once. Each item
+  gets one `choice` question whose options are the closed labels and whose
+  instructions name only the item's index, so item text never reaches question
+  instructions. Pydantic AI's `GoogleDecisionsModel` rejects answers outside
+  the labels. Decisions-only models are listed separately from the agent
+  catalogue (`decision_models` in the model catalogue response), so classifier
+  pickers and saved classifier overrides can select them but agents cannot.
 - Workspace classifiers are the first producer of generic workspace-defined
   runtime tools. Active rows are loaded for each run and synthesised as
   `classifier_{name}(items)` definitions without mutating the process-global

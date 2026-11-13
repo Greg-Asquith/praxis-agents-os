@@ -32,6 +32,8 @@ type ModelCatalogDefaults = {
 export type ModelCatalogResponse = {
   providers: ModelCatalogProvider[]
   models: ModelCatalogEntry[]
+  // Decisions-only models, which only helper tools such as classifiers can select.
+  decision_models: ModelCatalogEntry[]
   defaults: ModelCatalogDefaults
   video_tools_available: boolean
 }

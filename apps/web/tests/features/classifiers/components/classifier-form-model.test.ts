@@ -36,6 +36,21 @@ const classifier: Classifier = {
 const modelCatalog: ModelCatalogResponse = {
   defaults: { agent_model: "openai:gpt-5.4-mini" },
   video_tools_available: false,
+  decision_models: [
+    {
+      context_window: 262_144,
+      default_settings: {},
+      display_name: "Gemini Decision 1",
+      id: "google:gemini-decision-1",
+      model: "gemini-decision-1",
+      model_type: "light",
+      provider: "google",
+      supports_structured_output: false,
+      supports_thinking: false,
+      supports_tools: false,
+      supports_vision: true,
+    },
+  ],
   models: [
     {
       context_window: 100_000,
@@ -91,6 +106,13 @@ const modelCatalog: ModelCatalogResponse = {
       model_count: 1,
       model_type_defaults: {},
       provider: "anthropic",
+    },
+    {
+      configured: true,
+      display_name: "Google",
+      model_count: 0,
+      model_type_defaults: {},
+      provider: "google",
     },
   ],
 }
@@ -167,6 +189,7 @@ describe("classifier form model", () => {
   it("offers automatic plus configured structured-output models only", () => {
     expect(buildClassifierModelOptions(modelCatalog, null)).toEqual([
       { label: "Automatic (recommended)", value: "automatic" },
+      { label: "Google · Gemini Decision 1", value: "google:gemini-decision-1" },
       { label: "OpenAI · GPT 6 Luna", value: "openai:gpt-6-luna" },
     ])
   })

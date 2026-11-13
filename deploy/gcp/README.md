@@ -164,7 +164,7 @@ deploy again. Bootstrap enables the Vertex AI API and grants the API and worker
 service accounts access through its existing approval prompts. Google model
 and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
 Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `auto`: the catalog selects
-`eu` for Gemini Flash and Flash-Lite, and `global` for Gemini 3.1 Pro.
+`eu` for every catalogued Gemini chat model.
 Embeddings retain their `global` default. Existing environment files with an
 explicit `global` value keep that routing; set `auto` to adopt model defaults.
 An explicit location must be supported by every Gemini model you use. The
@@ -183,24 +183,28 @@ and grants the API and worker service accounts `roles/speech.client`, so
 staged audio from the platform-private bucket as its own service agent, which
 can read buckets in the same project.
 
-Google's model cards document the following availability (checked 2026-09-07):
+Google's model cards document the following availability (checked 2026-09-07,
+and 2026-11-13 for Gemini 4):
 
 | Gemini model | Supported Vertex locations | Automatic default |
 |---|---|---|
+| [4 Carbon](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-carbon) | `global`, `us`, `eu` | `eu` |
+| [4 Argon](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon) | `global`, `us`, `eu` | `eu` |
+| [4 Hydrogen](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-hydrogen) | `global`, `us`, `eu` | `eu` |
 | [3.8 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash) | `global`, `us`, `eu` | `eu` |
 | [3.7 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash) | `global`, `us`, `eu` | `eu` |
 | [3.5 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite) | `global`, `us`, `eu` | `eu` |
 | [3.1 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite) | `global`, `us`, `eu` | `eu` |
-| [3.1 Pro](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro) | `global` only | `global` |
 
 The EU endpoint uses `aiplatform.eu.rep.googleapis.com`. Google's
 [multi-region endpoint documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations#multi-region_endpoints)
 describes EU machine-learning processing boundaries. The `global` endpoint
 provides no control over processing region. No catalogued Gemini chat model
 offers single-country endpoints; `eu` supports Standard PayGo.
-Gemini 3.1 Pro uses the documented Vertex ID `gemini-3.1-pro-preview` behind
-the application's `gemini-3.1-pro` alias. These defaults apply to Vertex AI;
-the direct Gemini Developer API does not use this location setting.
+These defaults apply to Vertex AI;
+the direct Gemini Developer API does not use this location setting. Gemini
+Decisions is not on Vertex, so a `google` progress reviewer uses
+`AGENT_RUN_PROGRESS_REVIEW_MODEL` with structured output there.
 
 Set `ANTHROPIC_VERTEX_AI=true` to route Claude through Vertex with
 `ANTHROPIC_VERTEX_LOCATION` (default `global`). Set

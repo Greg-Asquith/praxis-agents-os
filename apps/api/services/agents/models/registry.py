@@ -7,6 +7,7 @@ Per-agent selections live on Agent rows. Follow the model lifecycle process in
 """
 
 from services.agents.models.domain import (
+    GEMINI_DECISION_MODEL,
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_META,
@@ -204,6 +205,19 @@ _CATALOG: tuple[ModelInfo, ...] = (
         vertex_default_location="eu",
         vertex_supported_locations=("global", "us", "eu"),
     ),
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-hydrogen
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model="gemini-4-hydrogen",
+        display_name="Gemini 4 Hydrogen",
+        context_window=1_048_576,
+        model_type="standard",
+        supports_thinking=True,
+        supports_vision=True,
+        vertex_model="gemini-4-hydrogen",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
+    ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
         model="gemini-3.5-flash-lite",
@@ -216,19 +230,6 @@ _CATALOG: tuple[ModelInfo, ...] = (
         vertex_model="gemini-3.5-flash-lite",
         vertex_default_location="eu",
         vertex_supported_locations=("global", "us", "eu"),
-    ),
-    ModelInfo(
-        provider=PROVIDER_GOOGLE,
-        model="gemini-3.1-pro",
-        display_name="Gemini 3.1 Pro",
-        context_window=1_048_576,
-        model_type="powerful",
-        chars_per_token=4.0,
-        supports_thinking=True,
-        supports_vision=True,
-        vertex_model="gemini-3.1-pro-preview",
-        vertex_default_location="global",
-        vertex_supported_locations=("global",),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -320,6 +321,35 @@ _CATALOG: tuple[ModelInfo, ...] = (
 )
 
 _INDEX: dict[tuple[str, str], ModelInfo] = {(info.provider, info.model): info for info in _CATALOG}
+
+
+# Decisions-only models answer typed questions and write no text, so agents can't select them.
+_DECISION_MODELS: tuple[ModelInfo, ...] = (
+    # https://ai.google.dev/gemini-api/docs/models/gemini-decision-1
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model=GEMINI_DECISION_MODEL,
+        display_name="Gemini Decision 1",
+        context_window=262_144,
+        model_type="light",
+        supports_tools=False,
+        supports_vision=True,
+        supports_structured_output=False,
+    ),
+)
+
+
+def find_decision_model(provider: str, model: str) -> ModelInfo | None:
+    """Return the Decisions-only model entry, or None if not known."""
+    return next(
+        (info for info in _DECISION_MODELS if (info.provider, info.model) == (provider, model)),
+        None,
+    )
+
+
+def list_decision_models() -> list[ModelInfo]:
+    """Return Decisions-only models, which only helper tools can select."""
+    return list(_DECISION_MODELS)
 
 
 def find_model(provider: str, model: str) -> ModelInfo | None:
