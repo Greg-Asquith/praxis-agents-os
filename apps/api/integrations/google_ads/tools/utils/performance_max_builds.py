@@ -2,7 +2,8 @@
 
 """Rules, account reads, and dry run answers for building Performance Max campaigns and groups."""
 
-from collections.abc import Iterable, Sequence
+import asyncio
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from ...operations.performance_max import (
 )
 from ...operations.search_campaigns import CampaignItem
 from ...operations.search_targeting import read_audiences, read_languages, read_locations
+from ...references import GoogleAdsAssetGroupReference
 from ..schemas.campaigns import performance_max_brand_problems
 from ..schemas.performance_max import asset_group_problems
 
@@ -221,38 +223,23 @@ async def performance_max_checks(
 ) -> dict[str, Any]:
     """Reads what the card names and checks, then dry runs everything the card can't fault."""
     campaign = request.campaign
-    locations = await read_locations(
-        client,
-        customer_id=customer_id,
-        login_customer_id=login_customer_id,
-        keys=[item.key for item in (*campaign.locations, *campaign.excluded_locations)],
-    )
-    languages = {
-        option.key: option.name
-        for option in await read_languages(
-            client, customer_id=customer_id, login_customer_id=login_customer_id
-        )
-    }
+    account = {"customer_id": customer_id, "login_customer_id": login_customer_id}
     image_ids = sorted(
         {reference.asset_id for reference in _media(campaign, request.asset_groups)}
         - {video.asset_id for group in request.asset_groups for video in group.videos}
     )
-    images = await read_images(
-        client, customer_id=customer_id, login_customer_id=login_customer_id, asset_ids=image_ids
+    locations, language_options, images, audiences, facts = await asyncio.gather(
+        read_locations(
+            client,
+            **account,
+            keys=[item.key for item in (*campaign.locations, *campaign.excluded_locations)],
+        ),
+        read_languages(client, **account),
+        read_images(client, **account, asset_ids=image_ids),
+        read_signal_audiences(client, **account, audiences=signals(request.asset_groups)),
+        read_account_facts(client, **account, campaign=campaign, with_goals=True),
     )
-    audiences = await read_signal_audiences(
-        client,
-        customer_id=customer_id,
-        login_customer_id=login_customer_id,
-        audiences=signals(request.asset_groups),
-    )
-    facts = await read_account_facts(
-        client,
-        customer_id=customer_id,
-        login_customer_id=login_customer_id,
-        campaign=campaign,
-        with_goals=True,
-    )
+    languages = {option.key: option.name for option in language_options}
     answers: dict[str, list[Any]] = {
         "campaign_problems": [],
         "problems": [],
@@ -338,12 +325,15 @@ async def _dry_run(
     indexes = [
         index for index, group in enumerate(request.asset_groups) if dry_run_ready(group, known)
     ]
-    compile_performance_max(build, request, checked, today, indexes, goals)
     answers: dict[str, list[Any]] = {
         "campaign_problems": [],
         "problems": [],
         "request_problems": [],
     }
+    # A campaign with no asset group isn't one Google can check.
+    if not indexes:
+        return answers
+    compile_performance_max(build, request, checked, today, indexes, goals)
     for problem in await dry_run_build(
         client,
         build,
@@ -411,3 +401,45 @@ def campaign_item_fields(
         goal = goals[source.position]
         fields["key"] = f"{goal.category}~{goal.origin}"
     return fields
+
+
+def created_asset_groups(
+    groups: Sequence["GoogleAdsNewAssetGroup"],
+    outcomes: Mapping[int, str],
+    created: Mapping[int, str],
+    *,
+    customer_id: str,
+    campaign_id: str | None,
+    status: str,
+) -> list[dict[str, Any]]:
+    """Each requested asset group's result row, with a reference once it and its campaign exist."""
+    rows = []
+    for index, group in enumerate(groups):
+        outcome = outcomes.get(index, "unverified")
+        resource_name = created.get(index)
+        reference = (
+            GoogleAdsAssetGroupReference(
+                customer_id=customer_id,
+                campaign_id=campaign_id,
+                asset_group_id=resource_name.rsplit("/", 1)[1],
+                label=group.name[:500],
+                status=status,
+            ).model_dump(mode="json")
+            if campaign_id is not None and resource_name is not None
+            else None
+        )
+        rows.append(
+            {
+                "name": group.name,
+                "outcome": "created" if outcome == "applied" else outcome,
+                "reference": reference,
+                "headlines": len(group.headlines),
+                "long_headlines": len(group.long_headlines),
+                "descriptions": len(group.descriptions),
+                "images": len(group.images),
+                "videos": len(group.videos),
+                "search_themes": len(group.search_themes),
+                "audience_signals": len(group.audience_signals),
+            }
+        )
+    return rows

@@ -226,7 +226,8 @@ async def dry_run_build(
     """Checks the whole build with Google without creating anything.
 
     Partial failure reports every rejected step rather than only the first. Builds with
-    Performance Max asset groups turn it off, because Google refuses it for them.
+    Performance Max asset groups turn it off, because Google refuses it for them, and get
+    the steps Google names in its refusal of the whole request.
 
     Returns:
         Each rejected step with Google's reason, or one problem for the whole request.

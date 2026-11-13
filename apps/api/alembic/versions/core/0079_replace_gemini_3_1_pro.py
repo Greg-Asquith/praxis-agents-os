@@ -27,6 +27,12 @@ def upgrade() -> None:
         WHERE default_model_provider = 'google'
             AND default_model = 'gemini-3.1-pro'
     """)
+    op.execute("""
+        UPDATE classifiers
+        SET model = 'gemini-4-argon'
+        WHERE model_provider = 'google'
+            AND model = 'gemini-3.1-pro'
+    """)
 
 
 def downgrade() -> None:

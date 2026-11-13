@@ -8,7 +8,7 @@ from typing import Any
 
 from services.integrations.http import IntegrationRequestPolicy
 
-from ..client import GoogleAdsClient, normalize_customer_id
+from ..client import GoogleAdsClient, GoogleAdsRequestRejectedError, normalize_customer_id
 from .utils import grouped_partial_failure_errors
 
 # At most this many operations go in one request; Google's limit is 10,000.
@@ -53,33 +53,42 @@ async def google_ads_mutate(
     """
     if not operations or len(operations) > MAX_MUTATE_OPERATIONS:
         raise ValueError("Google Ads mutate requests need between 1 and 5,000 operations")
-    payload = await client.post(
-        f"customers/{normalize_customer_id(customer_id)}/googleAds:mutate",
-        operation=f"validate_{operation}" if validate_only else operation,
-        # A dry run changes nothing, so retrying it is safe.
-        policy=(
-            IntegrationRequestPolicy.IDEMPOTENT_WRITE
-            if validate_only
-            else IntegrationRequestPolicy.MUTATION
-        ),
-        login_customer_id=login_customer_id,
-        json={
-            "mutateOperations": [item.payload() for item in operations],
-            "partialFailure": partial_failure,
-            "validateOnly": validate_only,
-        },
-    )
-    indexed_errors, unattributed_errors = grouped_partial_failure_errors(
+    try:
+        payload = await client.post(
+            f"customers/{normalize_customer_id(customer_id)}/googleAds:mutate",
+            operation=f"validate_{operation}" if validate_only else operation,
+            # A dry run changes nothing, so retrying it is safe.
+            policy=(
+                IntegrationRequestPolicy.IDEMPOTENT_WRITE
+                if validate_only
+                else IntegrationRequestPolicy.MUTATION
+            ),
+            login_customer_id=login_customer_id,
+            json={
+                "mutateOperations": [item.payload() for item in operations],
+                "partialFailure": partial_failure,
+                "validateOnly": validate_only,
+            },
+        )
+    except GoogleAdsRequestRejectedError as exc:
+        # Google refuses a dry run whole when partial failure is off, and names the
+        # operations in the refusal as a partial failure would.
+        errors = _errors({"partialFailureError": exc.failure}, operations)
+        if not validate_only or partial_failure or errors == ({}, []):
+            raise
+        return MutateResponse(None, *errors)
+    return MutateResponse(_results(payload, operations), *_errors(payload, operations))
+
+
+def _errors(
+    payload: Any, operations: Sequence[MutateOperation]
+) -> tuple[dict[int, dict[str, str]], list[dict[str, str]]]:
+    return grouped_partial_failure_errors(
         payload,
         list(range(len(operations))),
         value_to_error_fields=lambda _index: {},
         unattributed_error_fields={},
         default_message="Google Ads rejected this change",
-    )
-    return MutateResponse(
-        results=_results(payload, operations),
-        indexed_errors=indexed_errors,
-        unattributed_errors=unattributed_errors,
     )
 
 

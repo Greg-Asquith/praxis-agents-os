@@ -27,6 +27,19 @@ GOOGLE_ADS_UPLOAD_BASE_URL = f"https://{GOOGLE_ADS_HOST}/resumable/upload/{GOOGL
 AccessTokenFn = Callable[[bool], Awaitable[str]]
 
 
+class GoogleAdsRequestRejectedError(IntegrationValidationError):
+    """A request Google refused, with Google's error so a caller can find the operations."""
+
+    def __init__(self, message: str, *, failure: dict[str, Any], operation: str) -> None:
+        super().__init__(
+            message,
+            provider_key="google_ads",
+            operation=operation,
+            failure_disposition=IntegrationFailureDisposition.REJECTED,
+        )
+        self.failure = failure
+
+
 class GoogleAdsClient:
     def __init__(
         self,
@@ -185,7 +198,7 @@ class GoogleAdsClient:
                     response,
                     operation=operation,
                 ),
-                response_error_mapper=lambda response: _unapproved_project_error(
+                response_error_mapper=lambda response: _mapped_error(
                     response,
                     operation=operation,
                 ),
@@ -232,16 +245,28 @@ def _google_ads_error_detail(
     return f"Google Ads rejected the {subject}: {' '.join(messages)}"[:1000]
 
 
+def _mapped_error(response: httpx2.Response, *, operation: str) -> IntegrationError | None:
+    error = _error_object(response)
+    if error is None:
+        return None
+    if response.status_code == 403:
+        return _unapproved_project_error(error, operation=operation)
+    if response.status_code == 400:
+        return GoogleAdsRequestRejectedError(
+            _google_ads_error_detail(response, operation=operation),
+            failure=error,
+            operation=operation,
+        )
+    return None
+
+
 def _unapproved_project_error(
-    response: httpx2.Response,
+    error: dict[str, Any],
     *,
     operation: str,
 ) -> IntegrationPermissionError | None:
     """Explain the v25+ refusal for a Cloud project that only has Test access."""
-    if response.status_code != 403:
-        return None
-    error = _error_object(response)
-    if error is None or not any(
+    if not any(
         isinstance(code := provider_error.get("errorCode"), dict)
         and code.get("authorizationError") == "CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION"
         for provider_error in _provider_errors(error)

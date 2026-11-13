@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import httpx2
 import pytest
 
 from core.exceptions.integration import (
@@ -13,6 +14,7 @@ from core.exceptions.integration import (
     IntegrationTimeoutError,
     IntegrationValidationError,
 )
+from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.operations.build import CampaignBuild, dry_run_build, send_build
 from integrations.google_ads.operations.edits import (
     STALE_CODE,
@@ -22,6 +24,7 @@ from integrations.google_ads.operations.edits import (
     apply_edits,
     prepare_edits,
 )
+from tests.integrations.google_ads.support import _static_token
 
 _CAMPAIGN = "customers/333/campaigns/10"
 _AD_GROUP = "customers/333/adGroups/20"
@@ -482,6 +485,25 @@ async def test_build_dry_run_rejection_names_the_step() -> None:
     assert client.bodies[0]["validateOnly"] is True
     assert [(problem.step.label, problem.message) for problem in problems if problem.step] == [
         ("Hiking", "Ad group name is taken")
+    ]
+
+
+async def test_build_dry_run_without_partial_failure_names_the_step_google_refused() -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        error = {"message": "Request contains an invalid argument.", **_partial_failure(3, "Taken")}
+        return httpx2.Response(400, json={"error": error}, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        problems = await dry_run_build(
+            GoogleAdsClient(_static_token, client=http_client),
+            _search_build(),
+            login_customer_id="111",
+            operation="create",
+            partial_failure=False,
+        )
+
+    assert [(problem.step.label, problem.message) for problem in problems if problem.step] == [
+        ("Hiking", "Taken")
     ]
 
 

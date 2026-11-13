@@ -316,8 +316,9 @@ def _within_limits(rows: Sequence[_Row], group: LiveAssetGroup, segments: int) -
     counts["search_theme"] = len(group.themes)
     counts["audience_signal"] = segments
     descriptions = {link.text for link in group.links if link.field_type == "DESCRIPTION"}
+    automatic = _automatic(group)
     for row in rows:
-        if row.changes and row.action != "set":
+        if row.changes and row.action != "set" and row.before not in automatic:
             counts[row.kind] += 1 if row.action == "add" else -1
             if row.kind == "DESCRIPTION" and row.action == "add":
                 descriptions.add(row.value)
@@ -332,10 +333,16 @@ def _within_limits(rows: Sequence[_Row], group: LiveAssetGroup, segments: int) -
         replace(row, problem=problem)
         if row.changes
         and row.action != "set"
+        and row.before not in automatic
         and (problem := _limit_problem(row, counts[row.kind], exempt=exempt, no_short=no_short))
         else row
         for row in rows
     ]
+
+
+def _automatic(group: LiveAssetGroup) -> set[str]:
+    """The links Google made itself, which its minimums and maximums don't count."""
+    return {link.resource_name for link in group.links if not link.advertiser}
 
 
 def _limit_problem(row: _Row, after: int, *, exempt: bool, no_short: bool) -> str | None:
@@ -383,8 +390,12 @@ def _parts(group: LiveAssetGroup, rows: Sequence[_Row]) -> dict[str, int]:
     counts = Counter(link.field_type for link in group.links if link.advertiser)
     counts["search_theme"] = len(group.themes)
     parts: dict[str, int] = {}
+    automatic = _automatic(group)
     for kind in (*_LINK_KINDS, "search_theme"):
-        changing = [row for row in rows if row.kind == kind and row.changes]
+        # Removing a link Google made changes no count, so it goes in the first request.
+        changing = [
+            row for row in rows if row.kind == kind and row.changes and row.before not in automatic
+        ]
         removes = [row for row in changing if row.action == "remove"]
         adds = [row for row in changing if row.action == "add"]
         minimum, maximum = _LIMITS[kind]
@@ -666,6 +677,9 @@ def _unapproved(rows: Sequence[_Row], check: Any) -> str | None:
             return STALE_MESSAGE
         if isinstance(seen.get("problem"), str):
             return seen["problem"]
+        # A problem the approver never saw means the group changed since.
+        if row.problem is not None:
+            return STALE_MESSAGE
     return None
 
 

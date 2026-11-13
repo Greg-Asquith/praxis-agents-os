@@ -50,7 +50,6 @@ from ..operations.search_campaigns import CampaignItem, add_search_campaign, new
 from ..operations.search_targeting import read_locations
 from ..references import (
     GoogleAdsAdGroupReference,
-    GoogleAdsAssetGroupReference,
     GoogleAdsCampaignReference,
 )
 from .schemas.ad_groups import MAX_NEW_AD_GROUPS, MAX_RESULT_PROBLEMS, GoogleAdsNewAdGroup
@@ -81,6 +80,7 @@ from .utils.mutation_evidence import (
 from .utils.performance_max_builds import (
     account_problems,
     compile_performance_max,
+    created_asset_groups,
     performance_max_checks,
     performance_max_problems,
     read_account_facts,
@@ -478,23 +478,14 @@ def _result(
             for index, ad_group in enumerate(request.ad_groups)
         ]
     else:
-        data["asset_groups"] = [
-            {
-                "name": group.name,
-                "outcome": _outcome(outcomes.get(index)),
-                "reference": _asset_group_reference(
-                    entry.external_id, request.status, campaign_id, group, created.get(index)
-                ),
-                "headlines": len(group.headlines),
-                "long_headlines": len(group.long_headlines),
-                "descriptions": len(group.descriptions),
-                "images": len(group.images),
-                "videos": len(group.videos),
-                "search_themes": len(group.search_themes),
-                "audience_signals": len(group.audience_signals),
-            }
-            for index, group in enumerate(request.asset_groups)
-        ]
+        data["asset_groups"] = created_asset_groups(
+            request.asset_groups,
+            outcomes,
+            created,
+            customer_id=entry.external_id,
+            campaign_id=campaign_id,
+            status=request.status,
+        )
     return data
 
 
@@ -537,25 +528,6 @@ def _ad_group_reference(
         campaign_id=campaign_id,
         ad_group_id=ad_group_id,
         label=ad_group.name[:500],
-        status=status,
-    ).model_dump(mode="json")
-
-
-def _asset_group_reference(
-    customer_id: str,
-    status: str,
-    campaign_id: str | None,
-    group: GoogleAdsNewAssetGroup,
-    resource_name: str | None,
-) -> dict[str, Any] | None:
-    asset_group_id = _last_id(resource_name)
-    if campaign_id is None or asset_group_id is None:
-        return None
-    return GoogleAdsAssetGroupReference(
-        customer_id=customer_id,
-        campaign_id=campaign_id,
-        asset_group_id=asset_group_id,
-        label=group.name[:500],
         status=status,
     ).model_dump(mode="json")
 

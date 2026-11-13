@@ -231,6 +231,7 @@ export function UpdateAssetGroupsApproval({
           ) : null}
           <Section count={liveCount(groupRows, "remove")} title="Removals">
             <ItemTable
+              key={group}
               action="remove"
               disabled={disabled}
               kind={kind}
@@ -243,6 +244,7 @@ export function UpdateAssetGroupsApproval({
           </Section>
           <Section count={liveCount(groupRows, "add")} title="Additions">
             <ItemTable
+              key={group}
               action="add"
               disabled={disabled}
               kind={kind}

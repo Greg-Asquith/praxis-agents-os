@@ -542,6 +542,26 @@ async def test_video_title_with_angle_brackets_is_refused_before_any_request(mon
     assert google.uploads == []
 
 
+async def test_videos_over_one_gigabyte_in_total_are_refused_before_any_request(monkeypatch):
+    videos = [_video(f"reel-{number}.mp4", b"VIDEOBYTES") for number in range(2)]
+    for video in videos:
+        video.revision.size_bytes = 600 * 1024 * 1024
+    google = _Google()
+
+    entry, _audits = await _run(
+        monkeypatch, _deps(videos, monkeypatch), google, display=None, files=_files(videos)
+    )
+
+    assert entry["status"] == "error" and "at most 1 GB" in entry["error_message"]
+    assert google.uploads == []
+
+
+def test_an_emptied_video_description_is_no_description() -> None:
+    details = GoogleAdsVideoDetails(file_id=uuid4(), title="Trail Fit", description=" ")
+
+    assert details.description is None
+
+
 async def test_upload_address_off_googles_host_never_gets_the_token() -> None:
     sent: list[httpx2.Request] = []
     transport = httpx2.MockTransport(lambda request: sent.append(request) or httpx2.Response(200))

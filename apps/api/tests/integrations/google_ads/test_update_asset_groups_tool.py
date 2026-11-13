@@ -321,6 +321,21 @@ async def test_a_change_live_differently_from_what_was_approved_is_refused_with_
     assert account.mutates == []
 
 
+async def test_a_removal_that_would_now_pass_a_minimum_is_refused_with_nothing_sent(
+    monkeypatch,
+) -> None:
+    args = _args(remove_assets={"headlines": ["Built for the Hills"]})
+    shown = _Account(headlines={**_HEADLINES, "504": "Free Returns"})
+    display = await _display(monkeypatch, shown, args)
+    # Someone removed another headline in Google Ads after approval, leaving the minimum.
+    account = _Account()
+
+    entry = await _run(monkeypatch, account, args, display)
+
+    assert entry.status == "error" and "changed in Google Ads after" in entry.error_message
+    assert account.mutates == []
+
+
 def test_replacing_every_long_headline_never_passes_five_or_drops_under_one() -> None:
     live = [f"Old long headline {n}" for n in range(3)]
     group = LiveAssetGroup(

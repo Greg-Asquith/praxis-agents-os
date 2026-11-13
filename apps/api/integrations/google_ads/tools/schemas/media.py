@@ -5,7 +5,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 from services.integrations.files import FileReference
@@ -32,6 +32,12 @@ class GoogleAdsVideoDetails(GoogleAdsStrictModel):
     file_id: UUID = Field(description="The video File's ID, from `files`.")
     title: str = Field(min_length=1, max_length=100, description="Without < or >.")
     description: str | None = Field(default=None, max_length=5_000, description="Without < or >.")
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _blank_is_none(cls, value: object) -> object:
+        # The card sends an emptied description as blank text.
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class GoogleAdsUploadMediaRequest(GoogleAdsStrictModel):

@@ -128,8 +128,8 @@ The Gemini API serves Gemini 3.1 Pro only as `gemini-3.1-pro-preview`. On 13
 November 2026, its model list had no `gemini-3.1-pro`, so the catalogue alias
 returned 404 on the direct transport. The catalogue drops it for
 `gemini-4-argon`, which is GA, has the same **Powerful** type, and costs less
-for output. Migration `core_0079` moves saved agent selections and Google
-workspace defaults to Argon, including inactive and deleted agents. Both
+for output. Migration `core_0079` moves saved agent selections, Google
+workspace defaults, and classifier models to Argon, including inactive and deleted agents. Both
 models accept `low`, `medium`, and `high` thinking, so saved settings stay
 valid. Downgrading leaves Argon selections in place. Historical price rows
 remain.
@@ -384,9 +384,8 @@ follow the deployment runbook for a deployed environment.
 
 Google Vertex model and embedding calls share a
 process-owned Google client per project, location, and retry policy.
-`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: Gemini 4 Carbon, Argon, Flash,
-and Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
-`global`. Explicit locations must appear in the Gemini model's supported
+`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: every catalogued Gemini chat
+model uses `eu`, and embeddings retain `global`. Explicit locations must appear in the Gemini model's supported
 locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
 The image-only `gemini-nano-banana-2.1` model uses `global` for `auto`
 and accepts explicit `global`. Its location validation lives

@@ -47,7 +47,7 @@ from ..operations.performance_max import (
     add_asset_group,
     read_performance_max_campaign,
 )
-from ..references import GoogleAdsAssetGroupReference, GoogleAdsCampaignReference
+from ..references import GoogleAdsCampaignReference
 from .schemas.ad_groups import MAX_RESULT_PROBLEMS
 from .schemas.performance_max import (
     MAX_NEW_ASSET_GROUPS,
@@ -69,6 +69,7 @@ from .utils.mutation_evidence import (
 from .utils.performance_max_builds import (
     MEDIA_FROM_ANOTHER_ACCOUNT,
     asset_group_answer,
+    created_asset_groups,
     dry_run_ready,
     group_media,
     read_images,
@@ -342,41 +343,16 @@ def _result(
             for kind in _KINDS
             if any(counts[(kind, outcome)] for outcome in ("applied", "failed", "unverified"))
         ],
-        "asset_groups": [
-            {
-                "name": group.name,
-                "outcome": "created"
-                if outcomes.get(index) == "applied"
-                else outcomes.get(index, "unverified"),
-                "reference": _reference(request, group, created.get(index)),
-                "headlines": len(group.headlines),
-                "long_headlines": len(group.long_headlines),
-                "descriptions": len(group.descriptions),
-                "images": len(group.images),
-                "videos": len(group.videos),
-                "search_themes": len(group.search_themes),
-                "audience_signals": len(group.audience_signals),
-            }
-            for index, group in enumerate(request.asset_groups)
-        ],
+        "asset_groups": created_asset_groups(
+            request.asset_groups,
+            outcomes,
+            created,
+            customer_id=request.campaign.customer_id,
+            campaign_id=request.campaign.campaign_id,
+            status=request.status,
+        ),
         "problems": list(problems.values()),
     }
-
-
-def _reference(
-    request: GoogleAdsCreateAssetGroupsRequest,
-    group: GoogleAdsNewAssetGroup,
-    resource_name: str | None,
-) -> dict[str, Any] | None:
-    if resource_name is None:
-        return None
-    return GoogleAdsAssetGroupReference(
-        customer_id=request.campaign.customer_id,
-        campaign_id=request.campaign.campaign_id,
-        asset_group_id=resource_name.rsplit("/", 1)[1],
-        label=group.name[:500],
-        status=request.status,
-    ).model_dump(mode="json")
 
 
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:

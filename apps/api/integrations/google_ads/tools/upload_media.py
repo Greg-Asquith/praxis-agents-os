@@ -44,6 +44,7 @@ from services.integrations.operations import (
 
 from ..client import GoogleAdsClient
 from ..operations.media import (
+    MAX_VIDEO_BYTES,
     ImageSource,
     MediaSource,
     VideoSource,
@@ -142,7 +143,7 @@ async def google_ads_upload_media(
                 raise ModelRetry(_ACCOUNT_CHANGED)
             pinned = pinned_files(reviewed) if reviewed is not None else None
             sources = await _sources(ctx.deps, files or ())
-            _check_video_details(sources, video_details)
+            _check_videos(sources, video_details)
             for source in sources:
                 if (problem := source.problem) is not None:
                     code = (
@@ -259,12 +260,17 @@ def _upload_id(entry: ResolvedContextEntry, value: str) -> str:
     return match.group(2)
 
 
-def _check_video_details(
+def _check_videos(
     sources: Sequence[MediaSource], details: Sequence[GoogleAdsVideoDetails] | None
 ) -> None:
-    videos = {source.file.id for source in sources if isinstance(source, VideoSource)}
-    if any(detail.file_id not in videos for detail in details or ()):
+    videos = [source for source in sources if isinstance(source, VideoSource)]
+    if any(detail.file_id not in {video.file.id for video in videos} for detail in details or ()):
         raise ModelRetry("Titles and descriptions go with video Files only.")
+    # Videos upload one after another, and the tool's timeout allows for 1 GB.
+    if sum(video.revision.size_bytes for video in videos) > MAX_VIDEO_BYTES:
+        raise ModelRetry(
+            "One call uploads at most 1 GB of video. Upload these video Files in separate calls."
+        )
 
 
 def _items(
@@ -324,7 +330,7 @@ async def _validate_args(
         sources = await _sources(ctx.deps, files or ())
     except IntegrationError as exc:
         raise ModelRetry(exc.user_message) from None
-    _check_video_details(sources, video_details)
+    _check_videos(sources, video_details)
 
 
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
@@ -526,7 +532,7 @@ DEFINITION = RuntimeToolDefinition(
     description=(
         "Upload up to 20 workspace Files to the one writable Google Ads account selected in "
         "Active Context: images (JPEG, PNG, or GIF, at most 5,120 KB each) become image "
-        "assets, and videos (MP4, MOV, or WebM, at most 1 GB each) go to an unlisted YouTube "
+        "assets, and videos (MP4, MOV, or WebM, at most 1 GB in one call) go to an unlisted YouTube "
         "channel Google manages for the account, then become video assets once Google has "
         "processed them. Give each video a title in `video_details` (up to 100 characters, "
         "without < or >; it defaults to the File name and can't change later). A video still "

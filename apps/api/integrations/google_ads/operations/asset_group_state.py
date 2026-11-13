@@ -2,6 +2,7 @@
 
 """Reads live asset groups: their settings, linked assets, search themes, and audience signals."""
 
+import asyncio
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -109,24 +110,26 @@ async def read_asset_groups(
         raise ValueError("Google Ads asset group reads take at most 100 digit-only ids")
     reader = _Reader(client, normalize_customer_id(customer_id), login_customer_id)
     within = f"asset_group.id IN ({', '.join(ids)})"
-    groups = await reader.rows(
-        "SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.final_urls, "  # noqa: S608 -- digit-only ids
-        "campaign.name, campaign.status, campaign.advertising_channel_type, "
-        f"campaign.shopping_setting.merchant_id FROM asset_group WHERE {within}",
-        max_rows=len(ids),
-    )
-    links = await reader.rows(
-        "SELECT asset_group.id, asset_group_asset.resource_name, asset_group_asset.field_type, "  # noqa: S608 -- digit-only ids
-        "asset_group_asset.source, asset.id, asset.name, asset.text_asset.text, "
-        "asset.youtube_video_asset.youtube_video_title FROM asset_group_asset "
-        f"WHERE {within} AND asset_group_asset.status != 'REMOVED'",
-        max_rows=_MAX_LINKS,
-    )
-    signals = await reader.rows(
-        "SELECT asset_group.id, asset_group_signal.resource_name, "  # noqa: S608 -- digit-only ids
-        "asset_group_signal.search_theme.text, asset_group_signal.audience.audience "
-        f"FROM asset_group_signal WHERE {within}",
-        max_rows=_MAX_SIGNALS,
+    groups, links, signals = await asyncio.gather(
+        reader.rows(
+            "SELECT asset_group.id, asset_group.name, asset_group.status, asset_group.final_urls, "  # noqa: S608 -- digit-only ids
+            "campaign.name, campaign.status, campaign.advertising_channel_type, "
+            f"campaign.shopping_setting.merchant_id FROM asset_group WHERE {within}",
+            max_rows=len(ids),
+        ),
+        reader.rows(
+            "SELECT asset_group.id, asset_group_asset.resource_name, asset_group_asset.field_type, "  # noqa: S608 -- digit-only ids
+            "asset_group_asset.source, asset.id, asset.name, asset.text_asset.text, "
+            "asset.youtube_video_asset.youtube_video_title FROM asset_group_asset "
+            f"WHERE {within} AND asset_group_asset.status != 'REMOVED'",
+            max_rows=_MAX_LINKS,
+        ),
+        reader.rows(
+            "SELECT asset_group.id, asset_group_signal.resource_name, "  # noqa: S608 -- digit-only ids
+            "asset_group_signal.search_theme.text, asset_group_signal.audience.audience "
+            f"FROM asset_group_signal WHERE {within}",
+            max_rows=_MAX_SIGNALS,
+        ),
     )
     return await _assemble(reader, groups, links, signals)
 

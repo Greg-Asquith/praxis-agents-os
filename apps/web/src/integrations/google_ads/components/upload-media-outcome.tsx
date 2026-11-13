@@ -32,13 +32,11 @@ const COLUMNS: DataColumn[] = [
 const RECOVERED = "Google's reply was lost, so the asset was found in the account."
 const KIND_LABELS: Record<MediaKind, string> = {
   image: "Image",
-  youtube_video: "YouTube video",
-  video: "Video upload",
+  youtube_video: "YouTube Video",
+  video: "Video Upload",
 }
 
-/** One row per image and video, opening on the failures when anything failed.
-
-A video still processing names its upload, so a later call can finish it. */
+/** One row per image and video, opening on failures; a processing video names its upload. */
 export function UploadMediaOutcome({ result }: { result: UploadMediaResult }) {
   const [tab, setTab] = useState(
     result.uploads.some((upload) => upload.outcome === "failed") ? "failed" : "all"

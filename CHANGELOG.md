@@ -21,7 +21,6 @@ minor release. Patch releases contain backward-compatible fixes only.
   lists the asset groups first, shows the count each change leaves against
   Google's limits, and refuses a removal that would leave a group under a
   minimum, naming the type and count.
-
 - Google Ads asset groups in live Performance Max campaigns:
   `google_ads_create_asset_groups` adds up to five complete asset groups to
   a campaign in one approval, all created or none. The card lists the
@@ -30,7 +29,20 @@ minor release. Patch releases contain backward-compatible fixes only.
   asset group, and a name the campaign already uses. New asset groups, here
   and on Create Campaign, take audience signals: your own lists, interests,
   and custom audiences, which guide Google without limiting who sees the ads.
-
+- Google Ads Performance Max campaigns: `google_ads_create_campaign` with
+  `type: performance_max` builds a paused Performance Max campaign with its
+  budget, bidding, brand, and up to five asset groups in one all-or-nothing
+  request. The card counts each asset type against Google's minimum, and a
+  retailer's Merchant Center feed can be attached.
+- Google Ads video uploads: `google_ads_upload_media` takes MP4, MOV, and
+  WebM Files up to 1 GB and uploads them through Google Ads to an unlisted
+  YouTube channel Google manages for the account, so Performance Max asset
+  groups can use video without a YouTube connection. Each video has an
+  editable title and description on the card. A video Google is still
+  processing after two minutes can be finished in a later call.
+- Gemini 4 Hydrogen as a Google Standard model. Progress reviews and
+  classifiers on the Gemini API use `gemini-decision-1` through the Gemini
+  Decisions API; on Vertex they keep structured output.
 - Claude Fable 5.2 as the Anthropic Max model, with standard token pricing
   effective from 9 November 2026 and support for adaptive thinking and
   structured output through the Claude API and configured Vertex projects.
@@ -492,6 +504,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Removed
 
+- `gemini-3.1-pro`. The Gemini API no longer serves that ID. A migration
+  moves saved agent selections and workspace defaults to `gemini-4-argon`.
 - `GOOGLE_ADS_DEVELOPER_TOKEN` and the `developer-token` header. Google retired
   developer tokens on 2026-09-09; access now belongs to the Google Cloud project
   that owns the OAuth client or service account. Remove the setting and its
@@ -522,6 +536,17 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Google Ads Performance Max cards show Google's dry-run rejection on the
+  asset or change it is about. The answer was shown once for the whole
+  request, and on Change Asset Groups against every change.
+- `google_ads_update_asset_groups` refuses a group, with nothing sent, when a
+  removal that was within Google's minimum at approval would now pass it. It
+  no longer counts an asset Google made against the minimum.
+- `google_ads_upload_media` takes a video with an emptied description, and
+  refuses more than 1 GB of video in one call, which the tool's time limit
+  couldn't finish.
+- Saved classifiers on `gemini-3.1-pro` move to `gemini-4-argon` with agents
+  and workspace defaults.
 - Google Ads report errors include Google's reason. Google wraps a streamed
   report's error in a list, which the client didn't read, so the agent only
   saw "check that its fields and filters are valid GAQL".

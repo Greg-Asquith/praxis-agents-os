@@ -321,14 +321,15 @@ export function serializePerformanceMax(fields: DraftPerformanceMax): Record<str
   return {
     type: "performance_max",
     languages: fields.languages.map((item) => ({ key: item.key, name: item.name || null })),
-    business_name: fields.businessName.trim() || null,
+    // Sent as typed, so a space typed mid-name survives; the server tidies it.
+    business_name: fields.businessName || null,
     logos: fields.logos.map(imageValue),
     final_url_expansion: fields.finalUrlExpansion,
     conversion_goals: fields.conversionGoals,
     merchant: fields.merchant
       ? {
           merchant_id: fields.merchant.merchantId.trim(),
-          feed_label: fields.merchant.feedLabel.trim() || null,
+          feed_label: fields.merchant.feedLabel || null,
         }
       : null,
   }
@@ -445,6 +446,7 @@ function googleGroupProblems(
     ...textLines(group.descriptions),
     ...textLines(group.searchThemes),
     ...group.images.map((image) => image.assetId),
+    ...group.videos.map((video) => video["asset_id"]),
   ])
   return checks.groupProblems
     .filter(

@@ -648,7 +648,7 @@ declaration work as for Search. The campaign also takes these fields:
 | `business_name`, `logos` | The brand. Brand guidelines are always on (`brandGuidelinesEnabled`), so one business name (25 characters) and 1 to 5 logos are linked to the campaign with `campaignAsset`, at least one of them a square `LOGO`; `LANDSCAPE_LOGO` is optional. Logos are image assets from `google_ads_upload_media`. |
 | `final_url_expansion` | On by default, as Google sets it. Off sends `FINAL_URL_EXPANSION_TEXT_ASSET_AUTOMATION` as `OPTED_OUT`. |
 | `conversion_goals` | Left out, the campaign bids for the account's goals. A list of `{category, origin}` sets each account goal's `campaignConversionGoal` to bid or not, in the same request. |
-| `merchant` | `{merchant_id, feed_label}` for a retailer: `shoppingSetting` on the campaign, and one root listing filter (`UNIT_INCLUDED`, `SHOPPING`) per asset group, so it advertises every product in the feed. 311 B adds narrower filters. |
+| `merchant` | `{merchant_id, feed_label}` for a retailer: `shoppingSetting` on the campaign, and one root listing filter (`UNIT_INCLUDED`, `SHOPPING`) per asset group, so it advertises every product in the feed. Narrower filters are pending. |
 
 Each asset group has a `name`, `final_url`, `headlines`, `long_headlines`, `descriptions`,
 `images` (`{asset, field_type}` with `MARKETING_IMAGE`, `SQUARE_MARKETING_IMAGE`, or
@@ -686,9 +686,12 @@ image, logo, or video from another account. While preparing the approval,
 for the locations and languages, each image's size and the shapes it fits (`image_fits`
 from `operations/media.py`), the linked Merchant Center accounts (`product_link`), and the
 account goals, and Google's name for each audience signal (`read_signal_audiences`), then
-dry runs the build. Google refuses partial failure for these operations,
-even with `validateOnly`, so this dry run sends `partialFailure: false` and reports only
-Google's first rejection, for the whole request. Asset groups with an image in a shape it doesn't
+dry runs the build. The five reads run together. Google refuses partial failure for these
+operations, even with `validateOnly`, so this dry run sends `partialFailure: false` and
+Google refuses the whole request with a 400. That refusal names each rejected operation
+as a partial failure does, so `google_ads_mutate` reads the steps from it
+(`GoogleAdsRequestRejectedError.failure`), and a rejection that names no operation is one
+problem for the whole request. With no asset group left to check, the dry run is skipped. Asset groups with an image in a shape it doesn't
 fit, or an audience the account doesn't have, are left out of the dry run (`dry_run_ready`), and the dry run is skipped while the card already shows a
 problem with the brand, the feed, or the goals. `_checks` then also holds `languages`,
 `unknown_languages`, `images`, `unknown_images`, `audiences` (names by `kind:key`),
@@ -780,7 +783,7 @@ compare without case. Before approval, it refuses on the card:
 - a removal that leaves a type under its minimum, or no description of 60 characters or
   fewer, naming the type and the count left. A group in a campaign with a feed that would
   hold no assets of its own is exempt, as on creation. Only assets the advertiser added
-  count; ones Google made don't.
+  count; ones Google made don't, and removing one changes no count.
 - an addition over a maximum (15 headlines, 5 long headlines, 5 descriptions, 20 images
   of each shape, 15 videos, 25 search themes, 20 audiences in the signal)
 - an image the account doesn't have, or in a shape it doesn't fit, and an image or video
@@ -808,11 +811,12 @@ left. Only the first request can be dry run whole, because later ones rely on it
 the new text in later requests is dry run on its own. While preparing the approval,
 `_checks` holds each group's name, campaign, problem,
 counts of advertiser assets and themes by type (`now`), and one row per change (`row`,
-`action`, `kind`, `item`, `before`, `state`, `problem`), with Google's first dry-run
-rejection on the changes it names. Audit intents number each step by its request and
+`action`, `kind`, `item`, `before`, `state`, `problem`), with Google's dry-run
+rejection on each change it names. Audit intents number each step by its request and
 place (`1.4`). After approval, the tool reads the account again and
 refuses it, with nothing sent, when a change isn't one the approver saw, has a different
-state or live object (`CHANGED_SINCE_APPROVAL` wording), or was shown with a problem.
+state or live object (`CHANGED_SINCE_APPROVAL` wording), was shown with a problem, or has a
+problem now that the card didn't show, such as a removal that would pass a minimum.
 Audit intents are grouped by asset group. The result has one row per
 change with its asset group, campaign, setting, the value it replaced, and its outcome
 (`added`, `removed`, `changed`, `already_set`, `not_found`, `failed`, or `unverified`);
@@ -1235,7 +1239,8 @@ arguments name an account only through references. `files` takes File references
 `youtube.com` and `youtu.be` addresses only. `video_details` gives each video File a
 title and description, and `video_uploads` takes the upload IDs of earlier uploads that
 were still processing. Like Meta's upload, the tool may run unattended, because it sets up
-no spend. Its timeout is 10 minutes, for a 1 GB upload and the processing wait.
+no spend. Its timeout is 10 minutes, for a 1 GB upload and the processing wait, so one
+call's video Files total at most 1 GB and a larger request is refused before anything is sent.
 
 `operations/media.py` resolves each File as a `VideoSource` when its MIME type is
 `video/*`, and as an `ImageSource` otherwise. For images it applies Google's rules: JPEG,
