@@ -6,7 +6,10 @@ import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/ap
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
+import type {
+  ApprovalField,
+  ToolApprovalDecisionControls,
+} from "@/components/tool-ui/approval-types"
 import {
   parseSettledFanOutData,
   type FanOutEntry,
@@ -41,6 +44,8 @@ type ApprovalSpec<Args> = {
     controls: ToolApprovalDecisionControls
   ) => ReactNode
   title?: string | ((args: Args) => string)
+  // Drops fields the server says offer no choice, such as a picker with one option.
+  visibleFields?: (fields: ApprovalField[], args: unknown) => ApprovalField[]
   // `retained` is the request as the server last held it, before this card's unsaved edits.
   validateArgs?: (value: unknown, retained: Args) => string | null
 }
@@ -298,7 +303,8 @@ function renderApproval<Args, Result>(
       />
     )
   }
-  const fields = ui?.arg_fields ?? []
+  const allFields = ui?.arg_fields ?? []
+  const fields = variant.approval.visibleFields?.(allFields, activity.args) ?? allFields
   const currentArgs = refreshed
     ? refreshed.value
     : mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
@@ -338,7 +344,7 @@ function renderApproval<Args, Result>(
         renderFields
           ? approvalFallbackFields(
               mergeApprovalArgs(activity.args, approvalDecision.decision.edits),
-              fields
+              allFields
             )
           : []
       }

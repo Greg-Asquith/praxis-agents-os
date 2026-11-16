@@ -23,6 +23,18 @@ export type CalendarEventItem = {
   title: string
 }
 
+// A calendar write's event; null fields are ones the write leaves as they are.
+export type CalendarEventDraft = {
+  allDay: boolean
+  attendees: string[] | null
+  end: string | null
+  location: string | null
+  online: boolean | null
+  start: string | null
+  timeZone: string | null
+  title: string | null
+}
+
 export function CalendarEventTime({ event }: { event: CalendarEventItem }) {
   return (
     <p className="text-muted-foreground text-xs">

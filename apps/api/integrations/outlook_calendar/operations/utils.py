@@ -4,10 +4,11 @@
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.microsoft_graph.time import graph_local_datetime, validate_time_zone
 
@@ -213,3 +214,41 @@ def recurrence_summary(value: object) -> str | None:
         elif occurrence_range.get("type") == "numbered" and isinstance(count, int) and count > 0:
             summary += f", {count} times"
     return summary
+
+
+@dataclass
+class CalendarWriteState:
+    """Retains the event a write targeted or created if the request fails or is cancelled."""
+
+    action: str
+    event_id: str | None = None
+    web_link: str | None = None
+    join_url: str | None = None
+    event_type: str | None = None
+    applied: bool = False
+
+    def created(self, payload: object) -> None:
+        event_id = payload.get("id") if isinstance(payload, dict) else None
+        if not isinstance(event_id, str) or not 1 <= len(event_id) <= 512:
+            raise IntegrationValidationError(
+                "Outlook did not return the event reference.",
+                provider_key="outlook_calendar",
+                operation=self.action,
+                failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+                error_code="invalid_event_response",
+            )
+        self.event_id = event_id
+        self.updated(payload)
+
+    def updated(self, payload: object) -> None:
+        if isinstance(payload, dict):
+            meeting = payload.get("onlineMeeting")
+            self.web_link = text(payload.get("webLink"), 2_000) or None
+            self.join_url = (
+                text(meeting.get("joinUrl"), 2_000) or None if isinstance(meeting, dict) else None
+            )
+        self.applied = True
+
+
+def graph_attendees(addresses: list[str]) -> list[dict]:
+    return [{"emailAddress": {"address": value}, "type": "required"} for value in addresses]

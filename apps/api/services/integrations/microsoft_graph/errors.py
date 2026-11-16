@@ -87,6 +87,12 @@ def graph_response_error(
             error_code="mailbox_unavailable",
             **context,
         )
+    if code == "ErrorOccurrenceCrossingBoundary":
+        return IntegrationValidationError(
+            "An occurrence cannot move past the next or previous occurrence in its series",
+            error_code="occurrence_boundary",
+            **context,
+        )
     if code == "activityLimitReached" and response.status_code != 429:
         return IntegrationRateLimitError("Microsoft Graph rate limit exceeded", **context)
     return None

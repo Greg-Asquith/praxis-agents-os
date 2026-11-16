@@ -12,6 +12,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Outlook Calendar writes: once you approve, agents create events with
+  invitations and an optional Teams link, change an event's time, attendees,
+  or details, accept or decline invitations, and cancel meetings they
+  organise. The approval shows every attendee and both times with their time
+  zone, and each can be edited before sending.
 - Outlook Calendar reads: agents list events across selected calendars, read
   one event, check when up to 20 people are free, ask Outlook for meeting
   times, and look up people to invite. Times always name their time zone,

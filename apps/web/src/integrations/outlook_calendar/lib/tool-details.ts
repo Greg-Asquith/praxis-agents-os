@@ -1,6 +1,12 @@
 // apps/web/src/integrations/outlook_calendar/lib/tool-details.ts
 
-import { formatLocalDay, formatLocalTime } from "@/components/tool-ui/calendar/calendar-time"
+import type { CalendarEventDraft } from "@/components/tool-ui/calendar/calendar-event-list"
+import {
+  formatLocalDay,
+  formatLocalRange,
+  formatLocalTime,
+  timeZoneLabel,
+} from "@/components/tool-ui/calendar/calendar-time"
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
 import {
   compactDetails,
@@ -46,4 +52,24 @@ export function meetingTimesDetails(args: unknown): FanOutDetail[] {
 
 export function peopleDetails(args: unknown): FanOutDetail[] {
   return compactDetails([stringDetail(args, "query", "Name")])
+}
+
+// Lists only what a write sets, so an update shows its changes and nothing else.
+export function eventWriteRows(draft: CalendarEventDraft | null): FanOutDetail[] {
+  if (!draft) return []
+  const { end, start } = draft
+  return compactDetails([
+    start && end
+      ? {
+          label: "When",
+          value: `${formatLocalDay(start)}, ${formatLocalRange(start, end, draft.allDay)}`,
+        }
+      : null,
+    start && draft.timeZone ? { label: "Time Zone", value: timeZoneLabel(draft.timeZone) } : null,
+    draft.attendees === null
+      ? null
+      : { label: "Attendees", value: draft.attendees.join(", ") || "No attendees" },
+    draft.location ? { label: "Location", value: draft.location } : null,
+    draft.online ? { label: "Teams Meeting", value: "Yes" } : null,
+  ])
 }

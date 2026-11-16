@@ -60,8 +60,10 @@ Outlook Calendar cards use the provider-neutral calendar kit in
 `CalendarEventList` groups events by local day and shows each event's time
 zone; `CalendarSlotList` lists free or busy slots the same way. Times are
 wall-clock values in a named zone, so the kit formats them without converting
-to the browser's zone. Event lists, the event view, availability, meeting
-times, and people each have a registered presenter.
+to the browser's zone. `CalendarEventDraft` describes the event a write sets,
+with null for what an update leaves alone. Event lists, the event view,
+availability, meeting times, people, and each write have a registered
+presenter.
 
 ## Outlook Mail reads
 
@@ -238,6 +240,50 @@ references carry a fixed label, and the complete result has a 768 KiB limit.
 The event picker searches the next 30 days of each unambiguous selected
 calendar by subject. Bad windows, zones, and address lists return a retry
 message to the model before any Graph request.
+
+## Outlook Calendar writes
+
+Four tools change a calendar. Each needs approval every time
+(`supports_auto=False`), because invitations, updates, and cancellations reach
+real people:
+
+- `outlook_calendar_create_event` creates a single event in one calendar and
+  sends an invitation to every attendee. `calendar` picks the calendar; when
+  it is omitted the tool uses the only writable selected calendar, else the
+  default one, else asks the model to choose. `is_online_meeting` adds a Teams
+  link.
+- `outlook_calendar_update_event` patches the subject, times, attendees,
+  description, or location of one event and sends attendees an update.
+  `attendees` replaces the whole list, and `start` and `end` move together.
+  On an occurrence or series master it changes only the listed fields, never
+  the recurrence; moving an occurrence past a neighbour fails with
+  `occurrence_boundary`.
+- `outlook_calendar_respond_to_event` accepts, tentatively accepts, or
+  declines an invitation, optionally without telling the organiser.
+- `outlook_calendar_cancel_event` reads the event first. An organiser's
+  meeting with attendees is cancelled, which sends the comment to each
+  attendee; an event without attendees is deleted. An attendee's event fails
+  with `not_organizer` before any change, pointing the model to a decline.
+
+No write fans out. The event reference's `calendar_id` selects the calendar,
+which must be a selected calendar the connection can edit. The approval shows
+the calendar and time zone the write falls back to, and the tool sends those
+approved defaults (`approved_display_args`) rather than recomputing them, so
+the attendees, times, and zone the approver saw are what Graph receives.
+`_calendar_choice` in the display arguments tells the card to hide the
+calendar picker when only one writable calendar is selected.
+
+Creates carry a `transactionId` derived from the run and tool call, so a
+repeated run of the same approved call can't create a second event. Pending
+audit detail records counts, times, zone, response, action, and the
+transaction ID, never subjects, bodies, or attendee addresses; the terminal
+`external_ref` is the event ID. A timeout after dispatch records `unverified`,
+which plan 330's recovery evidence lists as uncertain.
+
+Each write has its own result card on the shared outcome layout with calendar
+icons. The create approval puts Start, End, and Time Zone on one row and
+edits Teams Meeting, All Day, and Show As on one line with the calendar kit's
+`CalendarEventOptions`.
 
 ## SharePoint and OneDrive file tools
 

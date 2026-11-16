@@ -140,8 +140,23 @@ class MeetingTimesEntry(IntegrationFanOutEntry):
     data: MeetingTimesData | None = None
 
 
+class WriteData(_StrictModel):
+    event: OutlookEventReference | None
+    action: str
+    event_type: Literal["singleInstance", "occurrence", "exception", "seriesMaster"] | None
+    web_link: UntrustedText | None
+    join_url: UntrustedText | None
+    outcome: Literal["applied", "failed", "unverified"]
+    error_code: str | None
+    detail: str | None
+
+
 class PeopleEntry(IntegrationFanOutEntry):
     data: PeopleData | None = None
+
+
+class WriteEntry(IntegrationFanOutEntry):
+    data: WriteData | None = None
 
 
 class EventsOutput(IntegrationFanOutOutput):
@@ -162,3 +177,7 @@ class MeetingTimesOutput(IntegrationFanOutOutput):
 
 class PeopleOutput(IntegrationFanOutOutput):
     results: list[PeopleEntry]
+
+
+class WriteOutput(IntegrationFanOutOutput):
+    results: list[WriteEntry]
