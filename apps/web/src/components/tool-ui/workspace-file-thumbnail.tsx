@@ -1,39 +1,14 @@
 // apps/web/src/components/tool-ui/workspace-file-thumbnail.tsx
 
 import { useState } from "react"
-import { queryOptions, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { ImageIcon, Loader2Icon, VideoIcon } from "lucide-react"
 
-import { apiRequest } from "@/lib/api/client"
-import { isRecord } from "@/lib/guards"
+import {
+  workspaceFilePreviewQueryOptions,
+  workspaceFilePreviewUrl,
+} from "@/components/tool-ui/workspace-file-preview"
 import { cn } from "@/lib/utils"
-import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
-
-const fileQueryKeys = createWorkspaceScopedQueryKeys("files")
-// Preview grants last 10 minutes; refetch well before one expires.
-const PREVIEW_STALE_MS = 4 * 60 * 1000
-
-// Keyed by revision, so a replaced File never shows its newer bytes in place of these.
-function revisionPreviewQueryOptions(fileId: string, revisionId: string | null) {
-  return queryOptions({
-    queryKey: [...fileQueryKeys.detail(fileId), "preview", revisionId ?? "current"],
-    queryFn: () =>
-      apiRequest<unknown>(
-        revisionId
-          ? `/files/${fileId}/preview?revision_id=${encodeURIComponent(revisionId)}`
-          : `/files/${fileId}/preview`,
-        { method: "POST" }
-      ),
-    staleTime: PREVIEW_STALE_MS,
-    retry: 1,
-  })
-}
-
-function previewUrl(grant: unknown): string | null {
-  const preview = isRecord(grant) ? grant["preview"] : null
-  const url = isRecord(preview) ? preview["url"] : null
-  return typeof url === "string" && url ? url : null
-}
 
 /** Shows one revision of a workspace File, or an unavailable tile when it has none to show. */
 export function WorkspaceFileThumbnail({
@@ -54,14 +29,14 @@ export function WorkspaceFileThumbnail({
 }) {
   const enabled = revisionId !== null || current
   const query = useQuery({
-    ...revisionPreviewQueryOptions(fileId, revisionId),
+    ...workspaceFilePreviewQueryOptions(fileId, revisionId),
     enabled,
   })
   // Recorded by URL, so a new grant or revision tries again.
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   // A grant can expire before a lazy image loads, so a failed load fetches one new grant.
   const [renewed, setRenewed] = useState(false)
-  const grantUrl = previewUrl(query.data)
+  const grantUrl = workspaceFilePreviewUrl(query.data)
   const handleLoadError = (failed: string) => {
     setFailedUrl(failed)
     if (renewed) return

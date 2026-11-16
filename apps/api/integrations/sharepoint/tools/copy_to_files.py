@@ -62,7 +62,11 @@ async def sharepoint_copy_to_files(
             source = item_result(item, drive_id=entry.external_id, operation="copy_to_files")
             version = item_version(item, operation="copy_to_files")
             saved = await create_copy(
-                ctx.deps,
+                ctx.deps.db,
+                workspace=ctx.deps.workspace,
+                user=ctx.deps.user,
+                conversation_id=ctx.deps.conversation.id,
+                agent=ctx.deps.agent,
                 name=source["name"].content,
                 content=content,
                 content_type=item["file"]["mimeType"],

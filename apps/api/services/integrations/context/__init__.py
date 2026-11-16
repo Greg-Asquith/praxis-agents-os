@@ -15,6 +15,9 @@ from services.integrations.context.resolve_active_context import (
     resolve_active_context,
     resolve_active_context_targets,
 )
+from services.integrations.context.resolve_conversation_target import (
+    resolve_conversation_target,
+)
 from services.integrations.context.set_active_context_selection import (
     set_active_context_selection,
 )
@@ -28,6 +31,7 @@ __all__ = [
     "list_context_groups",
     "resolve_active_context",
     "resolve_active_context_targets",
+    "resolve_conversation_target",
     "set_active_context_selection",
     "update_context_group",
 ]

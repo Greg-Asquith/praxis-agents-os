@@ -3,8 +3,14 @@
 """Creates workspace File copies through the shared storage lifecycle."""
 
 from pathlib import PurePosixPath
+from uuid import UUID
 
-from services.agents.runtime.context import RuntimeDeps
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.exceptions.general import AppValidationError
+from models.agent import Agent
+from models.user import User
+from models.workspace import Workspace
 from services.files import create_conversation_file_references, resolve_folder_by_name
 from services.files.contract import contract_for_content_type
 from services.files.create_file_with_revision import (
@@ -19,14 +25,22 @@ from utils.validation import normalize_optional_text
 
 
 async def create_copy(
-    deps: RuntimeDeps,
+    db: AsyncSession,
     *,
+    workspace: Workspace,
+    user: User,
+    conversation_id: UUID,
     name: str,
     content: bytes,
     content_type: str,
+    agent: Agent | None = None,
     folder: str | None = None,
 ) -> FileRevisionWriteResult:
-    """Reserves, creates, and links a File within the caller's audited transaction."""
+    """Reserves, creates, and links a File within the caller's audited transaction.
+
+    The agent is the revision actor when given; otherwise the person is. Folders are
+    resolved by name only for agents, so a person's copy lands at the Files root.
+    """
     contract = contract_for_content_type(content_type)
     name = safe_filename(name)[:255]
     extension = PurePosixPath(name).suffix.lower()
@@ -34,10 +48,12 @@ async def create_copy(
         extension = contract.extensions[0]
         name = f"{name[: 255 - len(extension)]}{extension}"
     folder_name = normalize_optional_text(folder)
+    if folder_name is not None and agent is None:
+        raise AppValidationError("Only an agent can save a copy into a folder by name")
     reservation = await reserve_file_revision(
-        deps.db,
-        workspace_id=deps.workspace.id,
-        user_id=deps.user.id,
+        db,
+        workspace_id=workspace.id,
+        user_id=user.id,
         name=name,
         size_bytes=len(content),
         content_hash=sha256_hex(content),
@@ -46,31 +62,29 @@ async def create_copy(
     )
     target_folder = (
         await resolve_folder_by_name(
-            deps.db,
-            workspace=deps.workspace,
-            agent=deps.agent,
-            requested_by=deps.user,
-            name=folder_name,
+            db, workspace=workspace, agent=agent, requested_by=user, name=folder_name
         )
-        if folder_name is not None
+        if folder_name is not None and agent is not None
         else None
     )
     saved = await create_file_with_revision(
-        deps.db,
-        workspace=deps.workspace,
+        db,
+        workspace=workspace,
         name=name,
         content=content,
         content_type=contract.content_type,
         extension=extension,
-        actor=FileRevisionActor(agent_id=deps.agent.id),
+        actor=FileRevisionActor(agent_id=agent.id)
+        if agent is not None
+        else FileRevisionActor(user_id=user.id),
         resolved_folder=target_folder,
         reservation=reservation,
     )
     await create_conversation_file_references(
-        deps.db,
-        workspace_id=deps.workspace.id,
-        conversation_id=deps.conversation.id,
+        db,
+        workspace_id=workspace.id,
+        conversation_id=conversation_id,
         file_ids=[saved.file.id],
-        created_by_user_id=deps.user.id,
+        created_by_user_id=user.id,
     )
     return saved

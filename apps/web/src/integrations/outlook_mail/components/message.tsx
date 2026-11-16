@@ -1,6 +1,6 @@
 // apps/web/src/integrations/outlook_mail/components/message.tsx
 
-import { use } from "react"
+import { use, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { AlertCircleIcon, PaperclipIcon } from "lucide-react"
 
@@ -14,7 +14,9 @@ import {
 import { prefetchProviderPreview } from "@/components/tool-ui/provider-preview-queries"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { outlookMessagePreviewQueryOptions } from "@/integrations/outlook_mail/api/message-preview"
+import { OutlookAttachmentRow } from "@/integrations/outlook_mail/components/attachment"
 import { OutlookMessageView } from "@/integrations/outlook_mail/components/message-preview"
 import {
   messageDate,
@@ -22,7 +24,7 @@ import {
   type OutlookMessage,
   type OutlookMessageDetail,
 } from "@/integrations/outlook_mail/lib/messages"
-import { formatBytes, pluralize } from "@/lib/format"
+import { pluralize } from "@/lib/format"
 
 export function OutlookMessageRow({ message }: { message: OutlookMessage }) {
   const queryClient = useQueryClient()
@@ -103,27 +105,45 @@ export function OutlookMessageBody({ message }: { message: OutlookMessageDetail 
 }
 
 function AttachmentList({ attachments }: { attachments: OutlookAttachment[] }) {
+  const [showInline, setShowInline] = useState(false)
+  const files = attachments.filter((attachment) => !attachment.inline)
+  const inline = attachments.filter((attachment) => attachment.inline)
   if (attachments.length === 0) {
     return null
   }
+  // Inline images are usually signature logos, so real attachments come first.
+  const visible = showInline ? [...files, ...inline] : files
   return (
     <section aria-label="Attachments" className="grid min-w-0 gap-1.5">
-      <p className="text-muted-foreground text-xs">
-        {String(attachments.length)} {pluralize(attachments.length, "Attachment")}
-      </p>
-      <ul className="flex min-w-0 flex-wrap gap-1.5">
-        {attachments.map((attachment, index) => (
-          <li className="min-w-0" key={`${String(index)}-${attachment.name}`}>
-            <Badge className="max-w-full font-normal" title={attachment.name} variant="outline">
-              <PaperclipIcon />
-              <span className="truncate">{attachment.name}</span>
-              {attachment.sizeBytes !== null ? (
-                <span className="text-muted-foreground">{formatBytes(attachment.sizeBytes)}</span>
-              ) : null}
-            </Badge>
-          </li>
-        ))}
-      </ul>
+      {files.length > 0 ? (
+        <p className="text-muted-foreground text-xs">
+          {String(files.length)} {pluralize(files.length, "Attachment")}
+        </p>
+      ) : null}
+      {visible.length > 0 ? (
+        <ul className="grid min-w-0 gap-1.5">
+          {visible.map((attachment, index) => (
+            <OutlookAttachmentRow
+              attachment={attachment}
+              key={`${String(index)}-${attachment.name}`}
+            />
+          ))}
+        </ul>
+      ) : null}
+      {inline.length > 0 ? (
+        <Button
+          className="justify-self-start"
+          onClick={() => {
+            setShowInline((value) => !value)
+          }}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
+          {showInline ? "Hide" : "Show"} {String(inline.length)}{" "}
+          {pluralize(inline.length, "Inline Image")}
+        </Button>
+      ) : null}
     </section>
   )
 }

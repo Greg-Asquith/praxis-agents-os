@@ -5,9 +5,17 @@ import { PaperclipIcon } from "lucide-react"
 import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { Badge } from "@/components/ui/badge"
 import type { OutlookAttachmentContent } from "@/integrations/outlook_mail/lib/attachments"
+import type { OutlookAttachment } from "@/integrations/outlook_mail/lib/messages"
+import { ProviderFileActions, ProviderFileRow } from "@/integrations/provider-file-row"
 import { formatBytes } from "@/lib/format"
 
-export function OutlookAttachmentView({ attachment }: { attachment: OutlookAttachmentContent }) {
+export function OutlookAttachmentView({
+  attachment,
+  reference,
+}: {
+  attachment: OutlookAttachmentContent
+  reference: Record<string, unknown> | null
+}) {
   const facts = [
     attachment.contentType,
     attachment.sizeBytes === null ? null : formatBytes(attachment.sizeBytes),
@@ -26,9 +34,39 @@ export function OutlookAttachmentView({ attachment }: { attachment: OutlookAttac
         </div>
         {attachment.truncated ? <Badge variant="warning">64 KiB limit reached</Badge> : null}
       </div>
+      {reference ? (
+        <ProviderFileActions
+          contentType={attachment.contentType}
+          source={{ name: attachment.name, providerKey: "outlook_mail", reference }}
+        />
+      ) : null}
       <div className="border-border bg-muted/20 max-h-96 overflow-auto rounded-lg border p-3">
         <MarkdownContent content={attachment.markdown} />
       </div>
     </div>
+  )
+}
+
+export function OutlookAttachmentRow({ attachment }: { attachment: OutlookAttachment }) {
+  if (!attachment.reference) {
+    return (
+      <li className="flex min-w-0 items-center gap-2.5 rounded-md border px-2.5 py-2">
+        <PaperclipIcon className="text-muted-foreground size-3.5 shrink-0" />
+        <p className="truncate text-sm" title={attachment.name}>
+          {attachment.name}
+        </p>
+      </li>
+    )
+  }
+  return (
+    <ProviderFileRow
+      contentType={attachment.contentType}
+      sizeBytes={attachment.sizeBytes}
+      source={{
+        name: attachment.name,
+        providerKey: "outlook_mail",
+        reference: attachment.reference,
+      }}
+    />
   )
 }

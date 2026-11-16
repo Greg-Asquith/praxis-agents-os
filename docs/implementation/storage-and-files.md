@@ -681,8 +681,10 @@ request ID. Failed cleanup jobs retain their ownership evidence.
 bytes from a selected library, and `outlook_mail_save_attachment` saves one
 Outlook file attachment, both through `services/integrations/files/create_copy.py`.
 That shared operation owns the immutable File creation and storage services.
-It uses workspace-private storage, an agent revision actor, an optional named
-folder, and a conversation link. The copy remains an ordinary workspace File
+It uses workspace-private storage, a conversation link, and either an agent
+revision actor with an optional named folder, or, for a person's **Save to
+Files** click on a tool card, the person as revision actor and the Files
+root. See [Microsoft Graph](integrations/microsoft-graph.md#view-and-save-attachments-from-the-message-card). The copy remains an ordinary workspace File
 with the same access and retention rules. Download and category limits apply
 before and during the transfer. For SharePoint, exact source size and any
 supplied supported provider hash are checked before local effects. Outlook

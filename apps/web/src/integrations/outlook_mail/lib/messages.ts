@@ -17,7 +17,11 @@ export type OutlookMessage = {
 }
 
 export type OutlookAttachment = {
+  contentType: string | null
+  inline: boolean
   name: string
+  // The scoped reference a Save to Files click sends back; null when the result lacks one.
+  reference: Record<string, unknown> | null
   sizeBytes: number | null
 }
 
@@ -41,12 +45,30 @@ function contact(value: unknown): string | null {
   return name && name !== address ? `${name} <${address}>` : address
 }
 
+export function attachmentReference(value: unknown): Record<string, unknown> | null {
+  if (
+    !isRecord(value) ||
+    value["entity_kind"] !== "outlook_attachment" ||
+    typeof value["mailbox_id"] !== "string" ||
+    typeof value["message_id"] !== "string" ||
+    typeof value["attachment_id"] !== "string"
+  )
+    return null
+  return value
+}
+
 function attachment(value: unknown): OutlookAttachment | null {
   if (!isRecord(value)) return null
   const name = nodeText(value["name"])
   if (name === null) return null
   const size = value["size_bytes"]
-  return { name, sizeBytes: isNonNegativeInteger(size) ? size : null }
+  return {
+    contentType: nodeText(value["content_type"]),
+    inline: value["is_inline"] === true,
+    name,
+    reference: attachmentReference(value["reference"]),
+    sizeBytes: isNonNegativeInteger(size) ? size : null,
+  }
 }
 
 function message(value: unknown): OutlookMessage | null {

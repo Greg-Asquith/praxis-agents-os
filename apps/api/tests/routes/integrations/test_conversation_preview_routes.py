@@ -147,15 +147,15 @@ async def test_conversation_preview_denies_unavailable_targets_without_provider_
         from dataclasses import replace
         from importlib import import_module
 
-        route = import_module("routes.integrations.get_context_preview")
-        resolve = route.resolve_active_context_targets
+        module = import_module("services.integrations.context.resolve_conversation_target")
+        resolve = module.resolve_active_context_targets
 
         async def ambiguous_context(*args, **kwargs):
             resolved = await resolve(*args, **kwargs)
             assert len(resolved.entries) == 1
             return replace(resolved, entries=resolved.entries * 2)
 
-        monkeypatch.setattr(route, "resolve_active_context_targets", ambiguous_context)
+        monkeypatch.setattr(module, "resolve_active_context_targets", ambiguous_context)
     client = AsyncMock()
     monkeypatch.setattr(preview_message, "graph_client_for_connection", client)
     response = await db_async_client.get(

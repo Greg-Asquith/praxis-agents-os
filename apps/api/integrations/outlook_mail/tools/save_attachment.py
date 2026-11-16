@@ -26,13 +26,12 @@ from services.audit_events import (
 )
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.files import FileReference
-from services.integrations.files.create_copy import create_copy
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
 
-from ..operations.copy_attachment import copy_attachment
+from ..operations.save_attachment import save_attachment
 from ..operations.utils import untrusted
 from ..references import OutlookAttachmentReference
 from .schemas import SavedAttachmentData, SavedAttachmentOutput
@@ -58,15 +57,14 @@ async def outlook_mail_save_attachment(
         reference = references[0]
 
         async def execute():
-            client = await mailbox_client(ctx, entry)
-            copied = await copy_attachment(
-                client, message_id=reference.message_id, attachment_id=reference.attachment_id
-            )
-            saved = await create_copy(
-                ctx.deps,
-                name=copied.name,
-                content=copied.content,
-                content_type=copied.content_type,
+            saved = await save_attachment(
+                ctx.deps.db,
+                await mailbox_client(ctx, entry),
+                workspace=ctx.deps.workspace,
+                user=ctx.deps.user,
+                conversation_id=ctx.deps.conversation.id,
+                reference=reference,
+                agent=ctx.deps.agent,
                 folder=folder,
             )
             detail = terminal_applied_operation_detail(
@@ -102,7 +100,7 @@ async def outlook_mail_save_attachment(
                 file_id=saved.file.id,
                 revision_id=saved.revision.id,
                 name=untrusted(reference.message_id, saved.file.name),
-                content_type=copied.content_type,
+                content_type=saved.file.content_type,
                 size_bytes=saved.bytes_written,
                 attachment=reference,
             )

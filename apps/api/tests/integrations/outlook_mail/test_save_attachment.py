@@ -95,7 +95,7 @@ async def test_save_retains_original_bytes_and_records_file_identity(
     monkeypatch, name, content_type, content
 ):
     ctx = save_context()
-    saved_file = SimpleNamespace(id=uuid4(), name=name)
+    saved_file = SimpleNamespace(id=uuid4(), name=name, content_type=content_type)
     saved_revision = SimpleNamespace(id=uuid4())
     folder = SimpleNamespace(id=uuid4())
     effects, audit = patch_effects(

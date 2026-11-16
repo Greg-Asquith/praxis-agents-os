@@ -129,7 +129,51 @@ with the File and revision IDs, never bytes or provider bodies. The result
 returns the File reference, file and revision IDs, the saved name as an
 `outlook_message` node, the Files content type, the size, and the source
 attachment reference. The card shows the saved File with an **Open in Files**
-link; failures show the error message from the table above.
+link, and plays saved images, video, and audio in place; failures show the
+error message from the table above.
+
+### View and save attachments from the message card
+
+Each file attachment on the `outlook_mail_read_message` card, and the
+`outlook_mail_read_attachment` card, has **View** and **Save to Files**;
+clicking the attachment name also views it. Both call a route directly. They
+send no message, start no agent turn, and agent tool policies don't apply.
+
+- `POST /api/v1/integrations/conversations/{conversation_id}/file-views`
+  returns the attachment's bytes for that view only. Nothing is stored. The
+  response carries `Content-Security-Policy: sandbox; default-src 'none'`,
+  `nosniff`, and `no-store`. Only images, video, audio, and PDF are viewable;
+  other types fail with `unviewable_file_type` and a prompt to save to Files.
+  Successful views are not audited, as with previews; failures are.
+- `POST .../file-saves` saves the attachment as a File with the person as
+  revision actor, links it to the conversation, and writes a user-actor
+  `file` create audit event (operation, conversation, revision, and source
+  reference identity; no bytes or connection IDs) in the same commit. It needs
+  a role that can write Files. A failure rolls back and records a failure
+  audit.
+
+Both take `{provider_key, reference}`, where `reference` is the scoped entity
+reference from the tool result. The routes are provider-neutral: a provider
+registers an `IntegrationFileSourceDefinition` (entity kind, reference model,
+operation, and a bounded `download`) in its plugin's
+`file_source_definitions`. Outlook's is in
+`integrations/outlook_mail/file_sources.py` and runs `copy_attachment`, so the
+pre-download checks and limits above apply. `services/integrations/file_sources/`
+validates the reference with the provider's model and resolves the
+conversation's active context with `resolve_conversation_target`, the check
+the conversation preview route also uses. Exactly one target must match the
+reference's mailbox, so another person's conversation, or a mailbox not
+selected in it, fails before credentials. The download uses the person's own
+connection credential.
+
+In the browser, images, video, and audio open in a dialog from a blob URL that
+is revoked when the dialog closes. PDFs open in a new isolated tab from a
+blob URL revoked after a minute. The actions are hidden on shared transcripts.
+Inline images, which are usually signature logos, collapse under **Show N
+Inline Images**. A saved row shows **Open in Files**. Saved state lasts for the
+page view, so a save after a reload makes another copy, as a repeated agent
+save does. The agent learns about a card view or save only if the operator
+mentions it.
 
 ## SharePoint and OneDrive file tools
 

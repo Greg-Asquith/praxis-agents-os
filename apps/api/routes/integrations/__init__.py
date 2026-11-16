@@ -27,6 +27,7 @@ from routes.integrations.refresh_connection import router as refresh_connection_
 from routes.integrations.rename_connection import router as rename_connection_router
 from routes.integrations.replace_credential import router as replace_credential_router
 from routes.integrations.revoke_connection import router as revoke_connection_router
+from routes.integrations.save_context_file import router as save_context_file_router
 from routes.integrations.set_context import router as set_context_router
 from routes.integrations.start_oauth_connect import router as start_oauth_connect_router
 from routes.integrations.test_connection import router as test_connection_router
@@ -36,6 +37,7 @@ from routes.integrations.update_resource_selection import (
     router as update_resource_selection_router,
 )
 from routes.integrations.update_table_scopes import router as update_table_scopes_router
+from routes.integrations.view_context_file import router as view_context_file_router
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 router.include_router(list_providers_router)
@@ -46,6 +48,8 @@ router.include_router(get_table_scopes_router)
 router.include_router(list_resource_tables_router)
 router.include_router(get_preview_router)
 router.include_router(get_context_preview_router)
+router.include_router(save_context_file_router)
+router.include_router(view_context_file_router)
 router.include_router(get_context_router)
 router.include_router(set_context_router)
 router.include_router(clear_context_router)

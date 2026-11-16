@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     )
     from models.user import User
     from models.workspace import Workspace
+    from services.agents.runtime.entity_references.domain import ScopedEntityReference
     from services.agents.runtime.entity_references.registry import EntityResolverDefinition
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
     from services.integrations.context.domain import ResolvedContextEntry
@@ -247,6 +248,42 @@ class IntegrationPreviewDefinition:
 
 
 @dataclass(frozen=True)
+class IntegrationFileRequest:
+    """A person's request to view or save one provider file from a conversation."""
+
+    reference: "ScopedEntityReference"
+    # The conversation's one active context target that matches the reference's scope.
+    scope: "ResolvedContextEntry"
+    actor: "User"
+    workspace: "Workspace"
+
+
+@dataclass(frozen=True)
+class IntegrationFileDownload:
+    """Original bytes whose type the Files contract accepts, within its size limit."""
+
+    name: str
+    content_type: str
+    content: bytes
+
+
+IntegrationFileDownloadFn = Callable[
+    ["AsyncSession", IntegrationFileRequest],
+    Awaitable[IntegrationFileDownload],
+]
+
+
+@dataclass(frozen=True)
+class IntegrationFileSourceDefinition:
+    """One provider entity kind a person can view or save into Files from a tool card."""
+
+    entity_kind: str
+    reference_model: type["ScopedEntityReference"]
+    operation: str
+    download: IntegrationFileDownloadFn
+
+
+@dataclass(frozen=True)
 class IntegrationEventRequest:
     """Provider-neutral metadata and exact bytes at the verification boundary."""
 
@@ -321,6 +358,7 @@ class IntegrationProviderPlugin:
     oauth_config: OAuthConfigFn | None = None
     tool_definitions: tuple["RuntimeToolDefinition", ...] = ()
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
+    file_source_definitions: tuple[IntegrationFileSourceDefinition, ...] = ()
     entity_resolvers: tuple["EntityResolverDefinition", ...] = ()
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: "TableScopeAdapter | None" = None

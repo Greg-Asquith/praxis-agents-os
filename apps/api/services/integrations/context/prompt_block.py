@@ -35,7 +35,6 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
     if resolved.entries:
         lines.append("")
     for entry in resolved.entries:
-        provider_label = _provider_label(entry.provider_key)
         markers = []
         if entry.connection_status == "degraded":
             markers.append("degraded")
@@ -44,14 +43,16 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
         if entry.is_personal:
             markers.append("personal")
         suffix = f", {', '.join(markers)}" if markers else ""
+        # A bare email address does not say whether a mailbox is Gmail or Outlook.
         lines.append(
-            f"- {entry.display_name} ({provider_label} {entry.resource_type}, "
-            f'connection "{entry.connection_label}"{suffix})'
+            f"- {entry.display_name} (provider: {_provider_label(entry.provider_key)}, "
+            f'type: {entry.resource_type}, connection: "{entry.connection_label}"{suffix})'
         )
     if resolved.unavailable:
         lines.extend(["", "Unavailable selections:", ""])
         lines.extend(
-            f"- {entry.display_name} ({entry.provider_key}): {entry.reason}"
+            f"- {entry.display_name} (provider: {_provider_label(entry.provider_key)}): "
+            f"{entry.reason}"
             for entry in resolved.unavailable
         )
     if unselected_lines:

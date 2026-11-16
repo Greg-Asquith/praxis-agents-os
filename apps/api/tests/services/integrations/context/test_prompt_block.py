@@ -67,3 +67,27 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
     rendered = build_system_prompt([PromptBlock("context", content, budget=2000)])
     assert ACTIVE_CONTEXT_LAW in rendered
     assert rendered.endswith("[truncated]")
+
+
+def test_active_context_block_names_each_mailbox_provider(monkeypatch) -> None:
+    from services.integrations.context import prompt_block
+
+    manifests = {
+        key: type("Manifest", (), {"display_name": label})()
+        for key, label in (("gmail", "Gmail"), ("outlook_mail", "Outlook Mail"))
+    }
+    monkeypatch.setattr(prompt_block, "PROVIDER_MANIFESTS", manifests)
+
+    content = render_active_context_block(
+        ResolvedActiveContext(
+            entries=(
+                _entry("a@example.com", provider_key="gmail", resource_type="gmail_mailbox"),
+                _entry(
+                    "b@example.com", provider_key="outlook_mail", resource_type="outlook_mailbox"
+                ),
+            )
+        )
+    )
+
+    assert "- a@example.com (provider: Gmail, type: gmail_mailbox," in content
+    assert "- b@example.com (provider: Outlook Mail, type: outlook_mailbox," in content

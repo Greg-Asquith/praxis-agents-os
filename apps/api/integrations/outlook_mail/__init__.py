@@ -14,6 +14,7 @@ from services.integrations.plugin import (
 
 from .discover_resources import discover_resources
 from .entity_resolvers import OUTLOOK_ATTACHMENT_RESOLVER, OUTLOOK_MESSAGE_RESOLVER
+from .file_sources import ATTACHMENT_FILE_SOURCE
 from .operations.preview_message import fetch_message_preview
 from .settings import outlook_mail_settings
 from .tools import TOOL_DEFINITIONS
@@ -60,6 +61,7 @@ PROVIDER = IntegrationProviderPlugin(
     oauth_config=oauth_config,
     tool_definitions=TOOL_DEFINITIONS,
     entity_resolvers=(OUTLOOK_MESSAGE_RESOLVER, OUTLOOK_ATTACHMENT_RESOLVER),
+    file_source_definitions=(ATTACHMENT_FILE_SOURCE,),
     preview_definitions=(
         IntegrationPreviewDefinition(
             kind="outlook_message",
