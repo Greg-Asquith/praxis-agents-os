@@ -21,13 +21,11 @@ from services.audit_events import (
     TerminalIntegrationOperationDetail,
     terminal_applied_operation_detail,
 )
-from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.context.results import serialize_fan_out_results
-from services.integrations.credentials import (
-    ensure_fresh_credential,
-    get_usable_connection_credential,
+from services.integrations.microsoft_graph import (
+    MicrosoftGraphClient,
+    graph_client_for_principal,
 )
-from services.integrations.microsoft_graph import MicrosoftGraphClient
 from services.integrations.operations import IntegrationAuditOutcome
 from services.integrations.utils import integration_failure_code
 from services.integrations.write_lifecycle import (
@@ -76,19 +74,13 @@ async def mailbox_client(ctx, entry) -> MicrosoftGraphClient:
 
 
 async def mailbox_client_for_principal(db, *, actor, workspace, entry) -> MicrosoftGraphClient:
-    async def access_token(force: bool) -> str:
-        usable = await get_usable_connection_credential(
-            db, connection_id=entry.connection_id, actor=actor, workspace=workspace
-        )
-        credential = await ensure_fresh_credential(
-            db, credential_id=usable.id, refresh_token=refresh_oauth_credential, force=force
-        )
-        if not credential.access_token:
-            raise ModelRetry("The Outlook connection needs to be reconnected.")
-        return credential.access_token
-
-    return MicrosoftGraphClient(
-        access_token, provider_key="outlook_mail", pacing_key=str(entry.connection_id)
+    return graph_client_for_principal(
+        db,
+        actor=actor,
+        workspace=workspace,
+        entry=entry,
+        provider_key="outlook_mail",
+        reconnect_message="The Outlook connection needs to be reconnected.",
     )
 
 

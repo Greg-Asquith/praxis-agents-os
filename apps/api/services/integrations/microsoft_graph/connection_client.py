@@ -2,12 +2,17 @@
 
 """Build Microsoft Graph clients from persisted personal connections."""
 
+from pydantic_ai import ModelRetry
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import IntegrationAuthError
 from models.integrations import IntegrationConnection
 from services.integrations.connections.utils import refresh_oauth_credential
-from services.integrations.credentials import build_personal_oauth_access_token_resolver
+from services.integrations.credentials import (
+    build_personal_oauth_access_token_resolver,
+    ensure_fresh_credential,
+    get_usable_connection_credential,
+)
 
 from .client import MicrosoftGraphClient
 
@@ -33,6 +38,27 @@ def graph_client_for_connection(
         access_token,
         provider_key=expected_provider_key,
         pacing_key=str(connection.id),
+    )
+
+
+def graph_client_for_principal(
+    db: AsyncSession, *, actor, workspace, entry, provider_key: str, reconnect_message: str
+) -> MicrosoftGraphClient:
+    """Creates a paced Graph client that acts as the user for one active-context entry."""
+
+    async def access_token(force: bool) -> str:
+        usable = await get_usable_connection_credential(
+            db, connection_id=entry.connection_id, actor=actor, workspace=workspace
+        )
+        credential = await ensure_fresh_credential(
+            db, credential_id=usable.id, refresh_token=refresh_oauth_credential, force=force
+        )
+        if not credential.access_token:
+            raise ModelRetry(reconnect_message)
+        return credential.access_token
+
+    return MicrosoftGraphClient(
+        access_token, provider_key=provider_key, pacing_key=str(entry.connection_id)
     )
 
 

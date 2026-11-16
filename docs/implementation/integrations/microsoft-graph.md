@@ -16,11 +16,13 @@ Authentication failures must propagate to credential refresh and connection
 recovery. The seam must not import provider packages. The Outlook
 Mail, Outlook Calendar, and SharePoint packages each own isolated OAuth
 settings and discovery. They expose `outlook_mailbox`, `outlook_calendar`,
-and `sharepoint_drive` resources, respectively. Calendar writes are pending.
+and `sharepoint_drive` resources, respectively.
 The seam's `time.py` parses local date-times without offsets, accepts IANA or
 Windows zone names, bounds windows, and builds `dateTimeTimeZone` values.
 `people.py::search_people` frames each person field as an `outlook_person`
-node for both Outlook packages.
+node for both Outlook packages. `graph_client_for_principal` builds the
+client each package's tools and pickers use to act as the user for one
+selected resource.
 
 `MicrosoftGraphClient.get_graph_bytes(path, operation=..., max_bytes=...)`
 reads authenticated binary Graph responses, including attachment `/$value`
@@ -238,8 +240,11 @@ location or body unless discovery recorded that the calendar can view private
 items. Provider text uses `outlook_event` or `outlook_person` nodes, event
 references carry a fixed label, and the complete result has a 768 KiB limit.
 The event picker searches the next 30 days of each unambiguous selected
-calendar by subject. Bad windows, zones, and address lists return a retry
-message to the model before any Graph request.
+calendar by subject. It matches the subject it shows, so a search can't
+confirm a masked one, and it marks a series master "Whole series" so an
+approver can tell a change to every occurrence from a change to one. Bad
+windows, zones, and address lists return a retry message to the model before
+any Graph request.
 
 ## Outlook Calendar writes
 
@@ -277,8 +282,9 @@ Creates carry a `transactionId` derived from the run and tool call, so a
 repeated run of the same approved call can't create a second event. Pending
 audit detail records counts, times, zone, response, action, and the
 transaction ID, never subjects, bodies, or attendee addresses; the terminal
-`external_ref` is the event ID. A timeout after dispatch records `unverified`,
-which plan 330's recovery evidence lists as uncertain.
+`external_ref` is the event ID. A timeout after dispatch records
+`unverified`, and the result tells the model to check the calendar before
+trying again.
 
 Each write has its own result card on the shared outcome layout with calendar
 icons. The create approval puts Start, End, and Time Zone on one row and

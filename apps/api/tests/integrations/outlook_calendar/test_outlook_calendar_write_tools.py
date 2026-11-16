@@ -16,6 +16,7 @@ from integrations.outlook_calendar.tools.create_event import (
     DEFINITION as CREATE_EVENT,
     outlook_calendar_create_event,
 )
+from integrations.outlook_calendar.tools.update_event import outlook_calendar_update_event
 from integrations.outlook_calendar.tools.utils import transaction_id
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from tests.integrations.outlook_calendar.support import context, entry
@@ -35,6 +36,7 @@ def provider(monkeypatch):
     client = SimpleNamespace(
         get=AsyncMock(),
         post=AsyncMock(return_value={"id": "event/==", "webLink": "https://outlook.office.com/x"}),
+        patch=AsyncMock(return_value={}),
         delete=AsyncMock(),
     )
     factory = AsyncMock(return_value=client)
@@ -42,7 +44,7 @@ def provider(monkeypatch):
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event", audit
     )
-    for name in ("create_event", "cancel_event"):
+    for name in ("create_event", "update_event", "cancel_event"):
         monkeypatch.setattr(f"integrations.outlook_calendar.tools.{name}.calendar_client", factory)
     return SimpleNamespace(client=client, factory=factory, audit=audit)
 
@@ -133,6 +135,23 @@ async def test_create_with_two_non_default_calendars_asks_which_before_approval(
     ctx = context(entry("Work"), entry("Family"), tool_name="outlook_calendar_create_event")
     with pytest.raises(ModelRetry, match="Work calendar, Family calendar"):
         CREATE_EVENT.args_validator(ctx, **ARGS)
+
+
+async def test_update_patches_only_the_fields_it_was_given(provider):
+    provider.client.get.return_value = {
+        "isOrganizer": True,
+        "attendees": [{}],
+        "type": "occurrence",
+    }
+
+    result = await outlook_calendar_update_event(
+        context(entry(), tool_name="outlook_calendar_update_event"), event=EVENT, subject="Moved"
+    )
+
+    request = provider.client.patch.await_args
+    assert request.args == ("/me/calendars/calendar/events/event%2F%3D%3D",)
+    assert request.kwargs["json"] == {"subject": "Moved"}
+    assert result["results"][0]["data"]["event_type"] == "occurrence"
 
 
 @pytest.mark.parametrize(

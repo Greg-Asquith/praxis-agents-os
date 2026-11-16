@@ -23,7 +23,7 @@ export const outlookCalendarUpdateEventPresenter = createIntegrationWritePresent
       prompt: "Attendees receive an update when you approve.",
       validateArgs: validateOutlookUpdateEventArgs,
       view: (args) => ({
-        note: "Attendees were sent the update.",
+        note: "Any attendees were sent the update.",
         rows: eventWriteRows(args),
         subject: args?.title ?? null,
         titles: {

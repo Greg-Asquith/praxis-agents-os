@@ -769,7 +769,16 @@ library-selection recovery hints. It uses the shared context and audit runners.
 The link presenter reuses the shared item table and read seam. The seam's
 optional failure renderer shows escaped site/library recovery hints alongside
 the error message. Pasted URLs remain plain text, and only validated result
-citations become links. Calendar tools remain pending.
+citations become links.
+Outlook Calendar contributes five bounded read tools on selected calendars:
+event listing and reading fan out, while availability, meeting-time
+suggestions, and people search run once per connection. Four writes create,
+update, respond to, and cancel events. Each targets one calendar and needs
+approval on every call, because invitations and cancellations reach other
+people. Times are wall-clock values with a named zone, and a write sends the
+calendar and zone the approver saw. Scoped calendar and event resolvers back
+the approval pickers. The cards use the provider-neutral calendar kit in
+`components/tool-ui/calendar/`.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.

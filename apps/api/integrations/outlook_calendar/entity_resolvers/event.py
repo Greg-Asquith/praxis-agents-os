@@ -33,22 +33,26 @@ from ..tools.utils import (
 
 MAX_CHOICES = 25
 SEARCH_DAYS = 30
-_SELECT = "id,subject,start,sensitivity"
+_SELECT = "id,subject,start,sensitivity,type"
+
+
+def _subject(entry, event: dict) -> str:
+    if is_masked(event, can_view_private=can_view_private(entry)):
+        return PRIVATE_SUBJECT
+    return text(event.get("subject"))
 
 
 def _choice(entry, event: dict, time_zone: str) -> EntityChoice:
-    subject = (
-        PRIVATE_SUBJECT
-        if is_masked(event, can_view_private=can_view_private(entry))
-        else text(event.get("subject"))
-    )
     start = local_time(event.get("start"))
+    when = f"{start.replace('T', ' ')[:16]} {time_zone}" if start else None
+    # A change to a series master reaches every occurrence, so the approver must see it.
+    series = "Whole series" if event.get("type") == "seriesMaster" else None
     return EntityChoice.from_reference(
         OutlookEventReference(
             calendar_id=entry.external_id,
             event_id=event["id"],
-            label=subject or "(No subject)",
-            description=f"{start.replace('T', ' ')[:16]} {time_zone}" if start else None,
+            label=_subject(entry, event) or "(No subject)",
+            description=", ".join(part for part in (when, series) if part) or None,
             scope_label=entry.display_name[:500],
         ),
         icon="outlook_calendar",
@@ -93,7 +97,8 @@ async def search_events(ctx, search, _dependent_args, page_size, cursor):
         choices.extend(
             _choice(entry, event, time_zone)
             for event in events
-            if text(event.get("id"), 512) and needle in text(event.get("subject")).casefold()
+            # Matching the shown subject keeps a search from confirming a masked one.
+            if text(event.get("id"), 512) and needle in _subject(entry, event).casefold()
         )
     choices = choices[:MAX_CHOICES]
     return EntityResolverPage(

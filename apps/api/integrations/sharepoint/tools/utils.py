@@ -11,17 +11,15 @@ from pydantic_core import to_json
 
 from services.agents.runtime.tools.contract import IntegrationToolBinding, ToolFieldPresentation
 from services.agents.runtime.untrusted import UntrustedNode
-from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import (
     IntegrationContextResult,
     serialize_fan_out_results,
 )
-from services.integrations.credentials import (
-    ensure_fresh_credential,
-    get_usable_connection_credential,
+from services.integrations.microsoft_graph import (
+    MicrosoftGraphClient,
+    graph_client_for_principal,
 )
-from services.integrations.microsoft_graph import MicrosoftGraphClient
 
 from ..operations.link_utils import direct_link_path
 from ..settings import sharepoint_settings
@@ -52,25 +50,13 @@ async def drive_client(ctx, entry) -> MicrosoftGraphClient:
 
 
 async def drive_client_for_principal(db, *, actor, workspace, entry) -> MicrosoftGraphClient:
-    async def access_token(force: bool) -> str:
-        usable = await get_usable_connection_credential(
-            db,
-            connection_id=entry.connection_id,
-            actor=actor,
-            workspace=workspace,
-        )
-        credential = await ensure_fresh_credential(
-            db,
-            credential_id=usable.id,
-            refresh_token=refresh_oauth_credential,
-            force=force,
-        )
-        if not credential.access_token:
-            raise ModelRetry("The SharePoint connection needs to be reconnected.")
-        return credential.access_token
-
-    return MicrosoftGraphClient(
-        access_token, provider_key="sharepoint", pacing_key=str(entry.connection_id)
+    return graph_client_for_principal(
+        db,
+        actor=actor,
+        workspace=workspace,
+        entry=entry,
+        provider_key="sharepoint",
+        reconnect_message="The SharePoint connection needs to be reconnected.",
     )
 
 

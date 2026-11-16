@@ -3,7 +3,7 @@
 """Published Microsoft Graph integration-engine seam."""
 
 from .client import GRAPH_API_BASE_URL, MicrosoftGraphClient, fixed_access_token
-from .connection_client import graph_client_for_connection
+from .connection_client import graph_client_for_connection, graph_client_for_principal
 from .entra import (
     ENTRA_HOST,
     authorization_url,
@@ -30,6 +30,7 @@ __all__ = [
     "fetch_graph_identity",
     "fixed_access_token",
     "graph_client_for_connection",
+    "graph_client_for_principal",
     "graph_response_error",
     "graph_string",
     "required_graph_string",

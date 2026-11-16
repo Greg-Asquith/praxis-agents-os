@@ -9,7 +9,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 MAX_TIME_ZONE_LENGTH = 64
 # Every UTC offset in use falls between -12:00 and +14:00.
 UTC_OFFSET_PADDING = (timedelta(hours=14), timedelta(hours=12))
-_WINDOWS_ZONE = re.compile(r"(?:[A-Za-z][A-Za-z .\-]{0,48} Standard Time|UTC(?:[+-]\d{2})?)")
+_WINDOWS_ZONE = re.compile(
+    r"(?:[A-Za-z][A-Za-z .\-]{0,48} Standard Time|Russia Time Zone \d{1,2}|UTC(?:[+-]\d{2})?)"
+)
 
 
 def parse_local_datetime(value: str, *, field: str) -> datetime:
