@@ -142,6 +142,7 @@ async def read_document_window(
     filename: str,
     offset: int,
     max_bytes: int,
+    strict_utf8: bool = True,
 ) -> DocumentWindowResult:
     """Converts the whole document and returns only the requested window from the worker."""
     result = await _run(
@@ -149,7 +150,7 @@ async def read_document_window(
         data,
         content_type,
         filename,
-        strict_utf8=True,
+        strict_utf8=strict_utf8,
         offset=offset,
         max_bytes=max_bytes,
     )
@@ -170,10 +171,17 @@ async def find_document_text(
     filename: str,
     query: str,
     limit: int,
+    strict_utf8: bool = True,
 ) -> DocumentFindResult:
     """Searches the whole converted document and returns bounded excerpts from the worker."""
     result = await _run(
-        "find_markdown", data, content_type, filename, strict_utf8=True, query=query, limit=limit
+        "find_markdown",
+        data,
+        content_type,
+        filename,
+        strict_utf8=strict_utf8,
+        query=query,
+        limit=limit,
     )
     value = result.value
     return DocumentFindResult(

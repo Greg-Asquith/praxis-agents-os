@@ -13,12 +13,12 @@ from core.exceptions.integration import (
     IntegrationNotFoundError,
     IntegrationValidationError,
 )
+from integrations.outlook_mail.operations.find_in_attachment import find_in_attachment
 from integrations.outlook_mail.operations.get_attachment import get_attachment
 from integrations.outlook_mail.operations.get_message import get_message
 from integrations.outlook_mail.operations.search_messages import search_messages
 from integrations.outlook_mail.settings import outlook_mail_settings
 from services.agents.runtime.untrusted import UntrustedNode
-from services.documents.markdown import TRUNCATION_MARKER
 from services.integrations.microsoft_graph import MicrosoftGraphClient, fixed_access_token
 from tests.support.documents import tiny_pdf
 
@@ -166,29 +166,41 @@ async def test_attachment_rejects_before_download(monkeypatch, changes, code):
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("content", ["界" * 30000], ids=["multibyte"])
-async def test_attachment_download_and_unicode_boundary(content):
+async def test_attachment_windows_continue_and_find_text_past_the_first_window():
+    # 3-byte characters put the 64 KiB window edge inside a character.
+    data = ("界" * 30000 + " Quarterly Total: 42").encode()
+
     def handler(request):
         if request.url.path.endswith("/$value"):
             assert request.headers["Authorization"] == "Bearer token"
-            return httpx2.Response(200, content=content.encode())
+            return httpx2.Response(200, content=data)
         return httpx2.Response(
             200,
             json={
                 "@odata.type": "#microsoft.graph.fileAttachment",
                 "contentType": "text/plain",
                 "name": "report.txt",
-                "size": 90000,
+                "size": len(data),
             },
         )
 
+    ids = {"message_id": "message", "attachment_id": "attachment"}
     async with graph(handler) as client:
-        result = await get_attachment(client, message_id="message", attachment_id="attachment")
-    assert len(result["markdown"].content.encode()) <= 65536
-    assert result["markdown"].content.endswith(TRUNCATION_MARKER)
-    assert result["truncated"] is True
-    assert result["source"] == "text"
-    assert result["markdown"].source_ref == "message"
+        first = await get_attachment(client, **ids)
+        second = await get_attachment(client, **ids, offset=first["end_offset"])
+        found = await find_in_attachment(client, **ids, query="quarterly total", limit=10)
+        at_match = await get_attachment(client, **ids, offset=found["matches"][0]["offset"])
+        with pytest.raises(IntegrationValidationError) as caught:
+            await get_attachment(client, **ids, offset=1)
+    assert first["truncated"] is True and "offset=" in first["hint"]
+    assert first["end_offset"] == 65535 and first["total_bytes"] == len(data)
+    assert first["markdown"].content + second["markdown"].content == data.decode()
+    assert second["truncated"] is False and second["hint"] is None
+    assert second["markdown"].source_ref == "message"
+    assert found["count"] == 1 and found["has_more"] is False
+    assert found["matches"][0]["excerpt"].source_kind == "outlook_message"
+    assert "Quarterly Total" in at_match["markdown"].content
+    assert caught.value.error_code == "invalid_offset"
 
 
 @pytest.mark.parametrize(

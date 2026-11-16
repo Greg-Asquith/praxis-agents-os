@@ -177,7 +177,7 @@ async def test_download_overflow_preserves_public_and_audit_reason(monkeypatch, 
         "services.integrations.operations.record_integration_operation_audit_event", audit
     )
     monkeypatch.setattr(
-        "integrations.outlook_mail.operations.get_attachment.convert_document_to_markdown_result",
+        "integrations.outlook_mail.operations.get_attachment.read_document_window",
         conversion,
     )
     requests = []

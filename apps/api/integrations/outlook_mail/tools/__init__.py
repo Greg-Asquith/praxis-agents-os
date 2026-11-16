@@ -1,6 +1,7 @@
 # apps/api/integrations/outlook_mail/tools/__init__.py
 
 from .create_draft import DEFINITION as CREATE_DRAFT
+from .find_in_attachment import DEFINITION as FIND_IN_ATTACHMENT
 from .forward_message import DEFINITION as FORWARD_MESSAGE
 from .list_mail_folders import DEFINITION as LIST_FOLDERS
 from .move_message import DEFINITION as MOVE_MESSAGE
@@ -19,6 +20,7 @@ TOOL_DEFINITIONS = (
     READ_MESSAGE,
     LIST_FOLDERS,
     READ_ATTACHMENT,
+    FIND_IN_ATTACHMENT,
     SAVE_ATTACHMENT,
     SEARCH_PEOPLE,
     SEND_MESSAGE,

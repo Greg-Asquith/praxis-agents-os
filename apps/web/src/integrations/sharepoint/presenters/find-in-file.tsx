@@ -2,7 +2,8 @@
 
 import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 import { SharePointFindView } from "@/integrations/sharepoint/components/find-results"
-import { findQuery, parseFindResults } from "@/integrations/sharepoint/lib/find-results"
+import { parseFindResults } from "@/integrations/sharepoint/lib/find-results"
+import { findQuery } from "@/integrations/text-matches"
 import { sharePointProvider } from "@/integrations/sharepoint/provider"
 
 export const sharePointFindInFilePresenter = defineIntegrationReadPresenter(sharePointProvider, {

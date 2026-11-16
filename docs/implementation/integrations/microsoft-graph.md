@@ -63,8 +63,14 @@ Select an Outlook mailbox in Active Context to use these tools:
 - `outlook_mail_list_folders` lists up to 200 top-level folders. Folder inputs
   accept a well-known name or the first exact display-name match.
 - `outlook_mail_read_attachment` targets one scoped file attachment and
-  returns up to 64 KiB of converted Markdown. Embedded items, reference
-  attachments, images, unsupported types, and oversized files fail closed.
+  returns one window of up to 64 KiB of converted Markdown from `offset`
+  (default 0). While `truncated` is true, the result's `hint` names the next
+  `end_offset`. Embedded items, reference attachments, images, unsupported
+  types, and oversized files fail closed.
+- `outlook_mail_find_in_attachment` takes the same reference, a literal query
+  of up to 200 characters, and a limit of up to 25. It searches the whole
+  converted attachment case-insensitively and returns excerpts with byte
+  offsets that `outlook_mail_read_attachment` accepts.
 - `outlook_mail_save_attachment` saves the original bytes of one scoped file
   attachment as a new workspace File. See [Saving attachments to
   Files](#saving-attachments-to-files).
@@ -84,9 +90,13 @@ positive. Both attachment metadata and streamed download bytes enforce it.
 Metadata, declared download length, and streamed overflow report
 `attachment_too_large`
 in tool results and operation audits.
-Attachment reads report the shared converter's actual truncation state, so
-literal marker text does not imply lost content. Text and HTML retain the
-converter's default replacement decoding for invalid UTF-8 bytes.
+Attachment reads and finds convert the whole attachment on every call and
+window or search it in the document worker, as `sharepoint_read_file` and
+`sharepoint_find_in_file` do; the card shows which part of the text it holds.
+An offset that is beyond the text or inside a UTF-8 character fails with
+`invalid_offset`. Unlike SharePoint, which writes files back and decodes
+strictly, text and HTML attachments keep replacement decoding for invalid UTF-8
+bytes, so a Latin-1 attachment stays readable.
 The `outlook_message` preview returns raw content to the engine for bounding
 and sanitisation. Preview definitions validate provider-specific reference
 patterns: Outlook permits bounded base64 IDs; Gmail retains its short URL-safe

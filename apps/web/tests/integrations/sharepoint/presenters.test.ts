@@ -268,6 +268,7 @@ describe("SharePoint presenters", () => {
       hasMore: false,
       limitReached: false,
       matches: [{ offset: 3145728, excerpt: "REVENUE" }],
+      totalBytes: 4194304,
     })
   })
 

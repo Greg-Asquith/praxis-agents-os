@@ -4,6 +4,7 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 import { MicrosoftConnectHelp } from "@/integrations/microsoft-connect-help"
 import { OutlookMailLogo } from "@/integrations/outlook_mail/components/logo"
 import { outlookMailAttachmentPresenter } from "@/integrations/outlook_mail/presenters/attachment"
+import { outlookMailFindInAttachmentPresenter } from "@/integrations/outlook_mail/presenters/find-in-attachment"
 import { outlookMailDraftPresenter } from "@/integrations/outlook_mail/presenters/create-draft"
 import { outlookMailFoldersPresenter } from "@/integrations/outlook_mail/presenters/folders"
 import { outlookMailForwardPresenter } from "@/integrations/outlook_mail/presenters/forward-message"
@@ -28,6 +29,7 @@ export default {
     outlookMailFoldersPresenter,
     outlookMailPeoplePresenter,
     outlookMailAttachmentPresenter,
+    outlookMailFindInAttachmentPresenter,
     outlookMailSaveAttachmentPresenter,
     outlookMailSendPresenter,
     outlookMailSendDraftPresenter,

@@ -82,9 +82,27 @@ class AttachmentData(_StrictModel):
     content_type: UntrustedText
     size_bytes: int = Field(ge=0)
     markdown: UntrustedText
+    offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_bytes: int = Field(ge=0)
     truncated: bool
+    hint: str | None = None
     source: Literal["converted", "text"]
     mailbox_time_zone: str | None
+
+
+class AttachmentMatch(_StrictModel):
+    offset: int = Field(ge=0)
+    excerpt: UntrustedText
+
+
+class AttachmentFindData(_StrictModel):
+    name: UntrustedText
+    content_type: UntrustedText
+    total_bytes: int = Field(ge=0)
+    matches: list[AttachmentMatch] = Field(max_length=25)
+    count: int = Field(ge=0, le=25)
+    has_more: bool
 
 
 class SavedAttachmentData(_StrictModel):
@@ -126,6 +144,10 @@ class AttachmentEntry(IntegrationFanOutEntry):
     data: AttachmentData | None = None
 
 
+class AttachmentFindEntry(IntegrationFanOutEntry):
+    data: AttachmentFindData | None = None
+
+
 class SavedAttachmentEntry(IntegrationFanOutEntry):
     data: SavedAttachmentData | None = None
 
@@ -148,6 +170,10 @@ class FoldersOutput(IntegrationFanOutOutput):
 
 class AttachmentOutput(IntegrationFanOutOutput):
     results: list[AttachmentEntry]
+
+
+class AttachmentFindOutput(IntegrationFanOutOutput):
+    results: list[AttachmentFindEntry]
 
 
 class SavedAttachmentOutput(IntegrationFanOutOutput):

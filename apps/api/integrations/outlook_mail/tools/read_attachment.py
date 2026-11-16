@@ -42,6 +42,7 @@ async def outlook_mail_read_attachment(
         OutlookAttachmentReference,
         Field(description="Scoped Outlook attachment reference returned by reading a message."),
     ],
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> dict:
     async def operation(entry, references):
         reference = references[0]
@@ -49,7 +50,10 @@ async def outlook_mail_read_attachment(
         async def execute():
             client = await mailbox_client(ctx, entry)
             result = await get_attachment(
-                client, message_id=reference.message_id, attachment_id=reference.attachment_id
+                client,
+                message_id=reference.message_id,
+                attachment_id=reference.attachment_id,
+                offset=offset,
             )
             return IntegrationAuditOutcome(
                 {**result, "mailbox_time_zone": mailbox_time_zone(entry)},
@@ -75,9 +79,12 @@ DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_read_attachment",
     function=outlook_mail_read_attachment,
     description=(
-        "Extracts text from a supported Outlook file attachment using its attachment reference. "
-        "Returns up to 64 KiB of Markdown. Images, embedded messages, and linked attachments are "
-        "unsupported."
+        "Reads the text of a supported Outlook file attachment using its attachment reference, "
+        "for summarising or reading it in order. To answer a question about specific content "
+        "(a name, quote, figure, date, or clause), call outlook_mail_find_in_attachment first "
+        "and pass a match's offset here; don't read from the start to look for it. Returns one "
+        "UTF-8 byte window of up to 64 KiB of Markdown; continue from end_offset while "
+        "truncated is true. Images, embedded messages, and linked attachments are unsupported."
     ),
     provider="outlook_mail",
     label="Read attachment in Outlook",

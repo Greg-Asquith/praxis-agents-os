@@ -74,8 +74,26 @@ const cases = [
   ],
   [
     "read_attachment",
-    { name: node("report.pdf"), markdown: node("# Revenue\nMonthly revenue"), truncated: true },
+    {
+      name: node("report.pdf"),
+      markdown: node("# Revenue\nMonthly revenue"),
+      offset: 65535,
+      end_offset: 131070,
+      total_bytes: 200000,
+      truncated: true,
+    },
     "Monthly revenue",
+  ],
+  [
+    "find_in_attachment",
+    {
+      name: node("report.pdf"),
+      total_bytes: 200000,
+      matches: [{ offset: 150000, excerpt: node("the Quarterly Total was 42") }],
+      count: 1,
+      has_more: false,
+    },
+    "<strong>Quarterly Total</strong>",
   ],
   [
     "save_attachment",
@@ -101,6 +119,7 @@ describe("Outlook read results", () => {
           id: "call",
           kind: "result",
           name: `outlook_mail_${tool}`,
+          args: { query: "quarterly total" },
           status: "completed",
           result: {
             results: [
