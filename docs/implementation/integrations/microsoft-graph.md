@@ -65,6 +65,9 @@ Select an Outlook mailbox in Active Context to use these tools:
 - `outlook_mail_read_attachment` targets one scoped file attachment and
   returns up to 64 KiB of converted Markdown. Embedded items, reference
   attachments, images, unsupported types, and oversized files fail closed.
+- `outlook_mail_save_attachment` saves the original bytes of one scoped file
+  attachment as a new workspace File. See [Saving attachments to
+  Files](#saving-attachments-to-files).
 - `outlook_mail_search_people` resolves a name to up to 25 people, including
   email addresses, job titles, and departments. It uses email-address fields,
   then an email-shaped user principal name. People without either are omitted.
@@ -88,6 +91,45 @@ The `outlook_message` preview returns raw content to the engine for bounding
 and sanitisation. Preview definitions validate provider-specific reference
 patterns: Outlook permits bounded base64 IDs; Gmail retains its short URL-safe
 IDs.
+
+### Saving attachments to Files
+
+`outlook_mail_save_attachment` takes one `OutlookAttachmentReference` and an
+optional `folder` name with `write_file` folder semantics. It mirrors
+`sharepoint_copy_to_files`: it requires only the mailbox read binding, uses
+`provider_query` egress, and is an internal write that is automatic by
+default with approval supported. It works in Code Mode. No OAuth scope is
+added.
+
+`operations/download_attachment.py` owns the metadata check and the bounded
+raw download that both the read and save paths use. The save path
+(`operations/copy_attachment.py`) never calls the Markdown converter, so
+images and other Files types that cannot be read as text still save. Before
+downloading, it rejects:
+
+| Case | Error code |
+| --- | --- |
+| Embedded email or linked attachment | `unsupported_attachment_kind` |
+| Type that the Files contract does not accept, including `application/octet-stream` | `unsupported_attachment_type` |
+| File name extension that does not belong to the declared type | `attachment_type_mismatch` |
+| Declared size over the limit | `attachment_too_large` |
+
+The limit is the smaller of `OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES` and the Files
+category limit. Streamed bytes enforce the same limit when `Content-Length` is
+absent or understated. A name without an extension takes the type's
+extension.
+
+The bytes go to `services/integrations/files/create_copy.py` inside the
+caller's savepoint. The File, its first revision, the conversation link, and
+the success audit commit together; a storage failure or interrupted worker
+leaves no File. A call dispatched again after commit, or a second explicit
+save, creates another copy. Storage writes are never retried because the Graph
+read retried. Audit evidence records the mailbox, message, and attachment IDs
+with the File and revision IDs, never bytes or provider bodies. The result
+returns the File reference, file and revision IDs, the saved name as an
+`outlook_message` node, the Files content type, the size, and the source
+attachment reference. The card shows the saved File with an **Open in Files**
+link; failures show the error message from the table above.
 
 ## SharePoint and OneDrive file tools
 

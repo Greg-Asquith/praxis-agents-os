@@ -7,6 +7,7 @@ from .move_message import DEFINITION as MOVE_MESSAGE
 from .read_attachment import DEFINITION as READ_ATTACHMENT
 from .read_message import DEFINITION as READ_MESSAGE
 from .reply_to_message import DEFINITION as REPLY_TO_MESSAGE
+from .save_attachment import DEFINITION as SAVE_ATTACHMENT
 from .search_messages import DEFINITION as SEARCH_MESSAGES
 from .search_people import DEFINITION as SEARCH_PEOPLE
 from .send_draft import DEFINITION as SEND_DRAFT
@@ -18,6 +19,7 @@ TOOL_DEFINITIONS = (
     READ_MESSAGE,
     LIST_FOLDERS,
     READ_ATTACHMENT,
+    SAVE_ATTACHMENT,
     SEARCH_PEOPLE,
     SEND_MESSAGE,
     SEND_DRAFT,

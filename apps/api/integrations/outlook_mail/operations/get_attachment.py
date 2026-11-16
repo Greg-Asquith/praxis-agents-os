@@ -2,10 +2,6 @@
 
 """Converts one supported file attachment within download and output limits."""
 
-from urllib.parse import quote
-
-from core.exceptions.integration import IntegrationDownloadTooLargeError, IntegrationValidationError
-from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.microsoft_graph import MicrosoftGraphClient
 from utils.document_markdown import (
     DocumentConversionError,
@@ -14,54 +10,34 @@ from utils.document_markdown import (
 )
 
 from ..settings import outlook_mail_settings
-from .utils import ATTACHMENT_SELECT, message_path, object_payload, text, untrusted
+from .download_attachment import attachment_error, attachment_metadata, download_attachment
+from .utils import text, untrusted
 
 MAX_MARKDOWN_BYTES = 64 * 1024
+OPERATION = "read_attachment"
 
 
 async def get_attachment(
     client: MicrosoftGraphClient, *, message_id: str, attachment_id: str
 ) -> dict:
-    path = f"{message_path(message_id)}/attachments/{quote(attachment_id, safe='')}"
-    metadata = object_payload(
-        await client.get(
-            path,
-            operation="read_attachment",
-            policy=IntegrationRequestPolicy.READ,
-            params={"$select": ATTACHMENT_SELECT},
-        ),
-        operation="read_attachment",
+    metadata = await attachment_metadata(
+        client, message_id=message_id, attachment_id=attachment_id, operation=OPERATION
     )
-    if metadata.get("@odata.type") != "#microsoft.graph.fileAttachment":
-        raise _attachment_error("This attachment is not a file.", "unsupported_attachment_kind")
     content_type = document_content_type(text(metadata.get("contentType"), 255))
     if content_type is None:
-        raise _attachment_error(
-            "This attachment type cannot be read as text.", "unsupported_attachment_type"
+        raise attachment_error(
+            "This attachment type cannot be read as text.",
+            "unsupported_attachment_type",
+            operation=OPERATION,
         )
-    size = metadata.get("size")
-    if type(size) is not int or size < 0:
-        raise _attachment_error(
-            "Outlook returned an invalid attachment size.", "invalid_attachment_size"
-        )
-    if size > outlook_mail_settings.OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES:
-        raise _attachment_error(
-            "This attachment exceeds the download limit.", "attachment_too_large"
-        )
-    try:
-        data = await client.get_graph_bytes(
-            f"{path}/$value",
-            operation="read_attachment",
-            max_bytes=outlook_mail_settings.OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES,
-        )
-    except IntegrationDownloadTooLargeError as exc:
-        raise IntegrationValidationError(
-            "This attachment exceeds the download limit.",
-            provider_key="outlook_mail",
-            operation="read_attachment",
-            error_code="attachment_too_large",
-            failure_disposition=exc.failure_disposition,
-        ) from None
+    data = await download_attachment(
+        client,
+        message_id=message_id,
+        attachment_id=attachment_id,
+        size=metadata["size"],
+        max_bytes=outlook_mail_settings.OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES,
+        operation=OPERATION,
+    )
     filename = text(metadata.get("name"))
     try:
         conversion = await convert_document_to_markdown_result(
@@ -71,8 +47,10 @@ async def get_attachment(
             max_bytes=MAX_MARKDOWN_BYTES,
         )
     except DocumentConversionError:
-        raise _attachment_error(
-            "This attachment could not be converted to text.", "attachment_conversion_failed"
+        raise attachment_error(
+            "This attachment could not be converted to text.",
+            "attachment_conversion_failed",
+            operation=OPERATION,
         ) from None
     return {
         "name": untrusted(message_id, filename),
@@ -82,9 +60,3 @@ async def get_attachment(
         "truncated": conversion.truncated,
         "source": conversion.source,
     }
-
-
-def _attachment_error(message: str, code: str) -> IntegrationValidationError:
-    return IntegrationValidationError(
-        message, provider_key="outlook_mail", operation="read_attachment", error_code=code
-    )

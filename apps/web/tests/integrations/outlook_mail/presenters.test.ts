@@ -77,6 +77,16 @@ const cases = [
     { name: node("report.pdf"), markdown: node("# Revenue\nMonthly revenue"), truncated: true },
     "Monthly revenue",
   ],
+  [
+    "save_attachment",
+    {
+      file_id: "019927a2-1891-7123-8123-0123456789ab",
+      name: node("report.pdf"),
+      content_type: "application/pdf",
+      size_bytes: 2048,
+    },
+    'href="/files?fileId=019927a2-1891-7123-8123-0123456789ab"',
+  ],
 ] as const
 
 describe("Outlook read results", () => {

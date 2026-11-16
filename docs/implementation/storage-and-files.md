@@ -675,17 +675,20 @@ grace period, cleanup removes uncommitted destination and staging bytes.
 Claimed or completed reservations cannot restart an incomplete copy; use a new
 request ID. Failed cleanup jobs retain their ownership evidence.
 
-## SharePoint File sources
+## Provider File sources
 
 `sharepoint_copy_to_files` imports original document, text, image, and video
-bytes from a selected library through `services/integrations/files/create_copy.py`.
+bytes from a selected library, and `outlook_mail_save_attachment` saves one
+Outlook file attachment, both through `services/integrations/files/create_copy.py`.
 That shared operation owns the immutable File creation and storage services.
 It uses workspace-private storage, an agent revision actor, an optional named
 folder, and a conversation link. The copy remains an ordinary workspace File
 with the same access and retention rules. Download and category limits apply
-before and during the transfer. Exact source size and any supplied supported
-provider hash are checked before local effects. Signed provider URLs are never
-retained.
+before and during the transfer. For SharePoint, exact source size and any
+supplied supported provider hash are checked before local effects. Outlook
+reports no content hash, so Outlook saves rely on the declared and streamed
+size limits. Signed
+provider URLs are never retained.
 
 `reserve_file_revision` commits cleanup ownership in an isolated tenant
 session without committing the tool's other work. The caller locks the

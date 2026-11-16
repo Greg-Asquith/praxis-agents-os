@@ -211,7 +211,10 @@ attachment metadata, and converted attachment text. `outlook_person` nodes
 frame people names, addresses, job titles, and departments. Read operations
 bound lists, strings, attachment downloads, and converted Markdown. Attachment
 bytes enter the shared document converter only after kind, type, and size
-checks. The complete tool result has a 768 KiB ceiling.
+checks. The complete tool result has a 768 KiB ceiling. Saving an attachment
+to Files keeps the bytes out of the result and audit; the saved name is an
+`outlook_message` node, and later File reads frame the content as any other
+File.
 
 SharePoint folder listings frame names, parent paths, content types, modified
 times, and citation URLs as `sharepoint_drive_item` nodes. Scoped references

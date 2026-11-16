@@ -3,11 +3,13 @@
 """Typed Outlook tool result contracts."""
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
+from services.integrations.files import FileReference
 
 from ..references import OutlookAttachmentReference, OutlookMessageReference
 
@@ -85,6 +87,16 @@ class AttachmentData(_StrictModel):
     mailbox_time_zone: str | None
 
 
+class SavedAttachmentData(_StrictModel):
+    reference: FileReference
+    file_id: UUID
+    revision_id: UUID
+    name: UntrustedText
+    content_type: str
+    size_bytes: int = Field(ge=0)
+    attachment: OutlookAttachmentReference
+
+
 class Person(_StrictModel):
     name: UntrustedText
     address: UntrustedText
@@ -114,6 +126,10 @@ class AttachmentEntry(IntegrationFanOutEntry):
     data: AttachmentData | None = None
 
 
+class SavedAttachmentEntry(IntegrationFanOutEntry):
+    data: SavedAttachmentData | None = None
+
+
 class PeopleEntry(IntegrationFanOutEntry):
     data: PeopleData | None = None
 
@@ -132,6 +148,10 @@ class FoldersOutput(IntegrationFanOutOutput):
 
 class AttachmentOutput(IntegrationFanOutOutput):
     results: list[AttachmentEntry]
+
+
+class SavedAttachmentOutput(IntegrationFanOutOutput):
+    results: list[SavedAttachmentEntry]
 
 
 class PeopleOutput(IntegrationFanOutOutput):

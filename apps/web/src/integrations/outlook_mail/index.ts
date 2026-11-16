@@ -11,6 +11,7 @@ import { outlookMailMovePresenter } from "@/integrations/outlook_mail/presenters
 import { outlookMailPeoplePresenter } from "@/integrations/outlook_mail/presenters/people"
 import { outlookMailReadPresenter } from "@/integrations/outlook_mail/presenters/read"
 import { outlookMailReplyPresenter } from "@/integrations/outlook_mail/presenters/reply-to-message"
+import { outlookMailSaveAttachmentPresenter } from "@/integrations/outlook_mail/presenters/save-attachment"
 import { outlookMailSearchPresenter } from "@/integrations/outlook_mail/presenters/search"
 import { outlookMailSendDraftPresenter } from "@/integrations/outlook_mail/presenters/send-draft"
 import { outlookMailSendPresenter } from "@/integrations/outlook_mail/presenters/send-message"
@@ -27,6 +28,7 @@ export default {
     outlookMailFoldersPresenter,
     outlookMailPeoplePresenter,
     outlookMailAttachmentPresenter,
+    outlookMailSaveAttachmentPresenter,
     outlookMailSendPresenter,
     outlookMailSendDraftPresenter,
     outlookMailReplyPresenter,
