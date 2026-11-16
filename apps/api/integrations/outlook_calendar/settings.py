@@ -2,7 +2,7 @@
 
 """Outlook Calendar-owned runtime configuration."""
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,7 @@ class OutlookCalendarSettings(BaseSettings):
     OUTLOOK_CALENDAR_OAUTH_CLIENT_ID: str = ""
     OUTLOOK_CALENDAR_OAUTH_CLIENT_SECRET: SecretStr = SecretStr("")
     OUTLOOK_CALENDAR_OAUTH_TENANT: str = ""
+    OUTLOOK_CALENDAR_MAX_RANGE_DAYS: int = Field(default=62, ge=1, le=366)
 
     model_config = SettingsConfigDict(
         env_file=".env",

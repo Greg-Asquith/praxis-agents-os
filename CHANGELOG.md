@@ -12,6 +12,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Outlook Calendar reads: agents list events across selected calendars, read
+  one event, check when up to 20 people are free, ask Outlook for meeting
+  times, and look up people to invite. Times always name their time zone,
+  defaulting to the mailbox's. `OUTLOOK_CALENDAR_MAX_RANGE_DAYS` (default 62)
+  bounds how far one listing reaches.
 - Outlook attachments in Files: `outlook_mail_save_attachment` saves an
   attachment's original bytes as a workspace File, and saved images, video,
   and audio play on the card. Each attachment on a read message has **View**

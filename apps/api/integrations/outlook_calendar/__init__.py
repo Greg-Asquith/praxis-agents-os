@@ -7,7 +7,9 @@ from services.integrations.microsoft_graph import entra_oauth_config
 from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
 
 from .discover_resources import discover_resources
+from .entity_resolvers import OUTLOOK_EVENT_RESOLVER
 from .settings import outlook_calendar_settings
+from .tools import TOOL_DEFINITIONS
 
 OUTLOOK_CALENDAR_OAUTH_SCOPES = (
     "openid",
@@ -49,4 +51,6 @@ PROVIDER = IntegrationProviderPlugin(
     ),
     discover_resources=discover_resources,
     oauth_config=oauth_config,
+    tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=(OUTLOOK_EVENT_RESOLVER,),
 )

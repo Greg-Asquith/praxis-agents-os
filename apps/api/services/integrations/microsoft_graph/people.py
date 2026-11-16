@@ -6,11 +6,10 @@ import re
 from typing import Any
 
 from core.exceptions.integration import IntegrationValidationError
+from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.http import IntegrationRequestPolicy
 
 from .client import MicrosoftGraphClient
-
-PersonResult = tuple[str, str, str, str]
 
 
 async def search_people(
@@ -18,12 +17,11 @@ async def search_people(
     *,
     query: str,
     limit: int,
-) -> list[PersonResult]:
-    """Search the delegated user's relevant people with a provider-side bound."""
+) -> list[dict[str, UntrustedNode]]:
+    """Searches the delegated user's relevant people and frames each field as untrusted."""
     normalized_query = query.strip()
-    if not normalized_query:
-        raise ValueError("Microsoft Graph people search query must not be blank")
-    bounded_limit = max(1, min(limit, 25))
+    if not 1 <= len(normalized_query) <= 100 or not 1 <= limit <= 25:
+        raise ValueError("People search requires 1-100 query characters and a limit of 1-25")
     payload = await client.post(
         "/search/query",
         operation="search_people",
@@ -33,20 +31,25 @@ async def search_people(
                 {
                     "entityTypes": ["person"],
                     "query": {"queryString": normalized_query},
-                    "size": bounded_limit,
+                    "size": limit,
                 }
             ]
         },
     )
     resources = _person_resources(payload)
     return [
-        (
-            _string(resource.get("displayName")),
-            address,
-            _string(resource.get("jobTitle")),
-            _string(resource.get("department")),
-        )
-        for resource in resources[:bounded_limit]
+        {
+            key: UntrustedNode(
+                source_kind="outlook_person", source_ref=address, content=value[:bound]
+            )
+            for key, value, bound in (
+                ("name", _string(resource.get("displayName")), 500),
+                ("address", address, 320),
+                ("job_title", _string(resource.get("jobTitle")), 500),
+                ("department", _string(resource.get("department")), 500),
+            )
+        }
+        for resource in resources[:limit]
         if (address := _person_address(resource))
     ]
 

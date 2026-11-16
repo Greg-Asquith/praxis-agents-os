@@ -16,13 +16,12 @@ from .entra import (
 from .errors import classify_entra_token_error, graph_response_error
 from .identity import extract_token_identity, fetch_graph_identity
 from .payloads import graph_string, required_graph_string
-from .people import PersonResult, search_people
+from .people import search_people
 
 __all__ = [
     "ENTRA_HOST",
     "GRAPH_API_BASE_URL",
     "MicrosoftGraphClient",
-    "PersonResult",
     "authorization_url",
     "classify_entra_token_error",
     "entra_oauth_config",

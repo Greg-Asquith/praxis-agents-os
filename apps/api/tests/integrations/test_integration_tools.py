@@ -25,6 +25,9 @@ from integrations.google_search_console.tools import (
 )
 from integrations.meta_ads.tools import TOOL_DEFINITIONS as META_ADS_TOOL_DEFINITIONS
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
+from integrations.outlook_calendar.tools import (
+    TOOL_DEFINITIONS as OUTLOOK_CALENDAR_TOOL_DEFINITIONS,
+)
 from integrations.outlook_mail.tools import TOOL_DEFINITIONS as OUTLOOK_MAIL_TOOL_DEFINITIONS
 from integrations.sharepoint.tools import TOOL_DEFINITIONS as SHAREPOINT_TOOL_DEFINITIONS
 from models.agent import Agent
@@ -54,6 +57,7 @@ ALL_INTEGRATION_TOOL_DEFINITIONS = (
     *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
     *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
     *NOTION_TOOL_DEFINITIONS,
+    *OUTLOOK_CALENDAR_TOOL_DEFINITIONS,
     *OUTLOOK_MAIL_TOOL_DEFINITIONS,
     *SHAREPOINT_TOOL_DEFINITIONS,
     *META_ADS_TOOL_DEFINITIONS,

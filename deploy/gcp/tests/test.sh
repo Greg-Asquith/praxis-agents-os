@@ -182,6 +182,7 @@ for manifest in \
   grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
+  grep -A1 'name: OUTLOOK_CALENDAR_MAX_RANGE_DAYS' "$manifest" | grep -q 'value: "62"'
   grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "50"'
@@ -193,6 +194,7 @@ cat >> "$TEST_TMP/microsoft-overrides.env" <<'ENV'
 MICROSOFT_GRAPH_REQUESTS_PER_SECOND=8.0
 OUTLOOK_MAIL_OAUTH_TENANT=mail.example.com
 OUTLOOK_CALENDAR_OAUTH_TENANT=calendar.example.com
+OUTLOOK_CALENDAR_MAX_RANGE_DAYS=31
 SHAREPOINT_OAUTH_TENANT=sharepoint.example.com
 SHAREPOINT_DISCOVERY_MAX_SITES=75
 ENV
@@ -205,6 +207,7 @@ for manifest in \
   grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: "mail.example.com"'
   grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" \
     | grep -q 'value: "calendar.example.com"'
+  grep -A1 'name: OUTLOOK_CALENDAR_MAX_RANGE_DAYS' "$manifest" | grep -q 'value: "31"'
   grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: "sharepoint.example.com"'
   grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "75"'
 done

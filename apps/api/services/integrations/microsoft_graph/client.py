@@ -172,6 +172,7 @@ class MicrosoftGraphClient:
         params: dict[str, Any] | None,
         max_items: int,
         max_pages: int,
+        headers: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """Follow bounded Graph pagination while treating next links as opaque URLs."""
         if max_items < 1 or max_pages < 1:
@@ -187,6 +188,7 @@ class MicrosoftGraphClient:
                 operation=operation,
                 policy=IntegrationRequestPolicy.READ,
                 params=next_params,
+                headers=headers,
             )
             if not isinstance(payload, dict) or not isinstance(payload.get("value"), list):
                 raise self._response_error(operation)

@@ -37,6 +37,7 @@ class FramedFixtureOutput(BaseModel):
     [
         "gmail_message",
         "outlook_message",
+        "outlook_event",
     ],
 )
 async def test_hostile_provider_content_is_enclosed_by_dispatch(monkeypatch, source_kind) -> None:

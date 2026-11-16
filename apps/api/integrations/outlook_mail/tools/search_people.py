@@ -17,12 +17,12 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.integrations.context.fan_out import run_context_fan_out
+from services.integrations.microsoft_graph import search_people
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
 
-from ..operations.search_people import search_people
 from .schemas import PeopleOutput
 from .utils import (
     OUTLOOK_MAIL_BINDING,

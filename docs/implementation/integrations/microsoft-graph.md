@@ -16,7 +16,11 @@ Authentication failures must propagate to credential refresh and connection
 recovery. The seam must not import provider packages. The Outlook
 Mail, Outlook Calendar, and SharePoint packages each own isolated OAuth
 settings and discovery. They expose `outlook_mailbox`, `outlook_calendar`,
-and `sharepoint_drive` resources, respectively. Calendar tools are pending.
+and `sharepoint_drive` resources, respectively. Calendar writes are pending.
+The seam's `time.py` parses local date-times without offsets, accepts IANA or
+Windows zone names, bounds windows, and builds `dateTimeTimeZone` values.
+`people.py::search_people` frames each person field as an `outlook_person`
+node for both Outlook packages.
 
 `MicrosoftGraphClient.get_graph_bytes(path, operation=..., max_bytes=...)`
 reads authenticated binary Graph responses, including attachment `/$value`
@@ -50,6 +54,14 @@ Shared chat search previews show an unavailable state without provider requests;
 completed reads retain the saved message body. Gmail retains
 its metadata chips and query keys through that same loader. HTML previews use
 engine sanitisation and the script-less sandboxed frame.
+
+Outlook Calendar cards use the provider-neutral calendar kit in
+`src/components/tool-ui/calendar/`, which Google Calendar can reuse.
+`CalendarEventList` groups events by local day and shows each event's time
+zone; `CalendarSlotList` lists free or busy slots the same way. Times are
+wall-clock values in a named zone, so the kit formats them without converting
+to the browser's zone. Event lists, the event view, availability, meeting
+times, and people each have a registered presenter.
 
 ## Outlook Mail reads
 
@@ -188,6 +200,44 @@ state lasts for the
 page view, so a save after a reload makes another copy, as a repeated agent
 save does. The agent learns about a card view or save only if the operator
 mentions it.
+
+## Outlook Calendar reads
+
+Select one or more Outlook calendars in Active Context to use these tools:
+
+- `outlook_calendar_list_events` lists events that overlap a local `start`
+  and `end` window in each selected calendar, including each occurrence of a
+  recurring series, with up to 100 events per calendar. The window can be at
+  most `OUTLOOK_CALENDAR_MAX_RANGE_DAYS` long (default 62).
+- `outlook_calendar_read_event` targets one scoped event reference and adds
+  up to 20,000 body characters, 100 attendees with their responses, and a
+  recurrence summary.
+- `outlook_calendar_get_availability` returns free and busy periods, working
+  hours, and Graph's `availabilityView` for up to 20 addresses over at most
+  31 days. Event subjects are omitted.
+- `outlook_calendar_find_meeting_times` asks Graph for up to 10 suggestions
+  for up to 20 required attendees, a 5 to 480 minute duration, and a window
+  of at most 14 days, using working or personal hours.
+- `outlook_calendar_search_people` resolves a name to up to 25 people, like
+  `outlook_mail_search_people`.
+
+Times are ISO 8601 strings without an offset plus a `time_zone`. When the
+agent omits `time_zone`, the tool uses the calendar's recorded mailbox zone
+and returns it with the result; an unusable recorded zone falls back to UTC.
+Requests send `Prefer: outlook.timezone` so Graph returns times in that zone.
+`calendarView` reads offset-less bounds as UTC and Windows zone names have no
+local offset table, so the listing pads the request by the widest UTC offsets
+and keeps events that overlap the window in local time.
+
+Event reads fan out across the selected calendars. Availability, meeting
+times, and people search run once per connection, against its first selected
+calendar. Private and confidential events show "Private appointment" with no
+location or body unless discovery recorded that the calendar can view private
+items. Provider text uses `outlook_event` or `outlook_person` nodes, event
+references carry a fixed label, and the complete result has a 768 KiB limit.
+The event picker searches the next 30 days of each unambiguous selected
+calendar by subject. Bad windows, zones, and address lists return a retry
+message to the model before any Graph request.
 
 ## SharePoint and OneDrive file tools
 
