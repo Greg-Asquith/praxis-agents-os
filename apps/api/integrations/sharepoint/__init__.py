@@ -38,6 +38,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="sharepoint",
         display_name="SharePoint",
         auth_modes=("oauth",),
+        oauth_account_name="Microsoft",
         owner_scope="user",
         oauth_scopes=SHAREPOINT_OAUTH_SCOPES,
         resource_types=("sharepoint_drive",),

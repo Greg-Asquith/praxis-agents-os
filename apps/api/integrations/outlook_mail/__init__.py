@@ -46,6 +46,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="outlook_mail",
         display_name="Outlook Mail",
         auth_modes=("oauth",),
+        oauth_account_name="Microsoft",
         owner_scope="user",
         oauth_scopes=OUTLOOK_MAIL_OAUTH_SCOPES,
         resource_types=("outlook_mailbox",),

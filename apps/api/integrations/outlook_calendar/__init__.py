@@ -38,6 +38,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="outlook_calendar",
         display_name="Outlook Calendar",
         auth_modes=("oauth",),
+        oauth_account_name="Microsoft",
         owner_scope="user",
         oauth_scopes=OUTLOOK_CALENDAR_OAUTH_SCOPES,
         resource_types=("outlook_calendar",),

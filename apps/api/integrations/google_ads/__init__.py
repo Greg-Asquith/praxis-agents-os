@@ -54,6 +54,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="google_ads",
         display_name="Google Ads",
         auth_modes=("oauth", "service_account"),
+        oauth_account_name="Google",
         owner_scope="workspace",
         oauth_scopes=(
             "openid",

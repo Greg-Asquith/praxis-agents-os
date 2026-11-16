@@ -52,6 +52,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="notion",
         display_name="Notion",
         auth_modes=("oauth",),
+        oauth_account_name="Notion",
         owner_scope="user",
         oauth_scopes=(),
         resource_types=("notion_workspace",),

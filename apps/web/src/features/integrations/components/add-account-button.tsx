@@ -15,6 +15,7 @@ import {
 import { ApiKeyConnectForm } from "@/features/integrations/components/api-key-connect-dialog"
 import { OAuthConnectionForm } from "@/features/integrations/components/connect-oauth-button"
 import { ServiceAccountConnectForm } from "@/features/integrations/components/service-account-connect-dialog"
+import { integrationSignInLabel } from "@/features/integrations/format"
 import type { IntegrationProvider } from "@/features/integrations/types"
 import { useCredentialLabel } from "@/integrations/registry"
 import { isOneOf } from "@/lib/guards"
@@ -89,7 +90,7 @@ function AuthModeChoice({
           >
             <ExternalLinkIcon className="mr-1 size-4 shrink-0" aria-hidden="true" />
             <span>
-              <span className="block">Sign In With Google</span>
+              <span className="block">{integrationSignInLabel(provider)}</span>
               <span className="mt-1 block text-xs font-normal opacity-80">
                 Recommended - sign in and grant access in your browser
               </span>

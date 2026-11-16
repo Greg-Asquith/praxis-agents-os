@@ -12,6 +12,7 @@ const provider: IntegrationProvider = {
   configured_auth_modes: { oauth: true },
   display_name: "Gmail",
   oauth_scopes: [],
+  oauth_account_name: "Google",
   owner_scope: "user",
   provider_key: "gmail",
   required_form_fields: [],

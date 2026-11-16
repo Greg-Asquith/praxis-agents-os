@@ -17,6 +17,7 @@ class IntegrationProviderManifest:
     auth_modes: tuple[str, ...]
     owner_scope: Literal["user", "workspace"]
     oauth_scopes: tuple[str, ...] = ()
+    oauth_account_name: str = ""
     resource_types: tuple[str, ...] = ()
     requires_discovery: bool = False
     required_form_fields: tuple[str, ...] = ()
@@ -44,5 +45,7 @@ def _validate_manifest(manifest: IntegrationProviderManifest) -> None:
         raise RuntimeError("Integration provider has unsupported auth modes")
     if "api_key" in manifest.auth_modes and not manifest.required_form_fields:
         raise RuntimeError("API-key integration providers must declare form fields")
+    if "oauth" in manifest.auth_modes and not manifest.oauth_account_name.strip():
+        raise RuntimeError("OAuth integration providers must declare an account name")
     if manifest.requires_discovery and not manifest.resource_types:
         raise RuntimeError("Discoverable integration providers must declare resource types")

@@ -42,6 +42,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="google_search_console",
         display_name="Google Search Console",
         auth_modes=("oauth",),
+        oauth_account_name="Google",
         owner_scope="workspace",
         oauth_scopes=_oauth_scopes(),
         resource_types=("google_search_console_site",),

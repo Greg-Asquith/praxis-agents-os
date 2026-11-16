@@ -20,6 +20,7 @@ export type IntegrationProvider = {
   auth_modes: IntegrationAuthMode[]
   owner_scope: IntegrationOwnerScope
   oauth_scopes: string[]
+  oauth_account_name: string
   resource_types: string[]
   required_form_fields: string[]
   capability_flags: string[]

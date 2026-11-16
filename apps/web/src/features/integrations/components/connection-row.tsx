@@ -151,7 +151,7 @@ export function ConnectionRow({
               {integrationOwnershipDescription(connection.owner_scope)} · Added{" "}
               {formatDateTime(connection.created_at)}
               {hasMultipleAuthModes && connection.credential
-                ? ` · ${connection.credential.auth_mode === "api_key" ? credentialLabel : integrationAuthModeLabel(connection.credential.auth_mode)}`
+                ? ` · ${connection.credential.auth_mode === "api_key" ? credentialLabel : integrationAuthModeLabel(connection.credential.auth_mode, provider)}`
                 : ""}
             </p>
             {connection.duplicate_of_connection_ids.length > 0 ? (

@@ -103,6 +103,7 @@ class ProviderRead(BaseModel):
     auth_modes: tuple[str, ...]
     owner_scope: Literal["user", "workspace"]
     oauth_scopes: tuple[str, ...]
+    oauth_account_name: str
     resource_types: tuple[str, ...]
     required_form_fields: tuple[str, ...]
     connect_help: str

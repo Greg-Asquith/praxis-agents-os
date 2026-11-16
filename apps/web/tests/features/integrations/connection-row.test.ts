@@ -17,6 +17,7 @@ const mixedModeGoogleAds: IntegrationProvider = {
   configured_auth_modes: { oauth: true, service_account: true },
   display_name: "Google Ads",
   oauth_scopes: [],
+  oauth_account_name: "Google",
   owner_scope: "workspace",
   provider_key: "google_ads",
   required_form_fields: [],
@@ -75,8 +76,10 @@ describe("ConnectionRow", () => {
     expect(html).not.toContain("Refresh Access")
   })
 
-  it("uses the exact service account label", () => {
-    expect(integrationAuthModeLabel("service_account")).toBe("Service Account Key")
+  it("names the provider's own account on the sign-in label", () => {
+    expect(integrationAuthModeLabel("oauth", { oauth_account_name: "Microsoft" })).toBe(
+      "Sign In With Microsoft"
+    )
   })
 
   it("obscures pasted service account JSON", () => {

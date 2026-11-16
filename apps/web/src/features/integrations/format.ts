@@ -7,9 +7,16 @@ export function integrationOwnershipDescription(ownerScope: IntegrationProvider[
   return ownerScope === "user" ? "Only you can manage this" : "Shared with the workspace"
 }
 
-export function integrationAuthModeLabel(authMode: string) {
+export function integrationSignInLabel(provider: Pick<IntegrationProvider, "oauth_account_name">) {
+  return `Sign In With ${provider.oauth_account_name}`
+}
+
+export function integrationAuthModeLabel(
+  authMode: string,
+  provider: Pick<IntegrationProvider, "oauth_account_name">
+) {
   if (authMode === "oauth") {
-    return "Sign In With Google"
+    return integrationSignInLabel(provider)
   }
   if (authMode === "api_key") {
     return "API key"

@@ -38,6 +38,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="gmail",
         display_name="Gmail",
         auth_modes=("oauth",),
+        oauth_account_name="Google",
         owner_scope="user",
         oauth_scopes=(
             "openid",

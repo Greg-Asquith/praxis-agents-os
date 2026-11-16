@@ -620,7 +620,9 @@ Adding a provider touches:
     idempotency mechanism is documented and covered.
 11. Declare `identity_source` on the OAuth protocol. Provider-owned identity
     also declares the token-response extractor when available and the required
-    access-token fetch function.
+    access-token fetch function. Set the manifest's `oauth_account_name` to
+    the account people sign in with (`"Microsoft"` gives **Sign In With
+    Microsoft**); registration rejects an OAuth provider without it.
 12. Declare remote token revocation explicitly. Use `revoke_token="none"` only
     when the authorization server has no revocation endpoint, and provide
     recovery guidance for removing the grant outside Praxis.

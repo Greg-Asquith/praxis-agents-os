@@ -35,6 +35,7 @@ PROVIDER = IntegrationProviderPlugin(
         provider_key="google_analytics",
         display_name="Google Analytics",
         auth_modes=("oauth", "service_account"),
+        oauth_account_name="Google",
         owner_scope="workspace",
         oauth_scopes=("openid", "email", ANALYTICS_READONLY_SCOPE),
         resource_types=("google_analytics_property",),

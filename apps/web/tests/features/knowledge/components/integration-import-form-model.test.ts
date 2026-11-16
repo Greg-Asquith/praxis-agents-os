@@ -26,6 +26,7 @@ const provider: IntegrationProvider = {
   knowledge_source_supported: true,
   knowledge_source_resource_types: ["notion_workspace"],
   oauth_scopes: [],
+  oauth_account_name: "Google",
   owner_scope: "user",
   provider_key: "notion",
   required_form_fields: [],

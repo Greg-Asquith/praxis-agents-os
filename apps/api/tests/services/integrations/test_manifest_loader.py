@@ -119,6 +119,7 @@ def _oauth_manifest(key: str = "example") -> IntegrationProviderManifest:
         auth_modes=("oauth",),
         owner_scope="user",
         oauth_scopes=("scope",),
+        oauth_account_name="Example",
     )
 
 
@@ -179,6 +180,8 @@ def test_manifest_rejects_duplicate_and_invalid_contracts() -> None:
     with pytest.raises(RuntimeError, match="Duplicate"):
         register_provider_manifest(_oauth_manifest())
     register_provider_manifest(replace(_oauth_manifest("no_scopes"), oauth_scopes=()))
+    with pytest.raises(RuntimeError, match="account name"):
+        register_provider_manifest(replace(_oauth_manifest("unnamed"), oauth_account_name=""))
     with pytest.raises(RuntimeError, match="form fields"):
         register_provider_manifest(
             IntegrationProviderManifest(
