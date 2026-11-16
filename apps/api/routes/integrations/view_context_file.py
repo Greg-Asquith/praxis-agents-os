@@ -5,12 +5,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Response
+from fastapi import APIRouter, Depends, Path, Response
 
-from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep, require_read
 from services.integrations.file_sources import IntegrationFileSourceCreate, view_integration_file
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_read)])
 
 
 # POST keeps the reference out of URLs and logs; the bytes are never stored.

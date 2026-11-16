@@ -416,6 +416,16 @@ bytes with bounded pixels, and re-encodes them, and the preview service
 rejects any image that isn't a base64 JPEG, so markup such as SVG can't reach
 the browser as an image.
 
+Attachment views (`POST .../file-views`) send original provider bytes to the
+browser without re-encoding, so the type is the control. The route returns only
+image, video, audio, and PDF types that the Files contract lists, which
+excludes SVG and HTML, and sends the contract's content type with `nosniff`,
+`no-store`, and a `sandbox` Content Security Policy. The client fetches the
+bytes into a blob. Images, video, and audio render in media elements, which
+run no script; a PDF opens in a new tab with no opener. Bytes are never
+stored and never enter model context. A new viewable type needs the same
+check: it must not be able to run script from a blob URL on the app's origin.
+
 Hostile-HTML coverage lives in `tests/routes/integrations/test_preview_routes.py`
 (script, event handler, form, meta refresh, `javascript:` link, nested iframe)
 and the Gmail and Outlook provider operation tests.

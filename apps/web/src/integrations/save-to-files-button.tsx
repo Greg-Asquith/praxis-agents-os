@@ -5,25 +5,22 @@ import { CheckIcon, FolderDownIcon, Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   type ProviderFileSource,
+  type SaveToFilesMutation,
   useActionableConversation,
-  useSaveToFiles,
 } from "@/integrations/file-sources"
 import { getErrorMessage } from "@/lib/api/errors"
 
 /** Saves one provider file on click, then links it in Files; hidden on read-only views. */
-export function SaveToFiles(props: ProviderFileSource) {
+export function SaveToFiles({
+  save,
+  source,
+}: {
+  // Owned by the row, so its button and the viewer's show one saved state.
+  save: SaveToFilesMutation
+  source: ProviderFileSource
+}) {
   const conversationId = useActionableConversation()
   if (conversationId === null) return null
-  return <SaveToFilesAction conversationId={conversationId} {...props} />
-}
-
-function SaveToFilesAction({
-  conversationId,
-  name,
-  providerKey,
-  reference,
-}: ProviderFileSource & { conversationId: string }) {
-  const save = useSaveToFiles(conversationId)
   const saved = save.data
   if (saved) {
     return (
@@ -42,10 +39,10 @@ function SaveToFilesAction({
   return (
     <div className="grid justify-items-end gap-1">
       <Button
-        aria-label={`Save ${name} to Files`}
+        aria-label={`Save ${source.name} to Files`}
         disabled={save.isPending}
         onClick={() => {
-          save.mutate({ name, providerKey, reference })
+          save.mutate({ conversationId, source })
         }}
         size="xs"
         type="button"

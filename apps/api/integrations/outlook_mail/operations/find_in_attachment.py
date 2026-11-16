@@ -5,7 +5,7 @@
 from services.integrations.microsoft_graph import MicrosoftGraphClient
 from utils.document_markdown import DocumentConversionError, find_document_text
 
-from .get_attachment import conversion_error, download_readable_attachment
+from .download_attachment import conversion_error, download_readable_attachment
 from .utils import untrusted
 
 OPERATION = "find_in_attachment"

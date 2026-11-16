@@ -212,6 +212,7 @@ class IntegrationProviderPlugin:
     oauth_config: OAuthConfigFn | None = None
     tool_definitions: tuple[RuntimeToolDefinition, ...] = ()
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
+    file_source_definitions: tuple[IntegrationFileSourceDefinition, ...] = ()
     entity_resolvers: tuple[EntityResolverDefinition, ...] = ()
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: TableScopeAdapter | None = None
@@ -261,7 +262,12 @@ engine retains connection scoping, response bounds, HTML sanitization, and
 failure auditing. The conversation route passes the matched context target to the
 fetch, so a provider can route the read through that account. Successful preview renders are not audited: the governed
 tool call that surfaced the content is the durable audit record, and
-per-render read events add noise. Anything a provider needs
+per-render read events add noise. File source definitions name an entity
+kind, its scoped reference model, an audit operation name, and a bounded
+`download` of original bytes. They let a person view or save a provider file
+from a tool card without an agent turn; the engine keeps the role check, the
+conversation's active context check, the Files write, and the audit. Anything
+a provider needs
 beyond this is a sign the engine is missing a seam; extend the engine,
 don't grow the contract ad hoc. The optional metadata job kind lets a
 warehouse-style provider trigger provider-owned cache refresh from discovery
@@ -715,9 +721,10 @@ unverified after the maintainer accepted its assumptions for implementation.
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft
 Graph seam. Each provider has an isolated Entra application, settings,
 manifest, discovery implementation, and lazy web module. These foundation
-packages expose connections and resources. Outlook Mail contributes five
-bounded read tools, scoped message and attachment resolvers, and an
-`outlook_message` preview. Seven approval-gated mail writes require one selected
+packages expose connections and resources. Outlook Mail contributes six
+bounded read tools, a tool that saves an attachment to Files, scoped message
+and attachment resolvers, an `outlook_message` preview, and an
+`outlook_attachment` file source. Seven approval-gated mail writes require one selected
 mailbox and retain immutable message references and terminal evidence. Move
 and update also support operator-configured automatic execution. Real-tenant
 reply rendering verification remains pending. SharePoint contributes bounded

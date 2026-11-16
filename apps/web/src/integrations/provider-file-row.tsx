@@ -3,13 +3,22 @@
 import { EyeIcon, Loader2Icon, PaperclipIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { type ProviderFileSource, useViewProviderFile } from "@/integrations/file-sources"
+import {
+  type ProviderFileSource,
+  type SaveToFilesMutation,
+  useSaveToFiles,
+  useViewProviderFile,
+} from "@/integrations/file-sources"
 import { ProviderFileViewer } from "@/integrations/provider-file-viewer"
 import { SaveToFiles } from "@/integrations/save-to-files-button"
 import { formatBytes } from "@/lib/format"
 
 type ProviderFileProps = { contentType: string | null; source: ProviderFileSource }
-type Viewer = ReturnType<typeof useViewProviderFile>
+type ViewerProps = {
+  save: SaveToFilesMutation
+  source: ProviderFileSource
+  viewer: ReturnType<typeof useViewProviderFile>
+}
 
 /** One provider file whose name opens it, with View and Save to Files actions. */
 export function ProviderFileRow({
@@ -18,6 +27,7 @@ export function ProviderFileRow({
   source,
 }: ProviderFileProps & { sizeBytes: number | null }) {
   const viewer = useViewProviderFile(source, contentType)
+  const save = useSaveToFiles()
   return (
     <li className="grid min-w-0 gap-1.5 rounded-md border px-2.5 py-2">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -41,9 +51,9 @@ export function ProviderFileRow({
             <p className="text-muted-foreground text-xs">{formatBytes(sizeBytes)}</p>
           ) : null}
         </div>
-        <ViewerActions source={source} viewer={viewer} />
+        <ViewerActions save={save} source={source} viewer={viewer} />
       </div>
-      <ViewerStatus source={source} viewer={viewer} />
+      <ViewerStatus save={save} source={source} viewer={viewer} />
     </li>
   )
 }
@@ -51,15 +61,16 @@ export function ProviderFileRow({
 /** View and Save to Files actions for a card that already names the file. */
 export function ProviderFileActions({ contentType, source }: ProviderFileProps) {
   const viewer = useViewProviderFile(source, contentType)
+  const save = useSaveToFiles()
   return (
     <div className="grid min-w-0 justify-items-end gap-1.5">
-      <ViewerActions source={source} viewer={viewer} />
-      <ViewerStatus source={source} viewer={viewer} />
+      <ViewerActions save={save} source={source} viewer={viewer} />
+      <ViewerStatus save={save} source={source} viewer={viewer} />
     </div>
   )
 }
 
-function ViewerActions({ source, viewer }: { source: ProviderFileSource; viewer: Viewer }) {
+function ViewerActions({ save, source, viewer }: ViewerProps) {
   return (
     <div className="flex shrink-0 items-start gap-1.5">
       {viewer.view ? (
@@ -79,12 +90,12 @@ function ViewerActions({ source, viewer }: { source: ProviderFileSource; viewer:
           View
         </Button>
       ) : null}
-      <SaveToFiles {...source} />
+      <SaveToFiles save={save} source={source} />
     </div>
   )
 }
 
-function ViewerStatus({ source, viewer }: { source: ProviderFileSource; viewer: Viewer }) {
+function ViewerStatus({ save, source, viewer }: ViewerProps) {
   return (
     <>
       {viewer.error ? (
@@ -98,6 +109,7 @@ function ViewerStatus({ source, viewer }: { source: ProviderFileSource; viewer: 
           kind={viewer.kind}
           onOpenChange={viewer.setDialogOpen}
           open={viewer.dialogOpen}
+          save={save}
           source={source}
         />
       ) : null}

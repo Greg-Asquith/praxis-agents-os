@@ -2,54 +2,15 @@
 
 """Reads one Markdown window of a supported file attachment."""
 
-from core.exceptions.integration import IntegrationValidationError
 from services.integrations.microsoft_graph import MicrosoftGraphClient
-from utils.document_markdown import (
-    DocumentConversionError,
-    document_content_type,
-    read_document_window,
-)
+from utils.document_markdown import DocumentConversionError, read_document_window
 from utils.text_window import TextWindowError
 
-from ..settings import outlook_mail_settings
-from .download_attachment import attachment_error, attachment_metadata, download_attachment
-from .utils import text, untrusted
+from .download_attachment import attachment_error, conversion_error, download_readable_attachment
+from .utils import untrusted
 
 MAX_MARKDOWN_BYTES = 64 * 1024
 OPERATION = "read_attachment"
-
-
-async def download_readable_attachment(
-    client: MicrosoftGraphClient, *, message_id: str, attachment_id: str, operation: str
-) -> tuple[str, str, bytes]:
-    """Returns the content type, name, and bytes of an attachment that converts to Markdown."""
-    metadata = await attachment_metadata(
-        client, message_id=message_id, attachment_id=attachment_id, operation=operation
-    )
-    content_type = document_content_type(text(metadata.get("contentType"), 255))
-    if content_type is None:
-        raise attachment_error(
-            "This attachment type cannot be read as text.",
-            "unsupported_attachment_type",
-            operation=operation,
-        )
-    data = await download_attachment(
-        client,
-        message_id=message_id,
-        attachment_id=attachment_id,
-        size=metadata["size"],
-        max_bytes=outlook_mail_settings.OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES,
-        operation=operation,
-    )
-    return content_type, text(metadata.get("name")), data
-
-
-def conversion_error(operation: str) -> IntegrationValidationError:
-    return attachment_error(
-        "This attachment could not be converted to text.",
-        "attachment_conversion_failed",
-        operation=operation,
-    )
 
 
 async def get_attachment(

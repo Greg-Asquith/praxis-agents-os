@@ -134,9 +134,11 @@ async def test_view_refuses_types_a_browser_cannot_show_safely(
     assert "Save it to Files" in response.text
 
 
-@pytest.mark.parametrize("case", ["unselected_mailbox", "other_member"])
+@pytest.mark.parametrize(
+    "case,status", [("unselected_mailbox", 400), ("other_member", 404), ("read_only", 403)]
+)
 async def test_save_denies_unavailable_targets_before_credentials(
-    db_session, db_async_client, integration_identity, monkeypatch, case
+    db_session, db_async_client, integration_identity, monkeypatch, case, status
 ):
     headers = integration_identity["headers"]
     if case == "other_member":
@@ -144,6 +146,9 @@ async def test_save_denies_unavailable_targets_before_credentials(
             db_session, role=WorkspaceRole.OWNER, workspace=integration_identity["workspace"]
         )
     conversation = await preview_context(db_session, integration_identity)
+    if case == "read_only":
+        integration_identity["membership"].role = WorkspaceRole.READ_ONLY
+        await db_session.commit()
     client = AsyncMock()
     monkeypatch.setattr(
         "integrations.outlook_mail.file_sources.mailbox_client_for_principal", client
@@ -153,6 +158,6 @@ async def test_save_denies_unavailable_targets_before_credentials(
         json=save_body("other" if case == "unselected_mailbox" else "mailbox"),
         headers=headers,
     )
-    assert response.status_code in {400, 404}, response.text
+    assert response.status_code == status, response.text
     client.assert_not_awaited()
     assert await db_session.scalar(select(File.id)) is None

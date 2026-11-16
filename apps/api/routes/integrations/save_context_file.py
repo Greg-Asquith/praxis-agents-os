@@ -5,16 +5,21 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Depends, Path, Request
 
-from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
+from core.dependencies import (
+    AsyncDbSessionDep,
+    CurrentUserDep,
+    CurrentWorkspaceDep,
+    require_editor,
+)
 from services.integrations.file_sources import (
     IntegrationFileSaveRead,
     IntegrationFileSourceCreate,
     save_integration_file,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_editor)])
 
 
 @router.post("/conversations/{conversation_id}/file-saves")
@@ -26,13 +31,12 @@ async def save_context_file(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
 ) -> IntegrationFileSaveRead:
-    workspace, membership = workspace_context
+    workspace, _membership = workspace_context
     return await save_integration_file(
         db,
         request=request,
         actor=actor,
         workspace=workspace,
-        membership=membership,
         conversation_id=conversation_id,
         payload=payload,
     )

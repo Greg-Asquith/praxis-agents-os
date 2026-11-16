@@ -11,10 +11,10 @@ import { workspaceMediaKind } from "@/components/tool-ui/workspace-file-preview"
 import { parseSavedFile } from "@/integrations/saved-file"
 import { apiFetch, apiRequest } from "@/lib/api/client"
 import { getErrorMessage, parseApiError } from "@/lib/api/errors"
+import { baseFilesQueryKeys } from "@/lib/file-query-keys"
+import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
 import { openSignedResource } from "@/lib/open-signed-resource"
-import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
-const fileQueryKeys = createWorkspaceScopedQueryKeys("files")
 // The new tab has loaded the PDF long before this; the URL only needs to outlive navigation.
 const PDF_URL_LIFETIME_MS = 60_000
 
@@ -52,7 +52,13 @@ async function fetchProviderFile(
 // Bytes are held only while the viewer is open.
 export function providerFileViewQueryOptions(conversationId: string, source: ProviderFileSource) {
   return queryOptions({
-    queryKey: ["provider-file-view", conversationId, source],
+    queryKey: [
+      ...baseIntegrationQueryKeys.workspace(),
+      "conversation",
+      conversationId,
+      "file-view",
+      source,
+    ],
     queryFn: ({ signal }) => fetchProviderFile(conversationId, source, signal),
     staleTime: 0,
     gcTime: 0,
@@ -107,10 +113,16 @@ export function useViewProviderFile(source: ProviderFileSource, contentType: str
 }
 
 /** Saves a provider file into Files as the signed-in person; no agent turn is involved. */
-export function useSaveToFiles(conversationId: string) {
+export function useSaveToFiles() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (source: ProviderFileSource) => {
+    mutationFn: async ({
+      conversationId,
+      source,
+    }: {
+      conversationId: string
+      source: ProviderFileSource
+    }) => {
       const saved = parseSavedFile(
         await apiRequest<unknown>(`/integrations/conversations/${conversationId}/file-saves`, {
           method: "POST",
@@ -120,6 +132,8 @@ export function useSaveToFiles(conversationId: string) {
       if (!saved) throw new Error("The file was saved, but its details couldn't be shown.")
       return saved
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: fileQueryKeys.lists() }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: baseFilesQueryKeys.lists() }),
   })
 }
+
+export type SaveToFilesMutation = ReturnType<typeof useSaveToFiles>

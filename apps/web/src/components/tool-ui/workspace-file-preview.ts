@@ -3,17 +3,16 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
+import { baseFilesQueryKeys } from "@/lib/file-query-keys"
 import { isRecord } from "@/lib/guards"
-import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
-const fileQueryKeys = createWorkspaceScopedQueryKeys("files")
 // Preview grants last 10 minutes; refetch well before one expires.
 const PREVIEW_STALE_MS = 4 * 60 * 1000
 
 // Keyed by revision, so a replaced File never shows its newer bytes in place of these.
 export function workspaceFilePreviewQueryOptions(fileId: string, revisionId: string | null) {
   return queryOptions({
-    queryKey: [...fileQueryKeys.detail(fileId), "preview", revisionId ?? "current"],
+    queryKey: [...baseFilesQueryKeys.detail(fileId), "preview", revisionId ?? "current"],
     queryFn: () =>
       apiRequest<unknown>(
         revisionId

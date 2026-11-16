@@ -12,6 +12,18 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Outlook attachments in Files: `outlook_mail_save_attachment` saves an
+  attachment's original bytes as a workspace File, and saved images, video,
+  and audio play on the card. Each attachment on a read message has **View**
+  and **Save to Files**, which act directly as the signed-in person with no
+  agent turn. Images, video, audio, and PDFs open without saving a copy.
+- Long Outlook attachments: `outlook_mail_read_attachment` takes an `offset`
+  to read past the first 64 KiB, and `outlook_mail_find_in_attachment` finds
+  literal text anywhere in an attachment and returns excerpts with offsets.
+- Provider file sources: a provider registers an
+  `IntegrationFileSourceDefinition`, and the provider-neutral
+  `POST /api/v1/integrations/conversations/{conversation_id}/file-views` and
+  `.../file-saves` routes view or save its files from a tool card.
 - Google Ads campaign goals and Performance Max switches:
   `google_ads_update_campaigns` sets which conversion goals a campaign bids
   for, the account's or a list of its own, and turns final URL expansion and
@@ -474,6 +486,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- The Active Context prompt block names each target's provider and type
+  (`provider: Outlook Mail, type: outlook_mailbox`), so an agent can tell a
+  Gmail mailbox from an Outlook one by more than its address.
 - Google Ads calls API v26 instead of v24, which Google sunsets in May 2027.
   No field the tools send or read changed, and the cards are unchanged.
 - Google Ads explains a Google Cloud project that only has Test access: the

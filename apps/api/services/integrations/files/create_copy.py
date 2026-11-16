@@ -64,7 +64,7 @@ async def create_copy(
         await resolve_folder_by_name(
             db, workspace=workspace, agent=agent, requested_by=user, name=folder_name
         )
-        if folder_name is not None and agent is not None
+        if folder_name is not None
         else None
     )
     saved = await create_file_with_revision(

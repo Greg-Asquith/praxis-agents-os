@@ -68,7 +68,7 @@ async def record_file_request_failure(
     *,
     request: IntegrationFileRequest,
     action: AuditAction,
-    provider_key: str,
+    operation: str,
     conversation_id: UUID,
     exc: Exception,
 ) -> None:
@@ -82,7 +82,8 @@ async def record_file_request_failure(
         requested_by_user_id=request.actor.id,
         status=AuditStatus.FAILURE,
         details={
-            "provider_key": provider_key,
+            "operation": operation,
+            "provider_key": request.scope.provider_key,
             "conversation_id": str(conversation_id),
             "source": source_identity(request),
             "error_code": getattr(exc, "error_code", None) or exc.__class__.__name__,

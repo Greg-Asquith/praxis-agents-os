@@ -154,13 +154,15 @@ send no message, start no agent turn, and agent tool policies don't apply.
   response carries `Content-Security-Policy: sandbox; default-src 'none'`,
   `nosniff`, and `no-store`. Only images, video, audio, and PDF are viewable;
   other types fail with `unviewable_file_type` and a prompt to save to Files.
-  Successful views are not audited, as with previews; failures are.
+  It needs a role that can read the workspace. Successful views are not
+  audited, as with previews; failures are.
 - `POST .../file-saves` saves the attachment as a File with the person as
   revision actor, links it to the conversation, and writes a user-actor
   `file` create audit event (operation, conversation, revision, and source
   reference identity; no bytes or connection IDs) in the same commit. It needs
-  a role that can write Files. A failure rolls back and records a failure
-  audit.
+  a role that can write Files, so a read-only member is refused before
+  credentials. A failure rolls back and records a failure audit with the
+  operation, source identity, and error code.
 
 Both take `{provider_key, reference}`, where `reference` is the scoped entity
 reference from the tool result. The routes are provider-neutral: a provider
@@ -180,7 +182,9 @@ In the browser, images, video, and audio open in a dialog from a blob URL that
 is revoked when the dialog closes. PDFs open in a new isolated tab from a
 blob URL revoked after a minute. The actions are hidden on shared transcripts.
 Inline images, which are usually signature logos, collapse under **Show N
-Inline Images**. A saved row shows **Open in Files**. Saved state lasts for the
+Inline Images**. A saved row shows **Open in Files**, and the row and its
+viewer share that state, so a save from the viewer also marks the row. Saved
+state lasts for the
 page view, so a save after a reload makes another copy, as a repeated agent
 save does. The agent learns about a card view or save only if the operator
 mentions it.

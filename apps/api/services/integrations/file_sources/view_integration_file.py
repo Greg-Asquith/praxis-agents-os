@@ -53,7 +53,7 @@ async def view_integration_file(
         await record_file_request_failure(
             request=file_request,
             action=AuditAction.READ,
-            provider_key=payload.provider_key,
+            operation=definition.operation,
             conversation_id=conversation_id,
             exc=exc,
         )

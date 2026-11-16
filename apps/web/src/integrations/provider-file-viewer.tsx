@@ -14,6 +14,7 @@ import {
 import {
   providerFileViewQueryOptions,
   type ProviderFileSource,
+  type SaveToFilesMutation,
   type ViewableKind,
 } from "@/integrations/file-sources"
 import { SaveToFiles } from "@/integrations/save-to-files-button"
@@ -25,12 +26,14 @@ export function ProviderFileViewer({
   kind,
   onOpenChange,
   open,
+  save,
   source,
 }: {
   conversationId: string
   kind: Exclude<ViewableKind, "pdf">
   onOpenChange: (open: boolean) => void
   open: boolean
+  save: SaveToFilesMutation
   source: ProviderFileSource
 }) {
   return (
@@ -41,7 +44,7 @@ export function ProviderFileViewer({
         </DialogHeader>
         {open ? <ViewerBody conversationId={conversationId} kind={kind} source={source} /> : null}
         <DialogFooter>
-          <SaveToFiles {...source} />
+          <SaveToFiles save={save} source={source} />
         </DialogFooter>
       </DialogContent>
     </Dialog>

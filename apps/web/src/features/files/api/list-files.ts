@@ -10,7 +10,7 @@ import type {
   FileSortField,
 } from "../types"
 import { isFileProcessing } from "../processing"
-import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
+import { baseFilesQueryKeys } from "@/lib/file-query-keys"
 import { apiRequest } from "@/lib/api/client"
 
 export type ListFilesParams = {
@@ -24,8 +24,6 @@ export type ListFilesParams = {
   folderId?: string
   rootOnly?: boolean
 }
-
-const baseFilesQueryKeys = createWorkspaceScopedQueryKeys("files")
 
 export const filesQueryKeys = {
   ...baseFilesQueryKeys,

@@ -8,10 +8,9 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.user import User
-from models.workspace import Workspace, WorkspaceMembership
+from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import record_operation_audit_event
-from services.files.utils import require_file_write_access
 from services.integrations.file_sources.schemas import (
     IntegrationFileSaveRead,
     IntegrationFileSourceCreate,
@@ -30,12 +29,10 @@ async def save_integration_file(
     request: Request,
     actor: User,
     workspace: Workspace,
-    membership: WorkspaceMembership,
     conversation_id: UUID,
     payload: IntegrationFileSourceCreate,
 ) -> IntegrationFileSaveRead:
     """Agent tool policies don't apply: the person saves with their own connection."""
-    require_file_write_access(membership)
     definition, file_request = await resolve_file_request(
         db, actor=actor, workspace=workspace, conversation_id=conversation_id, payload=payload
     )
@@ -81,7 +78,7 @@ async def save_integration_file(
         await record_file_request_failure(
             request=file_request,
             action=AuditAction.CREATE,
-            provider_key=payload.provider_key,
+            operation=definition.operation,
             conversation_id=conversation_id,
             exc=exc,
         )
