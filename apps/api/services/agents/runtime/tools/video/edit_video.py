@@ -8,12 +8,14 @@ nothing is uploaded. Any other clip is uploaded, within the model's input length
 """
 
 import hashlib
+from decimal import Decimal
 from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
+from sqlalchemy import select
 
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
@@ -45,12 +47,13 @@ from services.agents.runtime.tools.video.utils import probed_video, progress, wo
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.documents.outputs import EditTarget, save_file_edit
 from services.files.domain import GenerationProvenance
-from services.files.utils import file_revision_ref
+from services.files.utils import file_revision_ref, revision_video_metadata
 from services.media.catalogue import (
     PROCESSED_IN,
     MediaModel,
     MediaModelRoute,
     available_media_models,
+    available_route,
     default_media_model,
 )
 from services.media.generation import (
@@ -77,13 +80,45 @@ def _model_labels() -> dict[str, str]:
 _MODEL_LABELS = _model_labels()
 
 
-def _display_args(_deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """Shows the model that will run when the agent leaves it out."""
+async def _display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """Shows the model that will run when the agent leaves it out, and what each model would
+    cost for this clip once the probe has measured it."""
     default = default_media_model(TASK)
-    return {
+    display = {
         "model": default.id if default is not None else None,
         **{key: value for key, value in args.items() if value is not None},
     }
+    clip = await _measured_clip(deps, args.get("base_revision_id"))
+    if clip is None:
+        return display
+    seconds, resolution = clip
+    # The provider bills the clip it reads as input and keeps its length in the output.
+    display["_estimates"] = {
+        model.id: f"{route.clip_estimate(resolution, seconds, input_seconds=seconds):.2f}"
+        for model in available_media_models(TASK)
+        if (route := available_route(model, TASK))
+    }
+    display["_estimate_basis"] = f"{seconds:.1f} s at {'4K' if resolution == '4k' else resolution}"
+    return display
+
+
+async def _measured_clip(deps: RuntimeDeps, base_revision_id: object) -> tuple[Decimal, str] | None:
+    """Returns the base revision's length and output resolution, once the probe has run."""
+    try:
+        revision_id = UUID(str(base_revision_id))
+    except ValueError:
+        return None
+    revision = await deps.db.scalar(
+        select(FileRevision).where(
+            FileRevision.id == revision_id, FileRevision.workspace_id == deps.workspace.id
+        )
+    )
+    metadata = revision_video_metadata(revision)
+    if metadata is None:
+        return None
+    short_side = min(metadata.width or 0, metadata.height or 0)
+    resolution = "720p" if short_side <= 720 else "1080p" if short_side <= 1080 else "4k"
+    return Decimal(metadata.duration_ms) / 1000, resolution
 
 
 class EditVideoOutput(BaseModel):

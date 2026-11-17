@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/native-tools/video-tools.ts
 
+import type { EditedValues } from "@/components/tool-ui/edited-values"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isVideoAttachmentMediaType } from "@/features/conversations/attachments"
 import { videoSummary } from "@/features/files/format"
@@ -197,6 +198,34 @@ export function generateVideoPlan(args: unknown): string {
   ].join(", ")
 }
 
+// A paid call's estimated cost in US dollars, and what it was worked out for.
+export type VideoCostEstimate = { usd: string; basis: string }
+
+// The model's price a second at the chosen resolution, from the server's `_prices`, times the
+// length, following the approver's edits.
+export function generateVideoEstimate(
+  args: unknown,
+  edits: EditedValues
+): VideoCostEstimate | null {
+  if (!isRecord(args) || !isRecord(args["_prices"])) {
+    return null
+  }
+  const values = { ...args, ...edits }
+  const { model, resolution } = values
+  const seconds = Number(values["duration_seconds"])
+  const prices = typeof model === "string" ? args["_prices"][model] : null
+  const price = isRecord(prices) && typeof resolution === "string" ? prices[resolution] : null
+  // Whole millionths of a dollar, so the cents round exactly.
+  const micros = typeof price === "string" ? Math.round(Number(price) * 1_000_000) : NaN
+  if (!Number.isFinite(micros) || !Number.isInteger(seconds) || seconds <= 0) {
+    return null
+  }
+  return {
+    usd: (Math.round((micros * seconds) / 10_000) / 100).toFixed(2),
+    basis: generateVideoPlan({ ...values, duration_seconds: seconds }),
+  }
+}
+
 export function generateVideoResult(value: unknown): GenerateVideoResult | null {
   if (!isRecord(value)) {
     return null
@@ -230,6 +259,21 @@ export type EditVideoResult = {
   model: string
   // US dollars from the tokens Google reported, or null when unknown.
   costUsd: string | null
+}
+
+// The server's estimate for the chosen model, worked out from the clip's measured length and
+// resolution; none until the clip has been measured.
+export function editVideoEstimate(args: unknown, edits: EditedValues): VideoCostEstimate | null {
+  if (
+    !isRecord(args) ||
+    !isRecord(args["_estimates"]) ||
+    typeof args["_estimate_basis"] !== "string"
+  ) {
+    return null
+  }
+  const model = edits["model"] ?? args["model"]
+  const usd = typeof model === "string" ? args["_estimates"][model] : null
+  return typeof usd === "string" ? { usd, basis: args["_estimate_basis"] } : null
 }
 
 export function editVideoResult(value: unknown): EditVideoResult | null {

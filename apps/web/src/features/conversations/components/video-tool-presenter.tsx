@@ -2,8 +2,10 @@
 
 import type { ComponentType } from "react"
 
+import type { EditedValues } from "@/components/tool-ui/edited-values"
 import { CutVideoClipsApproval } from "@/features/conversations/components/video-clips-approval"
 import { CutVideoClipsRow } from "@/features/conversations/components/video-clips-row"
+import { VideoGenerationApproval } from "@/features/conversations/components/video-generation-approval"
 import {
   EditVideoLoadingRow,
   EditVideoRow,
@@ -22,11 +24,14 @@ import {
   CUT_VIDEO_CLIPS_TOOL_NAME,
   cutVideoClipsResult,
   EDIT_VIDEO_TOOL_NAME,
+  editVideoEstimate,
   editVideoResult,
   FIND_VIDEO_MOMENTS_TOOL_NAME,
   findVideoMomentsResult,
   GENERATE_VIDEO_TOOL_NAME,
+  generateVideoEstimate,
   generateVideoResult,
+  type VideoCostEstimate,
   videoFileReferences,
 } from "@/features/conversations/native-tools/video-tools"
 import type { ToolRowPresenter } from "@/integrations/contract"
@@ -63,6 +68,28 @@ const cutVideoClipsApproval: ToolRowPresenter = {
     ) : null,
 }
 
+// Paid calls show what they will cost before the approver decides.
+function paidVideoApproval(
+  name: string,
+  estimate: (args: unknown, edits: EditedValues) => VideoCostEstimate | null
+): ToolRowPresenter {
+  return {
+    handlesApprovals: true,
+    key: `${name}-approval`,
+    matches: (activity) => activity.status === "awaiting_approval" && activity.name === name,
+    render: ({ activity, approvalDecision, label, ui }) =>
+      approvalDecision ? (
+        <VideoGenerationApproval
+          activity={activity}
+          controls={approvalDecision}
+          estimate={estimate}
+          label={label ?? activity.name}
+          ui={ui ?? null}
+        />
+      ) : null,
+  }
+}
+
 const generateVideoRunning: ToolRowPresenter = {
   key: "generate-video-running",
   matches: (activity) =>
@@ -78,6 +105,8 @@ const editVideoRunning: ToolRowPresenter = {
 
 export const videoToolPresenters: ToolRowPresenter[] = [
   cutVideoClipsApproval,
+  paidVideoApproval(GENERATE_VIDEO_TOOL_NAME, generateVideoEstimate),
+  paidVideoApproval(EDIT_VIDEO_TOOL_NAME, editVideoEstimate),
   generateVideoRunning,
   editVideoRunning,
   completedVideoTool(FIND_VIDEO_MOMENTS_TOOL_NAME, findVideoMomentsResult, FindVideoMomentsRow),

@@ -2,7 +2,7 @@
 """Python-owned catalog of built-in runtime tools."""
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -109,7 +109,9 @@ def runtime_tool(
     always_allowed_when_mounted: bool = False,
     integration_binding: IntegrationToolBinding | None = None,
     availability_check: Callable[[], bool] | None = None,
-    approval_display_args: Callable[[RuntimeDeps, dict[str, Any]], dict[str, Any]] | None = None,
+    approval_display_args: (
+        Callable[[RuntimeDeps, dict[str, Any]], dict[str, Any] | Awaitable[dict[str, Any]]] | None
+    ) = None,
     presentation: ToolPresentation | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a Python function as a runtime tool."""

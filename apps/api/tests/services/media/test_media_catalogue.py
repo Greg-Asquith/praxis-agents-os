@@ -2,12 +2,16 @@
 
 """Media catalogue validation, route choice, and refusals before any provider call."""
 
+from datetime import UTC, datetime
+from decimal import Decimal
+
 import pytest
 from pydantic import SecretStr, ValidationError
 from pydantic_ai import ModelRetry
 
 from core.settings import settings
 from services.agents.runtime.tools.native import image_generation
+from services.ai_usage.pricing import find_price
 from services.media import catalogue
 from services.media.catalogue import MediaCatalogue, available_route
 
@@ -76,3 +80,17 @@ def test_a_model_is_refused_for_a_task_it_does_not_list(
 
     with pytest.raises(ModelRetry, match="test-image can't edit images"):
         image_generation.resolve_image_model("test-image", "edit_image")
+
+
+def test_the_approval_estimate_for_a_10_second_720p_omni_clip_matches_billed_pricing() -> None:
+    omni = catalogue.media_catalogue().get("omni-1.2-flash")
+    assert omni is not None
+    [route] = omni.routes
+    price = find_price(route.route, route.model, datetime.now(UTC).date())
+    assert price is not None
+    # Google lists 5,792 video output tokens a second at 720p.
+    billed = Decimal(57_920) * price.output_usd_per_mtok / Decimal(1_000_000)
+
+    estimate = route.clip_estimate("720p", Decimal(10))
+
+    assert abs(estimate - billed) < Decimal("0.005")

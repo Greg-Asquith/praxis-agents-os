@@ -91,7 +91,8 @@ durations, and resolutions), routes, upstream lab,
 processing location, a one-line `strengths`, and whether the vendor
 indemnifies output. Each route names the provider's own model ID, per task
 where it differs, and an estimated price per image or per second, optionally
-by output resolution. Adding or
+by output resolution, plus, for a video model that edits, a price a second
+for the input clip (`usd_per_input_second`). Adding or
 retiring a model is an edit to the file. `services/media/catalogue.py` loads
 and validates it once per process, so an unknown task, a missing price, a
 duplicate ID or route, a video route without a price for each resolution it
@@ -102,7 +103,7 @@ that can't do its task fails startup.
 | --- | --- | --- | --- |
 | `nano-banana-2.1` | `google`: `gemini-nano-banana-2.1` | $0.034 per 1K image | Globally |
 | `gpt-image-2.5` | `openai`: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` for edits | About $0.053 per 1024² image at medium quality (billed by token) | Globally |
-| `omni-1.2-flash` | `google`: `gemini-omni-1.2-flash` | $0.07 a second at 720p, $0.10 at 1080p, $0.21 at 4K (billed by token) | Globally |
+| `omni-1.2-flash` | `google`: `gemini-omni-1.2-flash` | $0.07 a second at 720p, $0.10 at 1080p, $0.21 at 4K, and $0.009 a second of input clip for an edit (billed by token) | Globally |
 
 A model is available when one of its routes is configured: Google and OpenAI
 by their provider credentials, with Google on Vertex also needing a supported
@@ -127,7 +128,10 @@ Processed globally", and changing it changes the cost shown. Generation's
 **Aspect Ratio** choices follow the selected model. Usage rows keep the
 route's provider and model and add `media_model` and `lab` to their details.
 
-The catalogue price is an estimate for the card. Usage reads price the calls
+The catalogue price is an estimate for the card; the video cards also show
+the call's estimated cost (see [video tools](video-tools.md#generation)), and
+a test keeps a 10 second 720p Omni estimate within half a cent of the billed
+token price. Usage reads price the calls
 themselves in `services/ai_usage/pricing.py`: GPT Image 2.5 by its text and
 image tokens, Nano Banana per image (see [AI usage](ai-usage.md)). SVG output for vector models
 is pending with the first route that serves one (353 or 354).

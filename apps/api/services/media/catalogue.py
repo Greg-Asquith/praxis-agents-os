@@ -74,6 +74,8 @@ class MediaModelRoute(_Record):
     usd_per_second: Decimal | None = Field(default=None, gt=0)
     # Video models priced by output resolution; usd_per_second is the default resolution's.
     usd_per_second_by_resolution: dict[str, Decimal] = Field(default_factory=dict)
+    # Input video a video edit sends or chains from, which some providers bill.
+    usd_per_input_second: Decimal | None = Field(default=None, gt=0)
 
     def provider_model(self, task: MediaTask) -> str:
         """Return the provider's model ID for one task."""
@@ -89,6 +91,13 @@ class MediaModelRoute(_Record):
     def price_per_second(self, resolution: str) -> Decimal:
         """Return the per-second price at one output resolution."""
         return self.usd_per_second_by_resolution.get(resolution) or self.price("text_to_video")
+
+    def clip_estimate(
+        self, resolution: str, seconds: Decimal, *, input_seconds: Decimal = Decimal(0)
+    ) -> Decimal:
+        """Return a clip's estimated price: its output, plus any input video it's billed for."""
+        input_price = self.usd_per_input_second or Decimal(0)
+        return seconds * self.price_per_second(resolution) + input_seconds * input_price
 
 
 class MediaModel(_Record):

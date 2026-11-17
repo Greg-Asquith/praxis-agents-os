@@ -2,6 +2,7 @@
 
 """edit_video: one paid edit per tool call, saved as the File's next revision."""
 
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -11,6 +12,7 @@ from core.database import set_session_tenant_context
 from core.settings import settings
 from models.files import File, FileRevision
 from models.media_generation import MediaGeneration
+from services.agents.runtime.tools.video import edit_video
 from tests.support.media import file_tool_turn, persist_analysed_video
 from tests.support.scenario import build_scenario_agent, run_scenario, scripted_model
 from tests.support.storage import reset_storage_provider_cache
@@ -198,3 +200,21 @@ async def test_another_workspaces_video_is_refused_before_any_paid_call(
     assert result.run.status == "completed"
     assert backend.edits == []
     assert "File not found" in str([message.parts for message in result.messages])
+
+
+async def test_the_approval_estimates_the_edit_from_the_measured_clip(db_session_factory) -> None:
+    context = await _context(db_session_factory)
+    _file, base = await _video(db_session_factory, context, duration_ms=10_000)
+
+    async with db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        deps = SimpleNamespace(db=db, workspace=SimpleNamespace(id=context.workspace_id))
+        display = await edit_video._display_args(
+            deps, {"instruction": INSTRUCTION, "base_revision_id": str(base)}
+        )
+
+    # A 1920x1080 clip is priced at 1080p, and the clip read as input is billed too:
+    # 10 s at $0.1043 output plus $0.0087 input a second.
+    assert display["_estimates"] == {"omni-1.2-flash": "1.13"}

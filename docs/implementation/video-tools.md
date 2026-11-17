@@ -658,8 +658,11 @@ the default, or `16:9`), `duration_seconds` (default 8), `resolution`
 (`720p`, the default, `1080p`, or `4k`), an optional catalogue `model`, and
 an optional File `name` and `folder`. The approval card shows the model that
 will run, with its price range a second and processing location, and every
-setting is editable. Image and video references and `extend_video` are
-pending (plan 250 C3).
+setting is editable. Under the settings it shows **Estimated Cost**, such as
+"About $0.56 · 8 s, Vertical, 720p", which follows the approver's edits: the
+display arguments carry each available model's price a second by resolution
+(`_prices`), and the card multiplies the chosen one by the length. Image and
+video references and `extend_video` are pending (plan 250 C3).
 
 The model comes from the media catalogue (`services/media/models.toml`, see
 [native tools](native-tools.md#media-model-catalogue)): `DEFAULT_VIDEO_GENERATION_MODEL`
@@ -710,7 +713,13 @@ arguments are the File, the `instruction` (up to 4,000 characters),
 `edit_video` task; `DEFAULT_VIDEO_GENERATION_MODEL` when the agent names
 none). The approval card shows the File, the full instruction (editable),
 and the model. The File isn't editable on the card, because the base
-revision belongs to it.
+revision belongs to it. Once the probe has measured the base revision, the
+card shows **Estimated Cost** for the chosen model, such as "About $1.13 ·
+10.0 s at 1080p": the clip's length at its output price (by the short side:
+720p up to 720 pixels, 1080p up to 1080, otherwise 4K), plus the clip read
+as input at the route's `usd_per_input_second`, which Google bills for
+chained and uploaded edits alike. The server works these out per model in
+the display arguments (`_estimates`, `_estimate_basis`).
 
 Before any paid request, the tool checks that the File is the workspace's
 own video, that `base_revision_id` is its current revision, and that it's an
@@ -874,6 +883,10 @@ The tool rows add the following:
   (a card as **Brand.png Card (3 s)**), finishing,
   and text on screen, including card text, read from the call's arguments
   (`video-clips-approval.tsx`).
+- **`generate_video` and `edit_video` approvals:** the tool's declared
+  fields with the estimated cost under them (`video-generation-approval.tsx`).
+  Display keys starting with `_` aren't shown as fields or sent back with
+  the approver's edits.
 
 In the composer, a video attachment shows its upload percentage, then
 "Preparing video", then its duration and dimensions. The person can send once

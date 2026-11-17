@@ -19,7 +19,10 @@ import type { ToolRowPresenter } from "@/integrations/contract"
 
 const integrationToolRowPresenters = vi.hoisted(() => vi.fn((): ToolRowPresenter[] => []))
 
-vi.mock("@/integrations/registry", () => ({ integrationToolRowPresenters }))
+vi.mock("@/integrations/registry", () => ({
+  integrationIcon: () => null,
+  integrationToolRowPresenters,
+}))
 
 const LANDSCAPE: VideoMetadata = {
   duration_ms: 83_500,
@@ -76,6 +79,43 @@ describe("video tool rows", () => {
 
     expect(html).toContain('aria-label="Edited coffee-cup.mp4"')
     expect(html).toContain('src="https://storage.test/file-1.mp4?signed=1"')
+  })
+
+  it("estimates a generation's cost from the approver's edits", () => {
+    const row = renderCustomToolCallRow({
+      activity: {
+        id: "tool-1",
+        kind: "approval",
+        name: "generate_video",
+        args: {
+          prompt: "A coffee cup on a table",
+          model: "omni-1.2-flash",
+          resolution: "720p",
+          duration_seconds: 8,
+          _prices: { "omni-1.2-flash": { "720p": "0.0695", "1080p": "0.1043" } },
+        },
+        status: "awaiting_approval",
+      },
+      approvalDecision: {
+        decision: { decision: "pending", edits: { resolution: "1080p" }, message: "" },
+        error: null,
+        onDecisionChange: () => undefined,
+        onRetry: () => undefined,
+        pendingCount: 1,
+        submitting: false,
+      },
+      compact: false,
+      defaultOpen: true,
+      label: "Generate Video",
+      live: true,
+      providerKey: null,
+      ui: null,
+    })
+
+    // 8 seconds at 1080p's $0.1043 a second, not 720p's $0.0695.
+    expect(
+      renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, row))
+    ).toContain("About $0.83")
   })
 
   it("leaves a video result to a specific presenter that claims it", () => {

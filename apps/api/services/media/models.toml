@@ -71,3 +71,6 @@ model = "gemini-omni-1.2-flash"
 # 1080p, and 17,376 at 4K (measured 2026-11-17). https://ai.google.dev/gemini-api/docs/pricing
 usd_per_second = "0.0695"
 usd_per_second_by_resolution = { "720p" = "0.0695", "1080p" = "0.1043", "4k" = "0.2085" }
+# An edit is also billed for the clip it changes, uploaded or chained: about 5,800
+# input tokens a second at $1.50 per million (measured on 1.1, 2026-10-01).
+usd_per_input_second = "0.0087"

@@ -6,7 +6,9 @@ import {
   cutMomentsInstruction,
   cutVideoClipsPlan,
   cutVideoClipsResult,
+  editVideoEstimate,
   findVideoMomentsResult,
+  generateVideoEstimate,
   videoFileReferences,
 } from "@/features/conversations/native-tools/video-tools"
 
@@ -218,5 +220,36 @@ describe("cutMomentsInstruction", () => {
     expect(cutMomentsInstruction("Talk.mp4", result.moments)).toBe(
       "Cut these moments from Talk.mp4 into separate clips:\n- 0:41 to 1:10 (41000–70250 ms)"
     )
+  })
+})
+
+describe("video cost estimates", () => {
+  const prices = { "omni-1.2-flash": { "720p": "0.0695", "4k": "0.2085" } }
+
+  it("prices a generation at the edited length and resolution, rounded to the cent", () => {
+    const args = {
+      model: "omni-1.2-flash",
+      resolution: "720p",
+      duration_seconds: 8,
+      _prices: prices,
+    }
+
+    expect(generateVideoEstimate(args, {})?.usd).toBe("0.56")
+    // A number field's edit arrives as text; 10 s at $0.2085 is $2.085, which rounds up.
+    expect(generateVideoEstimate(args, { resolution: "4k", duration_seconds: "10" })?.usd).toBe(
+      "2.09"
+    )
+    expect(generateVideoEstimate(args, { model: "unpriced-model" })).toBeNull()
+  })
+
+  it("shows the server's edit estimate for the chosen model only", () => {
+    const args = {
+      model: "omni-1.2-flash",
+      _estimates: { "omni-1.2-flash": "1.13" },
+      _estimate_basis: "10.0 s at 1080p",
+    }
+
+    expect(editVideoEstimate(args, {})).toEqual({ usd: "1.13", basis: "10.0 s at 1080p" })
+    expect(editVideoEstimate(args, { model: "other-model" })).toBeNull()
   })
 })

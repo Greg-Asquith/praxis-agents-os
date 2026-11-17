@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- See what a generated or edited video will cost before approving it: the
+  `generate_video` and `edit_video` approval cards show **Estimated Cost**
+  ("About $0.56 · 8 s, Vertical, 720p"). A generation's estimate follows the
+  approver's changes to the model, length, and resolution; an edit's is
+  worked out from the clip's measured length and resolution, including the
+  clip Google reads as input.
 - Fix a shot by instruction: `edit_video` changes a workspace MP4, such as
   "make it dusk" or "remove the extra hand", and saves the result as the
   File's next version. A clip made in Praxis chains from Google's stored

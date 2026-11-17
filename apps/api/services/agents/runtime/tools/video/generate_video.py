@@ -81,14 +81,21 @@ _MODEL_LABELS = _model_labels()
 
 
 def _display_args(_deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """Shows the model and settings that will run when the agent leaves them out."""
+    """Shows the model and settings that will run when the agent leaves them out, with each
+    model's price a second by resolution so the card's estimate follows the approver's edits."""
     default = default_media_model(TASK)
+    prices = {
+        model.id: {item: str(route.price_per_second(item)) for item in model.limits.resolutions}
+        for model in available_media_models(TASK)
+        if (route := available_route(model, TASK))
+    }
     return {
         "model": default.id if default is not None else None,
         "aspect_ratio": DEFAULT_ASPECT_RATIO,
         "resolution": DEFAULT_RESOLUTION,
         "duration_seconds": DEFAULT_DURATION_SECONDS,
         **{key: value for key, value in args.items() if value is not None},
+        "_prices": prices,
     }
 
 
