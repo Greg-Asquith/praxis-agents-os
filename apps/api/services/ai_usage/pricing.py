@@ -36,6 +36,18 @@ class ImageOutputPrice:
 
 
 @dataclass(frozen=True)
+class ImageTokenPrice:
+    """Per-token rates for image models that bill text and image tokens separately."""
+
+    provider: str
+    model: str
+    effective_from: date
+    text_input_usd_per_mtok: Decimal
+    image_input_usd_per_mtok: Decimal
+    image_output_usd_per_mtok: Decimal
+
+
+@dataclass(frozen=True)
 class VideoOutputPrice:
     provider: str
     model: str
@@ -231,6 +243,14 @@ IMAGE_OUTPUT_PRICES: tuple[ImageOutputPrice, ...] = (
     *_GOOGLE_IMAGE_OUTPUT_PRICES,
 )
 
+# GPT Image 2.5 bills by token; text output isn't billed. The Images API reports no
+# cached input, so all input is priced at the uncached rates.
+# https://developers.openai.com/api/docs/models/gpt-image-2.5-flare (2026-11-17)
+IMAGE_TOKEN_PRICES: tuple[ImageTokenPrice, ...] = tuple(
+    ImageTokenPrice("openai", model, date(2026, 9, 9), Decimal(5), Decimal(8), Decimal(30))
+    for model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst")
+)
+
 
 # Veo bills per output second; Google lists only the default with-audio rates, so
 # silent clips stay unpriced. https://ai.google.dev/gemini-api/docs/pricing#veo-3.1
@@ -282,6 +302,11 @@ def find_image_output_price(
     return _latest_effective(
         IMAGE_OUTPUT_PRICES, on_date, provider=provider, model=model, quality=quality, size=size
     )
+
+
+def find_image_token_price(provider: str, model: str, on_date: date) -> ImageTokenPrice | None:
+    """Return the latest per-token image rates effective on a UTC usage date."""
+    return _latest_effective(IMAGE_TOKEN_PRICES, on_date, provider=provider, model=model)
 
 
 def find_video_output_price(

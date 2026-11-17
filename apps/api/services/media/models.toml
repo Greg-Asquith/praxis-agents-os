@@ -1,0 +1,46 @@
+# apps/api/services/media/models.toml
+#
+# Every image and video model Praxis can call. Retiring a model is an edit here.
+# Prices are per-route estimates for approval cards, in US dollars; billed usage
+# is priced in services/ai_usage/pricing.py. Order sets the fallback default.
+
+[[models]]
+id = "nano-banana-2.1"
+label = "Nano Banana 2.1"
+tasks = ["text_to_image", "edit_image"]
+lab = "Google"
+# Vertex serves this model from the global endpoint only.
+processing = "global"
+strengths = "cheap, fast, and good at photoreal scenes, editing from up to 14 reference images"
+indemnified = true
+
+[models.limits]
+aspect_ratios = ["21:9", "16:9", "4:3", "3:2", "1:1", "9:16", "3:4", "2:3", "5:4", "4:5"]
+max_input_images = 14
+
+[[models.routes]]
+route = "google"
+model = "gemini-nano-banana-2.1"
+# Standard tier, 1K output. https://ai.google.dev/gemini-api/docs/pricing
+usd_per_image = "0.0336"
+
+[[models]]
+id = "gpt-image-2.5"
+label = "GPT Image 2.5"
+tasks = ["text_to_image", "edit_image"]
+lab = "OpenAI"
+processing = "global"
+strengths = "best overall image quality and text in images, with precise edits of one image"
+indemnified = true
+
+[models.limits]
+aspect_ratios = ["1:1", "2:3", "3:2"]
+max_input_images = 1
+
+[[models.routes]]
+route = "openai"
+model = "gpt-image-2.5-flare"
+task_models = { edit_image = "gpt-image-2.5-sunburst" }
+# Billed by token; about $0.053 for a 1024x1024 image at medium quality.
+# https://developers.openai.com/api/docs/models/gpt-image-2.5-flare
+usd_per_image = "0.053"

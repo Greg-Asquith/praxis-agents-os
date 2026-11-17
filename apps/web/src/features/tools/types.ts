@@ -60,6 +60,7 @@ export type ToolUiField = {
   show_empty?: boolean
   width?: ToolFieldWidth
   options_by_value?: Record<string, string[]>
+  option_labels?: Record<string, string>
   secondary: boolean
   entity_kind?: string | null
   depends_on?: string[]

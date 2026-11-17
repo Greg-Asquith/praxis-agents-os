@@ -424,7 +424,9 @@ replaces an incompatible selection when the controlling argument changes,
 and blocks approval while a supplied value remains incompatible. Options
 display in Title Case, in the picker and after a decision: upper-case provider
 values such as `LEARN_MORE` read as "Learn More", and common acronyms such as
-URL stay upper case.
+URL stay upper case. A field can declare `option_labels`, display text for
+option values that don't read well, such as model IDs. The image tools use it
+to show each model's name, estimated price, and processing location.
 
 While approval is blocked, the approval card states why in its footer, beside
 **Decline** and the approve button, so the reason is next to the button it

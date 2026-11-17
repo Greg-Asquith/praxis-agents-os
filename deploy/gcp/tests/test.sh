@@ -240,6 +240,7 @@ for manifest in \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: KB_ANNOTATION_PROVIDER' "$manifest" | grep -q 'value: "openai"'
   grep -A1 'name: KB_ANNOTATION_MODEL' "$manifest" | grep -q 'value: "gpt-6-luna"'
+  grep -A1 'name: DEFAULT_IMAGE_GENERATION_MODEL' "$manifest" | grep -q 'value: "nano-banana-2.1"'
 done
 grep -q 'maxRetries: 0' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; then

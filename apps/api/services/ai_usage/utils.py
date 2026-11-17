@@ -21,9 +21,11 @@ from services.ai_usage.domain import (
     AIUsageEventData,
 )
 from services.ai_usage.pricing import (
+    ImageTokenPrice,
     ModelPrice,
     find_audio_input_price,
     find_image_output_price,
+    find_image_token_price,
     find_price,
     find_video_output_price,
 )
@@ -76,6 +78,8 @@ class UsageBucket:
     video_audio: str | None = None
     video_output_seconds: Decimal = Decimal(0)
     audio_seconds: Decimal = Decimal(0)
+    input_image_tokens: int = 0
+    output_text_tokens: int = 0
     key: str | None = None
     label: str | None = None
 
@@ -153,11 +157,16 @@ def output_price_columns() -> list[Label]:
     return [AIUsageEvent.details[key].astext.label(key) for key in _OUTPUT_PRICE_DETAIL_KEYS]
 
 
-def metered_seconds_columns() -> list[Label]:
-    """Returns the summed video output and audio input seconds for one grouped bucket."""
+def metered_quantity_columns() -> list[Label]:
+    """Returns the summed seconds and image token modalities for one grouped bucket."""
     return [
         func.sum(cast(AIUsageEvent.details[key].astext, Numeric)).label(key)
-        for key in ("video_output_seconds", "audio_seconds")
+        for key in (
+            "video_output_seconds",
+            "audio_seconds",
+            "input_image_tokens",
+            "output_text_tokens",
+        )
     ]
 
 
@@ -167,6 +176,8 @@ def output_price_values(row: Any) -> dict[str, Any]:
         **{key: getattr(row, key) for key in _OUTPUT_PRICE_DETAIL_KEYS},
         "video_output_seconds": Decimal(row.video_output_seconds or 0),
         "audio_seconds": Decimal(row.audio_seconds or 0),
+        "input_image_tokens": int(row.input_image_tokens or 0),
+        "output_text_tokens": int(row.output_text_tokens or 0),
     }
 
 
@@ -176,6 +187,17 @@ def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
         + Decimal(bucket.cache_read_tokens) * price.cache_read_usd_per_mtok
         + Decimal(bucket.cache_write_tokens) * price.cache_write_usd_per_mtok
         + Decimal(bucket.output_tokens) * price.output_usd_per_mtok
+    ) / _MILLION
+
+
+def image_token_cost(bucket: UsageBucket, price: ImageTokenPrice) -> Decimal:
+    """Price image input above the text rate and image output, leaving text output unbilled."""
+    image_input = min(bucket.input_image_tokens, bucket.input_tokens)
+    image_output = max(0, bucket.output_tokens - bucket.output_text_tokens)
+    return (
+        Decimal(bucket.input_tokens - image_input) * price.text_input_usd_per_mtok
+        + Decimal(image_input) * price.image_input_usd_per_mtok
+        + Decimal(image_output) * price.image_output_usd_per_mtok
     ) / _MILLION
 
 
@@ -195,7 +217,12 @@ def fold_buckets(
             if bucket.purpose == PURPOSE_VIDEO_TRANSCRIPTION
             else None
         )
-        if price is None and audio_price is None:
+        image_token_price = (
+            find_image_token_price(bucket.provider, bucket.model, bucket.day)
+            if bucket.purpose == PURPOSE_IMAGE_GENERATION
+            else None
+        )
+        if price is None and audio_price is None and image_token_price is None:
             folded.unpriced_tokens += bucket.tokens
             folded.unpriced_requests += bucket.requests
         else:
@@ -206,14 +233,19 @@ def fold_buckets(
                 folded.estimated_cost_usd += bucket_cost(bucket, price)
             if audio_price is not None:
                 folded.estimated_cost_usd += bucket.audio_seconds / 60 * audio_price.usd_per_minute
+            if image_token_price is not None:
+                folded.estimated_cost_usd += image_token_cost(bucket, image_token_price)
         if bucket.purpose == PURPOSE_VIDEO_GENERATION:
             _fold_video_output(folded, bucket)
         if bucket.purpose == PURPOSE_IMAGE_GENERATION:
-            _fold_image_output(folded, bucket)
+            _fold_image_output(folded, bucket, priced_by_tokens=image_token_price is not None)
     return folded
 
 
-def _fold_image_output(folded: UsageFold, bucket: UsageBucket) -> None:
+def _fold_image_output(folded: UsageFold, bucket: UsageBucket, *, priced_by_tokens: bool) -> None:
+    if priced_by_tokens:
+        folded.priced_image_generations += bucket.invocations
+        return
     image_price = (
         find_image_output_price(
             bucket.provider,

@@ -373,7 +373,7 @@ async def test_summary_prices_transcription_per_audio_minute_or_by_tokens(
 
 
 @pytest.mark.parametrize("direct", [False, True])
-async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
+async def test_summary_prices_direct_2_5_images_by_token_modality(
     db_session: AsyncSession, direct: bool
 ) -> None:
     action, image_model = "generate", "gpt-image-2.5-flare"
@@ -394,6 +394,8 @@ async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
                 details={
                     "action": action,
                     "image_model": image_model,
+                    "input_image_tokens": 4,
+                    "output_text_tokens": 1,
                     **metadata,
                 },
             )
@@ -409,12 +411,16 @@ async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
         to=datetime(2026, 9, 10, tzinfo=UTC),
     )
 
-    assert summary.totals.estimated_cost_usd == (Decimal(0) if direct else Decimal("0.0000088"))
-    assert summary.pricing_coverage.priced_tokens == (0 if direct else 24)
-    assert summary.pricing_coverage.unpriced_tokens == (24 if direct else 0)
+    # Per direct row: 6 text input at $5, 4 image input at $8, 1 image output at $30 per
+    # million, with the text output unbilled. Historical helper rows keep Luna's rates.
+    assert summary.totals.estimated_cost_usd == (
+        Decimal("0.000184") if direct else Decimal("0.0000088")
+    )
+    assert summary.pricing_coverage.priced_tokens == 24
+    assert summary.pricing_coverage.unpriced_tokens == 0
     assert summary.models[0].model == (image_model if direct else "gpt-5.6-luna")
-    assert summary.pricing_coverage.priced_image_generations == 0
-    assert summary.pricing_coverage.unpriced_image_generations == 2
+    assert summary.pricing_coverage.priced_image_generations == (2 if direct else 0)
+    assert summary.pricing_coverage.unpriced_image_generations == (0 if direct else 2)
 
 
 @pytest.mark.asyncio

@@ -61,7 +61,9 @@ export function fieldOptionsError(
 // Upper-case provider values like LEARN_MORE read as Title Case; short acronyms stay as they are.
 const KEPT_ACRONYMS = new Set(["URL", "CPC", "CPM", "CPA", "CTR", "ID", "API", "SMS", "FAQ"])
 
-export function fieldOptionLabel(option: string): string {
+export function fieldOptionLabel(option: string, labels?: Record<string, string>): string {
+  const label = labels?.[option]
+  if (label) return label
   if (option !== option.toUpperCase() || !/[A-Z]/.test(option)) {
     return titleCaseToken(option, option)
   }

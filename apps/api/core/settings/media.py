@@ -57,6 +57,13 @@ class MediaSettingsMixin:
         default="eu",
         description="Speech-to-Text multi-region for Chirp 3 transcription on Vertex deployments.",
     )
+    DEFAULT_IMAGE_GENERATION_MODEL: str = Field(
+        default="nano-banana-2.1",
+        description=(
+            "Media catalogue ID of the image model used when an agent names none. When this "
+            "deployment can't call it, the first available catalogue model is used."
+        ),
+    )
     VIDEO_UNDERSTANDING_MODEL: str = Field(
         default="gemini-3.8-flash",
         description="Google catalog model that watches video for find_video_moments and ask_video.",

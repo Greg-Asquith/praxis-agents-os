@@ -110,10 +110,10 @@ async def _persist_source(
 
 
 @pytest.mark.parametrize(
-    ("tool_name", "provider", "image_model"),
+    ("tool_name", "image_model"),
     [
-        ("edit_image", "google", "gemini-nano-banana-2.1"),
-        ("generate_image_from_video", "google", "gemini-nano-banana-2.1"),
+        ("edit_image", "gemini-nano-banana-2.1"),
+        ("generate_image_from_video", "gemini-nano-banana-2.1"),
     ],
 )
 async def test_input_media_tool_auto_path_persists_source_provenance(
@@ -121,7 +121,6 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
     monkeypatch: pytest.MonkeyPatch,
     image_input_storage: None,
     tool_name: str,
-    provider: str,
     image_model: str,
 ) -> None:
     _enable_google(monkeypatch)
@@ -165,7 +164,7 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
         for file, _revision in source_files
     ]
     args = (
-        {"prompt": "  Approved prompt  ", "file_ids": references, "model_provider": provider}
+        {"prompt": "  Approved prompt  ", "file_ids": references}
         if is_edit
         else {"prompt": "  Approved prompt  ", "file_id": references[0]}
     )
@@ -246,7 +245,6 @@ async def test_vertex_edit_gif_fails_before_provider_dispatch(
                                 {
                                     "prompt": "Add a fox",
                                     "file_ids": [reference],
-                                    "model_provider": "google",
                                 },
                                 "vertex-gif",
                             ),

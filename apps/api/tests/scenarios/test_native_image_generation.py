@@ -80,7 +80,7 @@ async def test_vertex_image_approval_uses_real_adapter_and_persists_once(
                             "generate_image",
                             {
                                 "prompt": "A fox",
-                                "model_provider": "google",
+                                "model": "nano-banana-2.1",
                             },
                             "vertex-image",
                         ),
@@ -130,7 +130,7 @@ async def test_vertex_image_approval_uses_real_adapter_and_persists_once(
         assert (usage.requests, usage.input_tokens, usage.output_tokens) == (1, 10, 20)
 
 
-async def test_generate_image_approval_resumes_with_edited_prompt(
+async def test_generate_image_approval_shows_default_model_and_runs_the_chosen_one(
     db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     image_storage: None,
@@ -138,7 +138,6 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
 ) -> None:
     _enable_google(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
-    provider = "openai"
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["generate_image"],
@@ -150,11 +149,7 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
                 (
                     ToolCall(
                         "generate_image",
-                        {
-                            "prompt": "A blue fox",
-                            "model_provider": provider,
-                            "aspect_ratio": "3:2",
-                        },
+                        {"prompt": "A blue fox", "aspect_ratio": "3:2"},
                         "image-approval",
                     ),
                 )
@@ -168,6 +163,9 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
     assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
     state = load_suspended_run_state(suspended.run)
     assert "A blue fox" in json.dumps(state.message_history, default=str)
+    [call_id] = state.pending_tool_call_ids
+    display = state.deferred_tool_requests.metadata[call_id]["display_args"]
+    assert display["model"] == "nano-banana-2.1"
     assert openai_image_requests == []
 
     resumed = await run_scenario(
@@ -183,8 +181,7 @@ async def test_generate_image_approval_resumes_with_edited_prompt(
                     override_args={
                         "prompt": "A red fox",
                         "aspect_ratio": "3:2",
-                        "model_provider": provider,
-                        "model": None,
+                        "model": "gpt-image-2.5",
                     }
                 )
             }
@@ -210,7 +207,7 @@ async def test_generate_image_auto_policy_persists_workspace_scoped_file(
 ) -> None:
     _enable_google(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
-    provider, image_model = "openai", "gpt-image-2.5-flare"
+    image_model = "gpt-image-2.5-flare"
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["generate_image"],
@@ -227,7 +224,7 @@ async def test_generate_image_auto_policy_persists_workspace_scoped_file(
                             "generate_image",
                             {
                                 "prompt": "  A paper-cut mountain at sunrise  ",
-                                "model_provider": provider,
+                                "model": "gpt-image-2.5",
                             },
                             "auto-image",
                         ),
@@ -241,7 +238,7 @@ async def test_generate_image_auto_policy_persists_workspace_scoped_file(
     assert result.run.status == "completed"
     [returned] = result.tool_returns("generate_image")
     assert returned["content"]["image_model"] == image_model
-    assert returned["content"]["model"] == image_model
+    assert returned["content"]["model"] == "gpt-image-2.5"
     [request] = openai_image_requests
     assert image_request(request)["prompt"] == "  A paper-cut mountain at sunrise  "
     async with db_session_factory() as db:
@@ -347,7 +344,7 @@ async def test_direct_image_provider_failure_is_contained_and_audited(
                                 "generate_image",
                                 {
                                     "prompt": "A fox",
-                                    "model_provider": "openai",
+                                    "model": "gpt-image-2.5",
                                 },
                                 "failed-image",
                             ),
@@ -395,7 +392,7 @@ async def test_revoked_image_approval_makes_no_provider_request(
                 (
                     ToolCall(
                         "generate_image",
-                        {"prompt": "A fox", "model_provider": "openai"},
+                        {"prompt": "A fox", "model": "gpt-image-2.5"},
                         "image-approval",
                     ),
                 )
@@ -464,7 +461,7 @@ async def test_image_failures_publish_no_successful_reference(
     body = image_response()
     if failure == "malformed":
         body["data"] = [{"b64_json": "invalid base64"}]
-    args = {"prompt": "A fox", "model_provider": "openai"}
+    args = {"prompt": "A fox", "model": "gpt-image-2.5"}
     if failure == "missing_reference":
         args["file_ids"] = [str(uuid4())]
     async with mock_openai_images(
@@ -561,7 +558,7 @@ async def test_google_image_failure_preserves_outcome_and_usage(
                             (
                                 ToolCall(
                                     "generate_image",
-                                    {"prompt": "A fox", "model_provider": "google"},
+                                    {"prompt": "A fox", "model": "nano-banana-2.1"},
                                     "google-image-failure",
                                 ),
                             )

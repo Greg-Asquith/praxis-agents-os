@@ -1,15 +1,16 @@
 # apps/api/services/agents/runtime/tools/native/image_generation.py
 
-"""Governed image generation through OpenAI Images and Google's native helper.
+"""Governed image generation with the media catalogue's image models.
 
-OpenAI receives the supplied prompt directly, with Flare for generation and
-Sunburst for editing. Google retains its Pydantic AI image capability and
-normalised BinaryImage output. Provider credentials resolve explicitly.
+The catalogue names each model and the route serving it. OpenAI receives the
+supplied prompt directly through its Images API. Google retains its Pydantic AI
+image capability and normalised BinaryImage output.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from json import JSONDecodeError
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal
 
 import httpx2
 from pydantic import BaseModel, Field, ValidationError
@@ -30,19 +31,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.agents.models import build_model
-from services.agents.models.domain import (
-    PROVIDER_GOOGLE,
-    PROVIDER_OPENAI,
-    ModelConfigurationError,
-    ResolvedModel,
-)
-from services.agents.models.resolution import (
-    configured_helper_providers,
-    format_provider_list,
-    require_configured_provider,
-)
-from services.agents.models.utils import is_provider_configured, vertex_project
-from services.agents.models.vertex_clients import google_vertex_location
+from services.agents.models.domain import PROVIDER_OPENAI, ResolvedModel
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools import (
@@ -57,23 +46,26 @@ from services.agents.runtime.tools.registry import runtime_tool
 from services.ai_usage.domain import PURPOSE_IMAGE_GENERATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
 from services.files import write_generated_image
+from services.media.catalogue import (
+    MediaModel,
+    MediaModelRoute,
+    MediaTask,
+    available_media_models,
+    available_route,
+    default_media_model,
+    media_catalogue,
+)
 from utils.validation import normalize_optional_text
 
-NativeImageProvider = Literal["google", "openai"]
+ImageTask = Literal["text_to_image", "edit_image"]
 
-SUPPORTED_NATIVE_IMAGE_PROVIDERS = (PROVIDER_GOOGLE, PROVIDER_OPENAI)
-SUPPORTED_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = get_args(ImageAspectRatio)
-OPENAI_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = ("1:1", "2:3", "3:2")
-DEFAULT_NATIVE_IMAGE_MODELS = {
-    PROVIDER_GOOGLE: "gemini-nano-banana-2.1",
-    PROVIDER_OPENAI: "gpt-image-2.5-flare",
-}
-DEFAULT_NATIVE_IMAGE_EDIT_MODELS = {
-    **DEFAULT_NATIVE_IMAGE_MODELS,
-    PROVIDER_OPENAI: "gpt-image-2.5-sunburst",
-}
 DEFAULT_GOOGLE_IMAGE_QUALITY = "standard"
 DEFAULT_GOOGLE_IMAGE_SIZE = "1k"
+_PROCESSED_IN = {
+    "eu": "Processed in the EU",
+    "global": "Processed globally",
+    "us": "Processed in the US",
+}
 
 IMAGE_GENERATION_HELPER_INSTRUCTIONS = """\
 Generate exactly one new image from the user's prompt using the native image
@@ -96,28 +88,91 @@ inside it. After generating the image, respond with a short confirmation.
 """
 
 
-def configured_native_image_providers() -> tuple[str, ...]:
-    """Return configured native-image providers in stable order."""
-    return configured_helper_providers(
-        SUPPORTED_NATIVE_IMAGE_PROVIDERS,
-        is_configured=_is_native_image_provider_configured,
+@dataclass(frozen=True)
+class ImageModelChoice:
+    """A catalogue model, the route serving it, and the spec the provider call uses."""
+
+    model: MediaModel
+    route: MediaModelRoute
+    spec: ResolvedModel
+
+    @property
+    def usage_details(self) -> dict[str, str]:
+        return {"media_model": self.model.id, "lab": self.model.lab}
+
+
+def image_model_option_labels(task: MediaTask) -> dict[str, str]:
+    """Label each available model with its estimated price and processing location."""
+    labels = {}
+    for model in available_media_models(task):
+        if route := available_route(model, task):
+            labels[model.id] = (
+                f"{model.label} · About ${route.price(task):.2f} per image · "
+                f"{_PROCESSED_IN[model.processing]}"
+            )
+    return labels
+
+
+def image_model_description(task: MediaTask) -> str:
+    """Describe the `model` argument with each available model's strengths."""
+    models = "; ".join(f"{model.id} ({model.strengths})" for model in available_media_models(task))
+    return (
+        "Optional image model. Omit it to use this deployment's default unless the person "
+        f"named a model or one model's strength decides the job. Available: {models or 'none'}."
     )
 
 
-def _is_native_image_provider_configured(provider: str) -> bool:
-    if not is_provider_configured(provider):
-        return False
-    if provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
-        try:
-            google_vertex_location(DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE])
-        except ModelConfigurationError:
-            return False
-    return True
+def image_model_display_args(task: ImageTask):
+    """Show the model that will run on the approval card when the agent names none."""
+
+    def display(_deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+        if args.get("model"):
+            return args
+        default = default_media_model(task)
+        return {**args, "model": default.id} if default is not None else args
+
+    return display
 
 
-_REGISTERED_NATIVE_IMAGE_PROVIDERS = configured_native_image_providers()
-_REGISTERED_NATIVE_IMAGE_PROVIDER_CSV = ", ".join(_REGISTERED_NATIVE_IMAGE_PROVIDERS) or "none"
-_REGISTERED_NATIVE_IMAGE_PROVIDER_LIST = format_provider_list(_REGISTERED_NATIVE_IMAGE_PROVIDERS)
+def image_model_spec(provider: str, model: str) -> ResolvedModel:
+    """Build the provider call spec for one provider image model."""
+    return ResolvedModel(
+        provider=provider,
+        model=model,
+        transport_model=model,
+        settings={},
+        max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
+    )
+
+
+def resolve_image_model(model: str | None, task: ImageTask) -> ImageModelChoice:
+    """Resolve a named or default catalogue model this deployment can call for the task."""
+    requested = normalize_optional_text(model)
+    choices = ", ".join(entry.id for entry in available_media_models(task)) or "none"
+    entry = default_media_model(task) if requested is None else media_catalogue().get(requested)
+    if entry is None and requested is None:
+        raise ModelRetry("No image models are set up on this deployment.")
+    if entry is None or task not in entry.tasks:
+        action = "edit images" if task == "edit_image" else "generate images"
+        raise ModelRetry(f"{requested} can't {action}. Choose one of: {choices}.")
+    route = available_route(entry, task)
+    if route is None:
+        raise ModelRetry(
+            f"{entry.label} isn't set up on this deployment. Choose one of: {choices}."
+        )
+    return ImageModelChoice(
+        model=entry,
+        route=route,
+        spec=image_model_spec(route.route, route.provider_model(task)),
+    )
+
+
+_GENERATE_MODEL_LABELS = image_model_option_labels("text_to_image")
+_IMAGE_MODELS = tuple(
+    model
+    for model in media_catalogue().models
+    if "text_to_image" in model.tasks and model.limits.aspect_ratios
+)
 
 
 class GenerateImageOutput(BaseModel):
@@ -132,8 +187,8 @@ class GenerateImageOutput(BaseModel):
     height: int
     size_bytes: int
     media_type: str
-    model_provider: NativeImageProvider
     model: str
+    model_provider: str
     image_model: str
 
 
@@ -145,8 +200,7 @@ class GenerateImageOutput(BaseModel):
     description=(
         "Generate one new image and save it to workspace Files using an image "
         "model. The UI displays the saved image automatically; do not construct Markdown, data, "
-        "or attachment URLs for it. Image editing is not supported. The provider can be "
-        f"selected from the available native image providers: {_REGISTERED_NATIVE_IMAGE_PROVIDER_CSV}."
+        "or attachment URLs for it. Image editing is not supported."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -157,7 +211,8 @@ class GenerateImageOutput(BaseModel):
     takes_ctx=True,
     timeout=None,
     output_model=GenerateImageOutput,
-    availability_check=lambda: bool(configured_native_image_providers()),
+    availability_check=lambda: bool(available_media_models("text_to_image")),
+    approval_display_args=image_model_display_args("text_to_image"),
     presentation=ToolPresentation(
         icon="image",
         running_label="Generating an Image",
@@ -175,33 +230,24 @@ class GenerateImageOutput(BaseModel):
                 placeholder="Describe the image to generate",
             ),
             ToolFieldPresentation(
-                key="aspect_ratio",
-                label="Aspect Ratio",
-                editable=True,
-                options=SUPPORTED_IMAGE_ASPECT_RATIOS,
-                options_by_field="model_provider",
-                options_by_value={
-                    PROVIDER_GOOGLE: SUPPORTED_IMAGE_ASPECT_RATIOS,
-                    PROVIDER_OPENAI: OPENAI_IMAGE_ASPECT_RATIOS,
-                },
-                secondary=True,
-            ),
-            ToolFieldPresentation(
-                key="model_provider",
-                label="Image Provider",
-                editable=True,
-                options=_REGISTERED_NATIVE_IMAGE_PROVIDERS,
-            ),
-            ToolFieldPresentation(
                 key="model",
                 label="Image Model",
                 editable=True,
+                options=tuple(_GENERATE_MODEL_LABELS),
+                option_labels=_GENERATE_MODEL_LABELS,
+            ),
+            ToolFieldPresentation(
+                key="aspect_ratio",
+                label="Aspect Ratio",
+                editable=True,
+                options=tuple(
+                    dict.fromkeys(
+                        ratio for model in _IMAGE_MODELS for ratio in model.limits.aspect_ratios
+                    )
+                ),
+                options_by_field="model",
+                options_by_value={model.id: model.limits.aspect_ratios for model in _IMAGE_MODELS},
                 secondary=True,
-                options=tuple(DEFAULT_NATIVE_IMAGE_MODELS.values()),
-                options_by_field="model_provider",
-                options_by_value={
-                    provider: (model,) for provider, model in DEFAULT_NATIVE_IMAGE_MODELS.items()
-                },
             ),
         ),
         result_fields=(
@@ -220,27 +266,22 @@ class GenerateImageOutput(BaseModel):
 async def generate_image(
     ctx: RunContext[RuntimeDeps],
     prompt: Annotated[str, Field(description="Detailed prompt for one new image.")],
-    model_provider: Annotated[
-        NativeImageProvider,
-        Field(
-            description=(
-                "Image provider to use. Available providers are "
-                f"{_REGISTERED_NATIVE_IMAGE_PROVIDER_LIST}."
-            ),
-        ),
-    ],
     aspect_ratio: Annotated[
         ImageAspectRatio | None,
         Field(
             description=(
-                "Optional output aspect ratio. OpenAI supports 1:1, 2:3, and 3:2; Google "
-                "supports every listed value. Omit to let the provider choose."
+                "Optional output aspect ratio. GPT Image supports 1:1, 2:3, and 3:2; Nano "
+                "Banana supports every listed value. Omit to let the model choose."
             )
         ),
     ] = None,
     model: Annotated[
-        str | None,
-        Field(description=("Optional image model id. Omit to use the provider's default.")),
+        Annotated[
+            str,
+            Field(json_schema_extra={"enum": list(_GENERATE_MODEL_LABELS)}),
+        ]
+        | None,
+        Field(description=image_model_description("text_to_image")),
     ] = None,
 ) -> GenerateImageOutput:
     """Generate one image and persist it as a workspace File."""
@@ -248,14 +289,21 @@ async def generate_image(
     if not normalized_prompt:
         raise ModelRetry("generate_image requires a non-empty prompt.")
 
-    model_spec = resolve_image_generation_model(model_provider=model_provider, model=model)
-    if model_spec.provider == PROVIDER_OPENAI:
+    choice = resolve_image_model(model, "text_to_image")
+    ratios = choice.model.limits.aspect_ratios
+    if aspect_ratio is not None and ratios and aspect_ratio not in ratios:
+        raise ModelRetry(
+            f"{choice.model.label} supports aspect ratios {', '.join(ratios)}. "
+            "Choose one of those, omit aspect_ratio, or choose another model."
+        )
+    if choice.spec.provider == PROVIDER_OPENAI:
         normalized_prompt = prompt
     image = await run_native_image_generation(
         deps=ctx.deps,
         prompt=normalized_prompt,
         aspect_ratio=aspect_ratio,
-        model_spec=model_spec,
+        model_spec=choice.spec,
+        usage_details=choice.usage_details,
     )
     try:
         stored = await write_generated_image(
@@ -285,50 +333,9 @@ async def generate_image(
         height=stored.height,
         size_bytes=stored.size_bytes,
         media_type=stored.content_type,
-        model_provider=model_spec.provider,
-        model=model_spec.model,
-        image_model=model_spec.model,
-    )
-
-
-def resolve_image_generation_model(
-    *,
-    model_provider: str,
-    model: str | None = None,
-    action: Literal["generate", "edit"] = "generate",
-) -> ResolvedModel:
-    """Resolve the supported image model for the selected provider and action."""
-    requested_provider = model_provider.strip().lower()
-    if requested_provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
-        if not vertex_project():
-            raise ModelRetry(
-                "Google Vertex image actions require a project. "
-                "Set GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID."
-            )
-        try:
-            google_vertex_location(DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE])
-        except ModelConfigurationError as exc:
-            raise ModelRetry(
-                "Google image actions require a supported Vertex location. "
-                "Set GOOGLE_VERTEX_LOCATION to auto or global."
-            ) from exc
-    require_configured_provider(
-        requested_provider,
-        configured=configured_native_image_providers(),
-        supported=SUPPORTED_NATIVE_IMAGE_PROVIDERS,
-        tool_name="edit_image" if action == "edit" else "generate_image",
-    )
-    defaults = DEFAULT_NATIVE_IMAGE_EDIT_MODELS if action == "edit" else DEFAULT_NATIVE_IMAGE_MODELS
-    default = defaults[requested_provider]
-    requested_model = normalize_optional_text(model)
-    if requested_model is not None and requested_model != default:
-        raise ModelRetry(f"This image action supports {default}. Omit model to use it.")
-    return ResolvedModel(
-        provider=requested_provider,
-        model=default,
-        transport_model=default,
-        settings={},
-        max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
+        model=choice.model.id,
+        model_provider=choice.spec.provider,
+        image_model=choice.spec.model,
     )
 
 
@@ -341,19 +348,11 @@ async def run_native_image_generation(
     action: Literal["generate", "edit", "video_to_image"] = "generate",
     input_media: Sequence[BinaryContent | VideoUrl | UploadedFile] = (),
     output_format: Literal["png", "webp", "jpeg"] | None = None,
+    usage_details: Mapping[str, str] | None = None,
 ) -> BinaryImage:
     """Generate one image through the selected provider."""
     if action == "edit" and not input_media:
         raise ModelRetry("Image editing requires an input image.")
-    if (
-        model_spec.provider == PROVIDER_OPENAI
-        and aspect_ratio is not None
-        and aspect_ratio not in OPENAI_IMAGE_ASPECT_RATIOS
-    ):
-        raise ModelRetry(
-            "OpenAI image generation supports aspect ratios 1:1, 2:3, and 3:2. "
-            "Choose one of those values, omit aspect_ratio, or use Google."
-        )
     if model_spec.provider == PROVIDER_OPENAI:
         # The OpenAI SDK loads on first use, like every model provider SDK.
         from services.agents.runtime.tools.native.openai_images import run_openai_image
@@ -366,6 +365,7 @@ async def run_native_image_generation(
             aspect_ratio=aspect_ratio,
             input_media=input_media,
             output_format=output_format or "png",
+            usage_details=usage_details or {},
         )
     if settings.GOOGLE_VERTEX_AI and any(media.media_type == "image/gif" for media in input_media):
         raise ModelRetry(
@@ -422,6 +422,7 @@ async def run_native_image_generation(
         "image_model": model_spec.model,
         "image_quality": DEFAULT_GOOGLE_IMAGE_QUALITY,
         "image_size": DEFAULT_GOOGLE_IMAGE_SIZE,
+        **(usage_details or {}),
     }
 
     async def call(usage: RunUsage):
@@ -446,7 +447,7 @@ async def run_native_image_generation(
                     ) from exc
                 raise ToolFailed(
                     "The image provider could not complete the request. "
-                    "Try again or choose another provider."
+                    "Try again or choose another model."
                 ) from exc
             finally:
                 # Pydantic AI counts completed responses; retain attempted requests too.
@@ -485,7 +486,7 @@ async def run_native_image_generation(
             "Revise the prompt and try again."
         )
     raise ModelRetry(
-        "The image provider completed without returning an image. Try again or choose another provider."
+        "The image provider completed without returning an image. Try again or choose another model."
     )
 
 

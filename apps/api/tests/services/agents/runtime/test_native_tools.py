@@ -438,14 +438,15 @@ async def test_openai_images_receive_exact_prompt_without_helper(
     monkeypatch, image_usage_events, action, aspect_ratio, size
 ):
     prompt = '  Keep "EXACT wording".\nDo not paraphrase. 🦊  '
-    spec = image_generation_tools.resolve_image_generation_model(
-        model_provider="openai", action=action
+    choice = image_generation_tools.resolve_image_model(
+        "gpt-image-2.5", "edit_image" if action == "edit" else "text_to_image"
     )
     async with mock_openai_images(monkeypatch) as requests:
         result = await image_generation_tools.run_native_image_generation(
             deps=_metering_deps(),
             prompt=prompt,
-            model_spec=spec,
+            model_spec=choice.spec,
+            usage_details=choice.usage_details,
             aspect_ratio=aspect_ratio,
             action=action,
             input_media=(BinaryContent(data=IMAGE_BYTES, media_type="image/png"),)
@@ -487,6 +488,8 @@ async def test_openai_images_receive_exact_prompt_without_helper(
         "input_image_tokens": 4,
         "output_text_tokens": 0,
         "output_image_tokens": 20,
+        "media_model": "gpt-image-2.5",
+        "lab": "OpenAI",
     }
 
 
@@ -536,8 +539,9 @@ async def test_openai_image_errors_are_safe_metered_and_transport_owned(
                 prompt="A fox",
                 aspect_ratio=None,
                 action=action,
-                model_spec=image_generation_tools.resolve_image_generation_model(
-                    model_provider="openai", action=action
+                model_spec=image_generation_tools.image_model_spec(
+                    "openai",
+                    "gpt-image-2.5-sunburst" if action == "edit" else "gpt-image-2.5-flare",
                 ),
                 input_media=(BinaryContent(data=IMAGE_BYTES, media_type="image/png"),)
                 if action == "edit"
@@ -611,7 +615,7 @@ async def test_native_image_editing_probe_sends_input_image_and_edit_action(
     assert result is image
 
 
-async def test_edit_image_limits_openai_to_one_source_before_loading_media(
+async def test_edit_image_applies_model_source_limit_before_loading_media(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agent = _agent(tool_names=["edit_image"])
@@ -629,12 +633,12 @@ async def test_edit_image_limits_openai_to_one_source_before_loading_media(
         FileReference(entity_id=uuid4(), label="first.png"),
         FileReference(entity_id=uuid4(), label="second.png"),
     ]
-    with pytest.raises(ModelRetry, match="requires exactly one source image"):
+    with pytest.raises(ModelRetry, match="at most 1 source image at a time"):
         await image_editing_tools.edit_image(
             FakeContext(),
             "Combine these",
             references,
-            model_provider=PROVIDER_OPENAI,
+            model="gpt-image-2.5",
         )
 
 
@@ -665,7 +669,6 @@ async def test_edit_image_applies_combined_input_byte_bound(
             FakeContext(),
             "Adjust the palette",
             [FileReference(entity_id=uuid4(), label="source.png")],
-            model_provider=PROVIDER_GOOGLE,
         )
 
     assert captured["max_total_bytes"] == 1_234

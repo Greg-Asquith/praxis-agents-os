@@ -5,7 +5,7 @@
 import base64
 import binascii
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from openai import APIError, AsyncOpenAI
@@ -34,6 +34,7 @@ async def run_openai_image(
     aspect_ratio: str | None,
     input_media: Sequence[BinaryContent],
     output_format: Literal["png", "webp", "jpeg"],
+    usage_details: Mapping[str, str],
 ) -> BinaryImage:
     """Send the supplied prompt directly and return exactly one image."""
     if action not in {"generate", "edit"}:
@@ -50,6 +51,7 @@ async def run_openai_image(
         "action": action,
         "image_model": model,
         "usage_source": "images_api",
+        **usage_details,
     }
 
     async def call(usage: RunUsage) -> ImagesResponse:
@@ -116,7 +118,7 @@ async def run_openai_image(
                 "Revise the prompt and try again."
             ) from exc
         raise ToolFailed(
-            "The image provider could not complete the request. Try again or choose another provider."
+            "The image provider could not complete the request. Try again or choose another model."
         ) from exc
 
     images = response.data or []

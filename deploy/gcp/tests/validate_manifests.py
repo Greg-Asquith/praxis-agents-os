@@ -36,6 +36,15 @@ def _service_env_names(document: dict[str, Any]) -> set[str]:
     return {entry["name"] for entry in container.get("env") or []}
 
 
+def _check_unique_env_names(document: dict[str, Any], name: str) -> None:
+    spec = document["spec"]["template"]["spec"]
+    containers = spec["template"]["spec"]["containers"] if "template" in spec else spec["containers"]
+    for container in containers:
+        names = [entry["name"] for entry in container.get("env") or []]
+        if duplicates := sorted({env_name for env_name in names if names.count(env_name) > 1}):
+            raise ValueError(f"{name} sets {', '.join(duplicates)} more than once")
+
+
 def _check_isolated_service(document: dict[str, Any], name: str) -> None:
     # Ingress is open because there is no VPC, so invoker IAM must stay on.
     annotations = document["metadata"]["annotations"]
@@ -64,6 +73,8 @@ def main() -> None:
         "migrate": _load(rendered_dir / "jobs/praxis-migrate.yaml"),
         "worker": _load(rendered_dir / "jobs/praxis-worker.yaml"),
     }
+    for name, document in manifests.items():
+        _check_unique_env_names(document, name)
     for name in ("api", "web", "renderer", "data-science"):
         cpu = _service_cpu(manifests[name])
         if not isinstance(cpu, str):

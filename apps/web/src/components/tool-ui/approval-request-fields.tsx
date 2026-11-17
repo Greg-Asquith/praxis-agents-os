@@ -277,8 +277,12 @@ export function ApprovalRequestFields({
                 <SelectContent align="start">
                   <SelectGroup>
                     {options.map((option) => (
-                      <SelectItem key={option} label={fieldOptionLabel(option)} value={option}>
-                        {fieldOptionLabel(option)}
+                      <SelectItem
+                        key={option}
+                        label={fieldOptionLabel(option, field.option_labels)}
+                        value={option}
+                      >
+                        {fieldOptionLabel(option, field.option_labels)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -471,7 +475,7 @@ function resolveApprovalField(field: ApprovalField, value: unknown): ApprovalFal
   }
   // A decided choice reads the same as it did in the picker.
   return typeof value === "string" && field.options.includes(value)
-    ? { ...resolved, value: fieldOptionLabel(value) }
+    ? { ...resolved, value: fieldOptionLabel(value, field.option_labels) }
     : resolved
 }
 

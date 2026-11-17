@@ -36,13 +36,13 @@ from services.agents.runtime.tools.media_inputs import (
     load_workspace_video_input,
 )
 from services.agents.runtime.tools.native.image_generation import (
-    configured_native_image_providers,
-    resolve_image_generation_model,
+    image_model_spec,
     run_native_image_generation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.tools.video.utils import progress
 from services.files import write_generated_image
+from services.media.catalogue import media_route_configured
 from utils.validation import normalize_optional_text
 
 DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL = "gemini-nano-banana-2.1"
@@ -68,8 +68,8 @@ class VideoToImageOutput(BaseModel):
 
 
 def configured_video_to_image_provider() -> bool:
-    """Return whether the Google native-image provider is configured."""
-    return PROVIDER_GOOGLE in configured_native_image_providers()
+    """Return whether this deployment can call Google's video-to-image model."""
+    return media_route_configured(PROVIDER_GOOGLE, DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL)
 
 
 @runtime_tool(
@@ -217,7 +217,6 @@ def resolve_video_to_image_model(*, model: str | None = None) -> ResolvedModel:
             "generate_image_from_video currently supports gemini-nano-banana-2.1. "
             "Omit model to use it."
         )
-    return resolve_image_generation_model(
-        model_provider=PROVIDER_GOOGLE,
-        model=requested_model,
-    )
+    if not configured_video_to_image_provider():
+        raise ModelRetry("Google image models aren't set up on this deployment.")
+    return image_model_spec(PROVIDER_GOOGLE, requested_model)

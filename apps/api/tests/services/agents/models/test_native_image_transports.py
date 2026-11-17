@@ -15,10 +15,11 @@ from pydantic_ai.messages import BinaryContent
 
 from core.settings import settings
 from services.agents.runtime.tools.native.image_generation import (
-    configured_native_image_providers,
-    resolve_image_generation_model,
+    image_model_spec,
+    resolve_image_model,
     run_native_image_generation,
 )
+from services.media.catalogue import available_media_models
 from tests.support.google_native import mock_google_native
 from tests.support.openai_images import IMAGE_BYTES
 
@@ -57,7 +58,7 @@ async def test_google_image_adapter_preserves_media_and_transport(
         )
     )
     async with mock_google_native(monkeypatch, vertex=vertex) as requests:
-        spec = resolve_image_generation_model(model_provider="google")
+        spec = resolve_image_model("nano-banana-2.1", "text_to_image").spec
         image = await run_native_image_generation(
             deps=deps,
             prompt="A fox",
@@ -113,18 +114,15 @@ async def test_invalid_vertex_image_configuration_never_requests_provider(monkey
         monkeypatch.setattr("google.genai.Client", constructor)
         with pytest.raises(
             ModelRetry,
-            match={
-                "location": "GOOGLE_VERTEX_LOCATION",
-                "project": "GOOGLE_VERTEX_PROJECT",
-                "model": "Omit model",
-            }[failure],
+            match="unknown-image can't" if failure == "model" else "isn't set up",
         ):
-            resolve_image_generation_model(
-                model_provider="google",
-                model="unknown-image" if failure == "model" else None,
+            resolve_image_model(
+                "unknown-image" if failure == "model" else "nano-banana-2.1", "text_to_image"
             )
         if failure != "model":
-            assert configured_native_image_providers() == ("openai",)
+            assert [model.id for model in available_media_models("text_to_image")] == [
+                "gpt-image-2.5"
+            ]
     constructor.assert_not_called()
     assert requests == []
 
@@ -152,7 +150,7 @@ async def test_vertex_inline_image_limit_fails_before_request(monkeypatch):
                 deps=deps,
                 prompt="A fox",
                 aspect_ratio=None,
-                model_spec=resolve_image_generation_model(model_provider="google"),
+                model_spec=image_model_spec("google", "gemini-nano-banana-2.1"),
                 action="edit",
                 input_media=(
                     BinaryContent(

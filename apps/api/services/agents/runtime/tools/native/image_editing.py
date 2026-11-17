@@ -1,6 +1,6 @@
 # apps/api/services/agents/runtime/tools/native/image_editing.py
 
-"""Governed image editing through OpenAI Images and Google's native helper.
+"""Governed image editing with the media catalogue's image models.
 
 OpenAI receives one source image and the unchanged prompt directly. Google
 preserves ordered multi-image input and can return JPEG when PNG is requested;
@@ -14,9 +14,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
-from models.workspace import Workspace
-from services.agents.models.domain import PROVIDER_OPENAI, ResolvedModel
-from services.agents.models.resolution import resolve_agent_model
+from services.agents.models.domain import PROVIDER_OPENAI
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools import (
@@ -29,23 +27,19 @@ from services.agents.runtime.tools import (
 )
 from services.agents.runtime.tools.media_inputs import load_workspace_media_inputs
 from services.agents.runtime.tools.native.image_generation import (
-    _REGISTERED_NATIVE_IMAGE_PROVIDERS,
-    DEFAULT_NATIVE_IMAGE_EDIT_MODELS,
-    NativeImageProvider,
-    configured_native_image_providers,
-    resolve_image_generation_model,
+    image_model_description,
+    image_model_display_args,
+    image_model_option_labels,
+    resolve_image_model,
     run_native_image_generation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import write_generated_image
 from services.files.contract import FileCategory
 from services.files.resolve_chat_attachments import IMAGE_MEDIA_TYPES
-from utils.validation import normalize_optional_text
+from services.media.catalogue import available_media_models
 
-_REGISTERED_EDIT_IMAGE_PROVIDERS = configured_native_image_providers()
-_REGISTERED_EDIT_IMAGE_PROVIDER_LIST = (
-    " and ".join(_REGISTERED_EDIT_IMAGE_PROVIDERS) if _REGISTERED_EDIT_IMAGE_PROVIDERS else "none"
-)
+_EDIT_MODEL_LABELS = image_model_option_labels("edit_image")
 
 
 class EditImageOutput(BaseModel):
@@ -63,8 +57,8 @@ class EditImageOutput(BaseModel):
     height: int
     size_bytes: int
     media_type: str
-    model_provider: NativeImageProvider
     model: str
+    model_provider: str
     image_model: str
 
 
@@ -76,8 +70,7 @@ class EditImageOutput(BaseModel):
     description=(
         "Edit one current workspace image revision and save the result to workspace Files. "
         "The UI displays the saved image automatically; do not construct Markdown, data, or "
-        "attachment URLs for it. The provider can be selected from the configured "
-        f"image providers: {_REGISTERED_EDIT_IMAGE_PROVIDER_LIST}."
+        "attachment URLs for it."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -88,7 +81,8 @@ class EditImageOutput(BaseModel):
     takes_ctx=True,
     timeout=None,
     output_model=EditImageOutput,
-    availability_check=lambda: bool(configured_native_image_providers()),
+    availability_check=lambda: bool(available_media_models("edit_image")),
+    approval_display_args=image_model_display_args("edit_image"),
     presentation=ToolPresentation(
         icon="image",
         running_label="Editing an Image",
@@ -112,22 +106,11 @@ class EditImageOutput(BaseModel):
                 entity_kind="file",
             ),
             ToolFieldPresentation(
-                key="model_provider",
-                label="Image Provider",
-                editable=True,
-                options=_REGISTERED_NATIVE_IMAGE_PROVIDERS,
-            ),
-            ToolFieldPresentation(
                 key="model",
                 label="Image Model",
                 editable=True,
-                secondary=True,
-                options=tuple(DEFAULT_NATIVE_IMAGE_EDIT_MODELS.values()),
-                options_by_field="model_provider",
-                options_by_value={
-                    provider: (model,)
-                    for provider, model in DEFAULT_NATIVE_IMAGE_EDIT_MODELS.items()
-                },
+                options=tuple(_EDIT_MODEL_LABELS),
+                option_labels=_EDIT_MODEL_LABELS,
             ),
         ),
         result_fields=(
@@ -152,24 +135,14 @@ async def edit_image(
             min_length=1,
             max_length=14,
             description=(
-                "Current workspace images to edit in reference order. Google accepts up to 14; "
-                "OpenAI currently accepts one in this tool."
+                "Current workspace images to edit in reference order. Nano Banana accepts up "
+                "to 14; GPT Image accepts one."
             ),
         ),
     ],
-    model_provider: Annotated[
-        Annotated[
-            str,
-            Field(json_schema_extra={"enum": list(_REGISTERED_EDIT_IMAGE_PROVIDERS)}),
-        ]
-        | None,
-        Field(
-            description=("Optional image provider. Omit unless there is a reason to choose one.")
-        ),
-    ] = None,
     model: Annotated[
-        str | None,
-        Field(description="Optional image model id. Omit to use the provider default."),
+        Annotated[str, Field(json_schema_extra={"enum": list(_EDIT_MODEL_LABELS)})] | None,
+        Field(description=image_model_description("edit_image")),
     ] = None,
 ) -> EditImageOutput:
     """Edit one governed workspace image and persist the result."""
@@ -177,16 +150,15 @@ async def edit_image(
     if not normalized_prompt:
         raise ModelRetry("edit_image requires a non-empty prompt.")
 
-    model_spec = resolve_image_editing_model(
-        ctx.deps.agent,
-        workspace=ctx.deps.workspace,
-        model_provider=model_provider,
-        model=model,
-    )
-    if model_spec.provider == PROVIDER_OPENAI:
+    choice = resolve_image_model(model, "edit_image")
+    max_inputs = choice.model.limits.max_input_images
+    if max_inputs is not None and len(file_ids) > max_inputs:
+        raise ModelRetry(
+            f"{choice.model.label} edits at most {max_inputs} source image"
+            f"{'' if max_inputs == 1 else 's'} at a time. Pass fewer or choose another model."
+        )
+    if choice.spec.provider == PROVIDER_OPENAI:
         normalized_prompt = prompt
-    if model_spec.provider == PROVIDER_OPENAI and len(file_ids) != 1:
-        raise ModelRetry("OpenAI edit_image currently requires exactly one source image.")
     input_media = await load_workspace_media_inputs(
         ctx,
         file_ids,
@@ -201,10 +173,11 @@ async def edit_image(
         deps=ctx.deps,
         prompt=normalized_prompt,
         aspect_ratio=None,
-        model_spec=model_spec,
+        model_spec=choice.spec,
         action="edit",
         input_media=tuple(item.content for item in input_media),
         output_format="png",
+        usage_details=choice.usage_details,
     )
     try:
         stored = await write_generated_image(
@@ -240,32 +213,7 @@ async def edit_image(
         height=stored.height,
         size_bytes=stored.size_bytes,
         media_type=stored.content_type,
-        model_provider=model_spec.provider,
-        model=model_spec.model,
-        image_model=model_spec.model,
-    )
-
-
-def resolve_image_editing_model(
-    agent,
-    *,
-    workspace: Workspace | None,
-    model_provider: str | None = None,
-    model: str | None = None,
-) -> ResolvedModel:
-    """Resolve a configured OpenAI or Google image-editing model."""
-    requested_provider = normalize_optional_text(model_provider)
-    requested_model = normalize_optional_text(model)
-    if requested_provider is None:
-        if requested_model is not None:
-            raise ModelRetry("edit_image model requires model_provider.")
-        configured = configured_native_image_providers()
-        if not configured:
-            raise ModelRetry("No native edit_image providers are configured.")
-        active_provider = resolve_agent_model(agent, workspace=workspace).provider
-        requested_provider = active_provider if active_provider in configured else configured[0]
-    return resolve_image_generation_model(
-        model_provider=requested_provider,
-        model=requested_model,
-        action="edit",
+        model=choice.model.id,
+        model_provider=choice.spec.provider,
+        image_model=choice.spec.model,
     )

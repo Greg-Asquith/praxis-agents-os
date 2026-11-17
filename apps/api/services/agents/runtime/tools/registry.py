@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from models.agent import Agent
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATION_TOOL_DEFINITIONS,
     build_delegation_tools,
@@ -108,6 +109,7 @@ def runtime_tool(
     always_allowed_when_mounted: bool = False,
     integration_binding: IntegrationToolBinding | None = None,
     availability_check: Callable[[], bool] | None = None,
+    approval_display_args: Callable[[RuntimeDeps, dict[str, Any]], dict[str, Any]] | None = None,
     presentation: ToolPresentation | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a Python function as a runtime tool."""
@@ -142,6 +144,7 @@ def runtime_tool(
             always_allowed_when_mounted=always_allowed_when_mounted,
             integration_binding=integration_binding,
             availability_check=availability_check,
+            approval_display_args=approval_display_args,
             presentation=presentation or ToolPresentation(),
         )
         register_tool_definition(definition)

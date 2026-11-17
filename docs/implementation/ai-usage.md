@@ -107,13 +107,17 @@ The following contracts apply in this area:
 - Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
   with no Luna token charge. Returned input/output totals and bounded
   text/image modality details are retained. Missing usage stays unknown;
-  attempted requests still record an invocation. Image costs remain unpriced
-  because generic ledger rates cannot distinguish text and image input or
-  their cached subsets. These calls increment `unpriced_image_generations`,
-  displayed as **Incomplete image outputs**, and returned tokens count as
-  unpriced. Historical Responses helper rows retain their helper-token costs;
-  historical GPT Image 2 output estimates remain unchanged. Modality-aware
-  image pricing is pending.
+  attempted requests still record an invocation. Reads sum each bucket's
+  `input_image_tokens` and `output_text_tokens` details and price the tokens
+  from `IMAGE_TOKEN_PRICES` (effective from 9 September 2026): $5 per million
+  text input tokens, $8 image input, and $30 image output, with text output
+  unbilled, following OpenAI's
+  [model page](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare).
+  The Images API reports no cached input, so all input is priced uncached. A
+  row without modality details prices its input at the text rate. These calls
+  count as priced image generations. Historical Responses helper rows retain
+  their helper-token costs; historical GPT Image 2 output estimates remain
+  unchanged.
 - Platform usage reads are confined to `services/ai_usage/platform_queries.py`,
   use the sanctioned maintenance session, and set each transaction read-only
   before its first query. The `/platform-usage` router is super-admin-only;

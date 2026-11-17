@@ -81,13 +81,60 @@ The following contracts apply in this area:
 
 ## Image generation and editing
 
-Native image generation uses the governed `generate_image` helper-tool path
-for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
+### Media model catalogue
+
+`generate_image` and `edit_image` take an optional `model`: an ID from the
+media catalogue, `apps/api/services/media/models.toml`. Each entry records the
+model's tasks, limits (aspect ratios and source images), routes, upstream lab,
+processing location, a one-line `strengths`, and whether the vendor
+indemnifies output. Each route names the provider's own model ID, per task
+where it differs, and an estimated price per image or per second. Adding or
+retiring a model is an edit to the file. `services/media/catalogue.py` loads
+and validates it once per process, so an unknown task, a missing price, a
+duplicate ID or route, or an `DEFAULT_IMAGE_GENERATION_MODEL` that isn't an image model
+fails startup.
+
+| ID | Route and provider model | Estimate | Processed |
+| --- | --- | --- | --- |
+| `nano-banana-2.1` | `google`: `gemini-nano-banana-2.1` | $0.034 per 1K image | Globally |
+| `gpt-image-2.5` | `openai`: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` for edits | About $0.053 per 1024² image at medium quality (billed by token) | Globally |
+
+A model is available when one of its routes is configured: Google and OpenAI
+by their provider credentials, with Google on Vertex also needing a supported
+location. Runway and Replicate routes are never available until plans 353 and
+354 add their backends. When two configured routes serve one model, the
+cheaper one is used, and equal prices go to the earlier route in
+`MEDIA_ROUTE_PREFERENCE` (Google, OpenAI, Runway, Replicate). The tool schema
+lists the models available at process start. A model that isn't in the
+catalogue, doesn't list the task, or has no configured route is refused before
+any provider call.
+
+When `model` is omitted, the tool uses `DEFAULT_IMAGE_GENERATION_MODEL`
+(`nano-banana-2.1` by default) if it's available, otherwise the first available
+model in catalogue order. Routing between models (plan 352 B) is pending.
+
+The approval card shows **Image Model** with the model that will run, filled
+in by the tool's approval display arguments when the agent named none. Each
+choice reads, for example, "Nano Banana 2.1 · About $0.03 per image ·
+Processed globally", and changing it changes the cost shown. Generation's
+**Aspect Ratio** choices follow the selected model. Usage rows keep the
+route's provider and model and add `media_model` and `lab` to their details.
+
+The catalogue price is an estimate for the card. Usage reads price the calls
+themselves in `services/ai_usage/pricing.py`: GPT Image 2.5 by its text and
+image tokens, Nano Banana per image (see [AI usage](ai-usage.md)). SVG output for vector models
+is pending with the first route that serves one (353 or 354).
+
+### Providers
+
+Native image generation uses the governed `generate_image` helper-tool path.
+`NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
 Google helper run. The tool generates exactly one image, preserves provider-returned
 PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
 `auto`. `edit_image` uses the current revision of a workspace image with
 OpenAI or Google and limits combined raw source bytes with
-`NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES` (64 MiB by default);
+`NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES` (64 MiB by default) and the model's
+`max_input_images` (14 for Nano Banana, 1 for GPT Image);
 `generate_image_from_video` uses Google only and reads the video through the
 shared video input (see [Video tools](video-tools.md#gemini-video-input)): by
 `gs://` URI on Vertex with GCS storage, through a Files API upload on the
@@ -100,9 +147,9 @@ generated-file audit evidence.
 OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation
 and `gpt-image-2.5-sunburst` for editing. The approved prompt reaches the API
 unchanged, including whitespace, without a helper model or added instructions.
-The optional `model` argument must match the action's image model; helper IDs
-such as `gpt-6-luna` are rejected with guidance to omit the override.
-Requests, file-tool results, and usage rows name the actual image model.
+Requests and usage rows name the provider's image model; file-tool results
+return the catalogue ID as `model`, the route as `model_provider`, and the
+provider's model as `image_model`.
 
 OpenAI retains its three aspect ratios (`1:1`, `2:3`, and `3:2`), automatic
 size when omitted, PNG output, and single edit source. The shared provider
@@ -111,7 +158,9 @@ produce a prompt-revision outcome; other provider errors produce safe tool
 failures. Cancellation propagates. Google retains its Pydantic AI helper.
 Paid live verification of the direct 2.5 calls remains pending before release.
 
-Pydantic AI 2.66's `ImageGenerator` is not used by these tools. Its OpenAI
+Pydantic AI's `ImageGenerator` (OpenAI, Google, and xAI adapters; rechecked
+at 2.68 on 2026-11-17, with no Runway, Replicate, or video adapter) is not
+used by these tools. Its OpenAI
 adapter decodes every returned base64 image before application byte or count
 checks. The retained OpenAI adapter checks encoded length before decoding
 and records usage before validating outputs. The direct OpenAI and Google
@@ -123,22 +172,13 @@ inputs before requesting the provider. Mocked contract tests cover direct
 Google and Vertex image references separately. These results do not qualify
 live provider availability.
 
-Image approvals show an editable **Image Provider** picker, including when
-the agent omits the provider. The picker lists configured providers.
-Generation's **Aspect Ratio** choices follow the selected provider. Without
-an explicit provider, the list contains only ratios supported by every
-configured provider. Changing provider preserves a supported ratio and
-replaces an unsupported ratio with the first available choice. An explicit
-model selection also follows the provider. Editing has no aspect-ratio
-argument.
-
 Google generation, editing, and video input use Nano Banana 2.1
 (`gemini-nano-banana-2.1`) through the same provider factory as chat.
 Vertex requires an explicit project
 and Application Default Credentials. `GOOGLE_VERTEX_LOCATION=auto` retains
 the image model's `global` default. Explicit `global` is supported.
-Other locations, including `eu` and `us`, make Google image actions unavailable
-and fail with configuration guidance at execution. No direct-API fallback occurs.
+Other locations, including `eu` and `us`, make Google image models
+unavailable, and naming one is refused. No direct-API fallback occurs.
 Vertex inline source images are limited to 7 MB each, in addition to the
 combined workspace input limit. Convert GIF sources to PNG, JPEG, or WebP
 before Vertex editing. These requirements follow the

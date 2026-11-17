@@ -202,6 +202,8 @@ class ToolFieldPresentation:
     secondary: bool = False
     options_by_field: str | None = None
     options_by_value: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
+    # Display text for options whose value isn't readable, such as model IDs.
+    option_labels: dict[str, str] = dataclass_field(default_factory=dict)
     entity_kind: str | None = None
     # Entity kinds a structured field holds, so its card can search and pick them.
     entity_kinds: tuple[str, ...] = ()
@@ -710,6 +712,10 @@ def _validate_presentation_field_options(field: ToolFieldPresentation) -> None:
             )
         if not set(options).issubset(field.options):
             raise RuntimeError("Conditional field options must be a subset of declared options")
+    if not set(field.option_labels).issubset(field.options) or any(
+        not label.strip() for label in field.option_labels.values()
+    ):
+        raise RuntimeError("Option labels must name declared options and must not be blank")
 
 
 def _validate_presentation_record_shape(field: ToolFieldPresentation) -> None:
