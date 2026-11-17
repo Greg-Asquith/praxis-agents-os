@@ -283,6 +283,43 @@ cases:
       accepted_tools: ["cut_video_clips"]
       required_argument_text: ["00000000-0000-0000-0000-0000000249a1", "9:16", "bold"]
       expected_clips: [[[754120, 801360]], [[1630240, 1684020]]]
+      expected_finishing: {plain: true}
+  - name: video_music_quietly_underneath
+    inputs:
+      prompt: "Cut the discounts one as a 9:16 reel with bold captions, and add my track quietly underneath."
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      attachment:
+        file_id: "00000000-0000-0000-0000-0000000265e7"
+        fixture_path: "fixtures/video_evals/attached_audio_track.txt"
+      channel_fixture:
+        tool_name: find_video_moments
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000249a1", label: "Pricing workshop keynote.mp4"}
+          brief: "five 30 to 60 second clips about pricing for Instagram Reels"
+        fixture_path: "fixtures/video_evals/find_video_moments_pricing_talk.json"
+        structured: true
+    metadata:
+      judge_response: false
+      accepted_tools: ["cut_video_clips"]
+      expected_clips: [[[754120, 801360]]]
+      expected_finishing: {music_file_id: "00000000-0000-0000-0000-0000000265e7", max_music_volume: 50}
+  - name: video_punchier_after_pause_removal
+    inputs:
+      prompt: "Make it punchier."
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      channel_fixture:
+        tool_name: cut_video_clips
+        args:
+          clips: [{segments: [{file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000249a1", label: "Pricing workshop keynote.mp4"}, start_ms: 754120, end_ms: 801360}]}]
+          aspect_ratio: "9:16"
+          captions: bold
+          remove_silences: true
+        fixture_path: "fixtures/video_evals/cut_video_clips_discounts_reel.json"
+        structured: true
+    metadata:
+      judge_response: false
+      accepted_tools: ["cut_video_clips"]
+      expected_finishing: {punch_ins: auto, remove_silences: true, snap_on: true}
   - name: video_reels_from_attached_video
     inputs:
       prompt: "Turn this talk into five 30 to 60 second Instagram Reels about pricing, with captions."

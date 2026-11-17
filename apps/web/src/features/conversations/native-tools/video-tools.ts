@@ -180,7 +180,7 @@ export type VideoClip = {
   durationMs: number | null
   ranges: string[]
   // Fades, transitions, speed changes, and zooms in the order they play, such as
-  // "Fade In 0.5 s", then punch-ins and sound.
+  // "Fade In 0.5 s", then the clip's music where it differs from the call's.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -192,6 +192,8 @@ type ClipOverlay = { text: string; start: string; end: string }
 
 type ClipFolder = { id: string; name: string }
 
+type ClipMusic = { fileId: string; volume: number; duck: boolean }
+
 export type CutVideoClipsResult = {
   clips: VideoClip[]
   // Where the saved clips went, in order of first use.
@@ -199,13 +201,19 @@ export type CutVideoClipsResult = {
   // Who is responsible for the music's rights, when any clip has music.
   musicNotice: string | null
   saved: number
+  // What the call applied to every clip, shown once on the card.
+  soundLevelled: boolean
+  voiceCleanedUp: boolean
+  punchIns: boolean
 }
 
-export function cutVideoClipsResult(value: unknown): CutVideoClipsResult | null {
+// Reads a result; the call's arguments say which music every clip shares.
+export function cutVideoClipsResult(value: unknown, args?: unknown): CutVideoClipsResult | null {
   if (!isRecord(value) || !Array.isArray(value["clips"]) || typeof value["saved"] !== "number") {
     return null
   }
-  const clips = value["clips"].map(videoClip)
+  const callMusic = isRecord(args) ? musicArgument(args["music"]) : null
+  const clips = value["clips"].map((clip) => videoClip(clip, callMusic))
   if (clips.some((clip) => clip === null)) {
     return null
   }
@@ -220,15 +228,19 @@ export function cutVideoClipsResult(value: unknown): CutVideoClipsResult | null 
       folders.set(folder["id"], { id: folder["id"], name: folder["name"] })
     }
   }
+  const raw = value["clips"].filter(isRecord)
   return {
     clips: clips as VideoClip[],
     folders: [...folders.values()],
     musicNotice: typeof value["music_notice"] === "string" ? value["music_notice"] : null,
     saved: value["saved"],
+    soundLevelled: raw.some((clip) => typeof clip["loudness_lufs"] === "number"),
+    voiceCleanedUp: raw.some((clip) => clip["enhance_voice"] === true),
+    punchIns: raw.some((clip) => clip["punch_ins"] === true),
   }
 }
 
-function videoClip(value: unknown): VideoClip | null {
+function videoClip(value: unknown, callMusic: ClipMusic | null): VideoClip | null {
   if (
     !isRecord(value) ||
     typeof value["index"] !== "number" ||
@@ -243,13 +255,14 @@ function videoClip(value: unknown): VideoClip | null {
     return null
   }
   const segments = value["segments"].filter(isRecord)
+  const music = musicEffect(clipMusic(value["music"]), callMusic)
   return {
     index: value["index"],
     name: value["name"],
     video,
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
     ranges: segments.map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
-    effects: clipEffects(value, segments),
+    effects: [...clipEffects(value, segments), ...(music ? [music] : [])],
     overlays: Array.isArray(value["text_overlays"])
       ? value["text_overlays"]
           .filter(isRecord)
@@ -268,6 +281,134 @@ function videoClip(value: unknown): VideoClip | null {
   }
 }
 
+// A clip planned for approval, read from the call's arguments.
+type PlannedVideoClip = {
+  index: number
+  name: string | null
+  ranges: string[]
+  effects: string[]
+  overlays: string[]
+}
+
+export type CutVideoClipsPlan = {
+  clips: PlannedVideoClip[]
+  sound: string
+  music: string | null
+  pausesRemoved: boolean
+  punchIns: boolean
+}
+
+// Every finishing option a cut_video_clips call applies, so an approver sees all of them.
+export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
+  if (!isRecord(args) || !Array.isArray(args["clips"])) {
+    return null
+  }
+  const callMusic = musicArgument(args["music"])
+  const audio = isRecord(args["audio"]) ? args["audio"] : {}
+  const sound = [
+    audio["normalize"] === false ? "Not Levelled" : "Levelled",
+    ...(audio["enhance_voice"] === true ? ["Voice Cleaned Up"] : []),
+  ]
+  const clips = args["clips"].filter(isRecord).map((clip, position) => {
+    const segments = Array.isArray(clip["segments"]) ? clip["segments"].filter(isRecord) : []
+    const join = clip["transition"] ?? args["transition"]
+    const planned = segments.map((segment, index) => ({
+      ...segment,
+      transition_in: index > 0 ? (segment["transition_in"] ?? join) : null,
+    }))
+    const own = clip["music"]
+    const music =
+      own === "none"
+        ? callMusic
+          ? "No Music"
+          : null
+        : musicEffect(musicArgument(own) ?? callMusic, callMusic)
+    const overlays = Array.isArray(clip["text_overlays"]) ? clip["text_overlays"] : []
+    return {
+      index: position + 1,
+      name: typeof clip["name"] === "string" && clip["name"].trim() ? clip["name"] : null,
+      ranges: segments.map(plannedRange),
+      effects: [...clipEffects(clip, planned), ...(music ? [music] : [])],
+      overlays: overlays
+        .filter(isRecord)
+        .flatMap((overlay) => (typeof overlay["text"] === "string" ? [overlay["text"]] : [])),
+    }
+  })
+  return {
+    clips,
+    sound: sound.join(", "),
+    music: callMusic ? musicSummary(callMusic, args["music"]) : null,
+    pausesRemoved: args["remove_silences"] === true,
+    punchIns: args["punch_ins"] === "auto",
+  }
+}
+
+function plannedRange(segment: Record<string, unknown>) {
+  const file = isRecord(segment["file_id"]) ? segment["file_id"] : {}
+  const name = typeof file["label"] === "string" ? `${file["label"]} ` : ""
+  const { start_ms: startMs, end_ms: endMs } = segment
+  if (typeof startMs !== "number" && typeof endMs !== "number") {
+    return `${name}(Whole Video)`
+  }
+  const start = typeof startMs === "number" ? clock(startMs) : "Start"
+  const end = typeof endMs === "number" ? clock(endMs) : "End"
+  return `${name}${start}–${end}`
+}
+
+// M:SS, or H:MM:SS from an hour.
+function clock(milliseconds: number) {
+  const total = Math.floor(milliseconds / 1000)
+  const [hours, minutes, secs] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return hours ? `${String(hours)}:${pad(minutes)}:${pad(secs)}` : `${String(minutes)}:${pad(secs)}`
+}
+
+// The music a call or clip asks for; volume and duck follow the tool's defaults when omitted.
+function musicArgument(value: unknown): ClipMusic | null {
+  if (!isRecord(value) || !isRecord(value["file_id"])) {
+    return null
+  }
+  const fileId = value["file_id"]["entity_id"]
+  if (typeof fileId !== "string") {
+    return null
+  }
+  return {
+    fileId,
+    volume: typeof value["volume"] === "number" ? value["volume"] : 25,
+    duck: value["duck"] !== false,
+  }
+}
+
+function clipMusic(value: unknown): ClipMusic | null {
+  if (
+    !isRecord(value) ||
+    typeof value["file_id"] !== "string" ||
+    typeof value["volume"] !== "number"
+  ) {
+    return null
+  }
+  return { fileId: value["file_id"], volume: value["volume"], duck: value["duck"] !== false }
+}
+
+function musicSummary(music: ClipMusic, value: unknown) {
+  const file = isRecord(value) && isRecord(value["file_id"]) ? value["file_id"] : {}
+  const name = typeof file["label"] === "string" ? file["label"] : "Music"
+  return `${name}, ${String(music.volume)}% ${music.duck ? "Under Speech" : "Throughout"}`
+}
+
+// A clip's music only needs saying where it differs from the music every clip shares.
+function musicEffect(own: ClipMusic | null, shared: ClipMusic | null) {
+  if (!own) {
+    return shared ? "No Music" : null
+  }
+  if (!shared) {
+    return own.duck ? "Music Under Speech" : "Music Added"
+  }
+  const same =
+    own.fileId === shared.fileId && own.volume === shared.volume && own.duck === shared.duck
+  return same ? null : "Different Music"
+}
+
 function clipEffects(clip: Record<string, unknown>, segments: Record<string, unknown>[]) {
   const effects: string[] = []
   const fade = (key: string, label: string) => {
@@ -282,9 +423,11 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
     if (
       isRecord(transition) &&
       typeof transition["style"] === "string" &&
-      typeof transition["duration_ms"] === "number"
+      transition["style"] !== "none"
     ) {
-      effects.push(`${transitionLabel(transition["style"])} ${seconds(transition["duration_ms"])}`)
+      const length = transition["duration_ms"]
+      const label = transitionLabel(transition["style"])
+      effects.push(typeof length === "number" ? `${label} ${seconds(length)}` : label)
     }
     const speed = segment["speed"]
     if (typeof speed === "number" && speed !== 1) {
@@ -295,29 +438,15 @@ function clipEffects(clip: Record<string, unknown>, segments: Record<string, unk
       effects.push(`Freeze Frame ${seconds(freeze)}`)
     }
     const zoom = segment["zoom"]
-    if (isRecord(zoom) && typeof zoom["from_percent"] === "number") {
-      const from = zoom["from_percent"]
+    if (isRecord(zoom) && typeof zoom["to_percent"] === "number") {
+      const from = typeof zoom["from_percent"] === "number" ? zoom["from_percent"] : 100
       const to = zoom["to_percent"]
       effects.push(
-        typeof to === "number" && to !== from
-          ? `Zoom ${String(from)}% to ${String(to)}%`
-          : `Zoom ${String(from)}%`
+        to !== from ? `Zoom ${String(from)}% to ${String(to)}%` : `Zoom ${String(from)}%`
       )
     }
   }
   fade("fade_out_ms", "Fade Out")
-  if (clip["punch_ins"] === true) {
-    effects.push("Punch-In Zooms")
-  }
-  if (clip["enhance_voice"] === true) {
-    effects.push("Voice Cleaned Up")
-  }
-  if (isRecord(clip["music"])) {
-    effects.push(clip["music"]["duck"] === false ? "Music Added" : "Music Under Speech")
-  }
-  if (typeof clip["loudness_lufs"] === "number") {
-    effects.push("Sound Levelled")
-  }
   return effects
 }
 

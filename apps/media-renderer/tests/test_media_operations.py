@@ -267,8 +267,9 @@ def test_music_loops_under_the_clip_and_drops_while_someone_talks(
     storage: FakeStorage, config: DriverConfig, tmp_path: Path
 ) -> None:
     # talk_pause.mp4 is a 250 Hz "voice" at about -20 dBFS for 3 s, then 3 s of silence;
-    # music.mp3 is a 1.5 s 4 kHz tone at about -9 dBFS, so it has to loop to fill the clip.
-    # Highpass filters keep only the music. Two segments of one video are two ffmpeg inputs.
+    # music.mp3 is a 1.5 s 4 kHz tone at about -9 dBFS. Started 1 s in, it has to loop from
+    # the track's start to fill the clip. Highpass filters keep only the music. Two segments
+    # of one video are two ffmpeg inputs.
     response = _run(
         storage,
         config,
@@ -284,7 +285,7 @@ def test_music_loops_under_the_clip_and_drops_while_someone_talks(
             "music": True,
             "music_volume": 25,
             "music_duck": True,
-            "music_start_ms": 0,
+            "music_start_ms": 1000,
             "music_fade_in_ms": 0,
             "music_fade_out_ms": 1000,
         },
@@ -297,6 +298,35 @@ def test_music_loops_under_the_clip_and_drops_while_someone_talks(
     assert abs(response["result"]["duration_ms"] - 6000) <= 100
     assert in_the_pause > -45
     assert under_speech <= in_the_pause - 9
+
+
+def test_music_fades_longer_than_the_clip_are_refused(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    with pytest.raises(OperationError) as error:
+        _run(
+            storage,
+            config,
+            "cut",
+            sources=("talk_pause.mp4", "music.mp3"),
+            outputs=1,
+            arguments={
+                "segments": [[0, 0, 1000]],
+                "width": 160,
+                "height": 90,
+                "fps": 30,
+                "fit": False,
+                "music": True,
+                "music_volume": 25,
+                "music_duck": True,
+                "music_start_ms": 0,
+                "music_fade_in_ms": 600,
+                "music_fade_out_ms": 600,
+            },
+        )
+
+    assert error.value.code == "invalid_request"
+    assert "out-0" not in storage.uploads
 
 
 def test_speed_retimes_video_and_audio_together_and_a_freeze_holds_in_silence(

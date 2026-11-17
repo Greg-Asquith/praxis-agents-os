@@ -114,6 +114,12 @@ clip's `text_overlays`:
   allows. Shorten it rather than shrinking it.
 - In a clip of several segments, set an overlay's `segment` so it stays
   with its moment. Its times are then in that segment's video.
+- **Animation:** `bold` captions and `bold` and `title` overlays pop in by
+  default; `clean` and `highlight` don't move. Change it with
+  `caption_style.animation` or an overlay's `style.animation` only when the
+  person asks: `pop`, `slide_up`, `fade`, or `none`. Captions also take
+  `karaoke`, which fills each word as it's spoken; like `highlight`, it
+  needs word timings, so when the tool refuses it, use `pop`.
 
 ### Finishing
 
@@ -124,15 +130,20 @@ clip's `text_overlays`:
   for studio sound.
 - **Music:** add music only when asked, and only from an audio File the
   person attached or uploaded. Never pick a track yourself. Keep the
-  default volume of 25 and ducking on, so the music sits under speech. Tell
-  the person they're responsible for having the rights to the music.
+  default volume of 25 and ducking on, so the music sits under speech; for
+  "quietly underneath", keep 25 or go lower, never over 50. Tell the person
+  they're responsible for having the rights to the music. To leave one clip
+  of a set without the call's music, set that clip's `music` to `none`.
 - **Speed, freeze frames, and push-ins:** use a segment's `speed`,
   `freeze_end_ms`, or `zoom` only when the person asks. Speed runs from 0.5
   to 2; a gentle push-in is `to_percent` 115.
 - **Punch-ins:** `punch_ins` `auto` zooms in at every other jump cut that
   `remove_silences` makes, which hides the jump. Use it when the person
   wants punchier pacing, such as "make it punchier" after you've removed
-  pauses.
+  pauses. Recut with the same clips and settings plus `punch_ins`, and keep
+  `remove_silences` and snapping on.
+- **A plain cut:** when the person asks only for clips, add no music,
+  speed changes, zooms, or punch-ins.
 
 ### One call for the set
 

@@ -24,6 +24,8 @@ CaptionPreset = Literal["bold", "clean", "highlight"]
 OverlayPreset = Literal["bold", "clean", "title"]
 TextPosition = Literal["top", "middle", "lower"]
 TextAlign = Literal["left", "center", "right"]
+TextAnimation = Literal["none", "pop", "slide_up", "fade"]
+CaptionAnimation = Literal["none", "pop", "slide_up", "fade", "karaoke"]
 TextFont = Literal[
     "Anton",
     "Archivo Black",
@@ -80,6 +82,9 @@ CUE_HOLD_MS = 500
 LINE_HEIGHT = 1.2
 MAX_OVERLAY_CHARS = 200
 MAX_OVERLAY_FADE_MS = 1000
+# Text pops in from this scale, percent, and every entrance takes this long.
+POP_FROM_PERCENT = 80
+ENTRANCE_MS = 200
 
 
 class TextStyle(BaseModel):
@@ -126,10 +131,21 @@ class CaptionTextStyle(TextStyle):
     )
     words_per_caption: int | None = Field(default=None, ge=1, le=12)
     max_lines: int | None = Field(default=None, ge=1, le=3)
+    animation: CaptionAnimation | None = Field(
+        default=None,
+        description=(
+            "How each caption appears: 'pop' scales in, 'slide_up' rises into place, 'fade' "
+            "fades in, 'karaoke' fills each word in highlight_color as it's spoken."
+        ),
+    )
 
 
 class OverlayTextStyle(TextStyle):
     align: TextAlign | None = None
+    animation: TextAnimation | None = Field(
+        default=None,
+        description="How the text appears: 'pop' scales in, 'slide_up' rises, 'fade' fades in.",
+    )
 
 
 _COMMON = {
@@ -156,6 +172,7 @@ CAPTION_PRESETS: dict[str, CaptionTextStyle] = {
         outline_width=6,
         box=False,
         words_per_caption=4,
+        animation="pop",
     ),
     "clean": CaptionTextStyle(
         **_CAPTION,
@@ -166,6 +183,7 @@ CAPTION_PRESETS: dict[str, CaptionTextStyle] = {
         outline_width=14,
         box=True,
         words_per_caption=10,
+        animation="none",
     ),
     "highlight": CaptionTextStyle(
         **{**_CAPTION, "highlight_scale": 110},
@@ -176,6 +194,7 @@ CAPTION_PRESETS: dict[str, CaptionTextStyle] = {
         outline_width=6,
         box=False,
         words_per_caption=3,
+        animation="none",
     ),
 }
 # Overlays sit at the top by default, clear of lower captions.
@@ -189,6 +208,7 @@ OVERLAY_PRESETS: dict[str, OverlayTextStyle] = {
         uppercase=False,
         outline_width=6,
         box=False,
+        animation="pop",
     ),
     "clean": OverlayTextStyle(
         **_OVERLAY,
@@ -198,6 +218,7 @@ OVERLAY_PRESETS: dict[str, OverlayTextStyle] = {
         uppercase=False,
         outline_width=14,
         box=True,
+        animation="none",
     ),
     "title": OverlayTextStyle(
         **_OVERLAY,
@@ -207,6 +228,7 @@ OVERLAY_PRESETS: dict[str, OverlayTextStyle] = {
         uppercase=True,
         outline_width=8,
         box=False,
+        animation="pop",
     ),
 }
 
@@ -251,6 +273,12 @@ class CaptionStyle:
     preset: CaptionPreset
     options: CaptionTextStyle = field(default_factory=CaptionTextStyle)
 
+    @property
+    def needs_word_times(self) -> bool:
+        """Highlighting and karaoke follow each word, so they need exact word times."""
+        animation = self.options.animation or CAPTION_PRESETS[self.preset].animation
+        return self.preset == "highlight" or animation == "karaoke"
+
 
 @dataclass(frozen=True)
 class PlacedOverlay:
@@ -266,6 +294,7 @@ class _Look:
     """A preset with its overrides applied, sized for one clip."""
 
     options: CaptionTextStyle | OverlayTextStyle
+    frame: tuple[int, int]
     font_size: int
     # How much larger the spoken word grows, for highlight.
     grown: float
@@ -360,6 +389,7 @@ def _look(
     usable = width - margins[0] - margins[1]
     return _Look(
         options=options.model_copy(update={"bold": options.bold and font.has_bold}),
+        frame=size,
         font_size=font_size,
         grown=grown,
         scale=min(width, height) / REFERENCE_EDGE_PX,
@@ -383,10 +413,12 @@ def _caption_events(words: Sequence[TranscriptWord], look: _Look, *, highlight: 
     for index, cue in enumerate(cues):
         following = cues[index + 1][0].start_ms if index + 1 < len(cues) else None
         start, end = _cue_times(cue, following)
-        if highlight:
+        if look.options.animation == "karaoke":
+            events.append(_dialogue(start, end, _karaoke_text(cue, look)))
+        elif highlight:
             events += _highlight_events(cue, start, end, look)
         else:
-            events.append(_dialogue(start, end, _text(cue, look)))
+            events.append(_dialogue(start, end, _entrance(look) + _text(cue, look)))
     return events
 
 
@@ -437,8 +469,27 @@ def _text(cue: Sequence[TranscriptWord], look: _Look, active: int | None = None)
     )
 
 
+def _karaoke_text(cue: Sequence[TranscriptWord], look: _Look) -> str:
+    """The cue with each word filling from the text colour as it's spoken, until the next."""
+    starts = [word.start_ms for word in cue[1:]] + [cue[-1].end_ms]
+    # ASS times karaoke in centiseconds.
+    fills = [
+        max(1, round((until - word.start_ms) / 10)) for word, until in zip(cue, starts, strict=True)
+    ]
+    started: set[int] = set()
+    lines = []
+    for line in _lines([word.text for word in cue], look):
+        pieces = []
+        for index, piece in line:
+            # A word split across lines fills as one.
+            pieces.append(piece if index in started else f"{{\\kf{fills[index]}}}{piece}")
+            started.add(index)
+        lines.append(" ".join(pieces))
+    return "\\N".join(lines)
+
+
 def _overlay_text(overlay: TextOverlay, look: _Look, number: int) -> str:
-    """The overlay's lines, keeping its own line breaks, behind its fades."""
+    """The overlay's lines, keeping its own line breaks, behind its entrance and fades."""
     lines = [
         " ".join(piece for _, piece in line)
         for paragraph in overlay.text.splitlines()
@@ -452,20 +503,53 @@ def _overlay_text(overlay: TextOverlay, look: _Look, number: int) -> str:
             f"Text overlay {number} needs {len(lines)} lines and is set to "
             f"{look.options.max_lines}. Shorten it, make it smaller, or allow more lines."
         )
-    fades = overlay.fade_in_ms or overlay.fade_out_ms
-    fade = f"{{\\fad({overlay.fade_in_ms},{overlay.fade_out_ms})}}" if fades else ""
-    return fade + "\\N".join(lines)
+    return _entrance(look, overlay.fade_in_ms, overlay.fade_out_ms) + "\\N".join(lines)
+
+
+def _entrance(look: _Look, fade_in_ms: int = 0, fade_out_ms: int = 0) -> str:
+    """Override tags that bring text in with the look's animation, and fade it if asked.
+
+    Every value is a number we computed; nothing from the text reaches them.
+    """
+    animation = look.options.animation
+    if animation in {"fade", "slide_up"}:
+        fade_in_ms = fade_in_ms or ENTRANCE_MS
+    tags = f"\\fad({fade_in_ms},{fade_out_ms})" if fade_in_ms or fade_out_ms else ""
+    if animation == "pop":
+        tags += (
+            f"\\fscx{POP_FROM_PERCENT}\\fscy{POP_FROM_PERCENT}"
+            f"\\t(0,{ENTRANCE_MS},\\fscx100\\fscy100)"
+        )
+    elif animation == "slide_up":
+        x, y = _anchor(look)
+        tags += f"\\move({x},{y + look.font_size // 2},{x},{y},0,{ENTRANCE_MS})"
+    return f"{{{tags}}}" if tags else ""
+
+
+def _anchor(look: _Look) -> tuple[int, int]:
+    """Where libass places text with the look's alignment and margins, for moving it there."""
+    width, height = look.frame
+    left, right, vertical = look.margins
+    row, column = divmod(look.alignment - 1, 3)
+    x = (left, left + (width - left - right) // 2, width - right)[column]
+    y = (height - vertical, height // 2, vertical)[row]
+    return x, y
 
 
 def _highlight_events(
     cue: Sequence[TranscriptWord], start: int, end: int, look: _Look
 ) -> list[str]:
-    """One event per word, from its start to the next word's, with that word picked out."""
+    """One event per word, from its start to the next word's, with that word picked out.
+
+    Only the first word's event carries the entrance, so the cue doesn't come in again on
+    every word.
+    """
     events = []
     for index in range(len(cue)):
         word_start = start if index == 0 else max(start, cue[index].start_ms)
         word_end = end if index + 1 == len(cue) else max(word_start + 10, cue[index + 1].start_ms)
-        events.append(_dialogue(word_start, min(word_end, end), _text(cue, look, index)))
+        entrance = _entrance(look) if index == 0 else ""
+        events.append(_dialogue(word_start, min(word_end, end), entrance + _text(cue, look, index)))
     return events
 
 
@@ -480,6 +564,12 @@ def _cue_times(cue: Sequence[TranscriptWord], following: int | None) -> tuple[in
 def _style(name: str, look: _Look) -> str:
     options = look.options
     text_colour = _colour(options.text_color)
+    # Karaoke fills each word from the secondary colour to the primary.
+    filled = (
+        _colour(options.highlight_color)
+        if isinstance(options, CaptionTextStyle) and options.animation == "karaoke"
+        else text_colour
+    )
     # BorderStyle 4 (libass) draws one box behind the whole text in the back colour, padded
     # by the outline width, which is then hidden around the text; 3 would box each line, and
     # the boxes overlap.
@@ -489,7 +579,7 @@ def _style(name: str, look: _Look) -> str:
     return ",".join(
         str(value)
         for value in (
-            name, options.font, look.font_size, text_colour, text_colour,
+            name, options.font, look.font_size, filled, text_colour,
             _colour(options.outline_color, opacity=0 if options.box else 100), back_colour, -1 if options.bold else 0, 0, 0, 0,
             100, 100, 0, 0, 4 if options.box else 1, round(options.outline_width * look.scale),
             round(options.shadow * look.scale), look.alignment, *look.margins, 1,

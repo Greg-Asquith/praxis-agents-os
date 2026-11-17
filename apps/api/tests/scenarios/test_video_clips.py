@@ -319,6 +319,7 @@ async def test_the_persons_track_plays_under_every_clip_with_a_rights_notice(
                         "snap": False,
                         "music": {"file_id": music, "volume": 10, "duck": False},
                     },
+                    {"segments": [segment(talk, 10_000, 15_000)], "snap": False, "music": "none"},
                 ],
                 "music": {"file_id": music},
             }
@@ -326,14 +327,22 @@ async def test_the_persons_track_plays_under_every_clip_with_a_rights_notice(
     )
 
     [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
-    assert output["saved"] == 2
+    assert output["saved"] == 3
     assert output["music_notice"]
-    # The track follows the video as a second input; a clip's own music overrides the call's.
-    first, second = sorted(renderer, key=lambda request: request["arguments"]["segments"][0][1])
-    assert [len(first["inputs"]), len(second["inputs"])] == [2, 2]
+    # The track follows the video as a second input; a clip's own music overrides the call's,
+    # and "none" leaves it out.
+    first, second, third = sorted(
+        renderer, key=lambda request: request["arguments"]["segments"][0][1]
+    )
+    assert [len(first["inputs"]), len(second["inputs"]), len(third["inputs"])] == [2, 2, 1]
     assert (first["arguments"]["music_volume"], first["arguments"]["music_duck"]) == (25, True)
     assert (second["arguments"]["music_volume"], second["arguments"]["music_duck"]) == (10, False)
-    assert {clip["music"]["file_id"] for clip in output["clips"]} == {str(track.id)}
+    assert "music" not in third["arguments"]
+    assert [clip["music"] and clip["music"]["file_id"] for clip in output["clips"]] == [
+        str(track.id),
+        str(track.id),
+        None,
+    ]
     # Sending the track to the renderer is recorded like the video.
     assert any(
         row.resource_id == str(track.id) and row.details["operation"] == "video_clips"

@@ -304,7 +304,7 @@ def plan_clip(
             warnings.append(warning)
     planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
     fps = output_fps(planned[0].source.metadata)
-    if remove_silences or (captions and captions.preset == "highlight"):
+    if remove_silences or (captions and captions.needs_word_times):
         _require_word_times(planned)
     if remove_silences:
         planned = [replace(segment, keep_frames=_kept_frames(segment, fps)) for segment in planned]
@@ -420,8 +420,9 @@ def _require_word_times(segments: Sequence[PlannedSegment]) -> None:
         for segment in segments
     ):
         raise ValueError(
-            "Removing pauses and highlighting words need exact word times, which this "
-            "deployment's transcription doesn't give. Use bold or clean captions and keep pauses."
+            "Removing pauses, highlighting words, and karaoke captions need exact word times, "
+            "which this deployment's transcription doesn't give. Use bold or clean captions "
+            "without karaoke, and keep pauses."
         )
 
 

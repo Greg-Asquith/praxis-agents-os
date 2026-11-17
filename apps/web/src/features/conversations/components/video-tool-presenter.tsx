@@ -2,6 +2,7 @@
 
 import type { ComponentType } from "react"
 
+import { CutVideoClipsApproval } from "@/features/conversations/components/video-clips-approval"
 import { CutVideoClipsRow } from "@/features/conversations/components/video-clips-row"
 import { VideoToolRow } from "@/features/conversations/components/video-tool-row"
 import {
@@ -34,7 +35,25 @@ function completedVideoTool(
   }
 }
 
+// The tool is automatic by default; an owner can set it to ask first.
+const cutVideoClipsApproval: ToolRowPresenter = {
+  handlesApprovals: true,
+  key: "cut-video-clips-approval",
+  matches: (activity) =>
+    activity.status === "awaiting_approval" && activity.name === CUT_VIDEO_CLIPS_TOOL_NAME,
+  render: ({ activity, approvalDecision, label, ui }) =>
+    approvalDecision ? (
+      <CutVideoClipsApproval
+        activity={activity}
+        controls={approvalDecision}
+        label={label ?? activity.name}
+        ui={ui ?? null}
+      />
+    ) : null,
+}
+
 export const videoToolPresenters: ToolRowPresenter[] = [
+  cutVideoClipsApproval,
   completedVideoTool(FIND_VIDEO_MOMENTS_TOOL_NAME, findVideoMomentsResult, FindVideoMomentsRow),
   completedVideoTool(ASK_VIDEO_TOOL_NAME, askVideoResult, AskVideoRow),
   completedVideoTool(CUT_VIDEO_CLIPS_TOOL_NAME, cutVideoClipsResult, CutVideoClipsRow),

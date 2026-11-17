@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Moving text on reels: captions and text overlays take an `animation`
+  (`pop`, `slide_up`, `fade`, or `none`), and captions also take `karaoke`,
+  which fills each word as it's spoken. Bold captions and bold and title
+  overlays pop in by default. A clip can leave out the call's music with
+  `music: "none"`. When `cut_video_clips` asks for approval, the card shows
+  every finishing option: sound, music, pauses, punch-ins, and each clip's
+  segments, effects, and text. The clip card shows the settings every clip
+  shares once, as details, and each clip's own differences under it.
 - Outlook Calendar writes: once you approve, agents create events with
   invitations and an optional Teams link, change an event's time, attendees,
   or details, accept or decline invitations, and cancel meetings they

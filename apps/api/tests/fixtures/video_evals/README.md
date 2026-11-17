@@ -13,5 +13,10 @@ with the production code for a 45-minute pricing talk:
   tear at a wipe between two white screens. It mirrors the owner test of
   2026-10-13, where a clean wipe was described this way.
 
+- `attached_audio_track.txt`: `media_attachment_note` for an attached MP3,
+  the note chat sends with an audio File.
+- `cut_video_clips_discounts_reel.json`: a `cut_video_clips` result for one
+  9:16 reel cut from the talk with pause removal.
+
 Rebuild them when the attachment note or a tool's result changes, so the
 evals show models what production returns.

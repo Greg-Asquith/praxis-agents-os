@@ -68,7 +68,13 @@ five, and checks one direct `cut_video_clips` call with every range, never
 `run_code`. `video_check_does_not_overclaim` puts an `ask_video` answer in
 history that describes a split-frame tear at a wipe, and its `judge_rubric`
 checks the agent reports it as unconfirmed rather than as a renderer fault.
-Fixtures live in `tests/fixtures/video_evals/`.
+`ExpectedFinishing` checks the first `cut_video_clips` call's finishing
+options: `video_music_quietly_underneath` attaches an audio File and expects
+it as music at a volume of 50 or less; `video_punchier_after_pause_removal`
+puts a cut with pause removal in history, asks to make it punchier, and
+expects `punch_ins: auto` with pause removal and snapping kept on; and
+`video_cut_chosen_moments` also expects a plain cut with no music, speed,
+freeze, zoom, or punch-ins. Fixtures live in `tests/fixtures/video_evals/`.
 
 The `forecast_*` cases need `DATA_SCIENCE_URL` set so `forecast_series`
 mounts; nothing is forecast, because the runner stops at the first call.

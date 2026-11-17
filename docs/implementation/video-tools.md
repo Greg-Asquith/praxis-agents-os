@@ -421,9 +421,18 @@ arguments are as follows:
   `highlight` (the spoken word coloured and enlarged). `caption_style`
   overrides any part of the preset: font (one of the bundled families), size,
   weight, capitals, colours (`#RRGGBB`), outline, shadow, box, words per
-  caption, lines, `position` (`top`, `middle`, `lower`), and margin. On a
-  vertical frame the default margins keep clear of Reels, Shorts, and TikTok
-  controls.
+  caption, lines, `position` (`top`, `middle`, `lower`), margin, and
+  `animation`. On a vertical frame the default margins keep clear of Reels,
+  Shorts, and TikTok controls.
+- **Animation:** captions and overlays take `animation` in their style:
+  `none`, `pop` (scales in from 80% over 200 ms), `slide_up` (rises half a
+  line into place while fading in), or `fade` (fades in over 200 ms).
+  Captions also take `karaoke`, which fills each word from the text colour to
+  `highlight_color` as it's spoken, with ASS `\kf` timed to the next word's
+  start. `bold` captions and `bold` and `title` overlays pop by default;
+  `clean` and `highlight` don't move. A highlight cue animates on its first
+  word only. Every tag is built from numbers the API computed, in one override
+  block before the escaped text, so the renderer needs no change.
 - **Transitions:** a `transition` is `{style, duration_ms?, audio_curve?}`.
   The most specific wins: a segment's `transition_in`, then the clip's
   `transition`, then the call's. The duration defaults to 400 ms (500 ms for
@@ -465,7 +474,8 @@ arguments are as follows:
   probed like a video); a video, another workspace's File, or a published
   platform File is refused. `volume` defaults to 25, quiet under speech;
   `duck` (default true) lowers it while someone talks; `start_ms` is where in
-  the track to start; `fade_out_ms` defaults to 1000. The track has to start
+  the track to start; `fade_out_ms` defaults to 1000. A clip's `music: "none"`
+  leaves the call's track out of that clip. The track has to start
   inside its length, and its fades must fit the clip. There is no music
   library and no generated music: the agent is told to add music only when
   asked, and only a track the person gave it. A call with music returns
@@ -487,8 +497,8 @@ and the font's measured glyph width, because libass never wraps. A cue breaks
 at a sentence end, a speaker change, a 700 ms pause, or its word or line
 limit.
 
-Exact word times matter for some options. `highlight` and `remove_silences`
-are refused when a video's transcript came from Gemini. A video without
+Exact word times matter for some options. `highlight`, `karaoke`, and
+`remove_silences` are refused when a video's transcript came from Gemini. A video without
 audio is left uncaptioned, and a clip with no speech reports it.
 
 Each side of a transition extends by half its duration into the surrounding
@@ -597,14 +607,23 @@ The tool rows add the following:
   `ConversationActionsContext`, and the button is unavailable while the
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
-- **`cut_video_clips`:** a grid of stills with each clip's length, name,
-  ranges, fades, transitions, speeds (such as **2× Speed**), freezes
-  (**Freeze Frame 1 s**), and zooms (**Zoom 100% to 120%**) in play order,
-  then **Punch-In Zooms**, **Voice Cleaned Up**,
-  **Music Under Speech** (or **Music Added** without ducking), and **Sound
-  Levelled** when applied, and overlay text and times, plus a link to the
-  output folder and the music rights notice. Selecting a clip opens a
-  player; a failed clip shows its reason.
+- **`cut_video_clips`:** the card's details show what the call applied to
+  every clip: shape, framing, captions, pauses, **Sound** (Levelled, Voice
+  Cleaned Up), **Music** (the track, its volume, and Under Speech or
+  Throughout), and **Punch-In Zooms**. Below them, a grid of stills with
+  each clip's length, name, ranges, and its own fades, transitions, speeds
+  (such as **2× Speed**), freezes (**Freeze Frame 1 s**), and zooms (**Zoom
+  100% to 120%**) in play order, then **No Music** or **Different Music**
+  where its music differs from the call's, and overlay text and times, plus
+  a link to the output folder and the music rights notice. The effects line
+  wraps rather than truncating. Selecting a clip opens a player; a failed
+  clip shows its reason.
+- **`cut_video_clips` approval:** the tool is automatic by default; when an
+  owner sets it to ask first, the approval card shows shape, framing,
+  captions, and folder, the settings shared by every clip (sound, music,
+  pauses, and punch-ins), and a table with each clip's segments, finishing,
+  and text on screen, read from the call's arguments
+  (`video-clips-approval.tsx`).
 
 In the composer, a video attachment shows its upload percentage, then
 "Preparing video", then its duration and dimensions. The person can send once

@@ -19,6 +19,7 @@ import { useVideoPreview } from "@/features/conversations/hooks/use-video-previe
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   type CutVideoClipsResult,
+  cutVideoClipsPlan,
   cutVideoClipsResult,
   type VideoClip,
 } from "@/features/conversations/native-tools/video-tools"
@@ -44,7 +45,7 @@ export function CutVideoClipsRow({
   activity: ToolActivity
   defaultOpen: boolean
 }) {
-  const result = cutVideoClipsResult(activity.result)
+  const result = cutVideoClipsResult(activity.result, activity.args)
   if (!result) {
     return null
   }
@@ -57,7 +58,11 @@ export function CutVideoClipsRow({
     <ToolResultCard
       ariaLabel="Cut video clips"
       defaultOpen={defaultOpen}
-      details={[{ label: "Clips", value: clips }, ...settingDetails(activity.args)]}
+      details={[
+        { label: "Clips", value: clips },
+        ...settingDetails(activity.args),
+        ...finishingDetails(result, activity.args),
+      ]}
       summary={clips}
       heading={<ToolHeading icon={ScissorsIcon}>Cut Video Clips</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
@@ -93,6 +98,20 @@ function settingDetails(args: unknown): ToolResultDetail[] {
     ...(framing ? [{ label: "Framing", value: framing }] : []),
     ...(captions ? [{ label: "Captions", value: captions }] : []),
     ...(settings["remove_silences"] === true ? [{ label: "Pauses", value: "Removed" }] : []),
+  ]
+}
+
+// What the call applied to every clip; a clip's own differences show under it.
+function finishingDetails(result: CutVideoClipsResult, args: unknown): ToolResultDetail[] {
+  const sound = [
+    ...(result.soundLevelled ? ["Levelled"] : []),
+    ...(result.voiceCleanedUp ? ["Voice Cleaned Up"] : []),
+  ]
+  const music = cutVideoClipsPlan(args)?.music
+  return [
+    ...(sound.length > 0 ? [{ label: "Sound", value: sound.join(", ") }] : []),
+    ...(music ? [{ label: "Music", value: music }] : []),
+    ...(result.punchIns ? [{ label: "Punch-In Zooms", value: "On" }] : []),
   ]
 }
 
@@ -178,9 +197,7 @@ function ClipCaption({ clip }: { clip: VideoClip }) {
         {clip.ranges.join(" + ")}
       </p>
       {clip.effects.length > 0 ? (
-        <p className="text-muted-foreground truncate text-xs" title={clip.effects.join(" · ")}>
-          {clip.effects.join(" · ")}
-        </p>
+        <p className="text-muted-foreground text-xs wrap-break-word">{clip.effects.join(" · ")}</p>
       ) : null}
       {clip.overlays.map((overlay, index) => (
         <p

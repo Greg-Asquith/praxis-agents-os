@@ -9,7 +9,13 @@ from dataclasses import replace
 import pytest
 
 from services.files.domain import VideoMetadata
-from services.media.captions import CaptionStyle, OverlayTextStyle, TextOverlay, subtitle_file
+from services.media.captions import (
+    CaptionStyle,
+    CaptionTextStyle,
+    OverlayTextStyle,
+    TextOverlay,
+    subtitle_file,
+)
 from services.media.clips import (
     ClipSource,
     MusicBed,
@@ -205,12 +211,13 @@ def test_punch_ins_go_to_the_renderer_only_where_pauses_left_jump_cuts() -> None
     )
 
 
-def test_word_highlighting_and_pause_removal_need_exact_word_times() -> None:
+def test_word_highlighting_karaoke_and_pause_removal_need_exact_word_times() -> None:
     talk = _source(60_000, transcript=_transcript(model="gemini-3.8-flash"))
     plan = {"size": (1080, 1920), "framing": "center", "snap": False}
 
     for options in (
         {"captions": CaptionStyle(preset="highlight")},
+        {"captions": CaptionStyle(preset="bold", options=CaptionTextStyle(animation="karaoke"))},
         {"remove_silences": True},
     ):
         with pytest.raises(ValueError, match="exact word times"):
@@ -226,7 +233,9 @@ def test_caption_words_cant_style_the_file_and_lines_stay_within_the_bound() -> 
     )
 
     document, _ = subtitle_file(
-        size=(1080, 1920), words=words, captions=CaptionStyle(preset="bold")
+        size=(1080, 1920),
+        words=words,
+        captions=CaptionStyle(preset="bold", options=CaptionTextStyle(animation="none")),
     )
 
     lines = [line for *_, text in _dialogue(document) for line in text.split("\\N")]
@@ -377,19 +386,42 @@ def test_an_overlay_on_a_segment_keeps_to_its_moment_after_pauses_are_removed() 
     assert clip.operation.captions
 
 
-def test_overlay_text_cant_style_the_file_and_keeps_its_line_breaks() -> None:
+def test_animated_overlay_text_cant_style_the_file_and_keeps_its_line_breaks() -> None:
     clip = plan_clip(
         [(_source(60_000), 0, 10_000)],
         size=(1080, 1920),
         framing="center",
         snap=False,
-        overlays=[TextOverlay(text="{\\fnEvil}3 pricing\nmistakes")],
+        overlays=[
+            TextOverlay(
+                text="{\\fnEvil}3 pricing\nmistakes",
+                style=OverlayTextStyle(animation="slide_up"),
+            )
+        ],
     )
 
     [(start, end, _, text)] = _dialogue(clip.captions)
     assert (start, end) == ("0:00:00.00", "0:00:10.00")
-    # Bold Montserrat fits 15 characters a line on a 1080 pixel wide frame.
-    assert text == "(\N{SET MINUS}fnEvil)3\\Npricing\\Nmistakes"
+    # Our one override block rises 40 pixels to the top margin, centred between the side
+    # margins; bold Montserrat fits 15 characters a line on a 1080 pixel wide frame.
+    assert text == (
+        "{\\fad(200,0)\\move(496,270,496,230,0,200)}(\N{SET MINUS}fnEvil)3\\Npricing\\Nmistakes"
+    )
+
+
+def test_karaoke_fills_each_word_until_the_next_one_starts() -> None:
+    document, _ = subtitle_file(
+        size=(1080, 1920),
+        words=WORDS[:3],
+        captions=CaptionStyle(preset="bold", options=CaptionTextStyle(animation="karaoke")),
+    )
+
+    [(start, _, _, text)] = _dialogue(document)
+    assert start == "0:00:01.05"
+    assert text == "{\\kf40}Pricing {\\kf20}is\\N{\\kf60}simple."
+    # Words fill from the text colour (secondary) to the highlight colour (primary).
+    style = next(line for line in document.splitlines() if line.startswith("Style: Caption"))
+    assert style.split(",")[3:5] == ["&H0000D4FF", "&H00FFFFFF"]
 
 
 def test_an_overlay_outside_the_clip_fails_before_rendering() -> None:

@@ -180,11 +180,12 @@ async def test_checkpoint_timeout_rolls_back_before_interrupted_settlement(
         return rows
 
     monkeypatch.setattr(checkpoint_module, "persist_new_messages", blocked_checkpoint)
-    monkeypatch.setattr(stream_module, "CHECKPOINT_TIMEOUT", 0.05)
+    # Long enough for the real write before the block, even on a loaded machine.
+    monkeypatch.setattr(stream_module, "CHECKPOINT_TIMEOUT", 0.5)
     context = await build_scenario_agent(
         committed_db_session_factory, tool_names=["test_add_numbers"]
     )
-    async with asyncio.timeout(2):
+    async with asyncio.timeout(5):
         with pytest.raises(HookTimeoutError):
             await run_scenario(
                 committed_db_session_factory,

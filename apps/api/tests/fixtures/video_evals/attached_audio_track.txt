@@ -1,0 +1,8 @@
+Attached audio
+File id: 00000000-0000-0000-0000-0000000265e7
+Format: MP3 (audio/mpeg), 3,456,000 bytes
+Audio: 2:24
+<<<PRAXIS_UNTRUSTED_CONTENT>>> source_kind="file" source_ref="file:00000000-0000-0000-0000-0000000265e7/revision:00000000-0000-0000-0000-0000000265e8">>>
+Audio name: Upbeat bed.mp3
+<<<END_PRAXIS_UNTRUSTED_CONTENT>>>
+The audio itself isn't included in this message. To put it under video clips as music, pass the file id to cut_video_clips.

@@ -34,6 +34,7 @@ from evals.evaluators import (
     AcceptedToolCall,
     EvalOutput,
     ExpectedClips,
+    ExpectedFinishing,
     ExpectedForecast,
     ExpectedTools,
     ForbiddenArgumentText,
@@ -264,6 +265,7 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
         custom_evaluator_types=[
             AcceptedToolCall,
             ExpectedClips,
+            ExpectedFinishing,
             ExpectedForecast,
             ExpectedTools,
             ForbiddenArgumentText,

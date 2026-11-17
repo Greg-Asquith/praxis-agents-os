@@ -1,0 +1,49 @@
+{
+  "count": 1,
+  "saved": 1,
+  "failed": 0,
+  "clips": [
+    {
+      "index": 1,
+      "status": "saved",
+      "name": "Pricing workshop keynote 12.34-13.21.mp4",
+      "file_id": "00000000-0000-0000-0000-0000000265f1",
+      "revision_id": "00000000-0000-0000-0000-0000000265f2",
+      "reference": {
+        "version": 1,
+        "entity_kind": "file",
+        "entity_id": "00000000-0000-0000-0000-0000000265f1",
+        "label": "Pricing workshop keynote 12.34-13.21.mp4",
+        "description": "Clip · 0:41",
+        "scope_label": null
+      },
+      "media_type": "video/mp4",
+      "duration_ms": 41320,
+      "width": 1080,
+      "height": 1920,
+      "size_bytes": 24318112,
+      "loudness_lufs": -14.1,
+      "folder": {"id": "00000000-0000-0000-0000-0000000265f3", "name": "Pricing workshop keynote"},
+      "segments": [
+        {
+          "file_id": "00000000-0000-0000-0000-0000000249a1",
+          "start_ms": 754120,
+          "end_ms": 801360,
+          "start": "12:34",
+          "end": "13:21",
+          "speed": 1.0,
+          "freeze_end_ms": 0,
+          "zoom": null,
+          "transition_in": null
+        }
+      ],
+      "fade_in_ms": 0,
+      "fade_out_ms": 0,
+      "punch_ins": false,
+      "enhance_voice": false,
+      "music": null,
+      "text_overlays": [],
+      "warnings": []
+    }
+  ]
+}

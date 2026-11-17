@@ -167,8 +167,9 @@ class ClipArgument(BaseModel):
             "Each shows for the whole clip unless given times."
         ),
     )
-    music: MusicArgument | None = Field(
-        default=None, description="Music under this clip, overriding the call's."
+    music: MusicArgument | Literal["none"] | None = Field(
+        default=None,
+        description="Music under this clip, overriding the call's, or 'none' for no music.",
     )
 
 
@@ -191,7 +192,8 @@ def cut_video_clips_available() -> bool:
         "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. "
         "captions burns in the spoken words: 'bold' for punchy reels, 'clean' for a subtle "
         "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
-        "any part of the preset, such as the font or colours, when the person asks. "
+        "any part of the preset, such as the font, colours, or animation, when the person "
+        "asks. "
         "remove_silences cuts pauses between words with hard jump cuts; leave it off unless the "
         "person asks for tighter pacing or no pauses. Both apply to every clip. Segments join "
         "with hard cuts unless transition says otherwise, for every clip, one clip, or one "
@@ -202,7 +204,8 @@ def cut_video_clips_available() -> bool:
         "social apps play at; set audio.enhance_voice when the person asks for clearer sound "
         "from a phone, laptop, or room recording. music mixes a track the person provided "
         "under every clip, or one clip's, and lowers it while someone talks; add it only when "
-        "asked, and only an audio File they gave you. A segment's speed speeds it up or slows "
+        "asked, and only an audio File they gave you. A clip's music 'none' leaves it out of "
+        "that clip. A segment's speed speeds it up or slows "
         "it down, freeze_end_ms holds its last frame, and zoom pushes in slowly; use them only "
         "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
         "makes, which hides the jump; use it when the person wants punchier pacing. Clips save "
@@ -230,11 +233,19 @@ def cut_video_clips_available() -> bool:
         approval_title="Cut Video Clips",
         approval_prompt="The agent wants to cut clips from workspace videos and save them.",
         approve_label="Approve & Cut",
+        # The web card shows the clips and their finishing options from the structured fields.
         arg_fields=(
             ToolFieldPresentation(key="aspect_ratio", label="Aspect Ratio"),
             ToolFieldPresentation(key="framing", label="Framing", secondary=True),
             ToolFieldPresentation(key="captions", label="Captions", secondary=True),
             ToolFieldPresentation(key="folder", label="Folder", secondary=True),
+            ToolFieldPresentation(key="clips", label="Clips", format="structured"),
+            ToolFieldPresentation(key="audio", label="Sound", format="structured"),
+            ToolFieldPresentation(key="music", label="Music", format="structured"),
+            ToolFieldPresentation(
+                key="remove_silences", label="Remove Pauses", format="structured"
+            ),
+            ToolFieldPresentation(key="punch_ins", label="Punch-In Zooms", format="structured"),
         ),
         result_fields=(ToolFieldPresentation(key="saved", label="Clips", format="number"),),
     ),
@@ -413,7 +424,7 @@ async def _workspace_tracks(
     """Resolves each music File once, as the workspace's own measured audio."""
     tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]] = {}
     for argument in [music, *(clip.music for clip in clips)]:
-        if argument is None or argument.file_id.entity_id in tracks:
+        if argument is None or argument == "none" or argument.file_id.entity_id in tracks:
             continue
         file, revision = await workspace_audio(ctx, argument.file_id, tool_name="cut_video_clips")
         metadata = revision_video_metadata(revision)
@@ -470,7 +481,9 @@ def _plan_clips(
                     fade_out_ms=clip.fade_out_ms,
                     overlays=clip.text_overlays,
                     audio=audio,
-                    music=_clip_music(clip.music or music, tracks),
+                    music=None
+                    if clip.music == "none"
+                    else _clip_music(clip.music or music, tracks),
                     paces=[
                         SegmentPace(
                             speed_percent=round(segment.speed * 100),

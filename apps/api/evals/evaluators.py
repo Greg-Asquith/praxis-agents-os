@@ -133,6 +133,58 @@ class ExpectedClips(Evaluator[dict, EvalOutput, dict]):
 
 
 @dataclass
+class ExpectedFinishing(Evaluator[dict, EvalOutput, dict]):
+    """Checks the first cut_video_clips call's finishing options: music from the person's
+    File at a quiet volume, punch-ins with pause removal and snapping, or a plain cut.
+    """
+
+    def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
+        expected = (ctx.metadata or {}).get("expected_finishing")
+        if not expected:
+            return EvaluationReason(value=True)
+        if "cut_video_clips" not in ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="cut_video_clips was not called")
+        arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("cut_video_clips")]
+        try:
+            call = json.loads(arguments)
+            errors = _finishing_errors(call, call["clips"], expected)
+        except (TypeError, KeyError, AttributeError, json.JSONDecodeError):
+            return EvaluationReason(value=False, reason="cut_video_clips arguments aren't clips")
+        return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+def _finishing_errors(call: dict, clips: list[dict], expected: dict) -> list[str]:
+    musics = [music for music in [call.get("music"), *(c.get("music") for c in clips)] if music]
+    errors = []
+    if "music_file_id" in expected:
+        files = {music["file_id"]["entity_id"] for music in musics if music != "none"}
+        if files != {expected["music_file_id"]}:
+            errors.append(f"music files {sorted(files)}")
+        loud = [music["volume"] for music in musics if music != "none" and "volume" in music]
+        if any(volume > expected.get("max_music_volume", 50) for volume in loud):
+            errors.append(f"music volume {loud}")
+    errors.extend(
+        f"{name} is {call.get(name)!r}"
+        for name in ("punch_ins", "remove_silences")
+        if name in expected and call.get(name) != expected[name]
+    )
+    if expected.get("snap_on") and any(clip.get("snap") is False for clip in clips):
+        errors.append("snapping turned off")
+    if expected.get("plain"):
+        segments = [segment for clip in clips for segment in clip["segments"]]
+        if [music for music in musics if music != "none"]:
+            errors.append("music added")
+        if call.get("punch_ins", "off") != "off":
+            errors.append("punch-ins added")
+        if any(
+            segment.get("speed", 1) != 1 or segment.get("freeze_end_ms") or segment.get("zoom")
+            for segment in segments
+        ):
+            errors.append("speed, freeze, or zoom added")
+    return errors
+
+
+@dataclass
 class ExpectedForecast(Evaluator[dict, EvalOutput, dict]):
     """Checks the first call forecasts once, directly or in a script, with the expected
     settings, and that any literal history is the fixture's history unchanged."""
