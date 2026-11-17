@@ -277,8 +277,8 @@ def cut_video_clips_available() -> bool:
         "asked, and only an audio File they gave you. A clip's music 'none' leaves it out of "
         "that clip. logo puts an image File the person gave you, such as their logo, at a "
         "position on every clip, or one clip's, clear of captions and, unless safe_zone is "
-        "false, of the app's buttons; add it only when asked. A clip's logo 'none' leaves it out of that clip. A segment's "
-        "speed speeds it up or slows "
+        "false, of the app's buttons; add it only when asked. A clip's logo 'none' leaves it "
+        "out of that clip. A segment's speed speeds it up or slows "
         "it down, freeze_end_ms holds its last frame, and zoom pushes in slowly; use them only "
         "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
         "makes, which hides the jump; use it when the person wants punchier pacing. A segment "
@@ -869,13 +869,13 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
 
 
 def _segment_content(segment: PlannedSegment) -> dict[str, object]:
-    if segment.source is None:
-        card = segment.card or ClipCard(duration_ms=segment.end_ms)
+    if segment.card:
+        image = segment.card.image
         return {
             "card": {
                 "duration_ms": segment.end_ms,
-                "background_color": card.color,
-                "background_image": str(card.image.file_id) if card.image else None,
+                "background_color": segment.card.color,
+                "background_image": str(image.file_id) if image else None,
             }
         }
     return {

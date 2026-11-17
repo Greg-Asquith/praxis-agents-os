@@ -448,6 +448,20 @@ def test_karaoke_fills_each_word_until_the_next_one_starts() -> None:
     assert style.split(",")[3:5] == ["&H0000D4FF", "&H00FFFFFF"]
 
 
+def test_a_popping_highlight_cue_pops_once_and_keeps_popping_after_the_spoken_word() -> None:
+    document, _ = subtitle_file(
+        size=(1080, 1920),
+        words=WORDS[:3],
+        captions=CaptionStyle(preset="highlight", options=CaptionTextStyle(animation="pop")),
+    )
+
+    pop = "\\fscx80\\fscy80\\t(0,200,\\fscx100\\fscy100)"
+    first, second, _ = (text for *_, text in _dialogue(document))
+    # The spoken word's reset would end the pop, so the words after it start it again.
+    assert first.startswith(f"{{{pop}}}") and f"PRICING{{\\r{pop}}} IS" in first
+    assert "\\t(" not in second
+
+
 def test_an_overlay_outside_the_clip_fails_before_rendering() -> None:
     with pytest.raises(ValueError, match="Text overlay 1 ends after the clip, which is 0:10"):
         plan_clip(

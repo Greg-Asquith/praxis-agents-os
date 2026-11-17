@@ -679,9 +679,12 @@ def _cut_operation(
 
 
 def _cut_segment(segment: PlannedSegment, inputs: dict[UUID, int]) -> CutSegment | CutCard:
-    if segment.source is None:
-        card = segment.card or ClipCard(duration_ms=segment.end_ms)
-        return CutCard(duration_ms=segment.end_ms, color=card.color, image=card.image is not None)
+    if segment.card:
+        return CutCard(
+            duration_ms=segment.end_ms,
+            color=segment.card.color,
+            image=segment.card.image is not None,
+        )
     return CutSegment(
         input=inputs[segment.source.revision.id],
         start_ms=segment.start_ms,

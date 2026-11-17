@@ -505,8 +505,10 @@ arguments are as follows:
   `highlight_color` as it's spoken, with ASS `\kf` timed to the next word's
   start. `bold` captions and `bold` and `title` overlays pop by default;
   `clean` and `highlight` don't move. A highlight cue animates on its first
-  word only. Every tag is built from numbers the API computed, in one override
-  block before the escaped text, so the renderer needs no change.
+  word only, and repeats the entrance after the spoken word, whose style
+  reset would end it. Every tag is built from numbers the API computed, in
+  override blocks of its own, apart from the escaped text, so the renderer
+  needs no change.
 - **Transitions:** a `transition` is `{style, duration_ms?, audio_curve?}`.
   The most specific wins: a segment's `transition_in`, then the clip's
   `transition`, then the call's. The duration defaults to 400 ms (500 ms for

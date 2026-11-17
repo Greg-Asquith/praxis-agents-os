@@ -106,9 +106,7 @@ async def workspace_image(
     """Returns the current revision of one of the workspace's own images."""
     file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
     if file.category != FileCategory.IMAGE.value:
-        raise ModelRetry(
-            f"{tool_name} logo must be a PNG, JPEG, or WebP image from workspace Files."
-        )
+        raise ModelRetry(f"{tool_name} images must be PNG, JPEG, or WebP workspace Files.")
     if revision.workspace_id != ctx.deps.workspace.id:
         raise ModelRetry(f"{tool_name} can only use this workspace's own images.")
     return file, revision

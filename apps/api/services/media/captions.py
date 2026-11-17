@@ -431,7 +431,7 @@ def _caption_events(words: Sequence[TranscriptWord], look: _Look, *, highlight: 
         elif highlight:
             events += _highlight_events(cue, start, end, look)
         else:
-            events.append(_dialogue(start, end, _entrance(look) + _text(cue, look)))
+            events.append(_dialogue(start, end, _text(cue, look, entrance=_entrance(look))))
     return events
 
 
@@ -473,11 +473,16 @@ def _lines(texts: Sequence[str], look: _Look) -> list[list[tuple[int, str]]]:
     return lines
 
 
-def _text(cue: Sequence[TranscriptWord], look: _Look, active: int | None = None) -> str:
+def _text(
+    cue: Sequence[TranscriptWord], look: _Look, active: int | None = None, entrance: str = ""
+) -> str:
+    """The cue's lines behind ``entrance``, with the ``active`` word picked out."""
     grown = look.options.highlight_scale
     spoken = f"{{\\1c{_colour(look.options.highlight_color)}&\\fscx{grown}\\fscy{grown}}}"
-    return "\\N".join(
-        " ".join(f"{spoken}{piece}{{\\r}}" if index == active else piece for index, piece in line)
+    # The reset after the spoken word would end the entrance, so the words after it start it again.
+    resumed = f"{{\\r{entrance[1:-1]}}}"
+    return entrance + "\\N".join(
+        " ".join(f"{spoken}{piece}{resumed}" if index == active else piece for index, piece in line)
         for line in _lines([word.text for word in cue], look)
     )
 
@@ -562,7 +567,7 @@ def _highlight_events(
         word_start = start if index == 0 else max(start, cue[index].start_ms)
         word_end = end if index + 1 == len(cue) else max(word_start + 10, cue[index + 1].start_ms)
         entrance = _entrance(look) if index == 0 else ""
-        events.append(_dialogue(word_start, min(word_end, end), entrance + _text(cue, look, index)))
+        events.append(_dialogue(word_start, min(word_end, end), _text(cue, look, index, entrance)))
     return events
 
 

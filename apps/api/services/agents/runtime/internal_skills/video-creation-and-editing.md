@@ -152,8 +152,8 @@ clip's `text_overlays`:
   for Reels, Shorts, or TikTok. Text overlays sit top centre by default, so
   with a `top_center` logo put the overlays lower. Keep the default size of
   15 unless the person wants it bigger or smaller, and use `opacity` 60 to
-  80 for a watermark. Set `logo` on the call so every clip carries it; to leave one
-  clip out, set that clip's `logo` to `none`.
+  80 for a watermark. Set `logo` on the call so every clip carries it; to
+  leave one clip out, set that clip's `logo` to `none`.
 - **Title and end cards:** add a card only when the person asks for a
   title, intro, end card, or call to action card. A card is a segment,
   `{"card": {...}}`, placed where it plays: first for a title, last for an

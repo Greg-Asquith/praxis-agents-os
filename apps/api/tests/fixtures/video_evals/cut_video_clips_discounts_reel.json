@@ -5,6 +5,7 @@
   "clips": [
     {
       "index": 1,
+      "aspect_ratio": "9:16",
       "status": "saved",
       "name": "Pricing workshop keynote 12.34-13.21.mp4",
       "file_id": "00000000-0000-0000-0000-0000000265f1",
@@ -23,6 +24,7 @@
       "height": 1920,
       "size_bytes": 24318112,
       "loudness_lufs": -14.1,
+      "black_bars_removed": false,
       "folder": {"id": "00000000-0000-0000-0000-0000000265f3", "name": "Pricing workshop keynote"},
       "segments": [
         {
@@ -42,6 +44,7 @@
       "punch_ins": false,
       "enhance_voice": false,
       "music": null,
+      "logo": null,
       "text_overlays": [],
       "warnings": []
     }
