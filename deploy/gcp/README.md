@@ -405,6 +405,14 @@ the previous revision is compatible with persisted metadata.
       science service, API, web, and worker.
       A failed migration stops the script before any serving revision
       changes. Re-running the same SHA is safe.
+- [ ] To build and deploy only some services, pass `SERVICES` as a
+      comma-separated list of `api`, `web`, `media-renderer`, and
+      `data-science`, for example
+      `make gcp-deploy ENV_FILE=$ENV_FILE SERVICES=api,web`. `api` also runs
+      the migration job and replaces the worker job, which share its image.
+      Services left out keep their current revision, so include
+      `media-renderer` or `data-science` when the change touches
+      `apps/isolation-driver` or those apps.
 - [ ] If the migration failed: do not deploy the services. Inspect the
       failed execution, fix the forward migration, rerun the same SHA.
       Never roll the shared schema backward to match an old container.

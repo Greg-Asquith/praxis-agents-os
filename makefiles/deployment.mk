@@ -59,9 +59,9 @@ gcp-bootstrap: ## Bootstrap one GCP environment (requires ENV_FILE=... and inter
 	deploy/gcp/bootstrap.sh "$(ENV_FILE)"
 
 .PHONY: gcp-deploy
-gcp-deploy: ## Build, migrate, and deploy one GCP environment (requires ENV_FILE=...)
+gcp-deploy: ## Build, migrate, and deploy one GCP environment (requires ENV_FILE=...; optional SERVICES=api,web)
 	@test -n "$(ENV_FILE)" || { echo "ENV_FILE is required"; exit 2; }
-	deploy/gcp/deploy.sh "$(ENV_FILE)" $(GIT_SHA)
+	deploy/gcp/deploy.sh $(if $(SERVICES),--services "$(SERVICES)") "$(ENV_FILE)" $(GIT_SHA)
 
 .PHONY: gcp-check
 gcp-check: ## Validate GCP helpers and render fake manifests

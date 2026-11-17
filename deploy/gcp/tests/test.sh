@@ -285,6 +285,14 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/missing-render" "$TEST_TMP/miss
 fi
 grep -q 'required variable GCP_PROJECT_ID is unset or empty' "$TEST_TMP/missing.out"
 
+# A misspelt service must stop the deploy rather than silently skip it.
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/typo-render" --services api,renderer \
+  "$GCP_DIR/.env.example" abcdef0123456789 >"$TEST_TMP/typo.out" 2>&1; then
+  echo "render unexpectedly succeeded with an unknown service" >&2
+  exit 1
+fi
+grep -q "unknown service 'renderer'" "$TEST_TMP/typo.out"
+
 sed 's/^WEB_MEMORY=512Mi$/WEB_MEMORY=256Mi/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/undersized-web.env"
 if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/undersized-web-render" \

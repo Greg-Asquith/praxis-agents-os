@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 usage() {
-  echo "Usage: $0 [--render-only OUTPUT_DIR] ENV_FILE [GIT_SHA]" >&2
+  echo "Usage: $0 [--render-only OUTPUT_DIR] [--services api,web,media-renderer,data-science] ENV_FILE [GIT_SHA]" >&2
 }
 
 die() {
@@ -17,13 +17,29 @@ die() {
 
 RENDER_ONLY=false
 OUTPUT_DIR=""
-if [[ "${1:-}" == "--render-only" ]]; then
-  [[ $# -ge 3 ]] || { usage; exit 2; }
-  RENDER_ONLY=true
-  OUTPUT_DIR=$2
+ALL_SERVICES="api,web,media-renderer,data-science"
+DEPLOY_SERVICES=$ALL_SERVICES
+while [[ "${1:-}" == --* ]]; do
+  [[ $# -ge 2 ]] || { usage; exit 2; }
+  case "$1" in
+    --render-only) RENDER_ONLY=true; OUTPUT_DIR=$2 ;;
+    --services) DEPLOY_SERVICES=$2 ;;
+    *) usage; exit 2 ;;
+  esac
   shift 2
-fi
+done
 [[ $# -ge 1 && $# -le 2 ]] || { usage; exit 2; }
+
+# "api" covers the API service plus the migrate and worker jobs, which share its image.
+IFS=',' read -ra selected_services <<< "$DEPLOY_SERVICES"
+[[ ${#selected_services[@]} -gt 0 ]] || die "--services must name at least one service"
+for service in "${selected_services[@]}"; do
+  [[ ",$ALL_SERVICES," == *",$service,"* ]] \
+    || die "unknown service '$service'; choose from $ALL_SERVICES"
+done
+deploys() {
+  [[ ",$DEPLOY_SERVICES," == *",$1,"* ]]
+}
 
 ENV_FILE=$1
 [[ -f "$ENV_FILE" ]] || die "environment file not found: $ENV_FILE"
@@ -345,41 +361,52 @@ done
 REGISTRY_HOST="${GCP_REGION}-docker.pkg.dev"
 gcloud auth configure-docker "$REGISTRY_HOST" --quiet
 
-docker build --platform linux/amd64 --target production --build-arg CLOUD_EXTRA=gcp \
-  --tag "$API_IMAGE" "$REPO_ROOT/apps/api"
-docker build --platform linux/amd64 --target production \
-  --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" \
-  --build-arg WEB_PUBLIC_ASSET_ORIGINS="$WEB_PUBLIC_ASSET_ORIGINS" \
-  --build-arg WEB_HTTPS_ONLY="$WEB_HTTPS_ONLY" --tag "$WEB_IMAGE" "$REPO_ROOT/apps/web"
-docker build --platform linux/amd64 --target production \
-  --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$MEDIA_RENDERER_IMAGE" \
-  "$REPO_ROOT/apps/media-renderer"
-docker build --platform linux/amd64 --target production \
-  --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$DATA_SCIENCE_IMAGE" \
-  "$REPO_ROOT/apps/data-science"
-docker push "$API_IMAGE"
-docker push "$WEB_IMAGE"
-docker push "$MEDIA_RENDERER_IMAGE"
-docker push "$DATA_SCIENCE_IMAGE"
+echo "Deploying: $DEPLOY_SERVICES"
+if deploys api; then
+  docker build --platform linux/amd64 --target production --build-arg CLOUD_EXTRA=gcp \
+    --tag "$API_IMAGE" "$REPO_ROOT/apps/api"
+fi
+if deploys web; then
+  docker build --platform linux/amd64 --target production \
+    --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL" \
+    --build-arg WEB_PUBLIC_ASSET_ORIGINS="$WEB_PUBLIC_ASSET_ORIGINS" \
+    --build-arg WEB_HTTPS_ONLY="$WEB_HTTPS_ONLY" --tag "$WEB_IMAGE" "$REPO_ROOT/apps/web"
+fi
+if deploys media-renderer; then
+  docker build --platform linux/amd64 --target production \
+    --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$MEDIA_RENDERER_IMAGE" \
+    "$REPO_ROOT/apps/media-renderer"
+fi
+if deploys data-science; then
+  docker build --platform linux/amd64 --target production \
+    --build-context driver="$REPO_ROOT/apps/isolation-driver" --tag "$DATA_SCIENCE_IMAGE" \
+    "$REPO_ROOT/apps/data-science"
+fi
+deploys api && docker push "$API_IMAGE"
+deploys web && docker push "$WEB_IMAGE"
+deploys media-renderer && docker push "$MEDIA_RENDERER_IMAGE"
+deploys data-science && docker push "$DATA_SCIENCE_IMAGE"
 
-previous_api_revision=$(gcloud run services describe praxis-api --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet 2>/dev/null || true)
-previous_web_revision=$(gcloud run services describe praxis-web --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet 2>/dev/null || true)
+previous_revision() {
+  gcloud run services describe "$1" --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
+    --format='value(status.latestReadyRevisionName)' --quiet 2>/dev/null || true
+}
+previous_api_revision=""
+previous_web_revision=""
+deploys api && previous_api_revision=$(previous_revision praxis-api)
+deploys web && previous_web_revision=$(previous_revision praxis-web)
 
-gcloud run services replace "$OUTPUT_DIR/services/praxis-api.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --dry-run --quiet >/dev/null
-gcloud run services replace "$OUTPUT_DIR/services/praxis-web.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --dry-run --quiet >/dev/null
-gcloud run services replace "$OUTPUT_DIR/services/praxis-media-renderer.yaml" \
-  --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --dry-run --quiet >/dev/null
-gcloud run services replace "$OUTPUT_DIR/services/praxis-data-science.yaml" \
-  --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --dry-run --quiet >/dev/null
+for service in "${selected_services[@]}"; do
+  gcloud run services replace "$OUTPUT_DIR/services/praxis-${service}.yaml" \
+    --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --dry-run --quiet >/dev/null
+done
 
-gcloud run jobs replace "$OUTPUT_DIR/jobs/praxis-migrate.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --quiet
-gcloud run jobs execute praxis-migrate --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
-  --wait --quiet
+if deploys api; then
+  gcloud run jobs replace "$OUTPUT_DIR/jobs/praxis-migrate.yaml" --project="$GCP_PROJECT_ID" \
+    --region="$GCP_REGION" --quiet
+  gcloud run jobs execute praxis-migrate --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
+    --wait --quiet
+fi
 
 # Isolated services deploy first so the API and worker never point at a missing service.
 # Invoker IAM is each service's caller check: only the API and worker identities may call it.
@@ -404,24 +431,27 @@ deploy_isolated_service() {
   [[ "$invokers" == "$expected_invokers" ]] \
     || die "${service_name} invokers must be exactly the API and worker accounts; found: $invokers"
 }
-deploy_isolated_service praxis-media-renderer
-deploy_isolated_service praxis-data-science
+deploys media-renderer && deploy_isolated_service praxis-media-renderer
+deploys data-science && deploy_isolated_service praxis-data-science
 
-gcloud run services replace "$OUTPUT_DIR/services/praxis-api.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --quiet
-gcloud run services replace "$OUTPUT_DIR/services/praxis-web.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --quiet
-gcloud run jobs replace "$OUTPUT_DIR/jobs/praxis-worker.yaml" --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --quiet
+if deploys api; then
+  gcloud run services replace "$OUTPUT_DIR/services/praxis-api.yaml" --project="$GCP_PROJECT_ID" \
+    --region="$GCP_REGION" --quiet
+fi
+if deploys web; then
+  gcloud run services replace "$OUTPUT_DIR/services/praxis-web.yaml" --project="$GCP_PROJECT_ID" \
+    --region="$GCP_REGION" --quiet
+fi
+if deploys api; then
+  gcloud run jobs replace "$OUTPUT_DIR/jobs/praxis-worker.yaml" --project="$GCP_PROJECT_ID" \
+    --region="$GCP_REGION" --quiet
+fi
 
-api_revision=$(gcloud run services describe praxis-api --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet)
-web_revision=$(gcloud run services describe praxis-web --project="$GCP_PROJECT_ID" \
-  --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet)
-echo "Deployed praxis-api revision: $api_revision"
-echo "Deployed praxis-web revision: $web_revision"
-echo "Deployed praxis-media-renderer at: $MEDIA_RENDERER_URL"
-echo "Deployed praxis-data-science at: $DATA_SCIENCE_URL"
+for service in "${selected_services[@]}"; do
+  revision=$(gcloud run services describe "praxis-${service}" --project="$GCP_PROJECT_ID" \
+    --region="$GCP_REGION" --format='value(status.latestReadyRevisionName)' --quiet)
+  echo "Deployed praxis-${service} revision: $revision"
+done
 if [[ -n "$previous_api_revision" ]]; then
   echo "API rollback: gcloud run services update-traffic praxis-api --to-revisions=${previous_api_revision}=100 --project=${GCP_PROJECT_ID} --region=${GCP_REGION} --quiet"
 fi
