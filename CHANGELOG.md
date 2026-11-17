@@ -12,6 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Title and end cards on reels: a `cut_video_clips` segment can be a card,
+  such as "Follow for part 2" at the end, held in silence for 0.5 to 12
+  seconds over a colour or an image File the person gave. It joins with the
+  clip's transitions and fades like any segment, and music and the logo run
+  over it. The approval card and the clip card list each card among the
+  clip's segments. The media renderer draws cards with ffmpeg's `color`
+  source.
 - Your logo on reels: `cut_video_clips` takes `logo`, an image File (PNG,
   JPEG, or WebP) placed on every clip, or one clip's, with its transparency
   kept: in any corner, top or bottom centre, or the middle, clear of

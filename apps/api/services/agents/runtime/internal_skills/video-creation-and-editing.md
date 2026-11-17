@@ -149,6 +149,17 @@ clip's `text_overlays`:
   15 unless the person wants it bigger or smaller, and use `opacity` 60 to
   80 for a watermark. Set `logo` on the call so every clip carries it; to leave one
   clip out, set that clip's `logo` to `none`.
+- **Title and end cards:** add a card only when the person asks for a
+  title, intro, end card, or call to action card. A card is a segment,
+  `{"card": {...}}`, placed where it plays: first for a title, last for an
+  end card. Give it `text` (such as "Follow for part 2"), shown in the
+  middle; the `title` preset suits a short line. Its background is
+  `background_color` (black by default; use the person's brand colour when
+  they give one), or `background_image`, an image File the person gave,
+  which covers the frame. Keep the default 3 seconds unless asked; a card
+  is silent, but music plays on under it. The clip's transition and fades
+  apply to it like any segment, and a call's logo shows on it too. A clip
+  needs at least one video segment.
 - **Speed, freeze frames, and push-ins:** use a segment's `speed`,
   `freeze_end_ms`, or `zoom` only when the person asks. Speed runs from 0.5
   to 2; a gentle push-in is `to_percent` 115.
@@ -158,7 +169,7 @@ clip's `text_overlays`:
   pauses. Recut with the same clips and settings plus `punch_ins`, and keep
   `remove_silences` and snapping on.
 - **A plain cut:** when the person asks only for clips, add no music, logo,
-  speed changes, zooms, or punch-ins.
+  cards, speed changes, zooms, or punch-ins.
 
 ### One call for the set
 
@@ -179,7 +190,7 @@ After cutting, check the clips that matter before you report success. Ask
 - Is the speaker in frame throughout, or cut off at the edges?
 - Are the captions readable, and do they match what's said?
 - Does the clip start on a clear line and end on a finished sentence?
-- Is the requested text, music, logo, or effect there?
+- Is the requested text, music, logo, card, or effect there?
 
 Fix what fails with another call, or tell the person what's wrong. Also
 read the result's `warnings` and pass on anything you can't fix.

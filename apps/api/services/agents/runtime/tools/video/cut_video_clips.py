@@ -7,7 +7,7 @@ from pathlib import PurePath
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
 
@@ -49,14 +49,17 @@ from services.media.captions import (
     CaptionPreset,
     CaptionStyle,
     CaptionTextStyle,
+    Colour,
     PlacedOverlay,
     TextOverlay,
 )
 from services.media.clips import (
     DEFAULT_AUDIO,
+    MAX_CARD_DURATION_MS,
     NO_ZOOM,
     AspectRatio,
     ClipAudio,
+    ClipCard,
     ClipSource,
     Framing,
     LogoImage,
@@ -64,6 +67,7 @@ from services.media.clips import (
     MusicBed,
     MusicOptions,
     PlannedClip,
+    PlannedSegment,
     SegmentPace,
     SegmentZoom,
     TransitionOptions,
@@ -76,6 +80,7 @@ from services.media.domain import (
     MAX_FREEZE_MS,
     MAX_IMAGE_BYTES,
     MAX_SPEED_PERCENT,
+    MIN_CARD_MS,
     MIN_SPEED_PERCENT,
     MediaOperationResult,
     MediaRendererError,
@@ -87,6 +92,7 @@ from utils.validation import normalize_optional_text
 
 MAX_CLIPS = 5
 MAX_TEXT_OVERLAYS = 5
+MAX_CARD_TEXTS = 3
 MAX_CLIP_NAME_CHARS = 120
 MUSIC_RIGHTS_NOTICE = "The user is responsible for having the rights to use the music."
 
@@ -142,15 +148,51 @@ class ClipSegmentArgument(BaseModel):
     )
 
 
+class CardArgument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duration_ms: int = Field(default=3000, ge=MIN_CARD_MS, le=MAX_CARD_DURATION_MS)
+    background_color: Colour = "#000000"
+    background_image: FileReference | None = Field(
+        default=None,
+        description=(
+            "A PNG, JPEG, or WebP File the user gave, covering the frame, cropped to its shape. "
+            "Transparent parts show background_color."
+        ),
+    )
+    text: list[TextOverlay] = Field(
+        default_factory=list,
+        max_length=MAX_CARD_TEXTS,
+        description=(
+            "Text on the card, in the middle unless style.position says otherwise. segment is "
+            "ignored; times are from the card's start."
+        ),
+    )
+
+
+class CardSegmentArgument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    card: CardArgument = Field(
+        description=(
+            "A title or end card: a colour or image with text, in silence, such as 'Follow for "
+            "part 2'."
+        )
+    )
+    transition_in: TransitionOptions | None = Field(
+        default=None, description="As on a video segment."
+    )
+
+
 class ClipArgument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    segments: list[ClipSegmentArgument] = Field(
+    segments: list[ClipSegmentArgument | CardSegmentArgument] = Field(
         min_length=1,
         max_length=MAX_CUT_SEGMENTS,
         description=(
             "Ranges joined in order into one clip. Ranges and whole videos from several "
-            "workspace videos can be mixed."
+            "workspace videos can be mixed, with cards between or around them."
         ),
     )
     name: str | None = Field(
@@ -188,6 +230,12 @@ class ClipArgument(BaseModel):
         default=None,
         description="A logo on this clip, overriding the call's, or 'none' for no logo.",
     )
+
+    @model_validator(mode="after")
+    def require_a_video(self):
+        if not _videos_of(self):
+            raise ValueError("A clip needs at least one video segment as well as its cards.")
+        return self
 
 
 def cut_video_clips_available() -> bool:
@@ -229,7 +277,10 @@ def cut_video_clips_available() -> bool:
         "speed speeds it up or slows "
         "it down, freeze_end_ms holds its last frame, and zoom pushes in slowly; use them only "
         "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
-        "makes, which hides the jump; use it when the person wants punchier pacing. Clips save "
+        "makes, which hides the jump; use it when the person wants punchier pacing. A segment "
+        "can be a card instead of a video range: a title or end card of a colour, or an image "
+        "File the person gave, with text such as a call to action, held in silence; add one "
+        "only when asked. Clips save "
         "in a folder named after their first video unless folder names another. One clip "
         "failing doesn't stop the others; the result reports each clip. For the reels "
         "workflow, call load_capability with internal-video-creation-and-editing."
@@ -369,7 +420,7 @@ async def cut_video_clips(
     """Renders each clip from the caller's own videos and saves it in its output folder."""
     videos = await _workspace_videos(ctx, clips)
     tracks = await _workspace_tracks(ctx, clips, music)
-    logos = await _workspace_logos(ctx, clips, logo)
+    images = await _workspace_images(ctx, clips, logo)
     style = (
         None
         if captions == "none"
@@ -396,16 +447,21 @@ async def cut_video_clips(
         music=music,
         tracks=tracks,
         logo=logo,
-        logos=logos,
+        images=images,
     )
 
     # A call's track or logo that every clip overrides is never sent, so only used ones count.
     played = {request.music.revision.file_id for request in planned if request.music}
-    shown = {request.logo.revision.file_id for request in planned if request.logo}
+    shown = {request.logo.revision.file_id for request in planned if request.logo} | {
+        segment.card.image.file_id
+        for request in planned
+        for segment in request.segments
+        if segment.card and segment.card.image
+    }
     read = [
         *videos.values(),
         *((file, revision) for file, revision, _ in tracks.values() if file.id in played),
-        *((file, revision) for file, revision in logos.values() if file.id in shown),
+        *((file, revision) for file, revision in images.values() if file.id in shown),
     ]
     for file, revision in read:
         await record_media_read_audit(
@@ -428,7 +484,7 @@ async def cut_video_clips(
     for index, (clip, request, outcome) in enumerate(
         zip(clips, planned, rendered, strict=True), start=1
     ):
-        first_file = videos[clip.segments[0].file_id.entity_id][0]
+        first_file = videos[_videos_of(clip)[0].file_id.entity_id][0]
         name = _clip_name(clip, request, first_file)
         if isinstance(outcome, MediaRendererError):
             results.append(_failed(index, name, request, outcome.message))
@@ -456,7 +512,7 @@ async def _workspace_videos(
 ) -> dict[UUID, tuple[File, FileRevision]]:
     videos: dict[UUID, tuple[File, FileRevision]] = {}
     for clip in clips:
-        for segment in clip.segments:
+        for segment in _videos_of(clip):
             file_id = segment.file_id.entity_id
             if file_id not in videos:
                 videos[file_id] = await workspace_video(
@@ -483,33 +539,49 @@ async def _workspace_tracks(
     return tracks
 
 
-async def _workspace_logos(
+def _videos_of(clip: ClipArgument) -> list[ClipSegmentArgument]:
+    return [segment for segment in clip.segments if isinstance(segment, ClipSegmentArgument)]
+
+
+async def _workspace_images(
     ctx: RunContext[RuntimeDeps], clips: list[ClipArgument], logo: LogoArgument | None
 ) -> dict[UUID, tuple[File, FileRevision]]:
-    """Resolves each logo File once, as the workspace's own image within the renderer's size."""
-    logos: dict[UUID, tuple[File, FileRevision]] = {}
-    for argument in [logo, *(clip.logo for clip in clips)]:
-        if argument is None or argument == "none" or argument.file_id.entity_id in logos:
+    """Resolves each logo and card image File once, as the workspace's own image within the
+    renderer's size.
+    """
+    references = [
+        argument.file_id
+        for argument in [logo, *(clip.logo for clip in clips)]
+        if argument is not None and argument != "none"
+    ] + [
+        segment.card.background_image
+        for clip in clips
+        for segment in clip.segments
+        if isinstance(segment, CardSegmentArgument) and segment.card.background_image
+    ]
+    images: dict[UUID, tuple[File, FileRevision]] = {}
+    for reference in references:
+        if reference.entity_id in images:
             continue
-        file, revision = await workspace_image(ctx, argument.file_id, tool_name="cut_video_clips")
+        file, revision = await workspace_image(ctx, reference, tool_name="cut_video_clips")
         if revision.size_bytes > MAX_IMAGE_BYTES:
             raise ToolFailed(
-                f"The logo is larger than {MAX_IMAGE_BYTES // 1024**2} MB. Use a smaller image."
+                f"{file.name} is larger than {MAX_IMAGE_BYTES // 1024**2} MB. Use a smaller image."
             )
-        logos[argument.file_id.entity_id] = (file, revision)
-    return logos
+        images[reference.entity_id] = (file, revision)
+    return images
 
 
 def _clip_logo(
     argument: LogoArgument | Literal["none"] | None,
     shared: LogoArgument | None,
-    logos: dict[UUID, tuple[File, FileRevision]],
+    images: dict[UUID, tuple[File, FileRevision]],
 ) -> LogoImage | None:
     """The clip's own logo, the call's, or none."""
     chosen = shared if argument is None else argument
     if chosen is None or chosen == "none":
         return None
-    _, revision = logos[chosen.file_id.entity_id]
+    _, revision = images[chosen.file_id.entity_id]
     return LogoImage(
         revision=revision, options=LogoOptions(**chosen.model_dump(exclude={"file_id"}))
     )
@@ -523,6 +595,26 @@ def _clip_music(
     _, revision, metadata = tracks[argument.file_id.entity_id]
     options = MusicOptions(**argument.model_dump(exclude={"file_id"}))
     return MusicBed(revision=revision, metadata=metadata, options=options)
+
+
+def _clip_segments(
+    clip: ClipArgument,
+    sources: dict[UUID, ClipSource],
+    images: dict[UUID, tuple[File, FileRevision]],
+) -> list[tuple[ClipSource, int | None, int | None] | ClipCard]:
+    return [
+        ClipCard(
+            duration_ms=segment.card.duration_ms,
+            color=segment.card.background_color,
+            image=images[segment.card.background_image.entity_id][1]
+            if segment.card.background_image
+            else None,
+            text=tuple(segment.card.text),
+        )
+        if isinstance(segment, CardSegmentArgument)
+        else (sources[segment.file_id.entity_id], segment.start_ms, segment.end_ms)
+        for segment in clip.segments
+    ]
 
 
 def _plan_clips(
@@ -540,18 +632,15 @@ def _plan_clips(
     music: MusicArgument | None,
     tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]],
     logo: LogoArgument | None,
-    logos: dict[UUID, tuple[File, FileRevision]],
+    images: dict[UUID, tuple[File, FileRevision]],
 ) -> list[PlannedClip]:
     planned = []
     for index, clip in enumerate(clips, start=1):
-        first = sources[clip.segments[0].file_id.entity_id]
+        first = sources[_videos_of(clip)[0].file_id.entity_id]
         try:
             planned.append(
                 plan_clip(
-                    [
-                        (sources[segment.file_id.entity_id], segment.start_ms, segment.end_ms)
-                        for segment in clip.segments
-                    ],
+                    _clip_segments(clip, sources, images),
                     size=output_size(aspect_ratio, first.metadata),
                     framing=framing,
                     snap=clip.snap,
@@ -571,12 +660,17 @@ def _plan_clips(
                             speed_percent=round(segment.speed * 100),
                             freeze_end_ms=segment.freeze_end_ms,
                         )
+                        if isinstance(segment, ClipSegmentArgument)
+                        else SegmentPace()
                         for segment in clip.segments
                     ],
-                    zooms=[segment.zoom for segment in clip.segments],
+                    zooms=[
+                        segment.zoom if isinstance(segment, ClipSegmentArgument) else None
+                        for segment in clip.segments
+                    ],
                     punch_ins=punch_ins,
                     remove_black_bars=remove_black_bars,
-                    logo=_clip_logo(clip.logo, logo, logos),
+                    logo=_clip_logo(clip.logo, logo, images),
                 )
             )
         except ValueError as exc:
@@ -598,7 +692,7 @@ async def _clip_sources(
             "Captions and removing pauses need speech transcription, which isn't set up."
         )
     snapped = {
-        segment.file_id.entity_id for clip in clips if clip.snap for segment in clip.segments
+        segment.file_id.entity_id for clip in clips if clip.snap for segment in _videos_of(clip)
     }
     sources = {}
     for file_id, (file, revision) in videos.items():
@@ -736,14 +830,7 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
     transitions = request.operation.transitions
     return [
         {
-            "file_id": str(segment.source.revision.file_id),
-            "start_ms": segment.start_ms,
-            "end_ms": segment.end_ms,
-            "start": format_duration(segment.start_ms),
-            "end": format_duration(segment.end_ms),
-            "speed": segment.pace.speed_percent / 100,
-            "freeze_end_ms": segment.pace.freeze_end_ms,
-            "zoom": segment.zoom.model_dump() if segment.zoom != NO_ZOOM else None,
+            **_segment_content(segment),
             "transition_in": (
                 transitions[position - 1].model_dump()
                 if position and transitions and transitions[position - 1].duration_ms
@@ -752,6 +839,28 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
         }
         for position, segment in enumerate(request.segments)
     ]
+
+
+def _segment_content(segment: PlannedSegment) -> dict[str, object]:
+    if segment.source is None:
+        card = segment.card or ClipCard(duration_ms=segment.end_ms)
+        return {
+            "card": {
+                "duration_ms": segment.end_ms,
+                "background_color": card.color,
+                "background_image": str(card.image.file_id) if card.image else None,
+            }
+        }
+    return {
+        "file_id": str(segment.source.revision.file_id),
+        "start_ms": segment.start_ms,
+        "end_ms": segment.end_ms,
+        "start": format_duration(segment.start_ms),
+        "end": format_duration(segment.end_ms),
+        "speed": segment.pace.speed_percent / 100,
+        "freeze_end_ms": segment.pace.freeze_end_ms,
+        "zoom": segment.zoom.model_dump() if segment.zoom != NO_ZOOM else None,
+    }
 
 
 def _music(request: PlannedClip) -> dict[str, object] | None:
@@ -795,7 +904,7 @@ def _overlays(overlays: tuple[PlacedOverlay, ...]) -> list[dict[str, object]]:
 def _clip_name(clip: ClipArgument, request: PlannedClip, first_file: File) -> str:
     if clip.name and clip.name.strip():
         return safe_filename(f"{PurePath(clip.name.strip()).stem}.mp4")
-    first = request.segments[0]
+    first = next(segment for segment in request.segments if segment.source)
     times = f"{format_duration(first.start_ms)}-{format_duration(first.end_ms)}".replace(":", ".")
     more = f" +{len(request.segments) - 1}" if len(request.segments) > 1 else ""
     return safe_filename(f"{PurePath(first_file.name).stem} {times}{more}.mp4")

@@ -16,6 +16,7 @@ from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
 from services.media.captions import (
     CaptionStyle,
+    OverlayTextStyle,
     PlacedOverlay,
     TextOverlay,
     TextPosition,
@@ -24,6 +25,7 @@ from services.media.captions import (
     subtitle_file,
 )
 from services.media.domain import (
+    MAX_CARD_MS,
     MAX_CUT_KEEP_RANGES,
     MAX_CUT_SHOT_CUTS,
     MAX_FADE_MS,
@@ -38,6 +40,7 @@ from services.media.domain import (
     MIN_TRANSITION_MS,
     MIN_ZOOM_PERCENT,
     AudioCurve,
+    CutCard,
     CutLogo,
     CutMusic,
     CutOperation,
@@ -80,6 +83,8 @@ MAX_LOGO_SIZE_PERCENT = 30
 MAX_LOGO_MARGIN_PERCENT = 10
 # A logo position's first word, as the caption position at that edge.
 LOGO_EDGES: dict[str, TextPosition] = {"top": "top", "middle": "middle", "bottom": "lower"}
+# A card grows by half of each transition beside it, so it shows whole for its own length.
+MAX_CARD_DURATION_MS = MAX_CARD_MS - MAX_TRANSITION_MS
 
 
 class TransitionOptions(BaseModel):
@@ -242,6 +247,18 @@ class ClipSource:
 
 
 @dataclass(frozen=True)
+class ClipCard:
+    """A title or end card: a colour, or an image covering the frame over it, held in silence
+    with its text.
+    """
+
+    duration_ms: int
+    color: str = "#000000"
+    image: FileRevision | None = None
+    text: tuple[TextOverlay, ...] = ()
+
+
+@dataclass(frozen=True)
 class SegmentPace:
     """How fast a segment plays, 50 to 200 percent, and how long its last frame then holds."""
 
@@ -251,13 +268,16 @@ class SegmentPace:
 
 @dataclass(frozen=True)
 class PlannedSegment:
-    source: ClipSource
+    """A range of a video, or a card, whose times then run from 0 to its length."""
+
+    source: ClipSource | None
     start_ms: int
     end_ms: int
     # Output frame ranges [first, end) left after removing pauses; empty keeps every frame.
     keep_frames: tuple[tuple[int, int], ...] = ()
     pace: SegmentPace = SegmentPace()
     zoom: SegmentZoom = NO_ZOOM
+    card: ClipCard | None = None
 
     def output_ms(self, fps: int) -> int:
         """The segment's length in the clip: pauses removed, then sped up, then the freeze."""
@@ -334,7 +354,7 @@ def output_fps(first: VideoMetadata) -> int:
 
 
 def plan_clip(
-    segments: Sequence[tuple[ClipSource, int | None, int | None]],
+    segments: Sequence[tuple[ClipSource, int | None, int | None] | ClipCard],
     *,
     size: tuple[int, int],
     framing: Framing,
@@ -363,15 +383,20 @@ def plan_clip(
     ``punch_ins`` zooms in at every other jump cut that pause removal makes. Black bars are
     removed as ``remove_black_bars`` says, or by default when a video's shape differs from the
     clip's. A ``logo`` sits at its position, clear of captions on its edge and, in its safe
-    zone, of what social apps show over the frame's edges. Raises ValueError with a reason to show.
+    zone, of what social apps show over the frame's edges. At least one segment is a video;
+    a ``ClipCard`` segment shows its text in the middle unless the text's style says
+    otherwise. Raises ValueError with a reason to show.
     """
     joins = [
         (own or transition or HARD_CUT).cut_transition()
         for own in (list(transitions_in) or [None] * len(segments))[1:]
     ]
     planned, warnings = [], []
-    for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
-        segment, warning = _bounded_segment(position, source, start_ms, end_ms, snap=snap)
+    for position, item in enumerate(segments, start=1):
+        if isinstance(item, ClipCard):
+            segment, warning = PlannedSegment(None, 0, item.duration_ms, card=item), None
+        else:
+            segment, warning = _bounded_segment(position, *item, snap=snap)
         if paces:
             segment = replace(segment, pace=paces[position - 1])
         if zooms:
@@ -379,8 +404,9 @@ def plan_clip(
         planned.append(segment)
         if warning:
             warnings.append(warning)
-    planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
-    fps = output_fps(planned[0].source.metadata)
+    requested = [(None, None) if isinstance(item, ClipCard) else item[1:] for item in segments]
+    planned = _overlap_joins(planned, joins, requested, warnings)
+    fps = output_fps(next(segment.source for segment in planned if segment.source).metadata)
     if remove_silences or (captions and captions.needs_word_times):
         _require_word_times(planned)
     if remove_silences:
@@ -397,9 +423,15 @@ def plan_clip(
     if captions and not words:
         warnings.append("There's no speech to caption.")
         captions = None
+    card_text = [
+        _card_text(overlay, position)
+        for position, segment in enumerate(planned, start=1)
+        if segment.card
+        for overlay in segment.card.text
+    ]
     placed = tuple(
         _place_overlay(overlay, number, planned, offsets, fps, clip_ms)
-        for number, overlay in enumerate(overlays, start=1)
+        for number, overlay in enumerate([*overlays, *card_text], start=1)
     )
     caption_text = None
     if captions or placed:
@@ -426,7 +458,11 @@ def plan_clip(
         music=music,
         logo=placed_logo,
         remove_black_bars=(
-            any(_changes_shape(segment.source.metadata, size) for segment in planned)
+            any(
+                _changes_shape(segment.source.metadata, size)
+                for segment in planned
+                if segment.source
+            )
             if remove_black_bars is None
             else remove_black_bars
         ),
@@ -452,6 +488,14 @@ def plan_clip(
     if music:
         _require_music_fits(music, clip.duration_ms)
     return clip
+
+
+def _card_text(overlay: TextOverlay, position: int) -> TextOverlay:
+    """Binds a card's text to its segment, in the middle of the frame unless it says where."""
+    style = overlay.style or OverlayTextStyle()
+    if style.position is None:
+        style = style.model_copy(update={"position": "middle"})
+    return overlay.model_copy(update={"segment": position, "style": style})
 
 
 def _place_logo(
@@ -556,7 +600,9 @@ def _bounded_segment(
 
 def _require_word_times(segments: Sequence[PlannedSegment]) -> None:
     if any(
-        segment.source.transcript and segment.source.transcript.model not in WORD_TIMED_MODELS
+        segment.source
+        and segment.source.transcript
+        and segment.source.transcript.model not in WORD_TIMED_MODELS
         for segment in segments
     ):
         raise ValueError(
@@ -583,7 +629,7 @@ def _cut_operation(
     remove_black_bars: bool,
 ) -> tuple[CutOperation, tuple[FileRevision, ...]]:
     """Returns the renderer operation and its sources: one input per distinct video revision,
-    then the music, then the logo.
+    then the music, the logo, and each card's image in order.
     """
     keep = tuple(
         (position, first, end)
@@ -593,28 +639,22 @@ def _cut_operation(
     # Inputs are numbered in order of first use.
     revisions: dict[UUID, FileRevision] = {}
     for segment in segments:
-        revisions.setdefault(segment.source.revision.id, segment.source.revision)
+        if segment.source:
+            revisions.setdefault(segment.source.revision.id, segment.source.revision)
     inputs = {revision_id: index for index, revision_id in enumerate(revisions)}
     # Automatic framing jumps only at shot cuts, so it needs those inside each segment.
     shot_cuts = {
         (inputs[segment.source.revision.id], cut)
         for segment in segments
+        if segment.source and framing == "auto"
         for cut in segment.source.shot_cuts_ms
-        if framing == "auto" and segment.start_ms < cut < segment.end_ms
+        if segment.start_ms < cut < segment.end_ms
     }
+    card_images = tuple(
+        segment.card.image for segment in segments if segment.card and segment.card.image
+    )
     operation = CutOperation(
-        segments=tuple(
-            CutSegment(
-                input=inputs[segment.source.revision.id],
-                start_ms=segment.start_ms,
-                end_ms=segment.end_ms,
-                speed_percent=segment.pace.speed_percent,
-                freeze_end_ms=segment.pace.freeze_end_ms,
-                zoom_from_percent=segment.zoom.from_percent,
-                zoom_to_percent=segment.zoom.to_percent,
-            )
-            for segment in segments
-        ),
+        segments=tuple(_cut_segment(segment, inputs) for segment in segments),
         width=size[0],
         height=size[1],
         fps=fps,
@@ -635,7 +675,22 @@ def _cut_operation(
     )
     music_source = (music.revision,) if music else ()
     logo_source = (logo[0].revision,) if logo else ()
-    return operation, (*revisions.values(), *music_source, *logo_source)
+    return operation, (*revisions.values(), *music_source, *logo_source, *card_images)
+
+
+def _cut_segment(segment: PlannedSegment, inputs: dict[UUID, int]) -> CutSegment | CutCard:
+    if segment.source is None:
+        card = segment.card or ClipCard(duration_ms=segment.end_ms)
+        return CutCard(duration_ms=segment.end_ms, color=card.color, image=card.image is not None)
+    return CutSegment(
+        input=inputs[segment.source.revision.id],
+        start_ms=segment.start_ms,
+        end_ms=segment.end_ms,
+        speed_percent=segment.pace.speed_percent,
+        freeze_end_ms=segment.pace.freeze_end_ms,
+        zoom_from_percent=segment.zoom.from_percent,
+        zoom_to_percent=segment.zoom.to_percent,
+    )
 
 
 def _overlap_joins(
@@ -651,7 +706,8 @@ def _overlap_joins(
     Snapped cuts end and start on whole sentences; without this, the overlap would blend
     away their first and last words. At a video's start or end the overlap takes the
     segment's own edge instead, with a warning when the range asked for that edge. A whole
-    video, with no start or end given, always blends its edges, so it doesn't warn.
+    video, with no start or end given, always blends its edges, so it doesn't warn. A card
+    lengthens by both halves beside it.
     """
     extended = list(segments)
     for position, join in enumerate(joins):
@@ -661,9 +717,14 @@ def _overlap_joins(
         before, after = extended[position], extended[position + 1]
         tail = round(max(0, half - before.pace.freeze_end_ms) * before.pace.speed_percent / 100)
         head = round(half * after.pace.speed_percent / 100)
-        room_after = before.source.metadata.duration_ms - before.end_ms
+        room_after = before.source.metadata.duration_ms - before.end_ms if before.source else tail
         extended[position] = replace(before, end_ms=before.end_ms + min(tail, room_after))
-        extended[position + 1] = replace(after, start_ms=after.start_ms - min(head, after.start_ms))
+        if after.card:
+            extended[position + 1] = replace(after, end_ms=after.end_ms + head)
+        else:
+            extended[position + 1] = replace(
+                after, start_ms=after.start_ms - min(head, after.start_ms)
+            )
         if room_after < tail and requested[position][1] is not None:
             warnings.append(
                 f"Segment {position + 1} ends at the end of its video, so the transition "
@@ -693,7 +754,7 @@ def _require_room_for_joins(
 
 def _segment_words(segment: PlannedSegment) -> list[TranscriptWord]:
     """The transcript words a segment shows, clamped to it."""
-    if segment.source.transcript is None:
+    if segment.source is None or segment.source.transcript is None:
         return []
     return [
         word.model_copy(
@@ -828,7 +889,7 @@ def _place_overlay(
             raise ValueError(
                 f"Text overlay {number}'s times must be inside segment {overlay.segment}, "
                 f"{format_duration(segment.start_ms)} to {format_duration(segment.end_ms)} of "
-                "its video."
+                f"{'the card' if segment.card else 'its video'}."
             )
         offset = offsets[overlay.segment - 1]
         start = offset + _timeline_ms(segment, start_ms, fps)

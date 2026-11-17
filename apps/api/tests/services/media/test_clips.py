@@ -1,7 +1,7 @@
 # apps/api/tests/services/media/test_clips.py
 
 """Planning clips: bounds, snapping, input numbering, framing, pauses, captions, transitions,
-text overlays, music, logos, and size.
+text overlays, music, logos, cards, and size.
 """
 
 from dataclasses import replace
@@ -17,6 +17,7 @@ from services.media.captions import (
     subtitle_file,
 )
 from services.media.clips import (
+    ClipCard,
     ClipSource,
     LogoImage,
     LogoOptions,
@@ -28,7 +29,13 @@ from services.media.clips import (
     output_size,
     plan_clip,
 )
-from services.media.domain import CutTransition, Transcript, TranscriptSentence, TranscriptWord
+from services.media.domain import (
+    CutCard,
+    CutTransition,
+    Transcript,
+    TranscriptSentence,
+    TranscriptWord,
+)
 from tests.factories import build_file, build_file_revision, build_workspace
 
 SENTENCES = (
@@ -509,3 +516,36 @@ def test_a_logo_is_the_last_source_inside_the_safe_zone_unless_off_and_above_cap
     assert lowered.warnings == ("The logo moved above the captions.",)
     # Without the safe zone, only the 2% margin; a centred axis has none.
     assert edge.operation.renderer_arguments()["logo_margins"] == [0, 22]
+
+
+def test_a_card_joins_like_a_segment_and_its_text_is_inert_in_the_middle_of_the_frame() -> None:
+    talk = _source(60_000)
+    file = build_file(workspace=build_workspace(), category="image", content_type="image/png")
+    card = ClipCard(
+        duration_ms=3_000,
+        color="#112233",
+        image=build_file_revision(file),
+        text=(TextOverlay(text="{\\fnEvil}Part 2"),),
+    )
+
+    clip = plan_clip(
+        [(talk, 10_000, 20_000), card, (talk, 30_000, 35_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        transition=TransitionOptions(style="fade"),
+    )
+
+    # The card grows by half of each 400 ms fade, so it shows whole for its 3 s.
+    assert clip.operation.segments[1] == CutCard(duration_ms=3_400, color="#112233", image=True)
+    assert clip.duration_ms == 18_000
+    assert clip.sources == (talk.revision, card.image)
+    arguments = clip.operation.renderer_arguments()
+    assert arguments["segments"][1] == [-1, 0, 3_400]
+    assert arguments["cards"] == [[0x112233, 1]]
+    # On the card from where the fade into it starts, centred, with the override inert.
+    [(start, end, style, text)] = _dialogue(clip.captions)
+    assert (start, end) == ("0:00:09.80", "0:00:13.20")
+    assert text.endswith("(\N{SET MINUS}fnEvil)Part 2")
+    [line] = [line for line in clip.captions.splitlines() if line.startswith(f"Style: {style},")]
+    assert line.split(",")[18] == "5"

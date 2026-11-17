@@ -10,6 +10,7 @@ from driver.server import OperationContext, OperationError
 
 from media.audio import VOICE_FILTERS, normalize_loudness
 from media.black_bars import Picture, find_picture, picture_crop
+from media.cards import CARD_INPUT, card_filters, card_image_count, validate_cards
 from media.ffmpeg import (
     OUTPUT_AUDIO_RATE,
     check_arguments,
@@ -88,6 +89,7 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "logo_size": int,
             "logo_margins": list[int],
             "logo_opacity": int,
+            "cards": list[list[int]],
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -99,18 +101,19 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
     validate_transitions(arguments)
     validate_music(arguments)
     validate_logo(arguments)
+    validate_cards(arguments)
     return arguments
 
 
 def _validate_segments(segments: list[list[int]]) -> set[int]:
-    """Segments are [input, start_ms, end_ms] and must use every input from 0."""
+    """Segments are [input, start_ms, end_ms], or a card, and must use every input from 0."""
     if not 1 <= len(segments) <= MAX_SEGMENTS or any(len(item) != 3 for item in segments):
         raise OperationError(
             "invalid_request", f"segments must list 1 to {MAX_SEGMENTS} [input, start, end]."
         )
     for _, start, end in segments:
         check_range({"start_ms": start, "end_ms": end})
-    inputs = {item[0] for item in segments}
+    inputs = {item[0] for item in segments if item[0] != CARD_INPUT}
     if inputs != set(range(len(inputs))):
         raise OperationError("invalid_request", "segments must use every input from 0.")
     return inputs
@@ -193,15 +196,16 @@ def _validate_zooms(arguments: dict[str, Any]) -> None:
 
 
 def _video_input_count(arguments: dict[str, Any]) -> int:
-    return len({item[0] for item in arguments["segments"]})
+    return len({item[0] for item in arguments["segments"] if item[0] != CARD_INPUT})
 
 
 def cut_input_count(arguments: dict[str, Any]) -> int:
-    # The music, then the logo, then the captions file, follow the videos.
+    # The music, the logo, each card's image, then the captions file follow the videos.
     return (
         _video_input_count(arguments)
         + int(arguments.get("music", False))
         + int(arguments.get("logo", False))
+        + card_image_count(arguments)
         + int(arguments.get("captions", False))
     )
 
@@ -214,8 +218,11 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         require_video(summary)
         summaries.append(summary)
     music = arguments.get("music", False)
-    # The logo is checked before the slower framing analysis, so a bad image fails fast.
-    logo = image_input(context, len(summaries) + int(music)) if arguments.get("logo") else []
+    # Images are checked before the slower framing analysis, so a bad image fails fast.
+    first_card = len(summaries) + int(music) + int(arguments.get("logo", False))
+    logo = image_input(context, first_card - 1) if arguments.get("logo") else []
+    card_count = card_image_count(arguments)
+    card_images = iter([image_input(context, first_card + number) for number in range(card_count)])
     width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
     pictures = _pictures(context, arguments, summaries)
     tracks = (
@@ -228,8 +235,20 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
     speeds = arguments.get("speed_percents", [100] * count)
     freezes = arguments.get("freeze_end_ms", [0] * count)
     zooms = arguments.get("zooms", [[MIN_ZOOM_PERCENT, MIN_ZOOM_PERCENT]] * count)
-    options, filters, lengths = [], [], []
+    cards = iter(arguments.get("cards", []))
+    # ffmpeg numbers inputs as they're given: each video segment and card image, in order.
+    options, filters, lengths, streams = [], [], [], 0
     for position, (index, start, end) in enumerate(arguments["segments"]):
+        if index == CARD_INPUT:
+            color, image = next(cards)
+            frames = _frame_count(end, fps)
+            lengths.append(frames)
+            stream = None
+            if image:
+                options += next(card_images)
+                stream, streams = streams, streams + 1
+            filters += card_filters(position, color, stream, (width, height), frames, fps)
+            continue
         summary = summaries[index]
         start, end = clamp_range(summary, start, end)
         frames = _frame_count(end - start, fps)
@@ -237,6 +256,7 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         pace = _pace_filters(kept, speeds[position], freezes[position], fps)
         lengths.append(pace[2])
         options += segment_input(start, end, context.input_path(index))
+        stream, streams = streams, streams + 1
         if arguments["fit"]:
             framing = fit_filter(width, height, position)
         elif position in tracks:
@@ -248,6 +268,7 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         zoom = zoom_filter(frames, zooms[position], punched)
         filters += _segment_filters(
             position,
+            stream,
             picture_crop(pictures.get(position)) + framing,
             zoom,
             arguments.get("enhance_voice", False),
@@ -258,21 +279,19 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
             fps,
         )
     total = join(filters, lengths, arguments.get("transitions", []), fps)
-    audio, extra = "[mixed]", len(summaries)
+    audio = "[mixed]"
     # Music runs under the joined clip, so it plays straight through the transitions.
     if music:
-        options += music_input(context, arguments, extra, total, fps)
-        # ffmpeg opens each segment as its own input, so the music follows the segments.
-        audio = mix_music(filters, arguments, len(arguments["segments"]), total, fps)
-        extra += 1
+        options += music_input(context, arguments, len(summaries), total, fps)
+        audio = mix_music(filters, arguments, streams, total, fps)
+        streams += 1
     video = "[joined]"
     # The logo sits under all burned-in text; the API keeps it clear of the captions.
     if logo:
         options += logo
-        video = place_logo(filters, arguments, len(arguments["segments"]) + int(music), video)
-        extra += 1
+        video = place_logo(filters, arguments, streams, video)
     if arguments.get("captions"):
-        captions = _captions_input(context, extra)
+        captions = _captions_input(context, first_card + card_count)
         filters.append(f"{video}ass=filename={captions.name}[captioned]")
         video = "[captioned]"
     filters += fades(video, audio, arguments, total, fps)
@@ -317,6 +336,8 @@ def _pictures(
         return {}
     pictures = {}
     for position, (index, start, end) in enumerate(arguments["segments"]):
+        if index == CARD_INPUT:
+            continue
         summary = summaries[index]
         size = upright_size(summary)
         if size is None:
@@ -334,6 +355,7 @@ def _frame_count(duration_ms: int, fps: int) -> int:
 
 def _segment_filters(
     position: int,
+    stream: int,
     framing: str,
     zoom: str,
     enhance_voice: bool,
@@ -343,17 +365,18 @@ def _segment_filters(
     pace: tuple[str, str, int],
     fps: int,
 ) -> list[str]:
-    """Builds [vN] and [aN], each exactly the segment's output frames long so joins line up.
+    """Builds [vN] and [aN] from ffmpeg input ``stream``, each exactly the segment's output
+    frames long so joins line up.
 
     The zoom counts the segment's frames before pauses are removed, as ``keep`` does.
     """
     video_keep, audio_keep = _keep_filters(keep, fps)
     video_pace, audio_pace, _ = pace
     # Silence for an input without audio, so mismatched sources join cleanly.
-    audio = f"[{position}:a:0]" if has_audio else f"anullsrc=r={OUTPUT_AUDIO_RATE}:cl=stereo,"
+    audio = f"[{stream}:a:0]" if has_audio else f"anullsrc=r={OUTPUT_AUDIO_RATE}:cl=stereo,"
     voice = f"{VOICE_FILTERS}," if enhance_voice else ""
     return [
-        f"[{position}:v:0]{framing},fps={fps},format=yuv420p,"
+        f"[{stream}:v:0]{framing},fps={fps},format=yuv420p,"
         f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={frames},"
         f"setpts=PTS-STARTPTS{zoom}{video_keep}{video_pace}[v{position}]",
         f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"

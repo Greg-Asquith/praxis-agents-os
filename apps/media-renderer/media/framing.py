@@ -9,6 +9,7 @@ from typing import Any
 from driver.server import OperationContext, OperationError
 
 from media.black_bars import Picture, picture_crop
+from media.cards import CARD_INPUT
 from media.ffmpeg import clamp_range, read_json, run_ffmpeg, segment_input
 from media.reframe import (
     SAMPLE_INTERVAL_MS,
@@ -70,6 +71,8 @@ def subject_tracks(
     output = (arguments["width"], arguments["height"])
     sampled: dict[tuple[int, int], list[tuple[int, int, float, int, list[int]]]] = {}
     for position, (index, start, end) in enumerate(arguments["segments"]):
+        if index == CARD_INPUT:
+            continue
         summary = summaries[index]
         picture = pictures.get(position)
         source = upright_size(summary) if picture is None else picture[2:]

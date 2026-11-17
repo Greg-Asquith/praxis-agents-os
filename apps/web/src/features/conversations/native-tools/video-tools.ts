@@ -286,7 +286,11 @@ function videoClip(
     name: value["name"],
     video,
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
-    ranges: segments.map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
+    ranges: segments.map((segment) =>
+      isRecord(segment["card"])
+        ? cardRange(segment["card"])
+        : `${String(segment["start"])}–${String(segment["end"])}`
+    ),
     effects: [...clipEffects(value, segments), ...(music ? [music] : []), ...(logo ? [logo] : [])],
     overlays: Array.isArray(value["text_overlays"])
       ? value["text_overlays"]
@@ -359,7 +363,15 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
           ? "No Logo"
           : null
         : logoEffect(logoArgument(ownLogo) ?? callLogo, callLogo)
-    const overlays = Array.isArray(clip["text_overlays"]) ? clip["text_overlays"] : []
+    const cardText = segments.flatMap((segment): unknown[] =>
+      isRecord(segment["card"]) && Array.isArray(segment["card"]["text"])
+        ? (segment["card"]["text"] as unknown[])
+        : []
+    )
+    const overlays: unknown[] = [
+      ...(Array.isArray(clip["text_overlays"]) ? (clip["text_overlays"] as unknown[]) : []),
+      ...cardText,
+    ]
     return {
       index: position + 1,
       name: typeof clip["name"] === "string" && clip["name"].trim() ? clip["name"] : null,
@@ -387,6 +399,9 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
 }
 
 function plannedRange(segment: Record<string, unknown>) {
+  if (isRecord(segment["card"])) {
+    return cardRange(segment["card"])
+  }
   const file = isRecord(segment["file_id"]) ? segment["file_id"] : {}
   const name = typeof file["label"] === "string" ? `${file["label"]} ` : ""
   const { start_ms: startMs, end_ms: endMs } = segment
@@ -396,6 +411,20 @@ function plannedRange(segment: Record<string, unknown>) {
   const start = typeof startMs === "number" ? clock(startMs) : "Start"
   const end = typeof endMs === "number" ? clock(endMs) : "End"
   return `${name}${start}–${end}`
+}
+
+// Such as "Brand.png Card (2 s)"; a card lasts 3 s unless the call says.
+function cardRange(card: Record<string, unknown>) {
+  const image = card["background_image"]
+  const name = isRecord(image)
+    ? typeof image["label"] === "string"
+      ? `${image["label"]} Card`
+      : "Image Card"
+    : typeof image === "string"
+      ? "Image Card"
+      : "Card"
+  const length = typeof card["duration_ms"] === "number" ? card["duration_ms"] : 3000
+  return `${name} (${seconds(length)})`
 }
 
 // M:SS, or H:MM:SS from an hour.

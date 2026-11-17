@@ -48,6 +48,10 @@ MAX_IMAGE_BYTES = 20_971_520  # 20 MB
 MIN_LOGO_SIZE_PX = 8
 MIN_LOGO_OPACITY = 10
 MAX_LOGO_OPACITY = 100
+MIN_CARD_MS = 500
+# The renderer's input number for a card's segment, which reads no video.
+CARD_INPUT = -1
+MAX_CARD_MS = 15000
 LogoPosition = Literal[
     "top_left", "top_center", "top_right", "middle_center",
     "bottom_left", "bottom_center", "bottom_right",
@@ -133,6 +137,18 @@ class CutSegment(_Range):
     zoom_to_percent: int = Field(default=100, ge=MIN_ZOOM_PERCENT, le=MAX_ZOOM_PERCENT)
 
 
+class CutCard(BaseModel):
+    """A title or end card: ``color`` for ``duration_ms`` in silence, with the next card image
+    source covering the frame over it when ``image`` is set.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    duration_ms: int = Field(ge=MIN_CARD_MS, le=MAX_CARD_MS)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    image: bool = False
+
+
 class CutTransition(BaseModel):
     """How one segment joins the next; ``none`` with no duration is a hard cut."""
 
@@ -194,11 +210,12 @@ class CutOperation(_Operation):
     ``music`` mixes an audio source, which follows the videos, under the joined clip.
     ``remove_black_bars`` crops any black bars from each segment before it's framed.
     ``logo`` places an image source, which follows any music, under the burned-in text.
+    A segment can be a ``CutCard``, whose image source, if any, follows the logo.
     """
 
     name: Literal["cut"] = "cut"
     output_type: ClassVar[tuple[str, str]] = ("video/mp4", ".mp4")
-    segments: tuple[CutSegment, ...] = Field(min_length=1, max_length=MAX_CUT_SEGMENTS)
+    segments: tuple[CutSegment | CutCard, ...] = Field(min_length=1, max_length=MAX_CUT_SEGMENTS)
     width: int = Field(ge=MIN_OUTPUT_EDGE_PX, le=MAX_OUTPUT_EDGE_PX, multiple_of=2)
     height: int = Field(ge=MIN_OUTPUT_EDGE_PX, le=MAX_OUTPUT_EDGE_PX, multiple_of=2)
     fps: int = Field(default=30, ge=MIN_OUTPUT_FPS, le=MAX_OUTPUT_FPS)
@@ -221,7 +238,7 @@ class CutOperation(_Operation):
 
     @model_validator(mode="after")
     def require_every_input(self):
-        if {segment.input for segment in self.segments} != set(range(self.video_count())):
+        if {segment.input for segment in self._videos()} != set(range(self.video_count())):
             raise ValueError("segments must use every source from 0")
         if self.fit and self.reframe:
             raise ValueError("fit and reframe can't both be set")
@@ -246,22 +263,31 @@ class CutOperation(_Operation):
             raise ValueError("the logo must fit inside the frame")
         return self
 
+    def _videos(self) -> list[CutSegment]:
+        return [segment for segment in self.segments if isinstance(segment, CutSegment)]
+
     def video_count(self) -> int:
-        return len({segment.input for segment in self.segments})
+        return len({segment.input for segment in self._videos()})
+
+    def card_image_count(self) -> int:
+        return sum(1 for segment in self.segments if isinstance(segment, CutCard) and segment.image)
 
     def input_count(self) -> int:
         return (
             self.video_count()
             + int(self.music is not None)
             + int(self.logo is not None)
+            + self.card_image_count()
             + int(self.captions)
         )
 
     def source_categories(self) -> tuple[frozenset[FileCategory], ...]:
         videos = (frozenset({FileCategory.VIDEO}),) * self.video_count()
         music = (frozenset({FileCategory.AUDIO}),) if self.music else ()
-        logo = (frozenset({FileCategory.IMAGE}),) if self.logo else ()
-        return (*videos, *music, *logo)
+        images = (frozenset({FileCategory.IMAGE}),) * (
+            int(self.logo is not None) + self.card_image_count()
+        )
+        return (*videos, *music, *images)
 
     def renderer_arguments(self) -> dict[str, object]:
         music = (
@@ -287,15 +313,24 @@ class CutOperation(_Operation):
             if self.logo
             else {}
         )
+        cards = [segment for segment in self.segments if isinstance(segment, CutCard)]
+        # Cards play as they are, so they take the renderer's neutral speed, freeze, and zoom.
+        played = [
+            segment
+            if isinstance(segment, CutSegment)
+            else CutSegment(input=0, start_ms=0, end_ms=1)
+            for segment in self.segments
+        ]
         return {
             "segments": [
-                [segment.input, segment.start_ms, segment.end_ms] for segment in self.segments
+                [CARD_INPUT, 0, segment.duration_ms]
+                if isinstance(segment, CutCard)
+                else [segment.input, segment.start_ms, segment.end_ms]
+                for segment in self.segments
             ],
-            "speed_percents": [segment.speed_percent for segment in self.segments],
-            "freeze_end_ms": [segment.freeze_end_ms for segment in self.segments],
-            "zooms": [
-                [segment.zoom_from_percent, segment.zoom_to_percent] for segment in self.segments
-            ],
+            "speed_percents": [segment.speed_percent for segment in played],
+            "freeze_end_ms": [segment.freeze_end_ms for segment in played],
+            "zooms": [[segment.zoom_from_percent, segment.zoom_to_percent] for segment in played],
             "width": self.width,
             "height": self.height,
             "fps": self.fps,
@@ -316,6 +351,11 @@ class CutOperation(_Operation):
             "remove_black_bars": self.remove_black_bars,
             **music,
             **logo,
+            **(
+                {"cards": [[int(card.color[1:], 16), int(card.image)] for card in cards]}
+                if cards
+                else {}
+            ),
         }
 
 

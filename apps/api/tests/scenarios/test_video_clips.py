@@ -412,3 +412,60 @@ async def test_the_persons_logo_goes_on_every_clip_that_keeps_it_and_its_read_is
         row.resource_id == str(image.id) and row.details["operation"] == "video_clips"
         for row in result.audit_rows
     )
+
+
+async def test_an_end_card_shows_the_persons_image_after_the_video_and_its_read_is_recorded(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(),
+    )
+    image = await persist_image(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Brand.png",
+    )
+    background = FileReference(entity_id=image.id, label=image.name).model_dump(mode="json")
+    card = {"duration_ms": 2_000, "background_image": background, "text": [{"text": "Part 2"}]}
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once(
+            {
+                "clips": [
+                    {"segments": [segment(talk, 0, 5_000), {"card": card}], "snap": False},
+                ],
+                "aspect_ratio": "9:16",
+            }
+        ),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    [request] = renderer
+    # The image follows the video, then the card's text as captions.
+    assert len(request["inputs"]) == 3
+    assert request["arguments"]["segments"] == [[0, 0, 5_000], [-1, 0, 2_000]]
+    [clip] = output["clips"]
+    assert clip["name"] == "Pricing talk 0.00-0.05 +1.mp4"
+    assert clip["segments"][1]["card"] == {
+        "duration_ms": 2_000,
+        "background_color": "#000000",
+        "background_image": str(image.id),
+    }
+    assert [overlay["text"] for overlay in clip["text_overlays"]] == ["Part 2"]
+    assert any(
+        row.resource_id == str(image.id) and row.details["operation"] == "video_clips"
+        for row in result.audit_rows
+    )

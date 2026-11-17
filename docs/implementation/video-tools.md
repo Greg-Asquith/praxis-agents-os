@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000), `remove_black_bars`, `logo` with `logo_position`, `logo_size` (8 or more pixels), `logo_margins` (`[x, y]`), and `logo_opacity` (10 to 100) | one H.264 and AAC MP4, with its loudness when normalised and whether any segment had black bars removed |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`, or `[-1, 0, duration_ms]` for a card), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000), `remove_black_bars`, `logo` with `logo_position`, `logo_size` (8 or more pixels), `logo_margins` (`[x, y]`), and `logo_opacity` (10 to 100), `cards` (one `[colour, image]` per card) | one H.264 and AAC MP4, with its loudness when normalised and whether any segment had black bars removed |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -169,6 +169,18 @@ nothing for AAC.
   the captions file, so text overlays show above it; the API keeps it clear
   of captions. The renderer refuses logo options without `logo` and a logo
   that doesn't fit inside the frame.
+- **Cards:** a segment `[-1, 0, duration_ms]` (500 to 15000 ms) is a title
+  or end card that reads no video (`media/cards.py`). `cards` lists one
+  `[colour, image]` per card in order: the colour is an integer `0xRRGGBB`,
+  and `image` 1 takes the next card image input, after any logo and before
+  any captions file. The card is ffmpeg's `color` source at the output size
+  and frame rate, with the image scaled to cover the frame, cropped to its
+  shape, and overlaid on the colour so its transparent parts show it, and
+  silence from `anullsrc`. It's exactly its frames long, so it joins,
+  crossfades, and fades like any segment, and music, the logo, and burned-in
+  text run over it. The renderer refuses a card with a speed, a freeze, a
+  zoom, or removed frames, and a `cards` list that doesn't match the card
+  segments. Framing, black bar removal, and face tracking skip cards.
 - **Image inputs:** `media/images.py` checks an image before anything else
   in the cut runs. The file must be at most 20 MB. `ffprobe` detects its
   format from its content with only the `image_png_pipe`,
@@ -436,6 +448,20 @@ arguments are as follows:
   optional `start_ms` and `end_ms`; omitting both takes the whole video. An
   optional `name` names the File; otherwise it is named from the first video
   and range, such as `Talk 0.41-1.10.mp4`.
+- **Cards:** a segment can be `{card: {duration_ms?, background_color?,
+  background_image?, text?}, transition_in?}`, a title or end card held in
+  silence. `duration_ms` is 500 to 12000 (default 3000); the card grows by
+  half of each transition beside it, so it shows whole for that long and
+  stays inside the renderer's 15 s. `background_color` is `#RRGGBB`
+  (default black). `background_image` is one of the workspace's own image
+  Files, checked like a logo, scaled to cover the frame, with its
+  transparent parts showing the colour. `text` is up to three text
+  overlays, bound to the card, in the middle of the frame unless their
+  style sets a position, with times from the card's start; they go through
+  the same ASS file and escaping as every overlay. A clip needs at least one
+  video segment; its name and folder come from its first video. Each clip
+  reports a card segment as `card` (length, colour, and image File), and a
+  card image gets the same `video_clips` audit event as the source videos.
 - **Snapping:** `snap` (default true) applies `find_video_moments`' snapping
   without its length bounds. A move of a second or more comes back as a
   warning. The first snap on a video transcribes it and measures its shots; a
@@ -677,7 +703,8 @@ The tool rows add the following:
   Throughout), **Logo** (the File, its position, **Safe Zone Off** when off, and its
   opacity below 100%),
   and **Punch-In Zooms**. Below them, a grid of stills with
-  each clip's length, name, ranges, **Black Bars Removed** when it had any,
+  each clip's length, name, ranges (a card shows as **Card (3 s)** or
+  **Image Card (3 s)**), **Black Bars Removed** when it had any,
   and its own fades, transitions, speeds (such as **2× Speed**), freezes
   (**Freeze Frame 1 s**), and zooms (**Zoom 100% to 120%**) in play order, then **No Music** or **Different Music**
   where its music differs from the call's, **No Logo** or **Different Logo**
@@ -688,8 +715,9 @@ The tool rows add the following:
 - **`cut_video_clips` approval:** the tool is automatic by default; when an
   owner sets it to ask first, the approval card shows shape, framing,
   captions, and folder, the settings shared by every clip (sound, music,
-  logo, pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments, finishing,
-  and text on screen, read from the call's arguments
+  logo, pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments
+  (a card as **Brand.png Card (3 s)**), finishing,
+  and text on screen, including card text, read from the call's arguments
   (`video-clips-approval.tsx`).
 
 In the composer, a video attachment shows its upload percentage, then

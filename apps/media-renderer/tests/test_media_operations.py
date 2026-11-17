@@ -498,6 +498,50 @@ def test_a_transparent_logo_keeps_its_alpha_at_its_position(
     assert blue[20, 20] > 200 and red[20, 20] < 60
 
 
+def test_cards_join_like_segments_and_an_image_card_shows_its_colour_through_clear_parts(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # 1.5 s of red video crossfades over 500 ms into a 1.5 s green card, then cuts to a 1 s
+    # card of a 40x40 PNG, clear but for its white middle, over blue.
+    storage.objects["card.png"] = _png(
+        40, 40, lambda x, y: (255, 255, 255, 255) if 10 <= x < 30 and 10 <= y < 30 else (0, 0, 0, 0)
+    )
+    response = _run(
+        storage,
+        config,
+        "cut",
+        sources=("sample.mp4", "card.png"),
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 1500], [-1, 0, 1500], [-1, 0, 1000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "transitions": [["fade", 500, "tri"], ["none", 0, "tri"]],
+            "cards": [[0x00FF00, 0], [0x0000FF, 1]],
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    times = [500, 1250, 2000, 3000]
+    _run(storage, config, "frames", sources=("clip.mp4",), outputs=4, arguments={"times_ms": times})
+
+    assert abs(response["result"]["duration_ms"] - 3500) <= 50
+    assert response["result"]["has_audio"]
+    red, blend, green, image = (
+        cv2.imdecode(np.frombuffer(storage.uploads[f"out-{index}"], np.uint8), 1).astype(int)
+        for index in range(len(times))
+    )
+    red, blend, green = (frame.mean(axis=(0, 1)) for frame in (red, blend, green))
+    # BGR: the video, then video and card at once, then the card alone.
+    assert red[2] > 150 and red[1] < 60
+    assert blend[1] > 60 and blend[2] > 60
+    assert green[1] > 200 and green[2] < 60
+    # The image covers the frame: its white middle is centred, its clear border shows blue.
+    assert image[90, 160].min() > 200
+    assert image[90, 20][0] > 200 and image[90, 20][2] < 60
+
+
 @pytest.mark.parametrize(
     ("logo", "reason"),
     [

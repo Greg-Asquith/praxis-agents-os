@@ -118,6 +118,12 @@ describe("cutVideoClipsPlan", () => {
           segments: [
             { file_id: talk, start_ms: 41_000, end_ms: 70_000 },
             { file_id: talk, start_ms: 3_725_000, speed: 1.5, zoom: { to_percent: 115 } },
+            {
+              card: {
+                background_image: { entity_kind: "file", entity_id: "brand", label: "Brand.png" },
+                text: [{ text: "Follow for part 2" }],
+              },
+            },
           ],
           transition: { style: "fade" },
           text_overlays: [{ text: "3 pricing mistakes" }],
@@ -142,9 +148,9 @@ describe("cutVideoClipsPlan", () => {
         {
           index: 1,
           name: null,
-          ranges: ["Talk.mp4 0:41–1:10", "Talk.mp4 1:02:05–End"],
-          effects: ["Fade", "1.5× Speed", "Zoom 100% to 115%"],
-          overlays: ["3 pricing mistakes"],
+          ranges: ["Talk.mp4 0:41–1:10", "Talk.mp4 1:02:05–End", "Brand.png Card (3 s)"],
+          effects: ["Fade", "1.5× Speed", "Zoom 100% to 115%", "Fade"],
+          overlays: ["3 pricing mistakes", "Follow for part 2"],
         },
         {
           index: 2,

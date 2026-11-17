@@ -45,6 +45,9 @@ SHARED = (
     "MIN_LOGO_SIZE_PX",
     "MIN_LOGO_OPACITY",
     "MAX_LOGO_OPACITY",
+    "MIN_CARD_MS",
+    "MAX_CARD_MS",
+    "CARD_INPUT",
 )
 
 
