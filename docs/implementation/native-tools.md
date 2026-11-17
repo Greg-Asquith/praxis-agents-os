@@ -83,7 +83,8 @@ The following contracts apply in this area:
 
 ### Media model catalogue
 
-`generate_image`, `edit_image`, and `generate_video` take an optional `model`:
+`generate_image`, `edit_image`, `generate_video`, and `edit_video` take an
+optional `model`:
 an ID from the media catalogue, `apps/api/services/media/models.toml`. Each
 entry records the model's tasks, limits (aspect ratios, source images,
 durations, and resolutions), routes, upstream lab,
@@ -115,8 +116,8 @@ any provider call.
 
 When `model` is omitted, the tool uses `DEFAULT_IMAGE_GENERATION_MODEL`
 (`nano-banana-2.1` by default) if it's available, otherwise the first available
-model in catalogue order. `generate_video` does the same with
-`DEFAULT_VIDEO_GENERATION_MODEL` (`omni-1.2-flash`); see
+model in catalogue order. `generate_video` and `edit_video` do the same with
+`DEFAULT_VIDEO_GENERATION_MODEL` (`omni-1.2-flash`, which also edits); see
 [video tools](video-tools.md#generation). Routing between models (plan 352 B) is pending.
 
 The approval card shows **Image Model** with the model that will run, filled

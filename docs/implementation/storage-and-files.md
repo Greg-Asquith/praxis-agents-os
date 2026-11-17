@@ -89,9 +89,10 @@ model, with portrait recordings shown upright. For the probe's outcomes, see
 
 A revision a model made carries set-once provenance in `generation`: the
 route, the catalogue and provider model, the provider's ID, the task, a
-SHA-256 digest of the prompt, and its settings. File responses report
+SHA-256 digest of the prompt or instruction, its settings, and for an edit
+the revision it changed. File responses report
 `ai_generated` for a File whose current revision has it, and the Files page
-labels it **AI-Generated**. `generate_video` writes it; see
+labels it **AI-Generated**. `generate_video` and `edit_video` write it; see
 [Video tools](video-tools.md#generation).
 
 Ingestible workspace revisions enqueue `files.extract`. The File moves from

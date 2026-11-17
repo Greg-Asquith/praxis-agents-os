@@ -123,6 +123,7 @@ async def persist_analysed_video(
         db.add(revision)
         await db.flush()
         file.current_revision_id = revision.id
+        file.revision_count = revision.revision_number
         await db.commit()
         return file
 

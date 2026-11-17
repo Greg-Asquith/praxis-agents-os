@@ -14,6 +14,7 @@ missing, rather than failing at call time:
 | `ask_video` | Google | Read only |
 | `cut_video_clips` | Renderer | Saves video Files |
 | `generate_video` | A catalogue video model this deployment can call | Paid; saves a video File |
+| `edit_video` | A catalogue video model that edits, this deployment can call | Paid; saves the File's next revision |
 
 The renderer is available (`settings.media_renderer_available`) when
 `MEDIA_RENDERER_URL` is set and storage is `gcs` or `local_fs`. Google means
@@ -657,8 +658,8 @@ the default, or `16:9`), `duration_seconds` (default 8), `resolution`
 (`720p`, the default, `1080p`, or `4k`), an optional catalogue `model`, and
 an optional File `name` and `folder`. The approval card shows the model that
 will run, with its price range a second and processing location, and every
-setting is editable. Image and video references, `edit_video`, and
-`extend_video` are pending (plan 250 C2 and C3).
+setting is editable. Image and video references and `extend_video` are
+pending (plan 250 C3).
 
 The model comes from the media catalogue (`services/media/models.toml`, see
 [native tools](native-tools.md#media-model-catalogue)): `DEFAULT_VIDEO_GENERATION_MODEL`
@@ -667,11 +668,12 @@ durations, resolutions) are checked before any call, and a route may price a
 second by resolution (`usd_per_second_by_resolution`).
 
 Backends implement `VideoBackend` (`services/media/generation.py`), chosen by
-the catalogue route. A call runs in two steps, so the provider's ID is
-recorded between them:
+the catalogue route. `generate_video` and `edit_video` share the steps around
+the paid request (`runtime/tools/video/generation.py`). A call runs in two
+steps, so the provider's ID is recorded between them:
 
 1. The tool commits a `media_generations` row (`requested`) keyed by run and
-   tool call, then `start` sends the one paid request.
+   tool call, then `start` (or `start_edit`) sends the one paid request.
 2. The tool commits the provider's ID on the row (`running`), then `wait`
    polls until the clip is ready, for up to 900 seconds.
 3. The clip is saved as a File in the conversation's folder (or the named
@@ -687,8 +689,8 @@ by workspace.
 
 The saved revision carries its provenance in `file_revisions.generation`
 (`GenerationProvenance`: route, catalogue and provider model, the provider's
-ID, the task, a SHA-256 digest of the prompt, and the shape, resolution, and
-length). It's set once, with the revision. Files reports `ai_generated` for a
+ID, the task, a SHA-256 digest of the prompt or instruction, the shape,
+resolution, and length, and for an edit the revision it changed). It's set once, with the revision. Files reports `ai_generated` for a
 File whose current revision has provenance, and the Files table, the File
 details, and the generation row show **AI-Generated**. The result also
 returns the cost from the tokens Google reported, the model's own notes on
@@ -696,6 +698,43 @@ the prompt as untrusted content, and a reminder to check the clip with
 `ask_video`. While it runs, the row is a collapsed loading card with the
 stage, the clip's length, shape, and resolution, and how long it usually
 takes.
+
+### Editing
+
+`edit_video` (`runtime/tools/video/edit_video.py`) changes one workspace MP4
+by instruction and saves the result as the File's next revision, so the File
+stays in its folder and the person can restore the old version from Files.
+It asks for approval by default; an owner can switch it to automatic. Its
+arguments are the File, the `instruction` (up to 4,000 characters),
+`base_revision_id`, and an optional catalogue `model` (models with the
+`edit_video` task; `DEFAULT_VIDEO_GENERATION_MODEL` when the agent names
+none). The approval card shows the File, the full instruction (editable),
+and the model. The File isn't editable on the card, because the base
+revision belongs to it.
+
+Before any paid request, the tool checks that the File is the workspace's
+own video, that `base_revision_id` is its current revision, and that it's an
+MP4 (a revision keeps the File's type, and Omni returns MP4). Then it picks
+how Google gets the clip:
+
+- **Chained:** when the current revision has provenance from the same route,
+  the request names that revision's provider ID as `previous_interaction_id`
+  and sends no video. This is any clip made or edited in Praxis.
+- **Uploaded:** otherwise the tool reads the probe's duration and refuses a
+  clip longer than the model's `max_input_seconds` (10 for Omni) or larger
+  than `MAX_FILE_SIZE_VIDEO`, telling the agent to cut the shot with
+  `cut_video_clips` first. It audits the read (`video_edit`) and sends the
+  clip inline.
+- If Google no longer holds a chained interaction (HTTP 404, unbilled), the
+  same tool call uploads the clip instead, under the same limits.
+
+The save appends a revision with `expected_current_revision_id` set to the
+base, so a File changed during the edit saves nothing and the record is
+marked `failed`. A call that finds its own record `saved` returns that
+revision. The result has the revision ID and number, the base, the cost,
+the model's notes as untrusted content, and the reminder to check with
+`ask_video`. The row plays the clip, says **Saved As Version N**, and shows
+the instruction; while it runs it's a collapsed loading card.
 
 #### Omni
 
@@ -712,7 +751,15 @@ both transports) through google-genai's Interactions API, on Vertex at the
  "store": true, "background": true}
 ```
 
-The client sends it with SDK retries off, because a retried create is a
+An edit sends `response_format: {"type": "video"}` with either
+`previous_interaction_id` and the instruction as `input`, or an `input` of a
+`video` part (base64 MP4) and a `text` part with
+`generation_config.video_config.task: "edit"`. Google refuses
+`previous_interaction_id` alongside a task. On the Gemini API, Google
+doesn't edit uploaded video from the EEA, Switzerland, or the UK; that
+refusal returns a message suggesting a clip generated in Praxis or Vertex.
+
+The client sends each request with SDK retries off, because a retried create is a
 second paid clip, then polls the interaction every 5 seconds. Reads that fail
 are retried up to five times in a row. A wait that passes its deadline, or a
 call that's cancelled, asks Google to cancel the interaction. `store: true`
@@ -742,8 +789,10 @@ the hard limits and point to it. Each tool slice that changes what an agent
 can do with video updates the skill in the same change, never before the
 tool exists. The `video_*` cases in `apps/api/evals/datasets/agent_behavior.yaml`
 check that agents find moments before cutting, cut the returned ranges in one
-`cut_video_clips` call rather than from `run_code`, and report a glitch
-`ask_video` describes at a transition as unconfirmed.
+`cut_video_clips` call rather than from `run_code`, report a glitch
+`ask_video` describes at a transition as unconfirmed, fix a generated shot
+with `edit_video` rather than a new generation, and cut a long filmed clip
+before editing it.
 
 ## Long media calls
 
@@ -757,7 +806,7 @@ run's lease heartbeat continues during the call, and
 | `transcribe_video` | One renderer operation (`MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 s) plus 900 s for transcription |
 | `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
 | `cut_video_clips` | `transcribe_video`'s timeout, plus one renderer operation for shot cuts, plus one per round of three renders (up to 15: five clips in three shapes) |
-| `generate_video` | 1,020 s: 900 s of polling plus time to start and save |
+| `generate_video`, `edit_video` | 1,020 s: 900 s of polling plus time to start and save |
 
 When a timeout passes, Pydantic AI cancels the call and returns a retry to
 the model. Tools write their output File only after the provider returns, so
@@ -775,8 +824,9 @@ only; the client shows the latest stage on the running tool row.
 
 The runtime never runs a tool call twice: an interrupted call gets an
 interrupted return, and recovery evidence lists uncertain actions, so a
-completed paid call isn't repeated on resume. `generate_video` also keeps
-its own record of each paid call (see [Generation](#generation)).
+completed paid call isn't repeated on resume. `generate_video` and
+`edit_video` also keep their own record of each paid call (see
+[Generation](#generation)).
 
 ## Video in the conversation
 

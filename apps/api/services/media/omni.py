@@ -1,8 +1,9 @@
 # apps/api/services/media/omni.py
 
-"""Omni video generation through Google's Interactions API, on Vertex or the Gemini API.
+"""Omni video generation and editing through Google's Interactions API, on Vertex or the
+Gemini API.
 
-Each generation runs in the background on Google's side and is polled, so a clip
+Each call runs in the background on Google's side and is polled, so a clip
 that takes minutes never holds one HTTP request open. The clip comes back inline
 as base64; its size is bounded by the duration and resolution the request names.
 """
@@ -19,7 +20,9 @@ from services.agents.models.domain import PROVIDER_GOOGLE
 from services.agents.models.utils import provider_api_key, vertex_project
 from services.agents.models.vertex_clients import google_vertex_location
 from services.media.generation import (
+    ChainExpiredError,
     GeneratedVideo,
+    VideoEditRequest,
     VideoGenerationError,
     VideoGenerationRequest,
 )
@@ -33,39 +36,56 @@ _REQUEST_TIMEOUT_MS = 60_000
 _MAX_POLL_FAILURES = 5
 _MAX_THOUGHT_SUMMARY_CHARS = 2000
 _REFUSAL_MARKERS = ("safety", "policy", "blocked", "prohibited", "responsible ai")
+_REGION_MARKERS = ("location", "region", "country")
 _REFUSED = "Google declined this prompt under its content policy. Revise the prompt and try again."
 _UNAVAILABLE = "Google couldn't generate the video. Try again in a few minutes."
+_REGION = (
+    "Google doesn't edit uploaded video from this deployment's region. Edit a clip generated "
+    "in Praxis instead, or ask an admin to use Google Vertex AI."
+)
 
 
 class OmniBackend:
-    """Generates clips with an Omni model on whichever Google transport is configured."""
+    """Generates and edits clips with an Omni model on whichever Google transport is set up."""
 
     async def start(self, request: VideoGenerationRequest) -> str:
-        from google.genai._interactions import APIError, APIStatusError
+        return await _create(
+            request.provider_model,
+            input=request.prompt,
+            response_format={
+                "type": "video",
+                "aspect_ratio": request.aspect_ratio,
+                "resolution": request.resolution,
+                "duration": f"{request.duration_seconds}s",
+            },
+            generation_config={"video_config": {"task": "text_to_video"}},
+        )
 
-        async with _client(request.provider_model) as client:
-            try:
-                interaction = await client.interactions.create(
-                    model=request.provider_model,
-                    input=request.prompt,
-                    response_format={
-                        "type": "video",
-                        "aspect_ratio": request.aspect_ratio,
-                        "resolution": request.resolution,
-                        "duration": f"{request.duration_seconds}s",
-                    },
-                    generation_config={"video_config": {"task": "text_to_video"}},
-                    # Kept on Google's side so a later edit can chain from this clip.
-                    store=True,
-                    background=True,
-                )
-            except APIStatusError as exc:
-                raise _status_error(exc.status_code, exc.message) from exc
-            except APIError as exc:
-                raise VideoGenerationError(_UNAVAILABLE) from exc
-        if not interaction.id:
-            raise VideoGenerationError(_UNAVAILABLE)
-        return interaction.id
+    async def start_edit(self, request: VideoEditRequest) -> str:
+        if request.previous_id is not None:
+            # Google refuses a task alongside previous_interaction_id; the chain implies the edit.
+            return await _create(
+                request.provider_model,
+                input=request.instruction,
+                previous_interaction_id=request.previous_id,
+                response_format={"type": "video"},
+            )
+        if request.video is None:
+            raise ValueError("An edit needs the previous interaction or the clip.")
+        return await _create(
+            request.provider_model,
+            input=[
+                {
+                    "type": "video",
+                    "data": base64.b64encode(request.video).decode(),
+                    "mime_type": "video/mp4",
+                },
+                {"type": "text", "text": request.instruction},
+            ],
+            response_format={"type": "video"},
+            generation_config={"video_config": {"task": "edit"}},
+            uploads_video=True,
+        )
 
     async def wait(
         self,
@@ -88,6 +108,28 @@ class OmniBackend:
                 await asyncio.shield(_cancel(client, external_id))
                 raise
         return generated_video(interaction, max_bytes=max_bytes)
+
+
+async def _create(provider_model: str, *, uploads_video: bool = False, **body: Any) -> str:
+    """Sends one paid background request, stored so a later edit can chain from it."""
+    from google.genai._interactions import APIError, APIStatusError
+
+    async with _client(provider_model) as client:
+        try:
+            interaction = await client.interactions.create(
+                model=provider_model, store=True, background=True, **body
+            )
+        except APIStatusError as exc:
+            if "previous_interaction_id" in body and _chain_gone(exc.status_code, exc.message):
+                raise ChainExpiredError(_UNAVAILABLE) from exc
+            if uploads_video and _region_refused(exc.status_code, exc.message):
+                raise VideoGenerationError(_REGION) from exc
+            raise _status_error(exc.status_code, exc.message) from exc
+        except APIError as exc:
+            raise VideoGenerationError(_UNAVAILABLE) from exc
+    if not interaction.id:
+        raise VideoGenerationError(_UNAVAILABLE)
+    return interaction.id
 
 
 @asynccontextmanager
@@ -177,6 +219,16 @@ def _status_error(status_code: int, message: str) -> VideoGenerationError:
             "Google is limiting video generation on this project. Try again in a few minutes."
         )
     return VideoGenerationError(_UNAVAILABLE)
+
+
+def _chain_gone(status_code: int, message: str) -> bool:
+    return status_code == 404 or (status_code == 400 and "not found" in message.lower())
+
+
+def _region_refused(status_code: int, message: str) -> bool:
+    # The Gemini API doesn't edit uploaded video for EEA, Swiss, or UK callers.
+    lowered = message.lower()
+    return status_code in (400, 403) and any(marker in lowered for marker in _REGION_MARKERS)
 
 
 def _failure(message: str) -> VideoGenerationError:

@@ -1,7 +1,7 @@
 ---
 name: video-creation-and-editing
 human_name: Video Creation & Editing
-description: Use when you work with video: finding moments in footage, cutting short clips or reels, generating new shots, adding captions, text, music, a logo, or other finishing, transcribing, or answering questions about a video. Covers which tool to use, agreeing the brief, cutting clips people want to share, checking results, cost, and reporting.
+description: Use when you work with video: finding moments in footage, cutting short clips or reels, generating new shots or changing them by instruction, adding captions, text, music, a logo, or other finishing, transcribing, or answering questions about a video. Covers which tool to use, agreeing the brief, cutting clips people want to share, checking results, cost, and reporting.
 ---
 
 # Video creation and editing
@@ -23,6 +23,7 @@ you made and what you couldn't fix.
 | Cut clips or reels, with captions, text, music, a logo, and finishing | `cut_video_clips` |
 | Generate an image from a video, such as a thumbnail | `generate_image_from_video` |
 | Generate a new shot from a description, such as a hook or B-roll | `generate_video` |
+| Change a shot by instruction, such as "make it dusk" or "remove the extra hand" | `edit_video` |
 
 Call the video tools directly, never from `run_code`. They take minutes, a
 script has 60 seconds, and scripts can't call them. To cut several clips,
@@ -210,11 +211,29 @@ clip of 3 to 15 seconds, with sound, and saves it to Files.
 A generated clip can miss part of the prompt, such as an extra hand or the
 wrong colour. Check it with `ask_video` before you report it, as the
 result's `how_to_check` says. If it missed something, say what, and offer
-another try with a clearer prompt. Don't keep generating without asking:
-each try costs as much as the first.
+to fix it with `edit_video`. Don't keep generating or editing without
+asking: each try costs as much as the first.
 
 If Google declines a prompt under its content policy, change what it
 names, not just the wording, or tell the person it can't be made.
+
+## Fix a shot by instruction
+
+Use `edit_video` to change a clip that is nearly right, such as an extra
+hand, the wrong colour, or daylight that should be dusk. Don't generate a
+new clip for that: an edit keeps what already works. The edit is saved as
+the File's next version, and the person can restore the old one from Files.
+
+- Pass the clip's latest `revision_id` as `base_revision_id`. After an edit,
+  use the `revision_id` it returned for the next one.
+- Name one change per call and what must stay the same, such as "Remove
+  the second handle. Keep the cup, the steam, and the camera move."
+- A clip made with `generate_video` or `edit_video` can be edited at any
+  length. Any other clip must be MP4 and 10 seconds or less: cut the shot
+  with `cut_video_clips` first, then edit the new clip. Never edit a whole
+  video to change one shot.
+- Check the result with `ask_video`, as for a generated clip. A first edit
+  can miss the defect; a second, more specific instruction often fixes it.
 
 ## Check the results
 
@@ -250,6 +269,8 @@ single frame:
 - Generating a clip costs about $0.07 a second at 720p, $0.10 at 1080p,
   and $0.21 at 4K: an 8 second 720p clip is about $0.56. The result's
   `cost_usd` is what Google reported for that clip.
+- Editing a clip costs about the same as generating it, plus about $0.01 a
+  second for the clip Google reads.
 - The first `find_video_moments` or `cut_video_clips` call on a long video
   also transcribes it and measures its shots, so it takes longer. Tell the
   person when a long video may take several minutes.

@@ -67,8 +67,9 @@ class MediaSettingsMixin:
     DEFAULT_VIDEO_GENERATION_MODEL: str = Field(
         default="omni-1.2-flash",
         description=(
-            "Media catalogue ID of the video model generate_video uses when an agent names none. "
-            "When this deployment can't call it, the first available catalogue model is used."
+            "Media catalogue ID of the video model generate_video and edit_video use when an "
+            "agent names none. When this deployment can't call it for a task, the first "
+            "available catalogue model is used."
         ),
     )
     VIDEO_UNDERSTANDING_MODEL: str = Field(

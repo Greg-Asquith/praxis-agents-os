@@ -1,0 +1,27 @@
+{
+  "name": "coffee-cup-on-a-wooden-table-steam-rising.mp4",
+  "file_id": "00000000-0000-0000-0000-0000000250c1",
+  "revision_id": "00000000-0000-0000-0000-0000000250c2",
+  "reference": {
+    "version": 1,
+    "entity_kind": "file",
+    "label": "coffee-cup-on-a-wooden-table-steam-rising.mp4",
+    "description": "Generated video · 6 s",
+    "scope_label": null,
+    "entity_id": "00000000-0000-0000-0000-0000000250c1"
+  },
+  "media_type": "video/mp4",
+  "size_bytes": 3391488,
+  "model": "omni-1.2-flash",
+  "aspect_ratio": "9:16",
+  "resolution": "720p",
+  "duration_seconds": 6,
+  "cost_usd": "0.42",
+  "model_notes": {
+    "node": "praxis_untrusted",
+    "source_kind": "video_generation_notes",
+    "source_ref": "file:00000000-0000-0000-0000-0000000250c1/revision:00000000-0000-0000-0000-0000000250c2",
+    "content": "**Planning the Shot**\n\nA vertical close-up of a white ceramic cup on oak, steam curling up, slow push-in, soft morning window light, quiet café ambience."
+  },
+  "how_to_check": "Generated clips can miss parts of the prompt. Check this one with ask_video before reporting it as done, and say what you checked."
+}

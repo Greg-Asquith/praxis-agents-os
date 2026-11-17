@@ -148,6 +148,7 @@ def _assemble_runtime_catalogs() -> None:
     from services.agents.runtime.tools.video import (
         ask_video,
         cut_video_clips,
+        edit_video,
         find_video_moments,
         generate_video,
         transcribe_video,
@@ -165,6 +166,7 @@ def _assemble_runtime_catalogs() -> None:
         create_workbook,
         cut_video_clips,
         edit_presentation,
+        edit_video,
         edit_word_document,
         edit_workbook,
         find_video_moments,

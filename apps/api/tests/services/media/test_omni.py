@@ -1,16 +1,23 @@
 # apps/api/tests/services/media/test_omni.py
 
-"""Omni requests and responses, from interactions recorded on 2026-11-17."""
+"""Omni requests and responses, from interactions recorded on 2026-10-01 and 2026-11-17."""
 
 import base64
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from google.genai._interactions import APIStatusError
 from google.genai.interactions import Interaction
 
 from services.media import omni
-from services.media.generation import VideoGenerationError, VideoGenerationRequest
+from services.media.generation import (
+    ChainExpiredError,
+    VideoEditRequest,
+    VideoGenerationError,
+    VideoGenerationRequest,
+)
 
 CLIP = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 
@@ -115,3 +122,58 @@ async def test_start_sends_one_background_stored_generation(monkeypatch) -> None
         "duration": "4s",
     }
     assert body["generation_config"] == {"video_config": {"task": "text_to_video"}}
+
+
+def _fake_client(create):
+    @asynccontextmanager
+    async def client(_model):
+        yield SimpleNamespace(interactions=SimpleNamespace(create=create))
+
+    return client
+
+
+async def test_an_edit_chains_without_a_task_or_uploads_with_one(monkeypatch) -> None:
+    sent: list[dict] = []
+
+    async def create(**kwargs):
+        sent.append(kwargs)
+        return SimpleNamespace(id=f"interaction-{len(sent)}")
+
+    monkeypatch.setattr(omni, "_client", _fake_client(create))
+    backend = omni.OmniBackend()
+
+    await backend.start_edit(
+        VideoEditRequest("gemini-omni-1.2-flash", "Make it dusk.", previous_id="interaction-0")
+    )
+    await backend.start_edit(VideoEditRequest("gemini-omni-1.2-flash", "Make it dusk.", video=CLIP))
+
+    chained, uploaded = sent
+    # Google refuses previous_interaction_id alongside a task (HTTP 400, 2026-10-01).
+    assert chained["previous_interaction_id"] == "interaction-0"
+    assert chained["input"] == "Make it dusk."
+    assert "generation_config" not in chained
+    assert uploaded["generation_config"] == {"video_config": {"task": "edit"}}
+    assert uploaded["input"][0] == {
+        "type": "video",
+        "data": base64.b64encode(CLIP).decode(),
+        "mime_type": "video/mp4",
+    }
+    assert "previous_interaction_id" not in uploaded
+    assert all(body["store"] and body["background"] for body in sent)
+
+
+async def test_a_chain_google_no_longer_holds_is_reported_as_expired(monkeypatch) -> None:
+    async def create(**_kwargs):
+        request = httpx.Request("POST", "https://aiplatform.googleapis.com/v1beta1/interactions")
+        raise APIStatusError(
+            "Interaction not found.",
+            response=httpx.Response(404, request=request),
+            body=None,
+        )
+
+    monkeypatch.setattr(omni, "_client", _fake_client(create))
+
+    with pytest.raises(ChainExpiredError):
+        await omni.OmniBackend().start_edit(
+            VideoEditRequest("gemini-omni-1.2-flash", "Make it dusk.", previous_id="old")
+        )

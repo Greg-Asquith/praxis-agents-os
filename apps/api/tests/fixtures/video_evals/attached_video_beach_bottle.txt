@@ -1,0 +1,8 @@
+Attached video
+File id: 00000000-0000-0000-0000-0000000250d1
+Format: MP4 (video/mp4), 58,720,256 bytes
+Video: 0:24, 1080x1920, 30 fps, with audio
+<<<PRAXIS_UNTRUSTED_CONTENT>>> source_kind="file" source_ref="file:00000000-0000-0000-0000-0000000250d1/revision:00000000-0000-0000-0000-0000000250d2">>>
+Video name: Bottle on the beach.mp4
+<<<END_PRAXIS_UNTRUSTED_CONTENT>>>
+The video itself isn't included in this message. To work with it, pass the file id to the video tools.

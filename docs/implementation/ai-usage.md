@@ -90,7 +90,8 @@ The following contracts apply in this area:
   `gemini-decision-1`'s $0.10 per million input tokens.
 - Video helpers record under `video_understanding`, `video_generation`, or
   `video_transcription`, with tokens as the provider reports them.
-  `generate_video` records one `video_generation` row per paid call, with
+  `generate_video` and `edit_video` record one `video_generation` row per
+  paid call, with
   `media_model` and `media_generation_id` in its details. Omni 1.2 Flash bills
   by token: input at $1.50 a million and video output at $12, with thinking
   tokens counted as output at the video rate (Google lists $9 for them).

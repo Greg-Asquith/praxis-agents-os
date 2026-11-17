@@ -12,6 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Fix a shot by instruction: `edit_video` changes a workspace MP4, such as
+  "make it dusk" or "remove the extra hand", and saves the result as the
+  File's next version. A clip made in Praxis chains from Google's stored
+  interaction, so nothing is uploaded; any other clip is uploaded if it's 10
+  seconds or less. It asks for approval by default with the full
+  instruction on the card, never builds on a stale version, and Files marks
+  the edited video **AI-Generated**.
 - Generate a new shot from a description: `generate_video` makes one clip
   of 3 to 15 seconds, with sound, from a prompt, in 9:16 or 16:9 at 720p,
   1080p, or 4K, and saves it to Files. It runs on Omni 1.2 Flash on Vertex or

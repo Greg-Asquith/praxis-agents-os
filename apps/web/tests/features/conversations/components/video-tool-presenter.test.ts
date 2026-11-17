@@ -64,6 +64,20 @@ describe("video tool rows", () => {
     expect(html).toContain('src="https://storage.test/file-1.mp4?signed=1"')
   })
 
+  it("plays an edited clip with the version it saved", () => {
+    const html = render("edit_video", {
+      name: "coffee-cup.mp4",
+      file_id: "file-1",
+      media_type: "video/mp4",
+      revision_number: 2,
+      model: "omni-1.2-flash",
+      cost_usd: "0.58",
+    })
+
+    expect(html).toContain('aria-label="Edited coffee-cup.mp4"')
+    expect(html).toContain('src="https://storage.test/file-1.mp4?signed=1"')
+  })
+
   it("leaves a video result to a specific presenter that claims it", () => {
     integrationToolRowPresenters.mockReturnValueOnce([
       { key: "provider", matches: () => true, render: () => createElement("p", null, "Provider") },

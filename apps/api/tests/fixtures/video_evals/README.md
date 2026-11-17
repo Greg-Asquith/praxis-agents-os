@@ -18,5 +18,10 @@ with the production code for a 45-minute pricing talk:
 - `cut_video_clips_discounts_reel.json`: a `cut_video_clips` result for one
   9:16 reel cut from the talk with pause removal.
 
+- `generate_video_coffee_cup.json`: a `generate_video` result for a 6
+  second 9:16 clip, whose `model_notes` is an untrusted node.
+- `attached_video_beach_bottle.txt`: `media_attachment_note` for a filmed
+  24 second clip, longer than `edit_video` uploads.
+
 Rebuild them when the attachment note or a tool's result changes, so the
 evals show models what production returns.

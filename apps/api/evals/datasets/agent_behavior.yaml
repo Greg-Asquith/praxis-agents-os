@@ -331,6 +331,34 @@ cases:
       judge_response: false
       accepted_tools: ["find_video_moments"]
       required_argument_text: ["00000000-0000-0000-0000-0000000249a1"]
+  - name: video_fix_generated_shot_by_editing
+    inputs:
+      prompt: "The cup has two handles. Fix that."
+      tool_names: ["ask_video", "cut_video_clips", "generate_video", "edit_video"]
+      channel_fixture:
+        tool_name: generate_video
+        args:
+          prompt: "A white ceramic coffee cup on an oak table, steam rising. Slow push-in, soft morning window light, quiet cafe ambience. No text on screen."
+          duration_seconds: 6
+        fixture_path: "fixtures/video_evals/generate_video_coffee_cup.json"
+        structured: true
+    metadata:
+      judge_response: false
+      accepted_tools: ["edit_video"]
+      forbidden_tools: ["generate_video"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000250c1", "00000000-0000-0000-0000-0000000250c2"]
+  - name: video_long_clip_cut_before_editing
+    inputs:
+      prompt: "Make this look like it was shot at sunset."
+      tool_names: ["ask_video", "cut_video_clips", "generate_video", "edit_video"]
+      attachment:
+        file_id: "00000000-0000-0000-0000-0000000250d1"
+        fixture_path: "fixtures/video_evals/attached_video_beach_bottle.txt"
+    metadata:
+      judge_response: false
+      accepted_tools: ["ask_video", "cut_video_clips"]
+      forbidden_tools: ["edit_video", "generate_video"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000250d1"]
   - name: video_tools_not_in_run_code
     inputs:
       prompt: "Cut all five as separate 9:16 Reels with bold captions."

@@ -2,9 +2,9 @@
 
 """The interface every paid video generation backend implements, keyed by catalogue route.
 
-A generation runs in two steps so the caller can record the provider's ID between
-them: ``start`` sends the one paid request and returns that ID, and ``wait`` polls
-until the clip is ready. Neither step retries the paid request.
+A generation or edit runs in two steps so the caller can record the provider's ID
+between them: ``start`` or ``start_edit`` sends the one paid request and returns that
+ID, and ``wait`` polls until the clip is ready. Neither step retries the paid request.
 """
 
 from dataclasses import dataclass
@@ -20,6 +20,16 @@ class VideoGenerationRequest:
     aspect_ratio: str
     resolution: str
     duration_seconds: int
+
+
+@dataclass(frozen=True)
+class VideoEditRequest:
+    """An edit by instruction that chains from ``previous_id`` or uploads ``video``, an MP4."""
+
+    provider_model: str
+    instruction: str
+    previous_id: str | None = None
+    video: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -44,9 +54,17 @@ class VideoGenerationError(Exception):
         self.refused = refused
 
 
+class ChainExpiredError(VideoGenerationError):
+    """The provider no longer holds the clip an edit chained from; nothing was billed."""
+
+
 class VideoBackend(Protocol):
     async def start(self, request: VideoGenerationRequest) -> str:
         """Sends the paid request and returns the provider's ID for it."""
+        ...
+
+    async def start_edit(self, request: VideoEditRequest) -> str:
+        """Sends the paid edit and returns the provider's ID for it."""
         ...
 
     async def wait(

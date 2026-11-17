@@ -5,6 +5,8 @@ import type { ComponentType } from "react"
 import { CutVideoClipsApproval } from "@/features/conversations/components/video-clips-approval"
 import { CutVideoClipsRow } from "@/features/conversations/components/video-clips-row"
 import {
+  EditVideoLoadingRow,
+  EditVideoRow,
   GenerateVideoLoadingRow,
   GenerateVideoRow,
 } from "@/features/conversations/components/video-generation-row"
@@ -19,6 +21,8 @@ import {
   askVideoResult,
   CUT_VIDEO_CLIPS_TOOL_NAME,
   cutVideoClipsResult,
+  EDIT_VIDEO_TOOL_NAME,
+  editVideoResult,
   FIND_VIDEO_MOMENTS_TOOL_NAME,
   findVideoMomentsResult,
   GENERATE_VIDEO_TOOL_NAME,
@@ -63,16 +67,24 @@ const generateVideoRunning: ToolRowPresenter = {
   key: "generate-video-running",
   matches: (activity) =>
     activity.status === "running" && activity.name === GENERATE_VIDEO_TOOL_NAME,
-  render: ({ activity, live }) => <GenerateVideoLoadingRow activity={activity} live={live} />,
+  render: ({ activity }) => <GenerateVideoLoadingRow activity={activity} />,
+}
+
+const editVideoRunning: ToolRowPresenter = {
+  key: "edit-video-running",
+  matches: (activity) => activity.status === "running" && activity.name === EDIT_VIDEO_TOOL_NAME,
+  render: ({ activity }) => <EditVideoLoadingRow activity={activity} />,
 }
 
 export const videoToolPresenters: ToolRowPresenter[] = [
   cutVideoClipsApproval,
   generateVideoRunning,
+  editVideoRunning,
   completedVideoTool(FIND_VIDEO_MOMENTS_TOOL_NAME, findVideoMomentsResult, FindVideoMomentsRow),
   completedVideoTool(ASK_VIDEO_TOOL_NAME, askVideoResult, AskVideoRow),
   completedVideoTool(CUT_VIDEO_CLIPS_TOOL_NAME, cutVideoClipsResult, CutVideoClipsRow),
   completedVideoTool(GENERATE_VIDEO_TOOL_NAME, generateVideoResult, GenerateVideoRow),
+  completedVideoTool(EDIT_VIDEO_TOOL_NAME, editVideoResult, EditVideoRow),
 ]
 
 // Any completed result that names a video File, unless a more specific presenter claims it.

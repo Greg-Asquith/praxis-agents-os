@@ -167,7 +167,10 @@ class GenerationProvenance(BaseModel):
     # The provider's ID for the call, which a later edit can chain from.
     external_id: str | None = Field(default=None, max_length=512)
     task: str = Field(max_length=32)
+    # The prompt, or an edit's instruction, as a digest; the text itself isn't kept.
     prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    # The revision an edit changed.
+    source_revision_id: UUID | None = None
     aspect_ratio: str | None = Field(default=None, max_length=8)
     resolution: str | None = Field(default=None, max_length=8)
     duration_seconds: int | None = Field(default=None, gt=0)

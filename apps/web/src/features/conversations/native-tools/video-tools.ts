@@ -222,6 +222,33 @@ export function generateVideoResult(value: unknown): GenerateVideoResult | null 
   }
 }
 
+export const EDIT_VIDEO_TOOL_NAME = "edit_video"
+
+export type EditVideoResult = {
+  video: VideoFileReference
+  revisionNumber: number
+  model: string
+  // US dollars from the tokens Google reported, or null when unknown.
+  costUsd: string | null
+}
+
+export function editVideoResult(value: unknown): EditVideoResult | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const video = videoFileReference(value)
+  const { model, revision_number: revisionNumber } = value
+  if (!video || typeof model !== "string" || typeof revisionNumber !== "number") {
+    return null
+  }
+  return {
+    video,
+    revisionNumber,
+    model,
+    costUsd: typeof value["cost_usd"] === "string" ? value["cost_usd"] : null,
+  }
+}
+
 export const CUT_VIDEO_CLIPS_TOOL_NAME = "cut_video_clips"
 
 // One clip in one shape, saved as its own File.

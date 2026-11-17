@@ -153,11 +153,13 @@ default. _(enforced)_ The following rules define the defaults:
 - Any tool that **spends money**, such as a Google Ads mutation, is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. _(enforced)_
-- `generate_video` is billed to the deployment's own Google account, like
+- `generate_video` and `edit_video` are billed to the deployment's own
+  Google account, like
   every model call (each deployment runs in the customer's infrastructure
   with their own provider accounts). It costs about $0.07 to $0.21 a second
-  of clip, so it defaults to `approval` and shows the model's price on the
-  card. Plan 250 lets an owner set it to `auto` per workspace or agent,
+  of clip, so each defaults to `approval` and shows the model on the card
+  (`edit_video` shows the full instruction). Plan 250 lets an owner set them
+  to `auto` per workspace or agent,
   unlike ad spend, which is approval-only. Each call writes a
   `media_generations` record before the provider call and records the
   provider's ID before waiting, so one tool call never pays twice.
