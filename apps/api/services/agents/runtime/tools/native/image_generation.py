@@ -47,6 +47,7 @@ from services.ai_usage.domain import PURPOSE_IMAGE_GENERATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
 from services.files import write_generated_image
 from services.media.catalogue import (
+    PROCESSED_IN,
     MediaModel,
     MediaModelRoute,
     MediaTask,
@@ -61,11 +62,6 @@ ImageTask = Literal["text_to_image", "edit_image"]
 
 DEFAULT_GOOGLE_IMAGE_QUALITY = "standard"
 DEFAULT_GOOGLE_IMAGE_SIZE = "1k"
-_PROCESSED_IN = {
-    "eu": "Processed in the EU",
-    "global": "Processed globally",
-    "us": "Processed in the US",
-}
 
 IMAGE_GENERATION_HELPER_INSTRUCTIONS = """\
 Generate exactly one new image from the user's prompt using the native image
@@ -108,7 +104,7 @@ def image_model_option_labels(task: MediaTask) -> dict[str, str]:
         if route := available_route(model, task):
             labels[model.id] = (
                 f"{model.label} · About ${route.price(task):.2f} per image · "
-                f"{_PROCESSED_IN[model.processing]}"
+                f"{PROCESSED_IN[model.processing]}"
             )
     return labels
 

@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Generate a new shot from a description: `generate_video` makes one clip
+  of 3 to 15 seconds, with sound, from a prompt, in 9:16 or 16:9 at 720p,
+  1080p, or 4K, and saves it to Files. It runs on Omni 1.2 Flash on Vertex or
+  the Gemini API, chosen from the media catalogue
+  (`DEFAULT_VIDEO_GENERATION_MODEL`), and asks for approval by default with
+  the price a second on the card. Each call is recorded before Google is
+  asked, so one tool call never pays twice, and its usage is priced from the
+  tokens Google reports. Files marks generated videos **AI-Generated**.
 - Every platform's shape in one request: `cut_video_clips` takes
   `aspect_ratios`, up to three shapes such as 9:16, 1:1, and 16:9, in place
   of `aspect_ratio`. Each clip saves once per shape, cut at the same points,

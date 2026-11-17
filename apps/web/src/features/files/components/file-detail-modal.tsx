@@ -36,7 +36,7 @@ import { useFileRevisionsQuery } from "@/features/files/api/list-file-revisions"
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileContentView } from "@/features/files/components/file-content-view"
 import { FileRevisionsList } from "@/features/files/components/file-revisions-list"
-import { FileStatusBadge } from "@/features/files/components/file-status-badge"
+import { AiGeneratedBadge, FileStatusBadge } from "@/features/files/components/file-status-badge"
 import { RenameFileDialog } from "@/features/files/components/rename-file-dialog"
 import { MoveFilesDialog } from "@/features/files/components/move-files-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
@@ -243,6 +243,7 @@ function FileDetailDialog({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{fileCategoryLabel(file.category)}</Badge>
                 {isPlatform ? <Badge variant="secondary">Platform</Badge> : null}
+                {file.ai_generated ? <AiGeneratedBadge /> : null}
                 {file.processing_status !== "ready" ? (
                   <FileStatusBadge status={file.processing_status} />
                 ) : null}

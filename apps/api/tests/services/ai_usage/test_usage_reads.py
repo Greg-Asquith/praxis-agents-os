@@ -331,6 +331,38 @@ async def test_summary_prices_video_output_seconds_by_resolution_and_audio(
     assert summary.pricing_coverage.unpriced_video_generations == 1
 
 
+@pytest.mark.asyncio
+async def test_summary_prices_token_billed_video_by_its_tokens(db_session: AsyncSession) -> None:
+    workspace = build_workspace(slug=f"omni-cost-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    db_session.add(
+        _event(
+            workspace.id,
+            datetime(2026, 11, 17, 12, tzinfo=UTC),
+            purpose="video_generation",
+            provider="google",
+            model="gemini-omni-1.2-flash",
+            input_tokens=38,
+            output_tokens=23_168,
+            details={"media_model": "omni-1.2-flash"},
+        )
+    )
+    await db_session.flush()
+
+    summary = await get_usage_summary(
+        db_session,
+        workspace_id=workspace.id,
+        from_=datetime(2026, 11, 17, tzinfo=UTC),
+        to=datetime(2026, 11, 18, tzinfo=UTC),
+    )
+
+    # Omni has no per-second rate; its tokens price it and it isn't an incomplete output.
+    assert summary.totals.estimated_cost_usd == Decimal("0.278073")
+    assert summary.pricing_coverage.priced_video_generations == 1
+    assert summary.pricing_coverage.unpriced_video_generations == 0
+
+
 async def test_summary_prices_transcription_per_audio_minute_or_by_tokens(
     db_session: AsyncSession,
 ) -> None:

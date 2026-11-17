@@ -4,6 +4,10 @@ import type { ComponentType } from "react"
 
 import { CutVideoClipsApproval } from "@/features/conversations/components/video-clips-approval"
 import { CutVideoClipsRow } from "@/features/conversations/components/video-clips-row"
+import {
+  GenerateVideoLoadingRow,
+  GenerateVideoRow,
+} from "@/features/conversations/components/video-generation-row"
 import { VideoToolRow } from "@/features/conversations/components/video-tool-row"
 import {
   AskVideoRow,
@@ -17,11 +21,14 @@ import {
   cutVideoClipsResult,
   FIND_VIDEO_MOMENTS_TOOL_NAME,
   findVideoMomentsResult,
+  GENERATE_VIDEO_TOOL_NAME,
+  generateVideoResult,
   videoFileReferences,
 } from "@/features/conversations/native-tools/video-tools"
 import type { ToolRowPresenter } from "@/integrations/contract"
 
-// Running and failed calls keep the default row, which shows the progress stage.
+// Running and failed calls keep the default row, which shows the progress stage, unless
+// a tool registers its own running card.
 function completedVideoTool(
   name: string,
   parse: (value: unknown) => unknown,
@@ -52,11 +59,20 @@ const cutVideoClipsApproval: ToolRowPresenter = {
     ) : null,
 }
 
+const generateVideoRunning: ToolRowPresenter = {
+  key: "generate-video-running",
+  matches: (activity) =>
+    activity.status === "running" && activity.name === GENERATE_VIDEO_TOOL_NAME,
+  render: ({ activity, live }) => <GenerateVideoLoadingRow activity={activity} live={live} />,
+}
+
 export const videoToolPresenters: ToolRowPresenter[] = [
   cutVideoClipsApproval,
+  generateVideoRunning,
   completedVideoTool(FIND_VIDEO_MOMENTS_TOOL_NAME, findVideoMomentsResult, FindVideoMomentsRow),
   completedVideoTool(ASK_VIDEO_TOOL_NAME, askVideoResult, AskVideoRow),
   completedVideoTool(CUT_VIDEO_CLIPS_TOOL_NAME, cutVideoClipsResult, CutVideoClipsRow),
+  completedVideoTool(GENERATE_VIDEO_TOOL_NAME, generateVideoResult, GenerateVideoRow),
 ]
 
 // Any completed result that names a video File, unless a more specific presenter claims it.

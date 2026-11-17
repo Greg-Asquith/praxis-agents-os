@@ -153,6 +153,22 @@ default. _(enforced)_ The following rules define the defaults:
 - Any tool that **spends money**, such as a Google Ads mutation, is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. _(enforced)_
+- `generate_video` is billed to the deployment's own Google account, like
+  every model call (each deployment runs in the customer's infrastructure
+  with their own provider accounts). It costs about $0.07 to $0.21 a second
+  of clip, so it defaults to `approval` and shows the model's price on the
+  card. Plan 250 lets an owner set it to `auto` per workspace or agent,
+  unlike ad spend, which is approval-only. Each call writes a
+  `media_generations` record before the provider call and records the
+  provider's ID before waiting, so one tool call never pays twice.
+  _(enforced)_
+- Omni video generation runs on Google's `global` endpoint, which may
+  process data outside the EU (accepted by the operator on 2026-10-01), and
+  keeps each interaction on Google's side (`store: true`, decided
+  2026-11-17) so a later edit can chain from it. Google's retention period
+  for stored interactions isn't confirmed. On Vertex, Omni is offered only
+  when `GOOGLE_VERTEX_LOCATION` is `auto` or `global`, so pinning a
+  regional location turns it off. _(enforced)_
 - The Google Search Console Indexing API tool is also `approval` with
   `supports_auto=False`. Each action consumes a shared daily quota and Google
   permits notifications only for eligible job posting and livestream video

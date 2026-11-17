@@ -164,6 +164,9 @@ _GOOGLE_PRICES = (
     _price("google", "gemini-3.1-pro", date(2026, 8, 12), "2", "0.2", "2", "12"),
     _price("google", "gemini-3.1-flash-lite", date(2026, 8, 12), "0.25", "0.025", "0.25", "1.5"),
     _price("google", "gemini-embedding-2", date(2026, 4, 22), "0.2", "0", "0", "0"),
+    # Video output is $12 a million and thinking $9; output is priced at the video rate.
+    # No caching is listed. Checked 2026-11-17: https://ai.google.dev/gemini-api/docs/pricing
+    _price("google", "gemini-omni-1.2-flash", date(2026, 11, 17), "1.5", "1.5", "0", "12"),
 )
 
 # Local Ollama inference has no provider API token charge. Operator-owned

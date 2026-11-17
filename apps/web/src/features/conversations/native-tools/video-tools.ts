@@ -170,6 +170,58 @@ function videoMoment(value: unknown): VideoMoment | null {
   }
 }
 
+export const GENERATE_VIDEO_TOOL_NAME = "generate_video"
+
+export type GenerateVideoResult = {
+  video: VideoFileReference
+  model: string
+  aspectRatio: string
+  resolution: string
+  durationSeconds: number
+  // US dollars from the tokens Google reported, or null when unknown.
+  costUsd: string | null
+}
+
+const SHAPE_LABELS: Record<string, string> = { "9:16": "Vertical", "16:9": "Landscape" }
+
+// What a running generation will make, from its arguments and the tool's defaults.
+export function generateVideoPlan(args: unknown): string {
+  const record = isRecord(args) ? args : {}
+  const seconds = typeof record["duration_seconds"] === "number" ? record["duration_seconds"] : 8
+  const shape = typeof record["aspect_ratio"] === "string" ? record["aspect_ratio"] : "9:16"
+  const resolution = typeof record["resolution"] === "string" ? record["resolution"] : "720p"
+  return [
+    `${String(seconds)} s`,
+    SHAPE_LABELS[shape] ?? shape,
+    resolution === "4k" ? "4K" : resolution,
+  ].join(", ")
+}
+
+export function generateVideoResult(value: unknown): GenerateVideoResult | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const video = videoFileReference(value)
+  const { model, aspect_ratio: aspectRatio, resolution, duration_seconds: seconds } = value
+  if (
+    !video ||
+    typeof model !== "string" ||
+    typeof aspectRatio !== "string" ||
+    typeof resolution !== "string" ||
+    typeof seconds !== "number"
+  ) {
+    return null
+  }
+  return {
+    video,
+    model,
+    aspectRatio,
+    resolution,
+    durationSeconds: seconds,
+    costUsd: typeof value["cost_usd"] === "string" ? value["cost_usd"] : null,
+  }
+}
+
 export const CUT_VIDEO_CLIPS_TOOL_NAME = "cut_video_clips"
 
 // One clip in one shape, saved as its own File.

@@ -236,7 +236,7 @@ def fold_buckets(
             if image_token_price is not None:
                 folded.estimated_cost_usd += image_token_cost(bucket, image_token_price)
         if bucket.purpose == PURPOSE_VIDEO_GENERATION:
-            _fold_video_output(folded, bucket)
+            _fold_video_output(folded, bucket, priced_by_tokens=price is not None)
         if bucket.purpose == PURPOSE_IMAGE_GENERATION:
             _fold_image_output(folded, bucket, priced_by_tokens=image_token_price is not None)
     return folded
@@ -265,7 +265,10 @@ def _fold_image_output(folded: UsageFold, bucket: UsageBucket, *, priced_by_toke
     folded.estimated_cost_usd += Decimal(bucket.invocations) * image_price.usd_per_image
 
 
-def _fold_video_output(folded: UsageFold, bucket: UsageBucket) -> None:
+def _fold_video_output(folded: UsageFold, bucket: UsageBucket, *, priced_by_tokens: bool) -> None:
+    if priced_by_tokens:
+        folded.priced_video_generations += bucket.invocations
+        return
     video_price = (
         find_video_output_price(
             bucket.provider,

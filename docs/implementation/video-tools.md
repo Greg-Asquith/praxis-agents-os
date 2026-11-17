@@ -1,10 +1,10 @@
 # Video tools
 
-Read this before changing the media renderer, its API client, or anything that
-decodes, cuts, or measures video. For upload limits and video in chat, see
+Read this before changing the media renderer, its API client, video
+generation, or anything that decodes, cuts, or measures video. For upload limits and video in chat, see
 [Storage and files](storage-and-files.md#video-uploads-and-attachments).
 
-The agent has four video tools. Each is hidden when its dependencies are
+The agent has five video tools. Each is hidden when its dependencies are
 missing, rather than failing at call time:
 
 | Tool | Needs | Effect |
@@ -13,6 +13,7 @@ missing, rather than failing at call time:
 | `find_video_moments` | Renderer and Google | Read only |
 | `ask_video` | Google | Read only |
 | `cut_video_clips` | Renderer | Saves video Files |
+| `generate_video` | A catalogue video model this deployment can call | Paid; saves a video File |
 
 The renderer is available (`settings.media_renderer_available`) when
 `MEDIA_RENDERER_URL` is set and storage is `gcs` or `local_fs`. Google means
@@ -646,6 +647,89 @@ a name clash) and linked by `file_folders.source_file_id`.
   keeps one live folder per video. Renaming the folder keeps the link;
   deleting it means the next output creates a new one.
 
+### Generation
+
+`generate_video` (`runtime/tools/video/generate_video.py`) makes one clip of
+3 to 15 seconds, with sound, from a prompt. It asks for approval by default,
+because every call is paid; an owner can switch it to automatic. Its
+arguments are the prompt (up to 4,000 characters), `aspect_ratio` (`9:16`,
+the default, or `16:9`), `duration_seconds` (default 8), `resolution`
+(`720p`, the default, `1080p`, or `4k`), an optional catalogue `model`, and
+an optional File `name` and `folder`. The approval card shows the model that
+will run, with its price range a second and processing location, and every
+setting is editable. Image and video references, `edit_video`, and
+`extend_video` are pending (plan 250 C2 and C3).
+
+The model comes from the media catalogue (`services/media/models.toml`, see
+[native tools](native-tools.md#media-model-catalogue)): `DEFAULT_VIDEO_GENERATION_MODEL`
+(`omni-1.2-flash`) when the agent names none. Each model's limits (shapes,
+durations, resolutions) are checked before any call, and a route may price a
+second by resolution (`usd_per_second_by_resolution`).
+
+Backends implement `VideoBackend` (`services/media/generation.py`), chosen by
+the catalogue route. A call runs in two steps, so the provider's ID is
+recorded between them:
+
+1. The tool commits a `media_generations` row (`requested`) keyed by run and
+   tool call, then `start` sends the one paid request.
+2. The tool commits the provider's ID on the row (`running`), then `wait`
+   polls until the clip is ready, for up to 900 seconds.
+3. The clip is saved as a File in the conversation's folder (or the named
+   one), the row becomes `saved` with the revision, and usage is metered.
+
+A call that finds its own row `saved` returns that File, and one that finds
+it `running` waits on the same provider ID, so a paid request is never sent
+twice for one tool call. A row left at `requested` means the worker stopped
+before Google answered; the call fails rather than pay again. A failed or
+timed-out wait marks the row `failed` and meters one request with unknown
+tokens, because Google may bill it. The table has forced row-level security
+by workspace.
+
+The saved revision carries its provenance in `file_revisions.generation`
+(`GenerationProvenance`: route, catalogue and provider model, the provider's
+ID, the task, a SHA-256 digest of the prompt, and the shape, resolution, and
+length). It's set once, with the revision. Files reports `ai_generated` for a
+File whose current revision has provenance, and the Files table, the File
+details, and the generation row show **AI-Generated**. The result also
+returns the cost from the tokens Google reported, the model's own notes on
+the prompt as untrusted content, and a reminder to check the clip with
+`ask_video`. While it runs, the row is a collapsed loading card with the
+stage, the clip's length, shape, and resolution, and how long it usually
+takes.
+
+#### Omni
+
+`services/media/omni.py` calls Omni 1.2 Flash (`gemini-omni-1.2-flash` on
+both transports) through google-genai's Interactions API, on Vertex at the
+`global` location or on the Gemini API. Omni is available on Vertex only when
+`GOOGLE_VERTEX_LOCATION` is `auto` or `global`. The request is:
+
+```json
+{"model": "gemini-omni-1.2-flash", "input": "PROMPT",
+ "response_format": {"type": "video", "aspect_ratio": "9:16",
+                     "resolution": "720p", "duration": "8s"},
+ "generation_config": {"video_config": {"task": "text_to_video"}},
+ "store": true, "background": true}
+```
+
+The client sends it with SDK retries off, because a retried create is a
+second paid clip, then polls the interaction every 5 seconds. Reads that fail
+are retried up to five times in a row. A wait that passes its deadline, or a
+call that's cancelled, asks Google to cancel the interaction. `store: true`
+keeps the interaction on Google's side so a later edit can chain from it
+(the operator's decision, 2026-11-17).
+
+The clip comes back inline as base64 in `output_video.data`. Its size is
+bounded by the request: about 0.56 MB a second at 720p, 0.89 MB at 1080p,
+and 2.9 MB at 4K, so a 15 second 4K clip is about 44 MB. The client refuses
+a body whose decoded size would pass `MAX_FILE_SIZE_VIDEO` before decoding
+it. URI delivery needs a Cloud Storage bucket Google's service agent can
+write to on Vertex, so it isn't used. Usage records Google's input tokens,
+and video output plus thinking tokens as output, priced at the video rate.
+A refusal Google marks as safety or policy returns a retry asking for a
+revised prompt; other failures fail the call. Clips carry a C2PA manifest
+and Google's SynthID watermark.
+
 ### Video skill and evals
 
 The internal skill `runtime/internal_skills/video-creation-and-editing.md`
@@ -673,6 +757,7 @@ run's lease heartbeat continues during the call, and
 | `transcribe_video` | One renderer operation (`MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 s) plus 900 s for transcription |
 | `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
 | `cut_video_clips` | `transcribe_video`'s timeout, plus one renderer operation for shot cuts, plus one per round of three renders (up to 15: five clips in three shapes) |
+| `generate_video` | 1,020 s: 900 s of polling plus time to start and save |
 
 When a timeout passes, Pydantic AI cancels the call and returns a retry to
 the model. Tools write their output File only after the provider returns, so
@@ -690,7 +775,8 @@ only; the client shows the latest stage on the running tool row.
 
 The runtime never runs a tool call twice: an interrupted call gets an
 interrupted return, and recovery evidence lists uncertain actions, so a
-completed paid call isn't repeated on resume.
+completed paid call isn't repeated on resume. `generate_video` also keeps
+its own record of each paid call (see [Generation](#generation)).
 
 ## Video in the conversation
 

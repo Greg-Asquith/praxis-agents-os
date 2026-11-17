@@ -149,6 +149,7 @@ def _assemble_runtime_catalogs() -> None:
         ask_video,
         cut_video_clips,
         find_video_moments,
+        generate_video,
         transcribe_video,
     )
 
@@ -168,6 +169,7 @@ def _assemble_runtime_catalogs() -> None:
         edit_workbook,
         find_video_moments,
         forecasting,
+        generate_video,
         image_editing,
         image_generation,
         kb,

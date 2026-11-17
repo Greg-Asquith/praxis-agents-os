@@ -156,6 +156,23 @@ class VideoMetadata(BaseModel):
     loudness_lufs: float | None = Field(default=None, ge=-99, le=0)
 
 
+class GenerationProvenance(BaseModel):
+    """How a model made a revision; a revision with one is labelled AI-generated."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    route: str = Field(max_length=16)
+    media_model: str = Field(max_length=64)
+    provider_model: str = Field(max_length=128)
+    # The provider's ID for the call, which a later edit can chain from.
+    external_id: str | None = Field(default=None, max_length=512)
+    task: str = Field(max_length=32)
+    prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    aspect_ratio: str | None = Field(default=None, max_length=8)
+    resolution: str | None = Field(default=None, max_length=8)
+    duration_seconds: int | None = Field(default=None, gt=0)
+
+
 class FileRead(BaseModel):
     """API representation of a workspace file."""
 
@@ -179,6 +196,8 @@ class FileRead(BaseModel):
     processing_status: str
     processing_error: str | None = None
     video: VideoMetadata | None = None
+    # The current revision was made by an image or video model.
+    ai_generated: bool = False
     created_at: datetime
     updated_at: datetime
 

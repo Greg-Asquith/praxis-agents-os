@@ -44,3 +44,28 @@ task_models = { edit_image = "gpt-image-2.5-sunburst" }
 # Billed by token; about $0.053 for a 1024x1024 image at medium quality.
 # https://developers.openai.com/api/docs/models/gpt-image-2.5-flare
 usd_per_image = "0.053"
+
+[[models]]
+id = "omni-1.2-flash"
+label = "Omni 1.2 Flash"
+tasks = ["text_to_video"]
+lab = "Google"
+# Served from the global endpoint only, on Vertex and the Gemini API.
+processing = "global"
+strengths = "realistic motion with native sound, good at product shots and short ad inserts"
+# Google indemnifies generally available models; Omni's status isn't confirmed.
+indemnified = false
+
+[models.limits]
+aspect_ratios = ["9:16", "16:9"]
+durations_seconds = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+resolutions = ["720p", "1080p", "4k"]
+native_audio = true
+
+[[models.routes]]
+route = "google"
+model = "gemini-omni-1.2-flash"
+# $12 per million video output tokens at 5,792 tokens a second at 720p, 8,688 at
+# 1080p, and 17,376 at 4K (measured 2026-11-17). https://ai.google.dev/gemini-api/docs/pricing
+usd_per_second = "0.0695"
+usd_per_second_by_resolution = { "720p" = "0.0695", "1080p" = "0.1043", "4k" = "0.2085" }

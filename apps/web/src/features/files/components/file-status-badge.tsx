@@ -1,6 +1,6 @@
 // apps/web/src/features/files/components/file-status-badge.tsx
 
-import { Loader2Icon } from "lucide-react"
+import { Loader2Icon, SparklesIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { fileProcessingStatusLabel } from "@/features/files/format"
@@ -19,6 +19,15 @@ export function FileStatusBadge({ status }: { status: FileProcessingStatus }) {
     <Badge variant="secondary">
       <Loader2Icon data-icon="inline-start" className="animate-spin" />
       {fileProcessingStatusLabel(status)}
+    </Badge>
+  )
+}
+
+export function AiGeneratedBadge() {
+  return (
+    <Badge variant="secondary">
+      <SparklesIcon data-icon="inline-start" />
+      AI-Generated
     </Badge>
   )
 }

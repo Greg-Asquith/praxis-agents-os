@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useDeleteFileMutation } from "@/features/files/api/delete-file"
-import { FileStatusBadge } from "@/features/files/components/file-status-badge"
+import { AiGeneratedBadge, FileStatusBadge } from "@/features/files/components/file-status-badge"
 import { FileThumbnail } from "@/features/files/components/file-thumbnail"
 import { FolderActions } from "@/features/files/components/folder-actions"
 import { folderFileCountLabel } from "@/features/files/components/folder-copy"
@@ -583,6 +583,7 @@ function FileNameCell({
         <div className="flex min-w-0 items-center gap-2">
           <FileNameTooltip name={file.name} />
           {file.scope === "platform" ? <Badge variant="secondary">Shared</Badge> : null}
+          {file.ai_generated ? <AiGeneratedBadge /> : null}
           {file.processing_status === "ready" ? null : (
             <FileStatusBadge status={file.processing_status} />
           )}

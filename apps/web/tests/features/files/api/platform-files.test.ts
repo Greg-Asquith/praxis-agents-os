@@ -28,6 +28,7 @@ const file: WorkspaceFile = {
   processing_status: "ready",
   processing_error: null,
   video: null,
+  ai_generated: false,
   created_at: "2026-09-10",
   updated_at: "2026-09-10",
 }

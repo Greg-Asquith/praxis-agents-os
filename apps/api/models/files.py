@@ -32,6 +32,7 @@ _REVISION_MUTABLE_ONCE = frozenset(
         "markdown_object_key",
         "markdown_size_bytes",
         "media_metadata",
+        "generation",
         "transcript_object_key",
         "transcript_size_bytes",
         "shot_cuts_ms",
@@ -241,6 +242,8 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
     transcript_object_key = Column(String(1024), nullable=True)
     transcript_size_bytes = Column(BigInteger, nullable=True)
     shot_cuts_ms = Column(JSONB, nullable=True)
+    # How a model made this revision; see services.files.domain.GenerationProvenance.
+    generation = Column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(

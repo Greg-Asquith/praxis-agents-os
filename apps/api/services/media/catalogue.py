@@ -33,9 +33,18 @@ MediaTask = Literal[
 MediaRoute = Literal["google", "openai", "runway", "replicate"]
 
 IMAGE_TASKS: frozenset[MediaTask] = frozenset({"text_to_image", "edit_image", "vector_image"})
+_DEFAULT_SETTINGS = {
+    "text_to_image": "DEFAULT_IMAGE_GENERATION_MODEL",
+    "text_to_video": "DEFAULT_VIDEO_GENERATION_MODEL",
+}
 # Equal prices go to the earlier route.
 MEDIA_ROUTE_PREFERENCE: tuple[MediaRoute, ...] = get_args(MediaRoute)
 CATALOGUE_PATH = Path(__file__).with_name("models.toml")
+PROCESSED_IN = {
+    "eu": "Processed in the EU",
+    "global": "Processed globally",
+    "us": "Processed in the US",
+}
 
 
 class _Record(BaseModel):
@@ -63,6 +72,8 @@ class MediaModelRoute(_Record):
     task_models: dict[MediaTask, str] = Field(default_factory=dict)
     usd_per_image: Decimal | None = Field(default=None, gt=0)
     usd_per_second: Decimal | None = Field(default=None, gt=0)
+    # Video models priced by output resolution; usd_per_second is the default resolution's.
+    usd_per_second_by_resolution: dict[str, Decimal] = Field(default_factory=dict)
 
     def provider_model(self, task: MediaTask) -> str:
         """Return the provider's model ID for one task."""
@@ -74,6 +85,10 @@ class MediaModelRoute(_Record):
         if price is None:
             raise ValueError(f"The {self.route} route has no price for {task}.")
         return price
+
+    def price_per_second(self, resolution: str) -> Decimal:
+        """Return the per-second price at one output resolution."""
+        return self.usd_per_second_by_resolution.get(resolution) or self.price("text_to_video")
 
 
 class MediaModel(_Record):
@@ -100,6 +115,9 @@ class MediaModel(_Record):
                 route.price(task)
             if unknown := set(route.task_models) - set(self.tasks):
                 raise ValueError(f"{self.id} names a model for tasks it lacks: {sorted(unknown)}.")
+            by_resolution = route.usd_per_second_by_resolution
+            if by_resolution and (unpriced := set(self.limits.resolutions) - set(by_resolution)):
+                raise ValueError(f"{self.id} has no price at {sorted(unpriced)}.")
         return self
 
 
@@ -123,19 +141,21 @@ def media_catalogue() -> MediaCatalogue:
     """Load and validate the catalogue once per process; a bad file fails startup."""
     with CATALOGUE_PATH.open("rb") as file:
         catalogue = MediaCatalogue.model_validate(tomllib.load(file))
-    default = catalogue.get(settings.DEFAULT_IMAGE_GENERATION_MODEL)
-    if default is None or "text_to_image" not in default.tasks:
-        raise ValueError(
-            f"DEFAULT_IMAGE_GENERATION_MODEL '{settings.DEFAULT_IMAGE_GENERATION_MODEL}' isn't an image model "
-            f"in {CATALOGUE_PATH.name}."
-        )
+    for task, name in _DEFAULT_SETTINGS.items():
+        default = catalogue.get(getattr(settings, name))
+        if default is None or task not in default.tasks:
+            raise ValueError(
+                f"{name} '{getattr(settings, name)}' can't do {task} in {CATALOGUE_PATH.name}."
+            )
     return catalogue
 
 
 def default_media_model(task: MediaTask) -> MediaModel | None:
     """Return the deployment default when it can do the task, else the first available model."""
     available = available_media_models(task)
-    default_id = settings.DEFAULT_IMAGE_GENERATION_MODEL if task in IMAGE_TASKS else None
+    default_id = getattr(
+        settings, _DEFAULT_SETTINGS["text_to_image" if task in IMAGE_TASKS else "text_to_video"]
+    )
     return next((model for model in available if model.id == default_id), None) or next(
         iter(available), None
     )

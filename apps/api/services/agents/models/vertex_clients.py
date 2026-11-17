@@ -30,12 +30,13 @@ if TYPE_CHECKING:
 _clients: dict[tuple[str, str, int, float], "Client"] = {}
 _anthropic_clients: dict[tuple[str, str, int, float], "AsyncAnthropicVertex"] = {}
 _clients_lock = Lock()
+# Media models that aren't agent choices, served from the global endpoint only.
+_GLOBAL_MEDIA_MODELS = frozenset({"gemini-nano-banana-2.1", "gemini-omni-1.2-flash"})
 
 
 def google_vertex_location(model: str | None = None) -> str:
     """Resolve a supported location without constructing a provider client."""
-    if model == "gemini-nano-banana-2.1":
-        # Image-only models are not ordinary agent choices.
+    if model in _GLOBAL_MEDIA_MODELS:
         default_location, supported_locations = "global", ("global",)
     else:
         info = get_model(PROVIDER_GOOGLE, model) if model is not None else None

@@ -433,6 +433,7 @@ def file_to_read(
         processing_status=file.processing_status,
         processing_error=file.processing_error,
         video=revision_video_metadata(revision),
+        ai_generated=revision is not None and revision.generation is not None,
         created_at=file.created_at,
         updated_at=file.updated_at,
     )

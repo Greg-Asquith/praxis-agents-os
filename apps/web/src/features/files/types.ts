@@ -49,6 +49,8 @@ export type WorkspaceFile = {
   processing_status: FileProcessingStatus
   processing_error: string | null
   video: VideoMetadata | null
+  // The current revision was made by an image or video model.
+  ai_generated: boolean
   created_at: string
   updated_at: string
 }

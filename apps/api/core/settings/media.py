@@ -64,6 +64,13 @@ class MediaSettingsMixin:
             "deployment can't call it, the first available catalogue model is used."
         ),
     )
+    DEFAULT_VIDEO_GENERATION_MODEL: str = Field(
+        default="omni-1.2-flash",
+        description=(
+            "Media catalogue ID of the video model generate_video uses when an agent names none. "
+            "When this deployment can't call it, the first available catalogue model is used."
+        ),
+    )
     VIDEO_UNDERSTANDING_MODEL: str = Field(
         default="gemini-3.8-flash",
         description="Google catalog model that watches video for find_video_moments and ask_video.",

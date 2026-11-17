@@ -89,15 +89,21 @@ The following contracts apply in this area:
   Gemini Decisions rows carry input tokens only and price at
   `gemini-decision-1`'s $0.10 per million input tokens.
 - Video helpers record under `video_understanding`, `video_generation`, or
-  `video_transcription`, with tokens as the provider reports them. Video
-  generation tools are pending, so no tool records `video_generation` rows.
-  Veo bills per output second, so a Veo row's details carry `video_model`,
-  `video_resolution` (`720p`, `1080p`, or `4k`), `video_audio`, and
-  `video_output_seconds`. Reads price those seconds from Google's
+  `video_transcription`, with tokens as the provider reports them.
+  `generate_video` records one `video_generation` row per paid call, with
+  `media_model` and `media_generation_id` in its details. Omni 1.2 Flash bills
+  by token: input at $1.50 a million and video output at $12, with thinking
+  tokens counted as output at the video rate (Google lists $9 for them).
+  A row priced by tokens counts as a priced video generation. A generation
+  that failed after it started records one request with unknown tokens,
+  because Google may bill it. Veo bills per output second, so a Veo row's
+  details carry `video_model`, `video_resolution` (`720p`, `1080p`, or
+  `4k`), `video_audio`, and `video_output_seconds`. Reads price those seconds
+  from Google's
   [Veo 3.1 rates](https://ai.google.dev/gemini-api/docs/pricing#veo-3.1),
   effective from 9 October 2026 for the Gemini API preview models. Google
   lists only with-audio rates, so silent clips, Vertex model IDs, and video
-  rows without that metadata (such as Omni) count as
+  rows with neither a token price nor that metadata count as
   `unpriced_video_generations`, displayed as **Incomplete video outputs**.
   Speech-to-text bills per audio minute: a `video_transcription` row carries
   `audio_seconds`, and reads price Chirp 3 ($0.016) and `whisper-1`

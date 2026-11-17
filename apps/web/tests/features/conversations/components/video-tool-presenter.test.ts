@@ -48,6 +48,22 @@ describe("video tool rows", () => {
     expect(html).toContain("1080 x 1920")
   })
 
+  it("plays a generated clip in its own row", () => {
+    const html = render("generate_video", {
+      name: "coffee-cup.mp4",
+      file_id: "file-1",
+      media_type: "video/mp4",
+      model: "omni-1.2-flash",
+      aspect_ratio: "9:16",
+      resolution: "720p",
+      duration_seconds: 4,
+      cost_usd: "0.29",
+    })
+
+    expect(html).toContain('aria-label="Generated coffee-cup.mp4"')
+    expect(html).toContain('src="https://storage.test/file-1.mp4?signed=1"')
+  })
+
   it("leaves a video result to a specific presenter that claims it", () => {
     integrationToolRowPresenters.mockReturnValueOnce([
       { key: "provider", matches: () => true, render: () => createElement("p", null, "Provider") },

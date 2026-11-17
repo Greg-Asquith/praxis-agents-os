@@ -83,21 +83,25 @@ The following contracts apply in this area:
 
 ### Media model catalogue
 
-`generate_image` and `edit_image` take an optional `model`: an ID from the
-media catalogue, `apps/api/services/media/models.toml`. Each entry records the
-model's tasks, limits (aspect ratios and source images), routes, upstream lab,
+`generate_image`, `edit_image`, and `generate_video` take an optional `model`:
+an ID from the media catalogue, `apps/api/services/media/models.toml`. Each
+entry records the model's tasks, limits (aspect ratios, source images,
+durations, and resolutions), routes, upstream lab,
 processing location, a one-line `strengths`, and whether the vendor
 indemnifies output. Each route names the provider's own model ID, per task
-where it differs, and an estimated price per image or per second. Adding or
+where it differs, and an estimated price per image or per second, optionally
+by output resolution. Adding or
 retiring a model is an edit to the file. `services/media/catalogue.py` loads
 and validates it once per process, so an unknown task, a missing price, a
-duplicate ID or route, or an `DEFAULT_IMAGE_GENERATION_MODEL` that isn't an image model
-fails startup.
+duplicate ID or route, a video route without a price for each resolution it
+lists, or a `DEFAULT_IMAGE_GENERATION_MODEL` or `DEFAULT_VIDEO_GENERATION_MODEL`
+that can't do its task fails startup.
 
 | ID | Route and provider model | Estimate | Processed |
 | --- | --- | --- | --- |
 | `nano-banana-2.1` | `google`: `gemini-nano-banana-2.1` | $0.034 per 1K image | Globally |
 | `gpt-image-2.5` | `openai`: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` for edits | About $0.053 per 1024² image at medium quality (billed by token) | Globally |
+| `omni-1.2-flash` | `google`: `gemini-omni-1.2-flash` | $0.07 a second at 720p, $0.10 at 1080p, $0.21 at 4K (billed by token) | Globally |
 
 A model is available when one of its routes is configured: Google and OpenAI
 by their provider credentials, with Google on Vertex also needing a supported
@@ -111,7 +115,9 @@ any provider call.
 
 When `model` is omitted, the tool uses `DEFAULT_IMAGE_GENERATION_MODEL`
 (`nano-banana-2.1` by default) if it's available, otherwise the first available
-model in catalogue order. Routing between models (plan 352 B) is pending.
+model in catalogue order. `generate_video` does the same with
+`DEFAULT_VIDEO_GENERATION_MODEL` (`omni-1.2-flash`); see
+[video tools](video-tools.md#generation). Routing between models (plan 352 B) is pending.
 
 The approval card shows **Image Model** with the model that will run, filled
 in by the tool's approval display arguments when the agent named none. Each
