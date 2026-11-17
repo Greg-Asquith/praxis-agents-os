@@ -48,16 +48,6 @@ class ImageTokenPrice:
 
 
 @dataclass(frozen=True)
-class VideoOutputPrice:
-    provider: str
-    model: str
-    effective_from: date
-    resolution: str
-    audio: bool
-    usd_per_second: Decimal
-
-
-@dataclass(frozen=True)
 class AudioInputPrice:
     provider: str
     model: str
@@ -255,19 +245,6 @@ IMAGE_TOKEN_PRICES: tuple[ImageTokenPrice, ...] = tuple(
 )
 
 
-# Veo bills per output second; Google lists only the default with-audio rates, so
-# silent clips stay unpriced. https://ai.google.dev/gemini-api/docs/pricing#veo-3.1
-VIDEO_OUTPUT_PRICES: tuple[VideoOutputPrice, ...] = tuple(
-    VideoOutputPrice("google", model, date(2026, 10, 9), resolution, True, Decimal(cost))
-    for model, costs in {
-        "veo-3.1-generate-preview": {"720p": "0.40", "1080p": "0.40", "4k": "0.60"},
-        "veo-3.1-fast-generate-preview": {"720p": "0.10", "1080p": "0.12", "4k": "0.30"},
-        "veo-3.1-lite-generate-preview": {"720p": "0.05", "1080p": "0.08"},
-    }.items()
-    for resolution, cost in costs.items()
-)
-
-
 # Speech-to-text bills per minute of audio. Chirp 3 uses the standard tier, before volume discounts.
 # https://cloud.google.com/speech-to-text/pricing and https://openai.com/api/pricing
 AUDIO_INPUT_PRICES: tuple[AudioInputPrice, ...] = (
@@ -310,24 +287,6 @@ def find_image_output_price(
 def find_image_token_price(provider: str, model: str, on_date: date) -> ImageTokenPrice | None:
     """Return the latest per-token image rates effective on a UTC usage date."""
     return _latest_effective(IMAGE_TOKEN_PRICES, on_date, provider=provider, model=model)
-
-
-def find_video_output_price(
-    provider: str,
-    model: str,
-    resolution: str,
-    audio: bool,
-    on_date: date,
-) -> VideoOutputPrice | None:
-    """Return the latest per-second estimate for known video output metadata."""
-    return _latest_effective(
-        VIDEO_OUTPUT_PRICES,
-        on_date,
-        provider=provider,
-        model=model,
-        resolution=resolution,
-        audio=audio,
-    )
 
 
 def find_audio_input_price(provider: str, model: str, on_date: date) -> AudioInputPrice | None:

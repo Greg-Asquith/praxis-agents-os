@@ -27,7 +27,6 @@ from services.ai_usage.pricing import (
     find_image_output_price,
     find_image_token_price,
     find_price,
-    find_video_output_price,
 )
 from services.ai_usage.schemas import (
     BreakdownUsageRow,
@@ -46,9 +45,6 @@ _OUTPUT_PRICE_DETAIL_KEYS = (
     "image_model",
     "image_quality",
     "image_size",
-    "video_model",
-    "video_resolution",
-    "video_audio",
 )
 
 
@@ -73,10 +69,6 @@ class UsageBucket:
     image_model: str | None = None
     image_quality: str | None = None
     image_size: str | None = None
-    video_model: str | None = None
-    video_resolution: str | None = None
-    video_audio: str | None = None
-    video_output_seconds: Decimal = Decimal(0)
     audio_seconds: Decimal = Decimal(0)
     input_image_tokens: int = 0
     output_text_tokens: int = 0
@@ -162,7 +154,6 @@ def metered_quantity_columns() -> list[Label]:
     return [
         func.sum(cast(AIUsageEvent.details[key].astext, Numeric)).label(key)
         for key in (
-            "video_output_seconds",
             "audio_seconds",
             "input_image_tokens",
             "output_text_tokens",
@@ -174,7 +165,6 @@ def output_price_values(row: Any) -> dict[str, Any]:
     """Returns the `UsageBucket` output-price fields of a row selected with both helpers."""
     return {
         **{key: getattr(row, key) for key in _OUTPUT_PRICE_DETAIL_KEYS},
-        "video_output_seconds": Decimal(row.video_output_seconds or 0),
         "audio_seconds": Decimal(row.audio_seconds or 0),
         "input_image_tokens": int(row.input_image_tokens or 0),
         "output_text_tokens": int(row.output_text_tokens or 0),
@@ -266,26 +256,11 @@ def _fold_image_output(folded: UsageFold, bucket: UsageBucket, *, priced_by_toke
 
 
 def _fold_video_output(folded: UsageFold, bucket: UsageBucket, *, priced_by_tokens: bool) -> None:
+    # Every video model Praxis calls is billed by token; anything else has no price.
     if priced_by_tokens:
         folded.priced_video_generations += bucket.invocations
-        return
-    video_price = (
-        find_video_output_price(
-            bucket.provider,
-            bucket.video_model,
-            bucket.video_resolution,
-            bucket.video_audio == "true",
-            bucket.day,
-        )
-        if bucket.video_model and bucket.video_resolution
-        else None
-    )
-    if video_price is None:
+    else:
         folded.unpriced_video_generations += bucket.invocations
-        return
-    folded.has_priced_bucket = True
-    folded.priced_video_generations += bucket.invocations
-    folded.estimated_cost_usd += bucket.video_output_seconds * video_price.usd_per_second
 
 
 def decimal_share(numerator: int | Decimal, denominator: int | Decimal) -> Decimal:

@@ -38,7 +38,12 @@ from utils.validation import normalize_optional_text
 GENERATION_WAIT_SECONDS = 900
 TOOL_TIMEOUT_SECONDS = GENERATION_WAIT_SECONDS + 120
 MAX_PROMPT_CHARS = 4000
-_ACTIONS = {"text_to_video": "generate video", "edit_video": "edit video"}
+_ACTIONS = {
+    "text_to_video": "generate video",
+    "image_to_video": "generate video from images",
+    "reference_to_video": "generate video from reference clips",
+    "edit_video": "edit video",
+}
 HOW_TO_CHECK = (
     "Generated clips can miss parts of the prompt. Check this one with ask_video before "
     "reporting it as done, and say what you checked."

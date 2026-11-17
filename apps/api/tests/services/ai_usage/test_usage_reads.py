@@ -291,47 +291,6 @@ async def test_summary_adds_image_output_cost_and_exposes_incomplete_metadata(
 
 
 @pytest.mark.asyncio
-async def test_summary_prices_video_output_seconds_by_resolution_and_audio(
-    db_session: AsyncSession,
-) -> None:
-    workspace = build_workspace(slug=f"video-cost-{uuid4().hex}")
-    db_session.add(workspace)
-    await db_session.flush()
-    occurred_at = datetime(2026, 10, 12, 12, tzinfo=UTC)
-
-    def veo(seconds: int, *, resolution: str = "1080p", audio: bool = True) -> AIUsageEvent:
-        return _event(
-            workspace.id,
-            occurred_at,
-            purpose="video_generation",
-            provider="google",
-            model="veo-3.1-fast-generate-preview",
-            input_tokens=0,
-            details={
-                "video_model": "veo-3.1-fast-generate-preview",
-                "video_resolution": resolution,
-                "video_audio": audio,
-                "video_output_seconds": seconds,
-            },
-        )
-
-    db_session.add_all([veo(8), veo(6), veo(8, resolution="4k"), veo(8, audio=False)])
-    await db_session.flush()
-
-    summary = await get_usage_summary(
-        db_session,
-        workspace_id=workspace.id,
-        from_=datetime(2026, 10, 12, tzinfo=UTC),
-        to=datetime(2026, 10, 13, tzinfo=UTC),
-    )
-
-    # 14 s at 1080p ($0.12) plus 8 s at 4K ($0.30); Google lists no silent rate.
-    assert summary.totals.estimated_cost_usd == Decimal("4.08")
-    assert summary.pricing_coverage.priced_video_generations == 3
-    assert summary.pricing_coverage.unpriced_video_generations == 1
-
-
-@pytest.mark.asyncio
 async def test_summary_prices_token_billed_video_by_its_tokens(db_session: AsyncSession) -> None:
     workspace = build_workspace(slug=f"omni-cost-{uuid4().hex}")
     db_session.add(workspace)

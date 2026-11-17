@@ -108,7 +108,12 @@ async def test_a_generated_clip_is_edited_by_chaining_once_and_saved_as_its_next
 
     assert result.run.status == "completed"
     [request] = backend.edits
-    assert (request.previous_id, request.video) == ("interaction-1", None)
+    # The 1920x1080 source is kept at 1080p rather than Google's 720p default.
+    assert (request.previous_id, request.video, request.resolution) == (
+        "interaction-1",
+        None,
+        "1080p",
+    )
     # The second call has the same tool call ID, so it returns the saved revision unpaid.
     first, second = result.tool_returns("edit_video")
     assert first["content"]["revision_id"] == second["content"]["revision_id"]

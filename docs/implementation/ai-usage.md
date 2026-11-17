@@ -97,14 +97,7 @@ The following contracts apply in this area:
   tokens counted as output at the video rate (Google lists $9 for them).
   A row priced by tokens counts as a priced video generation. A generation
   that failed after it started records one request with unknown tokens,
-  because Google may bill it. Veo bills per output second, so a Veo row's
-  details carry `video_model`, `video_resolution` (`720p`, `1080p`, or
-  `4k`), `video_audio`, and `video_output_seconds`. Reads price those seconds
-  from Google's
-  [Veo 3.1 rates](https://ai.google.dev/gemini-api/docs/pricing#veo-3.1),
-  effective from 9 October 2026 for the Gemini API preview models. Google
-  lists only with-audio rates, so silent clips, Vertex model IDs, and video
-  rows with neither a token price nor that metadata count as
+  because Google may bill it. A video row without a token price counts as
   `unpriced_video_generations`, displayed as **Incomplete video outputs**.
   Speech-to-text bills per audio minute: a `video_transcription` row carries
   `audio_seconds`, and reads price Chirp 3 ($0.016) and `whisper-1`

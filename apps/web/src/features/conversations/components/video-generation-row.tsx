@@ -8,6 +8,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { AiGeneratedBadge } from "@/features/files/components/file-status-badge"
+import { MediaInputPreview } from "@/features/conversations/components/media-input-preview"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -53,6 +54,7 @@ export function GenerateVideoRow({
       <div className="grid min-w-0 gap-3">
         <VideoFileCard video={result.video} />
         <ArgText label="Prompt" text={prompt} />
+        <References activity={activity} />
       </div>
     </ToolResultCard>
   )
@@ -90,6 +92,22 @@ export function EditVideoRow({
         <ArgText label="Instruction" text={argText(activity, "instruction")} />
       </div>
     </ToolResultCard>
+  )
+}
+
+// The images and clips the generation drew on, when the agent passed any.
+function References({ activity }: { activity: ToolActivity }) {
+  const args = isRecord(activity.args) ? activity.args : {}
+  const has = (key: string) => Array.isArray(args[key]) && args[key].length > 0
+  if (!has("image_file_ids") && !has("reference_video_file_ids")) {
+    return null
+  }
+  return (
+    <div className="grid min-w-0 gap-1">
+      <p className="text-muted-foreground text-xs font-medium">References</p>
+      <MediaInputPreview args={args} field="image_file_ids" kind="image" />
+      <MediaInputPreview args={args} field="reference_video_file_ids" kind="video" />
+    </div>
   )
 }
 

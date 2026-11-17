@@ -661,8 +661,33 @@ will run, with its price range a second and processing location, and every
 setting is editable. Under the settings it shows **Estimated Cost**, such as
 "About $0.56 · 8 s, Vertical, 720p", which follows the approver's edits: the
 display arguments carry each available model's price a second by resolution
-(`_prices`), and the card multiplies the chosen one by the length. Image and
-video references and `extend_video` are pending (plan 250 C3).
+(`_prices`), and the card multiplies the chosen one by the length.
+`extend_video` is pending (plan 250 C3).
+
+A generation can draw on the workspace's own Files, from either list or
+both:
+
+- `image_file_ids`: up to six PNG, JPEG, or WebP images, such as the opening
+  frame or a product, person, or place to keep.
+- `reference_video_file_ids`: clips of 3 seconds or less whose subject,
+  motion, or style to follow. Omni takes three for a clip of up to 10
+  seconds and one for a longer clip; their sound is ignored.
+
+Images go before clips. The model's limits come from the catalogue (`max_input_images`,
+`reference_clips_by_length`, `max_reference_seconds`), and the call's task
+becomes `reference_to_video` when it has clips and `image_to_video` when it
+has only images, so only models that list it can run. Each reference must be the workspace's own File of the right
+type, and a clip must be probed and short enough; a longer one gets a
+pointer to `cut_video_clips`. All of this is checked before the paid
+record is written. The references go to Google inline before the prompt,
+with no task set, so the model reads from the prompt how each is used. Each
+is audited as a File read (`video_generation_reference`), and the saved
+revision's provenance lists their revisions (`reference_revision_ids`).
+The approval card lists the references, and its estimate adds the reference
+clips' measured length at the route's `usd_per_input_second`, because Google
+bills them as input (about 5,800 tokens a second, measured live). Each
+reference image is about 1,100 input tokens, about $0.002, so the estimate
+leaves images out.
 
 The model comes from the media catalogue (`services/media/models.toml`, see
 [native tools](native-tools.md#media-model-catalogue)): `DEFAULT_VIDEO_GENERATION_MODEL`
@@ -718,7 +743,9 @@ card shows **Estimated Cost** for the chosen model, such as "About $1.13 ·
 10.0 s at 1080p": the clip's length at its output price (by the short side:
 720p up to 720 pixels, 1080p up to 1080, otherwise 4K), plus the clip read
 as input at the route's `usd_per_input_second`, which Google bills for
-chained and uploaded edits alike. The server works these out per model in
+chained and uploaded edits alike. A chain is billed for its whole history,
+so an edit of an edited clip reads about twice the clip as input; the
+estimate counts the clip once. The server works these out per model in
 the display arguments (`_estimates`, `_estimate_basis`).
 
 Before any paid request, the tool checks that the File is the workspace's
@@ -734,8 +761,15 @@ how Google gets the clip:
   than `MAX_FILE_SIZE_VIDEO`, telling the agent to cut the shot with
   `cut_video_clips` first. It audits the read (`video_edit`) and sends the
   clip inline.
-- If Google no longer holds a chained interaction (HTTP 404, unbilled), the
-  same tool call uploads the clip instead, under the same limits.
+- If Google no longer holds a chained interaction (HTTP 404 "not found", or
+  400 "Precondition check failed" for one with no stored output; both
+  unbilled), the same tool call uploads the clip instead, under the same
+  limits. A chained clip can be any length: a 12 second clip chained
+  without trouble.
+
+Either way the request names the source's resolution, from the probe by
+the short side, because Google otherwise returns 720p even from a 1080p
+clip.
 
 The save appends a revision with `expected_current_revision_id` set to the
 base, so a File changed during the edit saves nothing and the record is
@@ -760,13 +794,16 @@ both transports) through google-genai's Interactions API, on Vertex at the
  "store": true, "background": true}
 ```
 
-An edit sends `response_format: {"type": "video"}` with either
-`previous_interaction_id` and the instruction as `input`, or an `input` of a
-`video` part (base64 MP4) and a `text` part with
+An edit sends `response_format: {"type": "video", "resolution": ...}` with
+either `previous_interaction_id` and the instruction as `input`, or an
+`input` of a `video` part (base64 MP4) and a `text` part with
 `generation_config.video_config.task: "edit"`. Google refuses
 `previous_interaction_id` alongside a task. On the Gemini API, Google
-doesn't edit uploaded video from the EEA, Switzerland, or the UK; that
-refusal returns a message suggesting a clip generated in Praxis or Vertex.
+doesn't edit uploaded video from the EEA, Switzerland, or the UK. It takes
+the request, then fails the interaction as `INVALID_ARGUMENT` with no
+reason, so on the Gemini API a failed interaction whose input held a video
+(and that wasn't a content refusal) returns a message suggesting a clip
+generated in Praxis or Vertex.
 
 The client sends each request with SDK retries off, because a retried create is a
 second paid clip, then polls the interaction every 5 seconds. Reads that fail
@@ -884,7 +921,9 @@ The tool rows add the following:
   and text on screen, including card text, read from the call's arguments
   (`video-clips-approval.tsx`).
 - **`generate_video` and `edit_video` approvals:** the tool's declared
-  fields with the estimated cost under them (`video-generation-approval.tsx`).
+  fields, including any reference images or clips, with the estimated cost
+  under them (`video-generation-approval.tsx`). The generation row shows
+  the references under the prompt.
   Display keys starting with `_` aren't shown as fields or sent back with
   the approver's edits.
 

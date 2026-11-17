@@ -208,6 +208,19 @@ clip of 3 to 15 seconds, with sound, and saves it to Files.
   Trim or join it with `cut_video_clips`.
 - Leave `model` out unless the person named one.
 
+When the shot must show the person's own product, place, or presenter,
+pass it as a reference rather than describing it:
+
+- Pass images from Files as `image_file_ids`, up to six. Say in the prompt
+  how each is used, such as "start on the first image" or "the bottle in
+  the second image stays on the table".
+- Pass short clips as `reference_video_file_ids` to follow a subject,
+  motion, or style: up to three for a clip of up to 10 seconds, one for a
+  longer clip. Each must be 3 seconds or less, so cut the moment first with
+  `cut_video_clips`. Their sound is ignored.
+- Images and clips can go in one call. Only use Files the person gave or
+  pointed to, and ask before using a photo of a real person.
+
 A generated clip can miss part of the prompt, such as an extra hand or the
 wrong colour. Check it with `ask_video` before you report it, as the
 result's `how_to_check` says. If it missed something, say what, and offer

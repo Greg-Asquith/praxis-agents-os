@@ -12,6 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Generate a shot that looks like the person's own product, place, or
+  presenter: `generate_video` takes up to six workspace images
+  (`image_file_ids`) and up to three clips of 3 seconds or less
+  (`reference_video_file_ids`). The approval card lists them, and its
+  estimate includes the reference clips Google bills as input. Each
+  reference must be the workspace's own image or video, checked before
+  anything is paid for.
 - See what a generated or edited video will cost before approving it: the
   `generate_video` and `edit_video` approval cards show **Estimated Cost**
   ("About $0.56 · 8 s, Vertical, 720p"). A generation's estimate follows the
@@ -628,6 +635,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Removed
 
+- Veo 3.1 usage prices and the per-second video pricing they used. Nothing
+  calls Veo, and it's no longer a frontier model; Omni is priced by token.
 - `gemini-3.1-pro`. The Gemini API no longer serves that ID. A migration
   moves saved agent selections and workspace defaults to `gemini-4-argon`.
 - `GOOGLE_ADS_DEVELOPER_TOKEN` and the `developer-token` header. Google retired
@@ -660,6 +669,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Edited videos keep their resolution: `edit_video` names the source's
+  resolution, because Google returned a 1080p clip's edit at 720p. An edit
+  on the Gemini API that Google refuses for the deployment's region now says
+  so, instead of asking to try again later.
 - `google_ads_update_targeting` no longer drops a yes to the EU political
   advertising question. A campaign with no declaration gets it whatever the
   change adds, and a yes for a campaign that has already answered no is

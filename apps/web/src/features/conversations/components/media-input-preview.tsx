@@ -15,8 +15,17 @@ type MediaReference = {
   label: string
 }
 
-export function MediaInputPreview({ args, kind }: { args: unknown; kind: MediaKind }) {
-  const references = mediaReferences(args, kind)
+// `field` names the argument holding the Files, when it isn't the tool's usual one.
+export function MediaInputPreview({
+  args,
+  field,
+  kind,
+}: {
+  args: unknown
+  field?: string
+  kind: MediaKind
+}) {
+  const references = mediaReferences(args, kind, field)
   if (references.length === 0) {
     return null
   }
@@ -88,11 +97,11 @@ function MediaPreviewCard({ kind, reference }: { kind: MediaKind; reference: Med
   )
 }
 
-function mediaReferences(args: unknown, kind: MediaKind): MediaReference[] {
+function mediaReferences(args: unknown, kind: MediaKind, field?: string): MediaReference[] {
   if (!isRecord(args)) {
     return []
   }
-  const values = kind === "image" ? args["file_ids"] : [args["file_id"]]
+  const values = field ? args[field] : kind === "image" ? args["file_ids"] : [args["file_id"]]
   if (!Array.isArray(values)) {
     return []
   }

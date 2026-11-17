@@ -48,7 +48,7 @@ usd_per_image = "0.053"
 [[models]]
 id = "omni-1.2-flash"
 label = "Omni 1.2 Flash"
-tasks = ["text_to_video", "edit_video"]
+tasks = ["text_to_video", "image_to_video", "reference_to_video", "edit_video"]
 lab = "Google"
 # Served from the global endpoint only, on Vertex and the Gemini API.
 processing = "global"
@@ -62,6 +62,11 @@ durations_seconds = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 resolutions = ["720p", "1080p", "4k"]
 # Uploaded clips to edit; Google refused 10.03 seconds on 2026-10-01.
 max_input_seconds = 10
+# Up to six reference images; reference clips of 3 s or less, three for a clip of up
+# to 10 s and one for a longer clip (Google's Omni docs, checked 2026-11-17).
+max_input_images = 6
+reference_clips_by_length = { "10" = 3, "15" = 1 }
+max_reference_seconds = 3
 native_audio = true
 
 [[models.routes]]

@@ -25,6 +25,7 @@ from services.media.generation import (
     VideoEditRequest,
     VideoGenerationError,
     VideoGenerationRequest,
+    VideoReference,
 )
 
 if TYPE_CHECKING:
@@ -36,9 +37,10 @@ _REQUEST_TIMEOUT_MS = 60_000
 _MAX_POLL_FAILURES = 5
 _MAX_THOUGHT_SUMMARY_CHARS = 2000
 _REFUSAL_MARKERS = ("safety", "policy", "blocked", "prohibited", "responsible ai")
-_REGION_MARKERS = ("location", "region", "country")
 _REFUSED = "Google declined this prompt under its content policy. Revise the prompt and try again."
 _UNAVAILABLE = "Google couldn't generate the video. Try again in a few minutes."
+# Google names QuickTime differently from the standard type.
+_GOOGLE_MEDIA_TYPES = {"video/quicktime": "video/mov"}
 _REGION = (
     "Google doesn't edit uploaded video from this deployment's region. Edit a clip generated "
     "in Praxis instead, or ask an admin to use Google Vertex AI."
@@ -49,16 +51,28 @@ class OmniBackend:
     """Generates and edits clips with an Omni model on whichever Google transport is set up."""
 
     async def start(self, request: VideoGenerationRequest) -> str:
+        response_format = {
+            "type": "video",
+            "aspect_ratio": request.aspect_ratio,
+            "resolution": request.resolution,
+            "duration": f"{request.duration_seconds}s",
+        }
+        if not request.references:
+            return await _create(
+                request.provider_model,
+                input=request.prompt,
+                response_format=response_format,
+                generation_config={"video_config": {"task": "text_to_video"}},
+            )
+        # No task: Google reads from the prompt whether an image opens the clip or is a
+        # character or product to keep, and a task constrains that.
         return await _create(
             request.provider_model,
-            input=request.prompt,
-            response_format={
-                "type": "video",
-                "aspect_ratio": request.aspect_ratio,
-                "resolution": request.resolution,
-                "duration": f"{request.duration_seconds}s",
-            },
-            generation_config={"video_config": {"task": "text_to_video"}},
+            input=[
+                *(_reference_part(reference) for reference in request.references),
+                {"type": "text", "text": request.prompt},
+            ],
+            response_format=response_format,
         )
 
     async def start_edit(self, request: VideoEditRequest) -> str:
@@ -68,7 +82,7 @@ class OmniBackend:
                 request.provider_model,
                 input=request.instruction,
                 previous_interaction_id=request.previous_id,
-                response_format={"type": "video"},
+                response_format=_edit_format(request),
             )
         if request.video is None:
             raise ValueError("An edit needs the previous interaction or the clip.")
@@ -82,9 +96,8 @@ class OmniBackend:
                 },
                 {"type": "text", "text": request.instruction},
             ],
-            response_format={"type": "video"},
+            response_format=_edit_format(request),
             generation_config={"video_config": {"task": "edit"}},
-            uploads_video=True,
         )
 
     async def wait(
@@ -110,7 +123,22 @@ class OmniBackend:
         return generated_video(interaction, max_bytes=max_bytes)
 
 
-async def _create(provider_model: str, *, uploads_video: bool = False, **body: Any) -> str:
+def _reference_part(reference: VideoReference) -> dict[str, str]:
+    return {
+        "type": reference.kind,
+        "data": base64.b64encode(reference.content).decode(),
+        "mime_type": _GOOGLE_MEDIA_TYPES.get(reference.media_type, reference.media_type),
+    }
+
+
+def _edit_format(request: VideoEditRequest) -> dict[str, str]:
+    # Without a resolution Google returns 720p, even from a 1080p clip (2026-11-17).
+    if request.resolution is None:
+        return {"type": "video"}
+    return {"type": "video", "resolution": request.resolution}
+
+
+async def _create(provider_model: str, **body: Any) -> str:
     """Sends one paid background request, stored so a later edit can chain from it."""
     from google.genai._interactions import APIError, APIStatusError
 
@@ -122,8 +150,6 @@ async def _create(provider_model: str, *, uploads_video: bool = False, **body: A
         except APIStatusError as exc:
             if "previous_interaction_id" in body and _chain_gone(exc.status_code, exc.message):
                 raise ChainExpiredError(_UNAVAILABLE) from exc
-            if uploads_video and _region_refused(exc.status_code, exc.message):
-                raise VideoGenerationError(_REGION) from exc
             raise _status_error(exc.status_code, exc.message) from exc
         except APIError as exc:
             raise VideoGenerationError(_UNAVAILABLE) from exc
@@ -183,7 +209,12 @@ def generated_video(interaction: "Interaction", *, max_bytes: int) -> GeneratedV
     if interaction.status != "completed":
         messages = [error.message or "" for error in interaction.errors or ()]
         messages += [_step_error(step) for step in interaction.steps or ()]
-        raise _failure(" ".join(messages))
+        failure = _failure(" ".join(messages))
+        # The Gemini API takes an uploaded clip from an EEA, Swiss, or UK caller, then fails
+        # it as INVALID_ARGUMENT with no reason given (2026-11-17).
+        if not failure.refused and not settings.GOOGLE_VERTEX_AI and _uploaded_video(interaction):
+            raise VideoGenerationError(_REGION)
+        raise failure
     video = interaction.output_video
     if video is None or not video.data:
         raise VideoGenerationError("Google finished without returning a clip. Try again.")
@@ -222,13 +253,21 @@ def _status_error(status_code: int, message: str) -> VideoGenerationError:
 
 
 def _chain_gone(status_code: int, message: str) -> bool:
-    return status_code == 404 or (status_code == 400 and "not found" in message.lower())
-
-
-def _region_refused(status_code: int, message: str) -> bool:
-    # The Gemini API doesn't edit uploaded video for EEA, Swiss, or UK callers.
+    # An unknown ID is a 404; one Google kept no usable output for is a 400 "Precondition
+    # check failed" (2026-11-17). Neither is billed.
     lowered = message.lower()
-    return status_code in (400, 403) and any(marker in lowered for marker in _REGION_MARKERS)
+    return status_code == 404 or (
+        status_code == 400 and ("not found" in lowered or "precondition" in lowered)
+    )
+
+
+def _uploaded_video(interaction: "Interaction") -> bool:
+    return any(
+        getattr(part, "type", None) == "video"
+        for step in interaction.steps or ()
+        if getattr(step, "type", None) == "user_input"
+        for part in getattr(step, "content", None) or ()
+    )
 
 
 def _failure(message: str) -> VideoGenerationError:

@@ -202,7 +202,8 @@ export function generateVideoPlan(args: unknown): string {
 export type VideoCostEstimate = { usd: string; basis: string }
 
 // The model's price a second at the chosen resolution, from the server's `_prices`, times the
-// length, following the approver's edits.
+// length, following the approver's edits. Reference clips are billed as input, so their
+// measured length at the model's `_input_prices` is added.
 export function generateVideoEstimate(
   args: unknown,
   edits: EditedValues
@@ -220,9 +221,24 @@ export function generateVideoEstimate(
   if (!Number.isFinite(micros) || !Number.isInteger(seconds) || seconds <= 0) {
     return null
   }
+  const input = referenceInput(args, model)
+  const plan = generateVideoPlan({ ...values, duration_seconds: seconds })
   return {
-    usd: (Math.round((micros * seconds) / 10_000) / 100).toFixed(2),
-    basis: generateVideoPlan({ ...values, duration_seconds: seconds }),
+    usd: (Math.round((micros * seconds + input.micros) / 10_000) / 100).toFixed(2),
+    basis: input.seconds ? `${plan}, plus ${input.seconds} s of reference clips` : plan,
+  }
+}
+
+function referenceInput(args: Record<string, unknown>, model: unknown) {
+  const seconds = Number(args["_reference_seconds"])
+  const prices = args["_input_prices"]
+  const price = isRecord(prices) && typeof model === "string" ? prices[model] : null
+  if (!(seconds > 0) || typeof price !== "string") {
+    return { micros: 0, seconds: null }
+  }
+  return {
+    micros: Math.round(Number(price) * 1_000_000) * seconds,
+    seconds: seconds.toFixed(1),
   }
 }
 

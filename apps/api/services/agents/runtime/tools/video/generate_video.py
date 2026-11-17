@@ -2,22 +2,28 @@
 
 """Generates a video clip from a prompt with a catalogue video model and saves it as a File.
 
-A call that finds its own paid record saved returns that File; one that finds it
-running waits on the same clip instead of paying twice.
+The prompt can come with reference images or short reference clips from workspace
+Files. A call that finds its own paid record saved returns that File; one that finds
+it running waits on the same clip instead of paying twice.
 """
 
 import hashlib
+from dataclasses import replace
+from decimal import Decimal
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
+from sqlalchemy import select
 
 from core.exceptions.general import AppValidationError, ConflictError
+from core.settings import settings
 from models.files import File, FileRevision
 from models.media_generation import MediaGeneration
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.entity_references.domain import FileReference
+from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
@@ -27,6 +33,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.files.utils import revision_source_ref
+from services.agents.runtime.tools.media_inputs import VIDEO_MEDIA_TYPES, record_media_read_audit
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.tools.video.generation import (
     HOW_TO_CHECK,
@@ -38,13 +45,21 @@ from services.agents.runtime.tools.video.generation import (
     start_generation,
     wait_for_clip,
 )
-from services.agents.runtime.tools.video.utils import progress
+from services.agents.runtime.tools.video.utils import (
+    probed_video,
+    progress,
+    workspace_image,
+    workspace_video,
+)
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.documents.outputs import OutputFolderResolver, save_new_file
+from services.files.contract import FileCategory
 from services.files.domain import GenerationProvenance
+from services.files.utils import file_revision_ref, revision_video_metadata
 from services.media.catalogue import (
     PROCESSED_IN,
     MediaModel,
+    MediaTask,
     available_media_models,
     available_route,
     default_media_model,
@@ -52,12 +67,16 @@ from services.media.catalogue import (
 from services.media.generation import (
     GeneratedVideo,
     VideoGenerationRequest,
+    VideoReference,
     video_backend,
 )
 from services.media.media_generations import settle_media_generation
+from services.storage.factory import get_storage_provider
 from utils.validation import normalize_optional_text
 
 TASK = "text_to_video"
+TOOL_NAME = "generate_video"
+REFERENCE_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 DEFAULT_ASPECT_RATIO = "9:16"
 DEFAULT_RESOLUTION = "720p"
 DEFAULT_DURATION_SECONDS = 8
@@ -80,23 +99,70 @@ def _model_labels() -> dict[str, str]:
 _MODEL_LABELS = _model_labels()
 
 
-def _display_args(_deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+def _task(images: object, clips: object) -> MediaTask:
+    return "reference_to_video" if clips else "image_to_video" if images else TASK
+
+
+async def _display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
     """Shows the model and settings that will run when the agent leaves them out, with each
-    model's price a second by resolution so the card's estimate follows the approver's edits."""
-    default = default_media_model(TASK)
-    prices = {
-        model.id: {item: str(route.price_per_second(item)) for item in model.limits.resolutions}
-        for model in available_media_models(TASK)
-        if (route := available_route(model, TASK))
+    model's price a second by resolution so the card's estimate follows the approver's edits.
+    Reference clips are billed as input, so their measured length and price come too."""
+    task = _task(args.get("image_file_ids"), args.get("reference_video_file_ids"))
+    default = default_media_model(task)
+    routes = {
+        model.id: (model, route)
+        for model in available_media_models(task)
+        if (route := available_route(model, task))
     }
-    return {
+    display = {
         "model": default.id if default is not None else None,
         "aspect_ratio": DEFAULT_ASPECT_RATIO,
         "resolution": DEFAULT_RESOLUTION,
         "duration_seconds": DEFAULT_DURATION_SECONDS,
         **{key: value for key, value in args.items() if value is not None},
-        "_prices": prices,
+        "_prices": {
+            model_id: {item: str(route.price_per_second(item)) for item in model.limits.resolutions}
+            for model_id, (model, route) in routes.items()
+        },
     }
+    seconds = await _reference_seconds(deps, args.get("reference_video_file_ids"))
+    if seconds:
+        display["_reference_seconds"] = str(seconds)
+        display["_input_prices"] = {
+            model_id: str(route.usd_per_input_second)
+            for model_id, (_model, route) in routes.items()
+            if route.usd_per_input_second is not None
+        }
+    return display
+
+
+async def _reference_seconds(deps: RuntimeDeps, references: object) -> Decimal:
+    """Returns the measured length of the reference clips the approver is shown."""
+    if not isinstance(references, list):
+        return Decimal(0)
+    ids = []
+    for reference in references:
+        try:
+            ids.append(
+                UUID(str(reference["entity_id"] if isinstance(reference, dict) else reference))
+            )
+        except (KeyError, ValueError):
+            continue
+    if not ids:
+        return Decimal(0)
+    revisions = await deps.db.scalars(
+        select(FileRevision)
+        .join(File, File.current_revision_id == FileRevision.id)
+        .where(
+            File.id.in_(ids),
+            File.category == FileCategory.VIDEO.value,
+            FileRevision.workspace_id == deps.workspace.id,
+        )
+    )
+    measured = [revision_video_metadata(revision) for revision in revisions]
+    return sum(
+        (Decimal(item.duration_ms) / 1000 for item in measured if item is not None), Decimal(0)
+    )
 
 
 class GenerateVideoOutput(BaseModel):
@@ -118,7 +184,7 @@ class GenerateVideoOutput(BaseModel):
 
 
 @runtime_tool(
-    name="generate_video",
+    name=TOOL_NAME,
     provider="native",
     label="Generate Video",
     code_eligible=False,
@@ -126,8 +192,11 @@ class GenerateVideoOutput(BaseModel):
         "Generate one new video clip of 3 to 15 seconds, with sound, from a prompt and save it to "
         "workspace Files. Use it for hook shots, B-roll, product shots, and transitions. Each "
         "call costs money: about $0.07 a second at 720p, more at 1080p and 4K. Describe the "
-        "shot, camera movement, lighting, and sound. It takes one to several minutes. The UI "
-        "plays the saved clip; don't link to it."
+        "shot, camera movement, lighting, and sound. To keep a product, person, or place "
+        "looking like the person's own, pass workspace images as image_file_ids, clips of 3 "
+        "seconds or less as reference_video_file_ids, or both, and say in the prompt how each is used, "
+        "such as the opening frame or the product to show. It takes one to several minutes. "
+        "The UI plays the saved clip; don't link to it."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -155,6 +224,18 @@ class GenerateVideoOutput(BaseModel):
                 format="multiline",
                 editable=True,
                 placeholder="Describe the shot to generate",
+            ),
+            ToolFieldPresentation(
+                key="image_file_ids",
+                label="Reference Images",
+                format="entity_list",
+                entity_kind="file",
+            ),
+            ToolFieldPresentation(
+                key="reference_video_file_ids",
+                label="Reference Clips",
+                format="entity_list",
+                entity_kind="file",
             ),
             ToolFieldPresentation(
                 key="model",
@@ -206,6 +287,27 @@ async def generate_video(
         Resolution | None,
         Field(description="720p (the default), 1080p, or 4k. Higher costs more."),
     ] = None,
+    image_file_ids: Annotated[
+        list[FileReference] | None,
+        Field(
+            max_length=6,
+            description=(
+                "Optional workspace PNG, JPEG, or WebP images to draw on: the opening frame, or "
+                "a product, person, or place to keep. Up to six."
+            ),
+        ),
+    ] = None,
+    reference_video_file_ids: Annotated[
+        list[FileReference] | None,
+        Field(
+            max_length=3,
+            description=(
+                "Optional workspace clips of 3 seconds or less whose subject, motion, or style "
+                "to follow. Up to three for a clip of 10 seconds or less, one for a longer clip. "
+                "Their sound is ignored."
+            ),
+        ),
+    ] = None,
     model: Annotated[
         Annotated[str, Field(json_schema_extra={"enum": list(_MODEL_LABELS)})] | None,
         Field(
@@ -227,7 +329,8 @@ async def generate_video(
         raise ModelRetry("generate_video requires a non-empty prompt.")
     if len(prompt) > MAX_PROMPT_CHARS:
         raise ModelRetry(f"prompt must be at most {MAX_PROMPT_CHARS} characters.")
-    entry, route = resolve_media_model(model, TASK)
+    task = _task(image_file_ids, reference_video_file_ids)
+    entry, route = resolve_media_model(model, task)
     request = VideoGenerationRequest(
         provider_model=route.provider_model(TASK),
         prompt=prompt,
@@ -237,15 +340,20 @@ async def generate_video(
     )
     _check_limits(entry, request)
 
-    record = await own_record(ctx, "generate_video")
+    record = await own_record(ctx, TOOL_NAME)
     if record is not None and record.status == "saved":
         return await _saved_output(ctx, record)
     if record is not None and record.status == "failed":
         raise ToolFailed(record.error or "The video couldn't be generated.")
+    references = [
+        *await _reference_images(ctx, entry, image_file_ids or []),
+        *await _reference_clips(ctx, entry, reference_video_file_ids or [], request),
+    ]
     if record is None:
+        request = replace(request, references=await _read_references(ctx, entry, references))
         record = await start_generation(
             ctx,
-            task=TASK,
+            task=task,
             entry=entry,
             route=route,
             send=lambda: video_backend(route.route).start(request),
@@ -259,6 +367,7 @@ async def generate_video(
         entry,
         request,
         video,
+        references=references,
         name=normalize_optional_text(name),
         folder=normalize_optional_text(folder),
     )
@@ -277,6 +386,92 @@ def _check_limits(entry: MediaModel, request: VideoGenerationRequest) -> None:
         )
 
 
+def _unique(references: list[FileReference]) -> list[FileReference]:
+    return list({internal_entity_id(item): item for item in references}.values())
+
+
+async def _reference_images(
+    ctx: RunContext[RuntimeDeps], entry: MediaModel, references: list[FileReference]
+) -> list[tuple[File, FileRevision]]:
+    """Returns the workspace's own images to send, refusing more than the model takes."""
+    references = _unique(references)
+    limit = entry.limits.max_input_images
+    if limit is not None and len(references) > limit:
+        raise ModelRetry(f"{entry.label} takes up to {limit} reference images.")
+    images = [await workspace_image(ctx, item, tool_name=TOOL_NAME) for item in references]
+    for file, revision in images:
+        if revision.content_type.split(";", 1)[0].strip().lower() not in REFERENCE_IMAGE_TYPES:
+            raise ModelRetry(f"{file.name} isn't a PNG, JPEG, or WebP image. Use one that is.")
+    return images
+
+
+async def _reference_clips(
+    ctx: RunContext[RuntimeDeps],
+    entry: MediaModel,
+    references: list[FileReference],
+    request: VideoGenerationRequest,
+) -> list[tuple[File, FileRevision]]:
+    """Returns the workspace's own short clips to send, within the model's reference limits."""
+    references = _unique(references)
+    if not references:
+        return []
+    limits = entry.limits
+    # The count for the shortest output length that covers this clip.
+    _, allowed = min(
+        (
+            (length, count)
+            for length, count in limits.reference_clips_by_length.items()
+            if request.duration_seconds <= length
+        ),
+        default=(0, 0),
+    )
+    if len(references) > allowed:
+        raise ModelRetry(
+            f"{entry.label} takes {allowed} reference clip{'' if allowed == 1 else 's'} for a "
+            f"{request.duration_seconds} second clip. Pass fewer, or make a shorter clip."
+        )
+    clips = [await workspace_video(ctx, item, tool_name=TOOL_NAME) for item in references]
+    longest = limits.max_reference_seconds
+    for file, revision in clips:
+        if revision.content_type.split(";", 1)[0].strip().lower() not in VIDEO_MEDIA_TYPES:
+            raise ModelRetry(f"{file.name} isn't an MP4, MOV, or WebM video. Use one that is.")
+        seconds = probed_video(revision).duration_ms / 1000
+        if longest is not None and seconds > longest:
+            raise ModelRetry(
+                f"{file.name} is {seconds:.1f} seconds, and {entry.label} takes reference clips "
+                f"of up to {longest}. Cut the moment to use with cut_video_clips, then pass the "
+                "new clip."
+            )
+    return clips
+
+
+async def _read_references(
+    ctx: RunContext[RuntimeDeps], entry: MediaModel, references: list[tuple[File, FileRevision]]
+) -> tuple[VideoReference, ...]:
+    """Reads each reference to send inline, refusing a set too large for one request."""
+    if sum(revision.size_bytes for _, revision in references) > settings.MAX_FILE_SIZE_VIDEO:
+        raise ModelRetry("These references are too large to send together. Pass fewer or smaller.")
+    storage = get_storage_provider()
+    loaded = []
+    for file, revision in references:
+        await record_media_read_audit(
+            ctx,
+            file.id,
+            revision.id,
+            operation="video_generation_reference",
+            tool_name=TOOL_NAME,
+            details={"media_model": entry.id},
+        )
+        loaded.append(
+            VideoReference(
+                kind="image" if file.category == FileCategory.IMAGE.value else "video",
+                content=await storage.get_object(file_revision_ref(revision)),
+                media_type=revision.content_type.split(";", 1)[0].strip().lower(),
+            )
+        )
+    return tuple(loaded)
+
+
 async def _save(
     ctx: RunContext[RuntimeDeps],
     record: MediaGeneration,
@@ -284,6 +479,7 @@ async def _save(
     request: VideoGenerationRequest,
     video: GeneratedVideo,
     *,
+    references: list[tuple[File, FileRevision]],
     name: str | None,
     folder: str | None,
 ) -> dict[str, object]:
@@ -294,8 +490,9 @@ async def _save(
         media_model=entry.id,
         provider_model=record.provider_model,
         external_id=record.external_id,
-        task=TASK,
+        task=record.task,
         prompt_digest=f"sha256:{hashlib.sha256(request.prompt.encode()).hexdigest()}",
+        reference_revision_ids=tuple(revision.id for _, revision in references) or None,
         aspect_ratio=request.aspect_ratio,
         resolution=request.resolution,
         duration_seconds=request.duration_seconds,

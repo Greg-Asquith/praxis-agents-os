@@ -8,9 +8,18 @@ ID, and ``wait`` polls until the clip is ready. Neither step retries the paid re
 """
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from services.media.catalogue import MediaRoute
+
+
+@dataclass(frozen=True)
+class VideoReference:
+    """An image or short clip a generation draws on, sent with the prompt."""
+
+    kind: Literal["image", "video"]
+    content: bytes
+    media_type: str
 
 
 @dataclass(frozen=True)
@@ -20,6 +29,7 @@ class VideoGenerationRequest:
     aspect_ratio: str
     resolution: str
     duration_seconds: int
+    references: tuple[VideoReference, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -30,6 +40,8 @@ class VideoEditRequest:
     instruction: str
     previous_id: str | None = None
     video: bytes | None = None
+    # The source clip's resolution, so the edit keeps it; None leaves it to the provider.
+    resolution: str | None = None
 
 
 @dataclass(frozen=True)

@@ -171,6 +171,8 @@ class GenerationProvenance(BaseModel):
     prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     # The revision an edit changed.
     source_revision_id: UUID | None = None
+    # The images or clips a generation drew on.
+    reference_revision_ids: tuple[UUID, ...] | None = None
     aspect_ratio: str | None = Field(default=None, max_length=8)
     resolution: str | None = Field(default=None, max_length=8)
     duration_seconds: int | None = Field(default=None, gt=0)

@@ -59,7 +59,9 @@ class MediaLimits(_Record):
     durations_seconds: tuple[int, ...] = ()
     resolutions: tuple[str, ...] = ()
     max_input_seconds: int | None = Field(default=None, ge=1)
-    max_references: int | None = Field(default=None, ge=1)
+    # Reference clips a generation takes, by the longest output length each count allows.
+    reference_clips_by_length: dict[int, int] = Field(default_factory=dict)
+    max_reference_seconds: int | None = Field(default=None, ge=1)
     native_audio: bool = False
 
 

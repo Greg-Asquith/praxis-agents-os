@@ -46,7 +46,7 @@ from services.agents.runtime.tools.video.generation import (
 from services.agents.runtime.tools.video.utils import probed_video, progress, workspace_video
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.documents.outputs import EditTarget, save_file_edit
-from services.files.domain import GenerationProvenance
+from services.files.domain import GenerationProvenance, VideoMetadata
 from services.files.utils import file_revision_ref, revision_video_metadata
 from services.media.catalogue import (
     PROCESSED_IN,
@@ -116,9 +116,13 @@ async def _measured_clip(deps: RuntimeDeps, base_revision_id: object) -> tuple[D
     metadata = revision_video_metadata(revision)
     if metadata is None:
         return None
+    return Decimal(metadata.duration_ms) / 1000, _resolution(metadata)
+
+
+def _resolution(metadata: VideoMetadata) -> str:
+    """Returns the output resolution that keeps the clip's own: up to 720p, 1080p, or 4K."""
     short_side = min(metadata.width or 0, metadata.height or 0)
-    resolution = "720p" if short_side <= 720 else "1080p" if short_side <= 1080 else "4k"
-    return Decimal(metadata.duration_ms) / 1000, resolution
+    return "720p" if short_side <= 720 else "1080p" if short_side <= 1080 else "4k"
 
 
 class EditVideoOutput(BaseModel):
@@ -250,6 +254,8 @@ async def _start(
 ) -> MediaGeneration:
     """Chains from the clip's stored interaction, or uploads the clip when there is none."""
     provider_model = route.provider_model(TASK)
+    metadata = revision_video_metadata(revision)
+    resolution = _resolution(metadata) if metadata else None
     chain_id = _chain_id(revision, route)
     # An upload is checked before the paid record, so a long clip costs nothing.
     upload = None if chain_id else await _upload(ctx, file, revision, entry)
@@ -259,7 +265,9 @@ async def _start(
         if chain_id is not None:
             try:
                 return await backend.start_edit(
-                    VideoEditRequest(provider_model, instruction, previous_id=chain_id)
+                    VideoEditRequest(
+                        provider_model, instruction, previous_id=chain_id, resolution=resolution
+                    )
                 )
             except ChainExpiredError:
                 # Google no longer holds the clip, and nothing was billed, so upload it instead.
@@ -269,9 +277,13 @@ async def _start(
                     # Settles the record as failed rather than leaving it at requested.
                     raise VideoGenerationError(str(exc)) from exc
                 return await backend.start_edit(
-                    VideoEditRequest(provider_model, instruction, video=content)
+                    VideoEditRequest(
+                        provider_model, instruction, video=content, resolution=resolution
+                    )
                 )
-        return await backend.start_edit(VideoEditRequest(provider_model, instruction, video=upload))
+        return await backend.start_edit(
+            VideoEditRequest(provider_model, instruction, video=upload, resolution=resolution)
+        )
 
     return await start_generation(ctx, task=TASK, entry=entry, route=route, send=send)
 

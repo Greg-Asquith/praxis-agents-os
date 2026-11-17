@@ -242,6 +242,23 @@ describe("video cost estimates", () => {
     expect(generateVideoEstimate(args, { model: "unpriced-model" })).toBeNull()
   })
 
+  it("adds the reference clips the model reads as input", () => {
+    const args = {
+      model: "omni-1.2-flash",
+      resolution: "720p",
+      duration_seconds: 8,
+      _prices: prices,
+      _reference_seconds: "9",
+      _input_prices: { "omni-1.2-flash": "0.0087" },
+    }
+
+    // $0.556 for the clip plus 9 s at $0.0087 is $0.6343.
+    expect(generateVideoEstimate(args, {})).toEqual({
+      usd: "0.63",
+      basis: "8 s, Vertical, 720p, plus 9.0 s of reference clips",
+    })
+  })
+
   it("shows the server's edit estimate for the chosen model only", () => {
     const args = {
       model: "omni-1.2-flash",
