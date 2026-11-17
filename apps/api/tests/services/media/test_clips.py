@@ -106,6 +106,21 @@ def test_automatic_framing_sends_each_inputs_shot_cuts_inside_its_segments() -> 
     assert clip.operation.shot_cuts_ms == ((0, 2_000), (1, 20_000), (1, 40_000))
 
 
+def test_black_bars_come_off_by_default_only_when_a_videos_shape_changes() -> None:
+    landscape = _source(10_000)
+    phone = replace(landscape, metadata=landscape.metadata.model_copy(update={"rotation": 90}))
+
+    def removes(source: ClipSource, size: tuple[int, int], **options) -> bool:
+        clip = plan_clip([(source, 0, 5_000)], size=size, framing="auto", snap=False, **options)
+        return clip.operation.remove_black_bars
+
+    assert removes(landscape, (1080, 1920))
+    assert not removes(landscape, (1920, 1080))
+    # A phone video stored sideways is already upright and vertical.
+    assert not removes(phone, (1080, 1920))
+    assert not removes(landscape, (1080, 1920), remove_black_bars=False)
+
+
 @pytest.mark.parametrize(
     ("start_ms", "end_ms"),
     [(60_000, None), (20_000, 20_000)],

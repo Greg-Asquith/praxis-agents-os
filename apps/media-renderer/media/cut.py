@@ -9,6 +9,7 @@ from typing import Any
 from driver.server import OperationContext, OperationError
 
 from media.audio import VOICE_FILTERS, normalize_loudness
+from media.black_bars import Picture, find_picture, picture_crop
 from media.ffmpeg import (
     OUTPUT_AUDIO_RATE,
     check_arguments,
@@ -20,7 +21,7 @@ from media.ffmpeg import (
     samples_per_frame,
     segment_input,
 )
-from media.framing import fill_filter, fit_filter, follow_filter, subject_tracks
+from media.framing import fill_filter, fit_filter, follow_filter, subject_tracks, upright_size
 from media.music import mix_music, music_input, validate_music
 from media.transitions import fades, join, validate_transitions
 from media.zoom import MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT, zoom_filter
@@ -79,6 +80,7 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "freeze_end_ms": list[int],
             "zooms": list[list[int]],
             "punch_ins": bool,
+            "remove_black_bars": bool,
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -203,7 +205,10 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         require_video(summary)
         summaries.append(summary)
     width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
-    tracks = subject_tracks(context, arguments, summaries) if arguments.get("reframe") else {}
+    pictures = _pictures(context, arguments, summaries)
+    tracks = (
+        subject_tracks(context, arguments, summaries, pictures) if arguments.get("reframe") else {}
+    )
     keep: dict[int, list[tuple[int, int]]] = {}
     for position, first, end in arguments.get("keep", []):
         keep.setdefault(position, []).append((first, end))
@@ -231,7 +236,7 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         zoom = zoom_filter(frames, zooms[position], punched)
         filters += _segment_filters(
             position,
-            framing,
+            picture_crop(pictures.get(position)) + framing,
             zoom,
             arguments.get("enhance_voice", False),
             summary["has_audio"],
@@ -280,7 +285,30 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
     loudness = (
         normalize_loudness(context, rendered, output, OUTPUT_AUDIO_OPTIONS) if normalize else None
     )
-    return {**probe_file(context, output.name), "loudness_lufs": loudness}
+    return {
+        **probe_file(context, output.name),
+        "loudness_lufs": loudness,
+        "black_bars_removed": bool(pictures),
+    }
+
+
+def _pictures(
+    context: OperationContext, arguments: dict[str, Any], summaries: list[dict[str, Any]]
+) -> dict[int, Picture]:
+    """Finds the picture inside any black bars of each segment, when asked to remove them."""
+    if not arguments.get("remove_black_bars"):
+        return {}
+    pictures = {}
+    for position, (index, start, end) in enumerate(arguments["segments"]):
+        summary = summaries[index]
+        size = upright_size(summary)
+        if size is None:
+            continue
+        start, end = clamp_range(summary, start, end)
+        picture = find_picture(context, index, start, end or summary["duration_ms"], size)
+        if picture is not None:
+            pictures[position] = picture
+    return pictures
 
 
 def _frame_count(duration_ms: int, fps: int) -> int:

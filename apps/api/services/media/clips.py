@@ -61,6 +61,8 @@ DEFAULT_TRANSITION_MS = 400
 # Dipping through black or white reads better a little slower.
 DEFAULT_DIP_TRANSITION_MS = 500
 DIP_STYLES = frozenset({"fadeblack", "fadewhite"})
+# Output sizes round to even pixels, so a shape this close to the clip's is the same shape.
+SHAPE_TOLERANCE = 0.01
 
 
 class TransitionOptions(BaseModel):
@@ -240,10 +242,10 @@ def max_clip_ms() -> int:
 def output_size(aspect_ratio: AspectRatio, first: VideoMetadata) -> tuple[int, int]:
     """Returns even output dimensions, 1080 pixels on the short side."""
     if aspect_ratio == "original":
-        if first.width is None or first.height is None:
+        upright = _upright_size(first)
+        if upright is None:
             raise ValueError("The first video has no dimensions")
-        upright = first.rotation in {90, 270}
-        width, height = (first.height, first.width) if upright else (first.width, first.height)
+        width, height = upright
     else:
         width, height = ASPECT_RATIOS[aspect_ratio]
     short, long = sorted((width, height))
@@ -251,6 +253,14 @@ def output_size(aspect_ratio: AspectRatio, first: VideoMetadata) -> tuple[int, i
     return (
         (OUTPUT_SHORT_EDGE_PX, long_edge) if width <= height else (long_edge, OUTPUT_SHORT_EDGE_PX)
     )
+
+
+def _upright_size(metadata: VideoMetadata) -> tuple[int, int] | None:
+    if metadata.width is None or metadata.height is None:
+        return None
+    if metadata.rotation in {90, 270}:
+        return metadata.height, metadata.width
+    return metadata.width, metadata.height
 
 
 def output_fps(first: VideoMetadata) -> int:
@@ -278,6 +288,7 @@ def plan_clip(
     paces: Sequence[SegmentPace] = (),
     zooms: Sequence[SegmentZoom | None] = (),
     punch_ins: bool = False,
+    remove_black_bars: bool | None = None,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, builds captions and text
     overlays, and adds any music.
@@ -285,8 +296,9 @@ def plan_clip(
     ``transition`` joins every pair of segments unless the later segment's own entry in
     ``transitions_in`` (one per segment, the first unused) says otherwise. ``paces`` and
     ``zooms`` have one entry per segment, or none to play every segment as it is.
-    ``punch_ins`` zooms in at every other jump cut that pause removal makes. Raises ValueError
-    with a reason to show.
+    ``punch_ins`` zooms in at every other jump cut that pause removal makes. Black bars are
+    removed as ``remove_black_bars`` says, or by default when a video's shape differs from the
+    clip's. Raises ValueError with a reason to show.
     """
     joins = [
         (own or transition or HARD_CUT).cut_transition()
@@ -342,6 +354,11 @@ def plan_clip(
         fade_out_ms=fade_out_ms,
         audio=audio,
         music=music,
+        remove_black_bars=(
+            any(_changes_shape(segment.source.metadata, size) for segment in planned)
+            if remove_black_bars is None
+            else remove_black_bars
+        ),
     )
     clip = PlannedClip(
         segments=tuple(planned),
@@ -363,6 +380,15 @@ def plan_clip(
     if music:
         _require_music_fits(music, clip.duration_ms)
     return clip
+
+
+def _changes_shape(metadata: VideoMetadata, size: tuple[int, int]) -> bool:
+    """Checks whether a video's upright shape differs from the clip's by more than rounding."""
+    upright = _upright_size(metadata)
+    if upright is None:
+        return False
+    width, height = upright
+    return abs(width / height - size[0] / size[1]) > SHAPE_TOLERANCE * size[0] / size[1]
 
 
 def _require_music_fits(music: MusicBed, clip_ms: int) -> None:
@@ -439,6 +465,7 @@ def _cut_operation(
     fade_out_ms: int,
     audio: ClipAudio,
     music: MusicBed | None,
+    remove_black_bars: bool,
 ) -> tuple[CutOperation, tuple[FileRevision, ...]]:
     """Returns the renderer operation and its sources: one input per distinct video revision,
     then the music.
@@ -488,6 +515,7 @@ def _cut_operation(
         enhance_voice=audio.enhance_voice,
         normalize_loudness=audio.normalize,
         music=CutMusic(**music.options.model_dump()) if music else None,
+        remove_black_bars=remove_black_bars,
     )
     music_source = (music.revision,) if music else ()
     return operation, (*revisions.values(), *music_source)

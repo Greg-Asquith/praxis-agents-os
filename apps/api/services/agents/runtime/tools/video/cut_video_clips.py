@@ -189,7 +189,8 @@ def cut_video_clips_available() -> bool:
         "set in one call. Pass the start_ms and end_ms that find_video_moments returned "
         "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok. When "
         "the shape changes, framing 'auto' (the default) crops to follow the speaker's face, "
-        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. "
+        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill; "
+        "black bars around the picture are removed first. "
         "captions burns in the spoken words: 'bold' for punchy reels, 'clean' for a subtle "
         "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
         "any part of the preset, such as the font, colours, or animation, when the person "
@@ -246,6 +247,7 @@ def cut_video_clips_available() -> bool:
                 key="remove_silences", label="Remove Pauses", format="structured"
             ),
             ToolFieldPresentation(key="punch_ins", label="Punch-In Zooms", format="structured"),
+            ToolFieldPresentation(key="remove_black_bars", label="Black Bars", format="structured"),
         ),
         result_fields=(ToolFieldPresentation(key="saved", label="Clips", format="number"),),
     ),
@@ -269,6 +271,15 @@ async def cut_video_clips(
             )
         ),
     ] = "auto",
+    remove_black_bars: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Crop black bars from letterboxed or pillarboxed footage so the picture fills "
+                "the frame. Omit to remove them when the shape changes."
+            )
+        ),
+    ] = None,
     captions: Annotated[
         CaptionPreset | Literal["none"],
         Field(description="Burned-in captions from the transcript, or 'none'."),
@@ -345,6 +356,7 @@ async def cut_video_clips(
         sources,
         aspect_ratio=aspect_ratio,
         framing=framing,
+        remove_black_bars=remove_black_bars,
         captions=style,
         remove_silences=remove_silences,
         punch_ins=punch_ins == "auto",
@@ -452,6 +464,7 @@ def _plan_clips(
     *,
     aspect_ratio: AspectRatio,
     framing: Framing,
+    remove_black_bars: bool | None,
     captions: CaptionStyle | None,
     remove_silences: bool,
     punch_ins: bool,
@@ -493,6 +506,7 @@ def _plan_clips(
                     ],
                     zooms=[segment.zoom for segment in clip.segments],
                     punch_ins=punch_ins,
+                    remove_black_bars=remove_black_bars,
                 )
             )
         except ValueError as exc:
@@ -558,7 +572,9 @@ async def _save_clip(
                 folder_id=folder.id,
             )
             # The renderer measured the clip, so it is ready without waiting for a probe.
-            saved.revision.media_metadata = outcome.result.model_dump(mode="json")
+            saved.revision.media_metadata = outcome.result.model_dump(
+                mode="json", exclude={"black_bars_removed"}
+            )
             saved.file.processing_status = "ready"
             await ctx.deps.db.flush()
     except AppValidationError as exc:
@@ -591,6 +607,7 @@ async def _save_clip(
         "height": metadata.height,
         "size_bytes": saved.revision.size_bytes,
         "loudness_lufs": metadata.loudness_lufs,
+        "black_bars_removed": metadata.black_bars_removed,
         "folder": {"id": str(folder.id), "name": folder.name},
         **_plan_output(request),
     }

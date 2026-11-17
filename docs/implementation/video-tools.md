@@ -51,7 +51,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000) | one H.264 and AAC MP4, with its loudness when normalised |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000), `remove_black_bars` | one H.264 and AAC MP4, with its loudness when normalised and whether any segment had black bars removed |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -90,6 +90,15 @@ nothing for AAC.
   checks the faces' shape and writes the crop as a `crop` filter expression
   built from numbers. OpenCV never reads a media file. Choosing the active
   speaker when several people are in frame is pending.
+- **`remove_black_bars`:** for each segment, `media/black_bars.py` decodes
+  five frames spread across it, joins them, and runs `cropdetect` once. The
+  picture is the widest area any frame shows, so an all-black frame adds
+  nothing. Bars count only on both opposite edges, at least 2% of the edge
+  each, and the narrower of the two is removed from both, so a dark edge of
+  the picture itself stays. A picture under 25% of an edge is treated as a
+  dark scene and kept whole. The segment is cropped before framing, and
+  `reframe` measures faces inside the crop. Detection takes about 0.14 s a
+  segment on 1080p footage, so it isn't cached per revision.
 - **`keep`:** per segment, the output frames to keep. Audio is cut into
   frames one video frame long, so `select` and `aselect` pick the same
   indices and stay in sync.
@@ -395,8 +404,8 @@ tear.
 
 ### Clips
 
-`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?,
-remove_silences?, transition?, audio?, folder?)` renders up to five clips and saves
+`cut_video_clips(clips, aspect_ratio?, framing?, remove_black_bars?, captions?,
+caption_style?, remove_silences?, punch_ins?, transition?, audio?, music?, folder?)` renders up to five clips and saves
 each as a new video File. It is an internal write, `auto` by default. Its
 arguments are as follows:
 
@@ -413,6 +422,11 @@ arguments are as follows:
   `9:16`, `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side, at the
   first video's frame rate rounded into 24 to 60. `framing` is `auto` (the
   default, renderer `reframe`), `center`, or `fit`.
+- **Black bars:** `remove_black_bars` crops letterbox or pillarbox bars from
+  each segment before it's framed, so the picture fills the new shape. Omitted,
+  it's on for a clip when any of its videos' upright shape differs from the
+  clip's by more than 1%, and off otherwise. Each clip reports
+  `black_bars_removed`, which isn't kept in the clip's media metadata.
 - **`remove_silences`:** off by default, and the agent is told to leave it
   off unless asked, because it makes jump cuts. It cuts every pause longer
   than 600 ms between words, leaving 150 ms beside speech. A segment with no
@@ -611,9 +625,9 @@ The tool rows add the following:
   every clip: shape, framing, captions, pauses, **Sound** (Levelled, Voice
   Cleaned Up), **Music** (the track, its volume, and Under Speech or
   Throughout), and **Punch-In Zooms**. Below them, a grid of stills with
-  each clip's length, name, ranges, and its own fades, transitions, speeds
-  (such as **2× Speed**), freezes (**Freeze Frame 1 s**), and zooms (**Zoom
-  100% to 120%**) in play order, then **No Music** or **Different Music**
+  each clip's length, name, ranges, **Black Bars Removed** when it had any,
+  and its own fades, transitions, speeds (such as **2× Speed**), freezes
+  (**Freeze Frame 1 s**), and zooms (**Zoom 100% to 120%**) in play order, then **No Music** or **Different Music**
   where its music differs from the call's, and overlay text and times, plus
   a link to the output folder and the music rights notice. The effects line
   wraps rather than truncating. Selecting a clip opens a player; a failed
@@ -621,7 +635,7 @@ The tool rows add the following:
 - **`cut_video_clips` approval:** the tool is automatic by default; when an
   owner sets it to ask first, the approval card shows shape, framing,
   captions, and folder, the settings shared by every clip (sound, music,
-  pauses, and punch-ins), and a table with each clip's segments, finishing,
+  pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments, finishing,
   and text on screen, read from the call's arguments
   (`video-clips-approval.tsx`).
 

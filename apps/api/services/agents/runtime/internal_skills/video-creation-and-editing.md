@@ -95,6 +95,9 @@ below and say which ones you chose.
 - `aspect_ratio` `9:16` with `framing` `auto`, which follows the speaker's
   face. Use `fit` when the whole frame matters, such as slides or a wide
   shot with several people.
+- Black bars around the picture, such as a talk recorded letterboxed, come
+  off when the shape changes. Leave `remove_black_bars` out unless the
+  person asks to keep the bars or to remove them without changing the shape.
 - Captions on. Most people watch reels without sound. Use `bold` for
   punchy reels and `clean` for a subtler line. `highlight` needs word
   timings that some deployments don't have; when the tool refuses it, use

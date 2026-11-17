@@ -69,6 +69,7 @@ describe("cutVideoClipsResult", () => {
               },
             ],
             fade_in_ms: 500,
+            black_bars_removed: true,
           },
           clip(2, null),
           clip(3, { ...track, volume: 10 }),
@@ -86,7 +87,14 @@ describe("cutVideoClipsResult", () => {
 
     expect(result?.clips.map((item) => [item.effects, item.error])).toEqual([
       [
-        ["Fade In 0.5 s", "Wipe Left 0.4 s", "2× Speed", "Freeze Frame 1 s", "Zoom 100% to 120%"],
+        [
+          "Black Bars Removed",
+          "Fade In 0.5 s",
+          "Wipe Left 0.4 s",
+          "2× Speed",
+          "Freeze Frame 1 s",
+          "Zoom 100% to 120%",
+        ],
         null,
       ],
       [["No Music"], null],
@@ -120,6 +128,7 @@ describe("cutVideoClipsPlan", () => {
       music: { file_id: { entity_kind: "file", entity_id: "track", label: "Upbeat.mp3" } },
       remove_silences: true,
       punch_ins: "auto",
+      remove_black_bars: false,
     })
 
     expect(plan).toEqual({
@@ -143,6 +152,7 @@ describe("cutVideoClipsPlan", () => {
       music: "Upbeat.mp3, 25% Under Speech",
       pausesRemoved: true,
       punchIns: true,
+      blackBars: "Kept",
     })
   })
 })

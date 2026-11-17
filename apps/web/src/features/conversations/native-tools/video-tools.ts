@@ -179,8 +179,8 @@ export type VideoClip = {
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
-  // Fades, transitions, speed changes, and zooms in the order they play, such as
-  // "Fade In 0.5 s", then the clip's music where it differs from the call's.
+  // Black bars removed, then fades, transitions, speed changes, and zooms in the order they
+  // play, such as "Fade In 0.5 s", then the clip's music where it differs from the call's.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -296,6 +296,8 @@ export type CutVideoClipsPlan = {
   music: string | null
   pausesRemoved: boolean
   punchIns: boolean
+  // Set only when the call says; otherwise bars come off when a video's shape changes.
+  blackBars: "Removed" | "Kept" | null
 }
 
 // Every finishing option a cut_video_clips call applies, so an approver sees all of them.
@@ -340,6 +342,12 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
     music: callMusic ? musicSummary(callMusic, args["music"]) : null,
     pausesRemoved: args["remove_silences"] === true,
     punchIns: args["punch_ins"] === "auto",
+    blackBars:
+      args["remove_black_bars"] === true
+        ? "Removed"
+        : args["remove_black_bars"] === false
+          ? "Kept"
+          : null,
   }
 }
 
@@ -410,7 +418,7 @@ function musicEffect(own: ClipMusic | null, shared: ClipMusic | null) {
 }
 
 function clipEffects(clip: Record<string, unknown>, segments: Record<string, unknown>[]) {
-  const effects: string[] = []
+  const effects = clip["black_bars_removed"] === true ? ["Black Bars Removed"] : []
   const fade = (key: string, label: string) => {
     const value = clip[key]
     if (typeof value === "number" && value > 0) {

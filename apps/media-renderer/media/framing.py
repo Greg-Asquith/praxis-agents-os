@@ -8,6 +8,7 @@ from typing import Any
 
 from driver.server import OperationContext, OperationError
 
+from media.black_bars import Picture, picture_crop
 from media.ffmpeg import clamp_range, read_json, run_ffmpeg, segment_input
 from media.reframe import (
     SAMPLE_INTERVAL_MS,
@@ -57,14 +58,21 @@ def follow_filter(width: int, height: int, axis: int, track: Track) -> str:
 
 
 def subject_tracks(
-    context: OperationContext, arguments: dict[str, Any], summaries: list[dict[str, Any]]
+    context: OperationContext,
+    arguments: dict[str, Any],
+    summaries: list[dict[str, Any]],
+    pictures: dict[int, Picture],
 ) -> dict[int, tuple[int, Track]]:
-    """Finds faces in each segment the crop can travel across and plans its (axis, track)."""
+    """Finds faces in each segment the crop can travel across and plans its (axis, track).
+
+    A segment with black bars is measured inside its ``pictures`` entry, as it is framed.
+    """
     output = (arguments["width"], arguments["height"])
     sampled: dict[tuple[int, int], list[tuple[int, int, float, int, list[int]]]] = {}
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
-        source = _upright_size(summary)
+        picture = pictures.get(position)
+        source = upright_size(summary) if picture is None else picture[2:]
         if source is None:
             continue
         shares = crop_share(source, output)
@@ -79,7 +87,8 @@ def subject_tracks(
             "-sn",
             "-dn",
             "-vf",
-            f"fps={1000 // SAMPLE_INTERVAL_MS},scale={size[0]}:{size[1]},format=bgr24",
+            f"{picture_crop(picture)}fps={1000 // SAMPLE_INTERVAL_MS},"
+            f"scale={size[0]}:{size[1]},format=bgr24",
             "-f",
             "rawvideo",
             f"frames-{position}.raw",
@@ -146,7 +155,7 @@ def _faces(
     return found
 
 
-def _upright_size(summary: dict[str, Any]) -> tuple[int, int] | None:
+def upright_size(summary: dict[str, Any]) -> tuple[int, int] | None:
     width, height = summary["width"], summary["height"]
     if not width or not height:
         return None

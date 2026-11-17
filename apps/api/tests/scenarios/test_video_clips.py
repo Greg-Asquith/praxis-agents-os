@@ -66,7 +66,7 @@ def renderer(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
         await get_storage_provider().put_object(staged_ref(target["url"]), content)
         return {
             "ok": True,
-            "result": CLIP,
+            "result": {**CLIP, "black_bars_removed": True},
             "outputs": [{"size_bytes": len(content), "sha256": sha256_hex(content)}],
             "elapsed_ms": 5,
         }
@@ -119,6 +119,9 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
     assert (output["saved"], output["failed"]) == (2, 1)
     assert [clip["status"] for clip in output["clips"]] == ["saved", "failed", "saved"]
     assert output["clips"][1]["error"] == "The video couldn't be read."
+    # The 16:9 talk becomes 9:16, so any black bars come off; the clip File doesn't keep that.
+    assert output["clips"][0]["black_bars_removed"] is True
+    assert all(request["arguments"]["remove_black_bars"] for request in renderer)
     # Clips render concurrently. The first snapped to its sentence; the last joined two videos.
     first, _, last = sorted(renderer, key=lambda request: request["arguments"]["segments"][0][1])
     assert first["arguments"]["segments"] == [[0, 10_000, 25_000]]

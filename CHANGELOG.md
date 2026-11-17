@@ -12,6 +12,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Black bars come off reels: when `cut_video_clips` changes a video's shape,
+  it crops letterbox or pillarbox bars before framing, so the picture fills
+  the frame. `remove_black_bars` turns it on or off for a call, and the clip
+  card shows **Black Bars Removed** on each clip that had them.
 - Moving text on reels: captions and text overlays take an `animation`
   (`pop`, `slide_up`, `fade`, or `none`), and captions also take `karaoke`,
   which fills each word as it's spoken. Bold captions and bold and title

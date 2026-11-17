@@ -57,6 +57,7 @@ function ClipsPlan({ plan }: { plan: CutVideoClipsPlan }) {
     ...(plan.music ? [{ label: "Music", value: plan.music }] : []),
     ...(plan.pausesRemoved ? [{ label: "Pauses", value: "Removed" }] : []),
     ...(plan.punchIns ? [{ label: "Punch-In Zooms", value: "On" }] : []),
+    ...(plan.blackBars ? [{ label: "Black Bars", value: plan.blackBars }] : []),
   ]
   const rows = plan.clips.map<DataRow>((clip) => ({
     clip: clip.name ?? `Clip ${String(clip.index)}`,

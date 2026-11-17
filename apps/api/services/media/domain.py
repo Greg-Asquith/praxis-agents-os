@@ -169,6 +169,7 @@ class CutOperation(_Operation):
     ``enhance_voice`` cleans up each segment's sound before the join, and
     ``normalize_loudness`` brings the finished clip to -14 LUFS in a second, audio-only pass.
     ``music`` mixes an audio source, which follows the videos, under the joined clip.
+    ``remove_black_bars`` crops any black bars from each segment before it's framed.
     """
 
     name: Literal["cut"] = "cut"
@@ -191,6 +192,7 @@ class CutOperation(_Operation):
     enhance_voice: bool = False
     normalize_loudness: bool = False
     music: CutMusic | None = None
+    remove_black_bars: bool = False
 
     @model_validator(mode="after")
     def require_every_input(self):
@@ -263,6 +265,7 @@ class CutOperation(_Operation):
             "fade_out_ms": self.fade_out_ms,
             "enhance_voice": self.enhance_voice,
             "normalize_loudness": self.normalize_loudness,
+            "remove_black_bars": self.remove_black_bars,
             **music,
         }
 
@@ -315,10 +318,16 @@ class FramesResult(_Result):
     times_ms: tuple[int, ...]
 
 
+class CutResult(VideoMetadata):
+    """The clip as the renderer measured it, and whether any segment had black bars removed."""
+
+    black_bars_removed: bool = False
+
+
 RESULT_MODELS: dict[str, type[BaseModel]] = {
     "probe": VideoMetadata,
     "scene_cuts": SceneCutsResult,
-    "cut": VideoMetadata,
+    "cut": CutResult,
     "extract_audio": ExtractAudioResult,
     "frames": FramesResult,
 }
@@ -341,7 +350,7 @@ class StagedMediaOutput(BaseModel):
 class MediaOperationResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    result: VideoMetadata | SceneCutsResult | ExtractAudioResult | FramesResult
+    result: CutResult | VideoMetadata | SceneCutsResult | ExtractAudioResult | FramesResult
     outputs: tuple[StagedMediaOutput, ...]
     elapsed_ms: int
 

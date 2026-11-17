@@ -403,6 +403,49 @@ def test_a_push_in_and_punch_ins_zoom_about_the_centre_of_a_vertical_crop(
     assert [centre for _, centre in boxes] == pytest.approx([90] * 4, abs=3)
 
 
+def test_black_bars_are_cropped_before_a_vertical_reframe(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # letterbox.mp4 is 640x360: black for 0.5 s, then a blue picture with 44-pixel black bars
+    # above and below. A 9:16 crop of the whole frame keeps the bars.
+    arguments = {
+        "segments": [[0, 0, 3000]],
+        "width": 180,
+        "height": 320,
+        "fps": 30,
+        "fit": False,
+        "reframe": True,
+    }
+    rows = {}
+    for remove in (False, True):
+        response = _run(
+            storage,
+            config,
+            "cut",
+            sources=("letterbox.mp4",),
+            outputs=1,
+            arguments={**arguments, "remove_black_bars": remove},
+        )
+        storage.objects["clip.mp4"] = storage.uploads["out-0"]
+        _run(
+            storage,
+            config,
+            "frames",
+            sources=("clip.mp4",),
+            outputs=1,
+            arguments={"times_ms": [1500]},
+        )
+        frame = cv2.imdecode(np.frombuffer(storage.uploads["out-0"], np.uint8), 0)
+        rows[remove] = (
+            response["result"]["black_bars_removed"],
+            frame[:4].mean(),
+            frame[-4:].mean(),
+        )
+
+    assert rows[False][0] is False and max(rows[False][1:]) < 30
+    assert rows[True][0] is True and min(rows[True][1:]) > 60
+
+
 def test_transition_names_match_the_ffmpeg_build() -> None:
     def names(filter_name: str, option: str) -> set[str]:
         help_text = subprocess.run(
