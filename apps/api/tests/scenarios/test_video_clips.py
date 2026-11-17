@@ -17,6 +17,7 @@ from services.storage.factory import get_storage_provider
 from tests.support.media import (
     persist_analysed_video,
     persist_audio,
+    persist_image,
     staged_ref,
     use_fake_renderer,
 )
@@ -349,5 +350,65 @@ async def test_the_persons_track_plays_under_every_clip_with_a_rights_notice(
     # Sending the track to the renderer is recorded like the video.
     assert any(
         row.resource_id == str(track.id) and row.details["operation"] == "video_clips"
+        for row in result.audit_rows
+    )
+
+
+async def test_the_persons_logo_goes_on_every_clip_that_keeps_it_and_its_read_is_recorded(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(),
+    )
+    image = await persist_image(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Logo.png",
+    )
+    logo = FileReference(entity_id=image.id, label=image.name).model_dump(mode="json")
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once(
+            {
+                "clips": [
+                    {"segments": [segment(talk, 0, 5_000)], "snap": False},
+                    {"segments": [segment(talk, 5_000, 10_000)], "snap": False, "logo": "none"},
+                ],
+                "aspect_ratio": "9:16",
+                "logo": {"file_id": logo, "opacity": 70},
+            }
+        ),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    assert output["saved"] == 2
+    first, second = sorted(renderer, key=lambda request: request["arguments"]["segments"][0][1])
+    # The logo follows the video as a second input; "none" leaves it out of a clip.
+    assert [len(first["inputs"]), len(second["inputs"])] == [2, 1]
+    assert (first["arguments"]["logo_position"], first["arguments"]["logo_opacity"]) == (
+        "top_right",
+        70,
+    )
+    assert "logo" not in second["arguments"]
+    assert [clip["logo"] and clip["logo"]["file_id"] for clip in output["clips"]] == [
+        str(image.id),
+        None,
+    ]
+    # Sending the image to the renderer is recorded like the video.
+    assert any(
+        row.resource_id == str(image.id) and row.details["operation"] == "video_clips"
         for row in result.audit_rows
     )

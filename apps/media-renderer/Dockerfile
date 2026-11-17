@@ -12,7 +12,7 @@ ARG YUNET_SHA256=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl nasm pkg-config xz-utils libx264-dev libass-dev libopus-dev \
+        build-essential ca-certificates curl nasm pkg-config xz-utils libx264-dev libass-dev libopus-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # YuNet face detection for automatic framing (MIT licence), pinned by hash.
@@ -36,14 +36,15 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o ffmpeg.tar.xz "https://ffmpeg.org
         --enable-libx264 \
         --enable-libass \
         --enable-libopus \
+        --enable-zlib \
         --enable-protocol=file,pipe \
-        --enable-demuxer=mov,matroska,ogg,mp3,wav \
+        --enable-demuxer=mov,matroska,ogg,mp3,wav,image_png_pipe,image_jpeg_pipe,image_webp_pipe \
         --enable-muxer=mp4,mov,ipod,ogg,image2,null,rawvideo \
-        --enable-decoder=h264,hevc,vp8,vp9,mpeg4,prores,mjpeg,aac,mp3float,opus,vorbis,flac,alac,ac3,eac3,pcm_s16le,pcm_s24le,pcm_f32le \
+        --enable-decoder=h264,hevc,vp8,vp9,mpeg4,prores,mjpeg,png,webp,aac,mp3float,opus,vorbis,flac,alac,ac3,eac3,pcm_s16le,pcm_s24le,pcm_f32le \
         --enable-encoder=libx264,libopus,aac,mjpeg,wrapped_avframe,rawvideo,pcm_s16le \
-        --enable-parser=h264,hevc,vp8,vp9,aac,opus,vorbis,mpegaudio,ac3,mjpeg \
+        --enable-parser=h264,hevc,vp8,vp9,aac,opus,vorbis,mpegaudio,ac3,mjpeg,png,webp \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
-        --enable-filter=highpass,perspective,cropdetect,afftdn,equalizer,acompressor,loudnorm,volume,asplit,sidechaincompress,amix,scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip,aselect,asetnsamples,tpad,atempo,xfade,acrossfade,fade,afade \
+        --enable-filter=highpass,perspective,cropdetect,afftdn,equalizer,acompressor,loudnorm,volume,asplit,sidechaincompress,amix,scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,colorchannelmixer,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip,aselect,asetnsamples,tpad,atempo,xfade,acrossfade,fade,afade \
     && make -j"$(nproc)" \
     && make install \
     && ! /opt/ffmpeg/bin/ffmpeg -hide_banner -protocols | grep -qE '^\s+(https?|tcp|udp|tls|rtmp|rtp)$'

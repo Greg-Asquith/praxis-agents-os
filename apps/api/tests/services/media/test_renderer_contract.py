@@ -41,6 +41,10 @@ SHARED = (
     "MAX_FREEZE_MS",
     "MIN_ZOOM_PERCENT",
     "MAX_ZOOM_PERCENT",
+    "MAX_IMAGE_BYTES",
+    "MIN_LOGO_SIZE_PX",
+    "MIN_LOGO_OPACITY",
+    "MAX_LOGO_OPACITY",
 )
 
 
@@ -71,3 +75,4 @@ def test_api_limits_and_names_match_the_renderers() -> None:
         renderer["NO_TRANSITION"]
     }
     assert set(get_args(domain.AudioCurve)) == renderer["ACROSSFADE_CURVES"]
+    assert set(get_args(domain.LogoPosition)) == renderer["LOGO_POSITIONS"]

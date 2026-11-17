@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Your logo on reels: `cut_video_clips` takes `logo`, an image File (PNG,
+  JPEG, or WebP) placed on every clip, or one clip's, with its transparency
+  kept: in any corner, top or bottom centre, or the middle, clear of
+  captions and, unless `safe_zone` is off, of the app's header and buttons.
+  Size, opacity, and margin are adjustable, and a clip can leave it out
+  with `logo: "none"`. The approval card and the clip card show the logo. The
+  media renderer reads images with three new decoders in its isolated child
+  and refuses one over 20 MB or 4096 pixels on a side.
 - Black bars come off reels: when `cut_video_clips` changes a video's shape,
   it crops letterbox or pillarbox bars before framing, so the picture fills
   the frame. `remove_black_bars` turns it on or off for a call, and the clip

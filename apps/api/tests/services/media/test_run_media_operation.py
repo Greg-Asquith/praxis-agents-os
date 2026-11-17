@@ -18,6 +18,7 @@ from services.files.revision_actor import FileRevisionActor
 from services.files.utils import sha256_hex
 from services.media import run_media_operation, save_media_output
 from services.media.domain import (
+    CutLogo,
     CutMusic,
     CutOperation,
     CutSegment,
@@ -100,6 +101,17 @@ def _track(workspace):
     return build_file_revision(file)
 
 
+def _logo(workspace):
+    file = build_file(
+        workspace=workspace,
+        name="logo.png",
+        category="image",
+        content_type="image/png",
+        extension=".png",
+    )
+    return build_file_revision(file)
+
+
 async def test_renderer_receives_only_server_built_urls_and_numeric_arguments(
     renderer: list[dict],
 ) -> None:
@@ -146,12 +158,16 @@ async def test_video_from_another_workspace_never_reaches_the_renderer(
 
 
 @pytest.mark.parametrize(
-    ("music", "code"),
-    [(lambda workspace: _track(build_workspace()), "forbidden"), (_video, "unsupported")],
-    ids=["another workspace's track", "a video as music"],
+    ("music", "logo", "code"),
+    [
+        (_track, lambda workspace: _logo(build_workspace()), "forbidden"),
+        (_track, _video, "unsupported"),
+        (_video, _logo, "unsupported"),
+    ],
+    ids=["another workspace's logo", "a video as a logo", "a video as music"],
 )
-async def test_music_must_be_audio_from_the_callers_workspace(
-    renderer: list[dict], music, code: str
+async def test_music_and_logo_must_be_their_kind_from_the_callers_workspace(
+    renderer: list[dict], music, logo, code: str
 ) -> None:
     workspace = build_workspace()
     operation = CutOperation(
@@ -159,12 +175,15 @@ async def test_music_must_be_audio_from_the_callers_workspace(
         width=1080,
         height=1920,
         music=CutMusic(volume=25, duck=True, start_ms=0, fade_in_ms=0, fade_out_ms=1000),
+        logo=CutLogo(
+            position="top_right", size_px=162, margin_x_px=40, margin_y_px=40, opacity=100
+        ),
     )
 
     with pytest.raises(MediaRendererError) as error:
         await run_media_operation(
             workspace_id=workspace.id,
-            sources=[_video(workspace), music(workspace)],
+            sources=[_video(workspace), music(workspace), logo(workspace)],
             operation=operation,
         )
 

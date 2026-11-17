@@ -4,7 +4,10 @@
 
 import json
 import re
+import struct
 import subprocess
+import zlib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -446,6 +449,90 @@ def test_black_bars_are_cropped_before_a_vertical_reframe(
     assert rows[True][0] is True and min(rows[True][1:]) > 60
 
 
+LOGO = {
+    "logo": True,
+    "logo_position": "bottom_center",
+    "logo_size": 40,
+    "logo_margins": [10, 10],
+    "logo_opacity": 100,
+}
+
+
+def test_a_transparent_logo_keeps_its_alpha_at_its_position(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # A 40x40 logo: an opaque red square in the middle, clear around it, over blue video.
+    storage.objects["logo.png"] = _png(
+        40, 40, lambda x, y: (255, 0, 0, 255) if 10 <= x < 30 and 10 <= y < 30 else (0, 0, 0, 0)
+    )
+    _run(
+        storage,
+        config,
+        "cut",
+        sources=("sample.mp4", "logo.png"),
+        outputs=1,
+        arguments={
+            "segments": [[0, 2000, 3500]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            **LOGO,
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    _run(
+        storage, config, "frames", sources=("clip.mp4",), outputs=1, arguments={"times_ms": [1000]}
+    )
+    blue, _, red = (
+        cv2.imdecode(np.frombuffer(storage.uploads["out-0"], np.uint8), 1)
+        .transpose(2, 0, 1)
+        .astype(int)
+    )
+
+    # The logo is centred across the frame, 10 pixels up from its foot; its square is the
+    # middle 20 of its 40 pixels.
+    assert red[150, 160] > 200 and blue[150, 160] < 60
+    # Its clear border shows the video through it.
+    assert blue[150, 144] > 200 and red[150, 144] < 60
+    assert blue[20, 20] > 200 and red[20, 20] < 60
+
+
+@pytest.mark.parametrize(
+    ("logo", "reason"),
+    [
+        (lambda: _png(4097, 2, lambda x, y: (0, 0, 0, 255)), "at most 4096 pixels"),
+        (lambda: (Path(__file__).parent / "fixtures" / "sample.mp4").read_bytes(), "isn't a PNG"),
+    ],
+    ids=["too wide", "a video"],
+)
+def test_a_logo_that_isnt_a_bounded_image_fails_before_rendering(
+    storage: FakeStorage, config: DriverConfig, logo: Callable[[], bytes], reason: str
+) -> None:
+    storage.objects["logo"] = logo()
+
+    with pytest.raises(OperationError) as error:
+        _run(
+            storage,
+            config,
+            "cut",
+            sources=("sample.mp4", "logo"),
+            outputs=1,
+            arguments={
+                "segments": [[0, 0, 1000]],
+                "width": 320,
+                "height": 180,
+                "fps": 30,
+                "fit": False,
+                **LOGO,
+            },
+        )
+
+    assert error.value.code == "invalid_media"
+    assert reason in error.value.message
+    assert "out-0" not in storage.uploads
+
+
 def test_transition_names_match_the_ffmpeg_build() -> None:
     def names(filter_name: str, option: str) -> set[str]:
         help_text = subprocess.run(
@@ -678,3 +765,23 @@ def _dimensions(jpeg: bytes) -> tuple[int, int]:
     height = int.from_bytes(jpeg[marker + 5 : marker + 7])
     width = int.from_bytes(jpeg[marker + 7 : marker + 9])
     return width, height
+
+
+def _png(width: int, height: int, pixel: Callable[[int, int], tuple[int, int, int, int]]) -> bytes:
+    """An 8-bit RGBA PNG, where `pixel(x, y)` gives each pixel's red, green, blue, and alpha."""
+    rows = b"".join(
+        b"\x00" + bytes(value for x in range(width) for value in pixel(x, y)) for y in range(height)
+    )
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows))
+        + chunk(b"IEND", b"")
+    )

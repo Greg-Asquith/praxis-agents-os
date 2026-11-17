@@ -378,12 +378,7 @@ def _look(
     width, height = size
     font = FONTS[options.font]
     font_size = round(min(width, height) * options.size / 100)
-    if height > width:
-        # Reels, Shorts, and TikTok put a header at the top, buttons on the right, and the
-        # account and description at the foot.
-        sides, default_margin = (0.08, 0.16), {"top": 12, "middle": 0, "lower": 24}
-    else:
-        sides, default_margin = (0.06, 0.06), {"top": 8, "middle": 0, "lower": 8}
+    sides, default_margin = safe_area(size)
     margin = default_margin[options.position] if options.margin is None else options.margin
     margins = (round(width * sides[0]), round(width * sides[1]), round(height * margin / 100))
     usable = width - margins[0] - margins[1]
@@ -399,6 +394,24 @@ def _look(
         + {"left": 0, "center": 1, "right": 2}[align],
         line_chars=max(4, int(usable / (font_size * font.width * grown))),
     )
+
+
+def safe_area(size: tuple[int, int]) -> tuple[tuple[float, float], dict[TextPosition, int]]:
+    """The share of the width kept clear on the left and right, and the percent of the height
+    kept clear at each text position.
+    """
+    width, height = size
+    if height > width:
+        # Reels, Shorts, and TikTok put a header at the top, buttons on the right, and the
+        # account and description at the foot.
+        return (0.08, 0.16), {"top": 12, "middle": 0, "lower": 24}
+    return (0.06, 0.06), {"top": 8, "middle": 0, "lower": 8}
+
+
+def caption_reach(style: CaptionStyle, size: tuple[int, int]) -> tuple[TextPosition | None, int]:
+    """Where captions sit, and how far from that edge a caption block of the most lines reaches."""
+    look = _caption_look(style, size)
+    return look.options.position, _past(look)
 
 
 def _past(look: _Look) -> int:

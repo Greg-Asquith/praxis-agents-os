@@ -39,7 +39,7 @@ It runs in the media renderer, a separate service:
 - `apps/media-renderer/` holds the ffmpeg operations (`media/`) and the
   image. The image builds a pinned ffmpeg from source with only the
   demuxers, decoders, encoders, and filters the operations use, plus
-  `libx264`, `libopus`, AAC, and `libass`. Network protocols are compiled out, and the build fails if
+  `libx264`, `libopus`, AAC, `libass`, and zlib (for PNG). Network protocols are compiled out, and the build fails if
   any remain. The image also holds headless OpenCV with the YuNet face
   detection model for automatic framing, and the caption fonts in
   `media/fonts.lock` (16 Google Fonts families, each file pinned by hash),
@@ -51,12 +51,12 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000), `remove_black_bars` | one H.264 and AAC MP4, with its loudness when normalised and whether any segment had black bars removed |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000), `speed_percents` (50 to 200), `freeze_end_ms` (0 to 3000), and `zooms` (`[from, to]`, 100 to 150), one per segment, `punch_ins`, `enhance_voice`, `normalize_loudness`, `music` with `music_volume` (0 to 100), `music_duck`, `music_start_ms`, `music_fade_in_ms`, and `music_fade_out_ms` (0 to 3000), `remove_black_bars`, `logo` with `logo_position`, `logo_size` (8 or more pixels), `logo_margins` (`[x, y]`), and `logo_opacity` (10 to 100) | one H.264 and AAC MP4, with its loudness when normalised and whether any segment had black bars removed |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
 Arguments are numbers, booleans, and names from fixed lists (transition
-styles and audio curves). The driver rejects unknown fields and wrong types,
+styles, audio curves, and logo positions). The driver rejects unknown fields and wrong types,
 checks every name against its own list, and builds every ffmpeg argument
 itself. A range must start before the end of the video; an end past it is
 trimmed. A frame time must be strictly before the end. Every operation,
@@ -158,6 +158,27 @@ nothing for AAC.
   The renderer refuses music options without `music`, a track with no sound,
   and a start past the track's end. MP3 and WAV inputs use their own
   demuxers; M4A uses `mov`.
+- **`logo`:** places an image input, after any music and before any
+  captions file, on the joined clip (`media/logo.py`). The image fits in a
+  `logo_size` pixel square with its transparency kept, at `logo_position`
+  (a corner, `top_center`, `bottom_center`, or `middle_center`),
+  `logo_margins` in from the edges it names (a centred axis ignores its
+  margin), at `logo_opacity` percent (`colorchannelmixer`). It's
+  scaled once; `overlay` repeats its one frame to the end of the clip, so
+  it sits through transitions, and the clip's fades apply to it. It's under
+  the captions file, so text overlays show above it; the API keeps it clear
+  of captions. The renderer refuses logo options without `logo` and a logo
+  that doesn't fit inside the frame.
+- **Image inputs:** `media/images.py` checks an image before anything else
+  in the cut runs. The file must be at most 20 MB. `ffprobe` detects its
+  format from its content with only the `image_png_pipe`,
+  `image_jpeg_pipe`, and `image_webp_pipe` demuxers, which read that one
+  file and never a name pattern, and the stream must be the matching `png`,
+  `mjpeg`, or `webp` decoder's. Both sides must be at most 4096 pixels, and
+  every decoder runs with `-max_pixels` at 4096 squared, so a header that
+  claims more is refused before its frame is allocated. ffmpeg then reads
+  the image with the detected demuxer named explicitly. The `image2`
+  demuxer, which reads files by name and can expand patterns, isn't built.
 
 ### Isolation
 
@@ -212,7 +233,8 @@ and error mapping are shared with the data science client in
   media input, then any files the API staged itself, such as captions
   (`stage_media_input`). Each operation lists the File categories each
   source may be (`source_categories`): a video for every input, except an
-  audio File for a cut's music and either for a probe. It refuses the request
+  audio File for a cut's music, an image for its logo, and either video or
+  audio for a probe. It refuses the request
   if any revision is from another workspace or isn't a category its position
   takes, or any staged file is outside the workspace's staging prefix. It signs one download per input and one
   size-bounded staging upload per output, validates the result against the
@@ -405,7 +427,7 @@ tear.
 ### Clips
 
 `cut_video_clips(clips, aspect_ratio?, framing?, remove_black_bars?, captions?,
-caption_style?, remove_silences?, punch_ins?, transition?, audio?, music?, folder?)` renders up to five clips and saves
+caption_style?, remove_silences?, punch_ins?, transition?, audio?, music?, logo?, folder?)` renders up to five clips and saves
 each as a new video File. It is an internal write, `auto` by default. Its
 arguments are as follows:
 
@@ -496,6 +518,34 @@ arguments are as follows:
   `music_notice`, which says the person is responsible for the music's
   rights, and each clip reports its `music`. The music File gets the same
   `video_clips` audit event as the source videos.
+- **`logo`:** `{file_id, position?, size_percent?, opacity?, margin_percent?,
+  safe_zone?}`
+  on every clip, or a clip's own `logo` to override it; a clip's
+  `logo: "none"` leaves it out. `file_id` must be one of the workspace's own
+  image Files (PNG, JPEG, or WebP) of at most 20 MB; a video, an audio File,
+  another workspace's File, or a published platform File is refused.
+  `position` is `top_left`, `top_center`, `top_right` (the default),
+  `middle_center`, `bottom_left`, `bottom_center`, or `bottom_right`;
+  `size_percent` (5 to 30, default 15) is the logo's longer side as a share
+  of the frame's short edge; `opacity` is 10 to 100 (default 100);
+  `margin_percent` (0 to 10, default 2) is extra space as a share of the
+  short edge. With `safe_zone` (default true), the logo sits inside the same
+  safe area as captions: on a vertical clip, 8% of the width in on the
+  left, 16% on the right, 12% of the height from the top, and 24% from the
+  foot; on other shapes, 6% of the width and 8% of the height. With
+  `safe_zone: false`, only the margin keeps it from the edge; the agent is
+  told to turn it off only when the person wants the logo close to the edge
+  or the video isn't for Reels, Shorts, or TikTok. A centred logo is
+  centred on the frame. With captions on its edge, it moves past their
+  tallest block with the warning "The logo moved above the captions." (or
+  below), safe zone or not; a `middle_center` logo with `middle` captions is
+  refused with a reason. It's drawn under all burned-in text, not
+  between captions and overlays, because it never overlaps the captions. The
+  agent is told to add a logo only when asked, and only an image the person
+  gave it. Each clip reports its `logo` (File, position, size, opacity, and
+  safe zone),
+  and the image File gets the same `video_clips` audit event as the source
+  videos.
 - **`folder`:** names the output folder, created in the caller's workspace if
   needed. Otherwise clips go in the first segment's video's
   [output folder](#output-folders).
@@ -624,18 +674,21 @@ The tool rows add the following:
 - **`cut_video_clips`:** the card's details show what the call applied to
   every clip: shape, framing, captions, pauses, **Sound** (Levelled, Voice
   Cleaned Up), **Music** (the track, its volume, and Under Speech or
-  Throughout), and **Punch-In Zooms**. Below them, a grid of stills with
+  Throughout), **Logo** (the File, its position, **Safe Zone Off** when off, and its
+  opacity below 100%),
+  and **Punch-In Zooms**. Below them, a grid of stills with
   each clip's length, name, ranges, **Black Bars Removed** when it had any,
   and its own fades, transitions, speeds (such as **2× Speed**), freezes
   (**Freeze Frame 1 s**), and zooms (**Zoom 100% to 120%**) in play order, then **No Music** or **Different Music**
-  where its music differs from the call's, and overlay text and times, plus
+  where its music differs from the call's, **No Logo** or **Different Logo**
+  where its logo does, and overlay text and times, plus
   a link to the output folder and the music rights notice. The effects line
   wraps rather than truncating. Selecting a clip opens a player; a failed
   clip shows its reason.
 - **`cut_video_clips` approval:** the tool is automatic by default; when an
   owner sets it to ask first, the approval card shows shape, framing,
   captions, and folder, the settings shared by every clip (sound, music,
-  pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments, finishing,
+  logo, pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments, finishing,
   and text on screen, read from the call's arguments
   (`video-clips-approval.tsx`).
 

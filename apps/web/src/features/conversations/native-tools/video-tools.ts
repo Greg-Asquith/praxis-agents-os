@@ -180,7 +180,8 @@ export type VideoClip = {
   durationMs: number | null
   ranges: string[]
   // Black bars removed, then fades, transitions, speed changes, and zooms in the order they
-  // play, such as "Fade In 0.5 s", then the clip's music where it differs from the call's.
+  // play, such as "Fade In 0.5 s", then the clip's music and logo where they differ from the
+  // call's.
   effects: string[]
   overlays: ClipOverlay[]
   warnings: string[]
@@ -193,6 +194,24 @@ type ClipOverlay = { text: string; start: string; end: string }
 type ClipFolder = { id: string; name: string }
 
 type ClipMusic = { fileId: string; volume: number; duck: boolean }
+
+type ClipLogo = {
+  fileId: string
+  position: string
+  sizePercent: number
+  opacity: number
+  safeZone: boolean
+}
+
+const LOGO_POSITION_LABELS: Record<string, string> = {
+  top_left: "Top Left",
+  top_center: "Top Centre",
+  top_right: "Top Right",
+  middle_center: "Middle",
+  bottom_left: "Bottom Left",
+  bottom_center: "Bottom Centre",
+  bottom_right: "Bottom Right",
+}
 
 export type CutVideoClipsResult = {
   clips: VideoClip[]
@@ -207,13 +226,14 @@ export type CutVideoClipsResult = {
   punchIns: boolean
 }
 
-// Reads a result; the call's arguments say which music every clip shares.
+// Reads a result; the call's arguments say which music and logo every clip shares.
 export function cutVideoClipsResult(value: unknown, args?: unknown): CutVideoClipsResult | null {
   if (!isRecord(value) || !Array.isArray(value["clips"]) || typeof value["saved"] !== "number") {
     return null
   }
   const callMusic = isRecord(args) ? musicArgument(args["music"]) : null
-  const clips = value["clips"].map((clip) => videoClip(clip, callMusic))
+  const callLogo = isRecord(args) ? logoArgument(args["logo"]) : null
+  const clips = value["clips"].map((clip) => videoClip(clip, callMusic, callLogo))
   if (clips.some((clip) => clip === null)) {
     return null
   }
@@ -240,7 +260,11 @@ export function cutVideoClipsResult(value: unknown, args?: unknown): CutVideoCli
   }
 }
 
-function videoClip(value: unknown, callMusic: ClipMusic | null): VideoClip | null {
+function videoClip(
+  value: unknown,
+  callMusic: ClipMusic | null,
+  callLogo: ClipLogo | null
+): VideoClip | null {
   if (
     !isRecord(value) ||
     typeof value["index"] !== "number" ||
@@ -256,13 +280,14 @@ function videoClip(value: unknown, callMusic: ClipMusic | null): VideoClip | nul
   }
   const segments = value["segments"].filter(isRecord)
   const music = musicEffect(clipMusic(value["music"]), callMusic)
+  const logo = logoEffect(clipLogo(value["logo"]), callLogo)
   return {
     index: value["index"],
     name: value["name"],
     video,
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
     ranges: segments.map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
-    effects: [...clipEffects(value, segments), ...(music ? [music] : [])],
+    effects: [...clipEffects(value, segments), ...(music ? [music] : []), ...(logo ? [logo] : [])],
     overlays: Array.isArray(value["text_overlays"])
       ? value["text_overlays"]
           .filter(isRecord)
@@ -294,6 +319,7 @@ export type CutVideoClipsPlan = {
   clips: PlannedVideoClip[]
   sound: string
   music: string | null
+  logo: string | null
   pausesRemoved: boolean
   punchIns: boolean
   // Set only when the call says; otherwise bars come off when a video's shape changes.
@@ -306,6 +332,7 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
     return null
   }
   const callMusic = musicArgument(args["music"])
+  const callLogo = logoArgument(args["logo"])
   const audio = isRecord(args["audio"]) ? args["audio"] : {}
   const sound = [
     audio["normalize"] === false ? "Not Levelled" : "Levelled",
@@ -325,12 +352,19 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
           ? "No Music"
           : null
         : musicEffect(musicArgument(own) ?? callMusic, callMusic)
+    const ownLogo = clip["logo"]
+    const logo =
+      ownLogo === "none"
+        ? callLogo
+          ? "No Logo"
+          : null
+        : logoEffect(logoArgument(ownLogo) ?? callLogo, callLogo)
     const overlays = Array.isArray(clip["text_overlays"]) ? clip["text_overlays"] : []
     return {
       index: position + 1,
       name: typeof clip["name"] === "string" && clip["name"].trim() ? clip["name"] : null,
       ranges: segments.map(plannedRange),
-      effects: [...clipEffects(clip, planned), ...(music ? [music] : [])],
+      effects: [...clipEffects(clip, planned), ...(music ? [music] : []), ...(logo ? [logo] : [])],
       overlays: overlays
         .filter(isRecord)
         .flatMap((overlay) => (typeof overlay["text"] === "string" ? [overlay["text"]] : [])),
@@ -340,6 +374,7 @@ export function cutVideoClipsPlan(args: unknown): CutVideoClipsPlan | null {
     clips,
     sound: sound.join(", "),
     music: callMusic ? musicSummary(callMusic, args["music"]) : null,
+    logo: callLogo ? logoSummary(callLogo, args["logo"]) : null,
     pausesRemoved: args["remove_silences"] === true,
     punchIns: args["punch_ins"] === "auto",
     blackBars:
@@ -415,6 +450,73 @@ function musicEffect(own: ClipMusic | null, shared: ClipMusic | null) {
   const same =
     own.fileId === shared.fileId && own.volume === shared.volume && own.duck === shared.duck
   return same ? null : "Different Music"
+}
+
+// The logo a call or clip asks for; placement follows the tool's defaults when omitted.
+function logoArgument(value: unknown): ClipLogo | null {
+  if (!isRecord(value) || !isRecord(value["file_id"])) {
+    return null
+  }
+  const fileId = value["file_id"]["entity_id"]
+  if (typeof fileId !== "string") {
+    return null
+  }
+  return {
+    fileId,
+    position: typeof value["position"] === "string" ? value["position"] : "top_right",
+    sizePercent: typeof value["size_percent"] === "number" ? value["size_percent"] : 15,
+    opacity: typeof value["opacity"] === "number" ? value["opacity"] : 100,
+    safeZone: value["safe_zone"] !== false,
+  }
+}
+
+function clipLogo(value: unknown): ClipLogo | null {
+  if (
+    !isRecord(value) ||
+    typeof value["file_id"] !== "string" ||
+    typeof value["position"] !== "string" ||
+    typeof value["size_percent"] !== "number" ||
+    typeof value["opacity"] !== "number"
+  ) {
+    return null
+  }
+  return {
+    fileId: value["file_id"],
+    position: value["position"],
+    sizePercent: value["size_percent"],
+    opacity: value["opacity"],
+    safeZone: value["safe_zone"] !== false,
+  }
+}
+
+// Such as "Logo.png, Top Centre, Safe Zone Off, 70% Opacity".
+function logoSummary(logo: ClipLogo, value: unknown) {
+  const file = isRecord(value) && isRecord(value["file_id"]) ? value["file_id"] : {}
+  const name = typeof file["label"] === "string" ? file["label"] : "Logo"
+  const position = LOGO_POSITION_LABELS[logo.position] ?? titleCaseToken(logo.position, "Top Right")
+  return [
+    name,
+    position,
+    ...(logo.safeZone ? [] : ["Safe Zone Off"]),
+    ...(logo.opacity < 100 ? [`${String(logo.opacity)}% Opacity`] : []),
+  ].join(", ")
+}
+
+// A clip's logo only needs saying where it differs from the logo every clip shares.
+function logoEffect(own: ClipLogo | null, shared: ClipLogo | null) {
+  if (!own) {
+    return shared ? "No Logo" : null
+  }
+  if (!shared) {
+    return "Logo Added"
+  }
+  const same =
+    own.fileId === shared.fileId &&
+    own.position === shared.position &&
+    own.safeZone === shared.safeZone &&
+    own.sizePercent === shared.sizePercent &&
+    own.opacity === shared.opacity
+  return same ? null : "Different Logo"
 }
 
 function clipEffects(clip: Record<string, unknown>, segments: Record<string, unknown>[]) {

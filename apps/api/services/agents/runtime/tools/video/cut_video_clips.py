@@ -33,6 +33,7 @@ from services.agents.runtime.tools.video.utils import (
     video_shot_cuts,
     video_transcript,
     workspace_audio,
+    workspace_image,
     workspace_video,
 )
 from services.files import (
@@ -58,6 +59,8 @@ from services.media.clips import (
     ClipAudio,
     ClipSource,
     Framing,
+    LogoImage,
+    LogoOptions,
     MusicBed,
     MusicOptions,
     PlannedClip,
@@ -71,6 +74,7 @@ from services.media.domain import (
     MAX_CUT_SEGMENTS,
     MAX_FADE_MS,
     MAX_FREEZE_MS,
+    MAX_IMAGE_BYTES,
     MAX_SPEED_PERCENT,
     MIN_SPEED_PERCENT,
     MediaOperationResult,
@@ -90,6 +94,15 @@ MUSIC_RIGHTS_NOTICE = "The user is responsible for having the rights to use the 
 class MusicArgument(MusicOptions):
     file_id: FileReference = Field(
         description="An audio File the user attached or uploaded. Never pick a track yourself."
+    )
+
+
+class LogoArgument(LogoOptions):
+    file_id: FileReference = Field(
+        description=(
+            "A PNG, JPEG, or WebP File the user attached or uploaded as their logo. A PNG with a "
+            "transparent background looks best."
+        )
     )
 
 
@@ -171,6 +184,10 @@ class ClipArgument(BaseModel):
         default=None,
         description="Music under this clip, overriding the call's, or 'none' for no music.",
     )
+    logo: LogoArgument | Literal["none"] | None = Field(
+        default=None,
+        description="A logo on this clip, overriding the call's, or 'none' for no logo.",
+    )
 
 
 def cut_video_clips_available() -> bool:
@@ -206,7 +223,10 @@ def cut_video_clips_available() -> bool:
         "from a phone, laptop, or room recording. music mixes a track the person provided "
         "under every clip, or one clip's, and lowers it while someone talks; add it only when "
         "asked, and only an audio File they gave you. A clip's music 'none' leaves it out of "
-        "that clip. A segment's speed speeds it up or slows "
+        "that clip. logo puts an image File the person gave you, such as their logo, at a "
+        "position on every clip, or one clip's, clear of captions and, unless safe_zone is "
+        "false, of the app's buttons; add it only when asked. A clip's logo 'none' leaves it out of that clip. A segment's "
+        "speed speeds it up or slows "
         "it down, freeze_end_ms holds its last frame, and zoom pushes in slowly; use them only "
         "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
         "makes, which hides the jump; use it when the person wants punchier pacing. Clips save "
@@ -243,6 +263,7 @@ def cut_video_clips_available() -> bool:
             ToolFieldPresentation(key="clips", label="Clips", format="structured"),
             ToolFieldPresentation(key="audio", label="Sound", format="structured"),
             ToolFieldPresentation(key="music", label="Music", format="structured"),
+            ToolFieldPresentation(key="logo", label="Logo", format="structured"),
             ToolFieldPresentation(
                 key="remove_silences", label="Remove Pauses", format="structured"
             ),
@@ -325,6 +346,15 @@ async def cut_video_clips(
         MusicArgument | None,
         Field(description="Music under every clip. Omit for none."),
     ] = None,
+    logo: Annotated[
+        LogoArgument | None,
+        Field(
+            description=(
+                "A logo on every clip, top right by default; any corner, top or bottom centre, "
+                "or the middle. Omit for none."
+            )
+        ),
+    ] = None,
     folder: Annotated[
         str | None,
         Field(
@@ -339,6 +369,7 @@ async def cut_video_clips(
     """Renders each clip from the caller's own videos and saves it in its output folder."""
     videos = await _workspace_videos(ctx, clips)
     tracks = await _workspace_tracks(ctx, clips, music)
+    logos = await _workspace_logos(ctx, clips, logo)
     style = (
         None
         if captions == "none"
@@ -364,13 +395,17 @@ async def cut_video_clips(
         audio=audio,
         music=music,
         tracks=tracks,
+        logo=logo,
+        logos=logos,
     )
 
-    # A call's track that every clip overrides never plays, so only played tracks are sent.
+    # A call's track or logo that every clip overrides is never sent, so only used ones count.
     played = {request.music.revision.file_id for request in planned if request.music}
+    shown = {request.logo.revision.file_id for request in planned if request.logo}
     read = [
         *videos.values(),
         *((file, revision) for file, revision, _ in tracks.values() if file.id in played),
+        *((file, revision) for file, revision in logos.values() if file.id in shown),
     ]
     for file, revision in read:
         await record_media_read_audit(
@@ -448,6 +483,38 @@ async def _workspace_tracks(
     return tracks
 
 
+async def _workspace_logos(
+    ctx: RunContext[RuntimeDeps], clips: list[ClipArgument], logo: LogoArgument | None
+) -> dict[UUID, tuple[File, FileRevision]]:
+    """Resolves each logo File once, as the workspace's own image within the renderer's size."""
+    logos: dict[UUID, tuple[File, FileRevision]] = {}
+    for argument in [logo, *(clip.logo for clip in clips)]:
+        if argument is None or argument == "none" or argument.file_id.entity_id in logos:
+            continue
+        file, revision = await workspace_image(ctx, argument.file_id, tool_name="cut_video_clips")
+        if revision.size_bytes > MAX_IMAGE_BYTES:
+            raise ToolFailed(
+                f"The logo is larger than {MAX_IMAGE_BYTES // 1024**2} MB. Use a smaller image."
+            )
+        logos[argument.file_id.entity_id] = (file, revision)
+    return logos
+
+
+def _clip_logo(
+    argument: LogoArgument | Literal["none"] | None,
+    shared: LogoArgument | None,
+    logos: dict[UUID, tuple[File, FileRevision]],
+) -> LogoImage | None:
+    """The clip's own logo, the call's, or none."""
+    chosen = shared if argument is None else argument
+    if chosen is None or chosen == "none":
+        return None
+    _, revision = logos[chosen.file_id.entity_id]
+    return LogoImage(
+        revision=revision, options=LogoOptions(**chosen.model_dump(exclude={"file_id"}))
+    )
+
+
 def _clip_music(
     argument: MusicArgument | None, tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]]
 ) -> MusicBed | None:
@@ -472,6 +539,8 @@ def _plan_clips(
     audio: ClipAudio,
     music: MusicArgument | None,
     tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]],
+    logo: LogoArgument | None,
+    logos: dict[UUID, tuple[File, FileRevision]],
 ) -> list[PlannedClip]:
     planned = []
     for index, clip in enumerate(clips, start=1):
@@ -507,6 +576,7 @@ def _plan_clips(
                     zooms=[segment.zoom for segment in clip.segments],
                     punch_ins=punch_ins,
                     remove_black_bars=remove_black_bars,
+                    logo=_clip_logo(clip.logo, logo, logos),
                 )
             )
         except ValueError as exc:
@@ -656,6 +726,7 @@ def _plan_output(request: PlannedClip) -> dict[str, object]:
         "punch_ins": request.operation.punch_ins,
         "enhance_voice": request.operation.enhance_voice,
         "music": _music(request),
+        "logo": _logo(request),
         "text_overlays": _overlays(request.overlays),
         "warnings": list(request.warnings),
     }
@@ -692,6 +763,19 @@ def _music(request: PlannedClip) -> dict[str, object] | None:
         "volume": options.volume,
         "duck": options.duck,
         "start_ms": options.start_ms,
+    }
+
+
+def _logo(request: PlannedClip) -> dict[str, object] | None:
+    if request.logo is None:
+        return None
+    options = request.logo.options
+    return {
+        "file_id": str(request.logo.revision.file_id),
+        "position": options.position,
+        "safe_zone": options.safe_zone,
+        "size_percent": options.size_percent,
+        "opacity": options.opacity,
     }
 
 

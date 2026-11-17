@@ -22,6 +22,8 @@ from media.ffmpeg import (
     segment_input,
 )
 from media.framing import fill_filter, fit_filter, follow_filter, subject_tracks, upright_size
+from media.images import image_input
+from media.logo import place_logo, validate_logo
 from media.music import mix_music, music_input, validate_music
 from media.transitions import fades, join, validate_transitions
 from media.zoom import MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT, zoom_filter
@@ -81,6 +83,11 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "zooms": list[list[int]],
             "punch_ins": bool,
             "remove_black_bars": bool,
+            "logo": bool,
+            "logo_position": str,
+            "logo_size": int,
+            "logo_margins": list[int],
+            "logo_opacity": int,
         },
     )
     inputs = _validate_segments(arguments["segments"])
@@ -91,6 +98,7 @@ def validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
     _validate_zooms(arguments)
     validate_transitions(arguments)
     validate_music(arguments)
+    validate_logo(arguments)
     return arguments
 
 
@@ -189,10 +197,11 @@ def _video_input_count(arguments: dict[str, Any]) -> int:
 
 
 def cut_input_count(arguments: dict[str, Any]) -> int:
-    # The music, then the captions file, follow the videos.
+    # The music, then the logo, then the captions file, follow the videos.
     return (
         _video_input_count(arguments)
         + int(arguments.get("music", False))
+        + int(arguments.get("logo", False))
         + int(arguments.get("captions", False))
     )
 
@@ -204,6 +213,9 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
         summary = probe_file(context, context.fetch_input(index).name)
         require_video(summary)
         summaries.append(summary)
+    music = arguments.get("music", False)
+    # The logo is checked before the slower framing analysis, so a bad image fails fast.
+    logo = image_input(context, len(summaries) + int(music)) if arguments.get("logo") else []
     width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
     pictures = _pictures(context, arguments, summaries)
     tracks = (
@@ -248,12 +260,17 @@ def run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, A
     total = join(filters, lengths, arguments.get("transitions", []), fps)
     audio, extra = "[mixed]", len(summaries)
     # Music runs under the joined clip, so it plays straight through the transitions.
-    if arguments.get("music"):
+    if music:
         options += music_input(context, arguments, extra, total, fps)
         # ffmpeg opens each segment as its own input, so the music follows the segments.
         audio = mix_music(filters, arguments, len(arguments["segments"]), total, fps)
         extra += 1
     video = "[joined]"
+    # The logo sits under all burned-in text; the API keeps it clear of the captions.
+    if logo:
+        options += logo
+        video = place_logo(filters, arguments, len(arguments["segments"]) + int(music), video)
+        extra += 1
     if arguments.get("captions"):
         captions = _captions_input(context, extra)
         filters.append(f"{video}ass=filename={captions.name}[captioned]")

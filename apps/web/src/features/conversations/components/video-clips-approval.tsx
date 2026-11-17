@@ -55,6 +55,7 @@ function ClipsPlan({ plan }: { plan: CutVideoClipsPlan }) {
   const shared = [
     { label: "Sound", value: plan.sound },
     ...(plan.music ? [{ label: "Music", value: plan.music }] : []),
+    ...(plan.logo ? [{ label: "Logo", value: plan.logo }] : []),
     ...(plan.pausesRemoved ? [{ label: "Pauses", value: "Removed" }] : []),
     ...(plan.punchIns ? [{ label: "Punch-In Zooms", value: "On" }] : []),
     ...(plan.blackBars ? [{ label: "Black Bars", value: plan.blackBars }] : []),

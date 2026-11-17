@@ -29,7 +29,11 @@ from utils.isolated_service import IsolatedService, post_isolated_operation
 
 # The renderer's budget covers its transfers; this covers cold start and the round trip.
 REQUEST_ALLOWANCE_SECONDS = 60
-SOURCE_KINDS = {FileCategory.AUDIO: "an audio file", FileCategory.VIDEO: "a video"}
+SOURCE_KINDS = {
+    FileCategory.AUDIO: "an audio file",
+    FileCategory.IMAGE: "an image",
+    FileCategory.VIDEO: "a video",
+}
 
 
 async def run_media_operation(
@@ -42,7 +46,8 @@ async def run_media_operation(
     """Sends one operation on authorised workspace media and returns its staged outputs.
 
     The caller must have resolved every source for ``workspace_id``; each must be a File
-    category the operation takes at its position, such as audio for a cut's music.
+    category the operation takes at its position, such as audio for a cut's music or an image
+    for its logo.
     ``staged_inputs`` are files the API wrote to this workspace's staging, such as captions,
     and follow the sources. The renderer receives one signed GET per input and signed PUTs under
     this workspace's staging prefix; it never sees a storage name it could change.

@@ -23,7 +23,9 @@ def check_arguments(
     required: dict[str, type],
     optional: dict[str, type] | None = None,
 ) -> dict[str, Any]:
-    """Checks argument names and exact types; the only strings are transition names."""
+    """Checks argument names and exact types; strings are names the operation checks against
+    its own fixed lists.
+    """
     optional = optional or {}
     unknown = set(arguments) - set(required) - set(optional)
     missing = set(required) - set(arguments)

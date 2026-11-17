@@ -107,10 +107,11 @@ function finishingDetails(result: CutVideoClipsResult, args: unknown): ToolResul
     ...(result.soundLevelled ? ["Levelled"] : []),
     ...(result.voiceCleanedUp ? ["Voice Cleaned Up"] : []),
   ]
-  const music = cutVideoClipsPlan(args)?.music
+  const plan = cutVideoClipsPlan(args)
   return [
     ...(sound.length > 0 ? [{ label: "Sound", value: sound.join(", ") }] : []),
-    ...(music ? [{ label: "Music", value: music }] : []),
+    ...(plan?.music ? [{ label: "Music", value: plan.music }] : []),
+    ...(plan?.logo ? [{ label: "Logo", value: plan.logo }] : []),
     ...(result.punchIns ? [{ label: "Punch-In Zooms", value: "On" }] : []),
   ]
 }

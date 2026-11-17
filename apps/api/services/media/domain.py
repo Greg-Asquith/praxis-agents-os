@@ -44,6 +44,14 @@ MAX_SPEED_PERCENT = 200
 MAX_FREEZE_MS = 3000
 MIN_ZOOM_PERCENT = 100
 MAX_ZOOM_PERCENT = 150
+MAX_IMAGE_BYTES = 20_971_520  # 20 MB
+MIN_LOGO_SIZE_PX = 8
+MIN_LOGO_OPACITY = 10
+MAX_LOGO_OPACITY = 100
+LogoPosition = Literal[
+    "top_left", "top_center", "top_right", "middle_center",
+    "bottom_left", "bottom_center", "bottom_right",
+]  # fmt: skip
 # Every named xfade style in the renderer's ffmpeg, and "none" for a hard cut.
 TransitionStyle = Literal[
     "none", "fade", "fadeblack", "fadewhite", "fadegrays", "fadefast", "fadeslow", "dissolve",
@@ -156,6 +164,21 @@ class CutMusic(BaseModel):
     fade_out_ms: int = Field(ge=0, le=MAX_FADE_MS)
 
 
+class CutLogo(BaseModel):
+    """An image source fitted in a square of ``size_px`` and placed ``margin_x_px`` and
+    ``margin_y_px`` in from the edges ``position`` names on the joined clip. A centred axis
+    ignores its margin.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    position: LogoPosition
+    size_px: int = Field(ge=MIN_LOGO_SIZE_PX, le=MAX_OUTPUT_EDGE_PX)
+    margin_x_px: int = Field(ge=0, le=MAX_OUTPUT_EDGE_PX)
+    margin_y_px: int = Field(ge=0, le=MAX_OUTPUT_EDGE_PX)
+    opacity: int = Field(ge=MIN_LOGO_OPACITY, le=MAX_LOGO_OPACITY)
+
+
 class CutOperation(_Operation):
     """Joins segments of one or more sources into one H.264 and AAC MP4 of a fixed size.
 
@@ -170,6 +193,7 @@ class CutOperation(_Operation):
     ``normalize_loudness`` brings the finished clip to -14 LUFS in a second, audio-only pass.
     ``music`` mixes an audio source, which follows the videos, under the joined clip.
     ``remove_black_bars`` crops any black bars from each segment before it's framed.
+    ``logo`` places an image source, which follows any music, under the burned-in text.
     """
 
     name: Literal["cut"] = "cut"
@@ -193,6 +217,7 @@ class CutOperation(_Operation):
     normalize_loudness: bool = False
     music: CutMusic | None = None
     remove_black_bars: bool = False
+    logo: CutLogo | None = None
 
     @model_validator(mode="after")
     def require_every_input(self):
@@ -214,17 +239,29 @@ class CutOperation(_Operation):
             raise ValueError("keep_frames must name a segment and a frame range")
         if self.transitions and len(self.transitions) != len(self.segments) - 1:
             raise ValueError("transitions must list one per junction")
+        if self.logo and (
+            self.logo.margin_x_px + self.logo.size_px > self.width
+            or self.logo.margin_y_px + self.logo.size_px > self.height
+        ):
+            raise ValueError("the logo must fit inside the frame")
         return self
 
     def video_count(self) -> int:
         return len({segment.input for segment in self.segments})
 
     def input_count(self) -> int:
-        return self.video_count() + int(self.music is not None) + int(self.captions)
+        return (
+            self.video_count()
+            + int(self.music is not None)
+            + int(self.logo is not None)
+            + int(self.captions)
+        )
 
     def source_categories(self) -> tuple[frozenset[FileCategory], ...]:
         videos = (frozenset({FileCategory.VIDEO}),) * self.video_count()
-        return (*videos, frozenset({FileCategory.AUDIO})) if self.music else videos
+        music = (frozenset({FileCategory.AUDIO}),) if self.music else ()
+        logo = (frozenset({FileCategory.IMAGE}),) if self.logo else ()
+        return (*videos, *music, *logo)
 
     def renderer_arguments(self) -> dict[str, object]:
         music = (
@@ -237,6 +274,17 @@ class CutOperation(_Operation):
                 "music_fade_out_ms": self.music.fade_out_ms,
             }
             if self.music
+            else {}
+        )
+        logo = (
+            {
+                "logo": True,
+                "logo_position": self.logo.position,
+                "logo_size": self.logo.size_px,
+                "logo_margins": [self.logo.margin_x_px, self.logo.margin_y_px],
+                "logo_opacity": self.logo.opacity,
+            }
+            if self.logo
             else {}
         )
         return {
@@ -267,6 +315,7 @@ class CutOperation(_Operation):
             "normalize_loudness": self.normalize_loudness,
             "remove_black_bars": self.remove_black_bars,
             **music,
+            **logo,
         }
 
 

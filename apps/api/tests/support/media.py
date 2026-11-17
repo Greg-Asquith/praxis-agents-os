@@ -131,6 +131,45 @@ async def persist_audio(
     db_session_factory, *, workspace_id: UUID, user_id: UUID, name: str, duration_ms: int
 ) -> File:
     """Stores a probed MP3 in the workspace, such as a music track."""
+    return await _persist_file(
+        db_session_factory,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name=name,
+        kind=("audio", "audio/mpeg", ".mp3"),
+        media_metadata={
+            "duration_ms": duration_ms,
+            "has_audio": True,
+            "audio_codec": "mp3float",
+            "rotation": 0,
+        },
+    )
+
+
+async def persist_image(
+    db_session_factory, *, workspace_id: UUID, user_id: UUID, name: str
+) -> File:
+    """Stores a PNG in the workspace, such as a logo."""
+    return await _persist_file(
+        db_session_factory,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        name=name,
+        kind=("image", "image/png", ".png"),
+    )
+
+
+async def _persist_file(
+    db_session_factory,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+    name: str,
+    kind: tuple[str, str, str],
+    media_metadata: dict | None = None,
+) -> File:
+    """Stores a File of a (category, content type, extension) whose content is its name."""
+    category, content_type, extension = kind
     async with db_session_factory() as db:
         workspace = await db.get_one(Workspace, workspace_id)
         content = name.encode()
@@ -138,9 +177,9 @@ async def persist_audio(
         file = build_file(
             workspace=workspace,
             name=name,
-            category="audio",
-            content_type="audio/mpeg",
-            extension=".mp3",
+            category=category,
+            content_type=content_type,
+            extension=extension,
             size_bytes=len(content),
             content_hash=digest,
         )
@@ -149,14 +188,9 @@ async def persist_audio(
         revision = build_file_revision(
             file, created_by_user_id=user_id, size_bytes=len(content), content_hash=digest
         )
-        revision.media_metadata = {
-            "duration_ms": duration_ms,
-            "has_audio": True,
-            "audio_codec": "mp3float",
-            "rotation": 0,
-        }
+        revision.media_metadata = media_metadata
         await get_storage_provider().put_object(
-            private_ref_from_key(revision.object_key), content, content_type="audio/mpeg"
+            private_ref_from_key(revision.object_key), content, content_type=content_type
         )
         db.add(revision)
         await db.flush()

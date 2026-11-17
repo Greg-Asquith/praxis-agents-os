@@ -1,7 +1,7 @@
 ---
 name: video-creation-and-editing
 human_name: Video Creation & Editing
-description: Use when you work with video: finding moments in footage, cutting short clips or reels, adding captions, text, music, or other finishing, transcribing, or answering questions about a video. Covers which tool to use, agreeing the brief, cutting clips people want to share, checking results, cost, and reporting.
+description: Use when you work with video: finding moments in footage, cutting short clips or reels, adding captions, text, music, a logo, or other finishing, transcribing, or answering questions about a video. Covers which tool to use, agreeing the brief, cutting clips people want to share, checking results, cost, and reporting.
 ---
 
 # Video creation and editing
@@ -20,7 +20,7 @@ you made and what you couldn't fix.
 | Find the best moments for a brief, ready to cut | `find_video_moments` |
 | Answer a question about a video, list its scenes, or check a clip | `ask_video` |
 | Get the spoken words with timings, saved as an SRT file | `transcribe_video` |
-| Cut clips or reels, with captions, text, music, and finishing | `cut_video_clips` |
+| Cut clips or reels, with captions, text, music, a logo, and finishing | `cut_video_clips` |
 | Generate an image from a video, such as a thumbnail | `generate_image_from_video` |
 
 Call the video tools directly, never from `run_code`. They take minutes, a
@@ -137,6 +137,18 @@ clip's `text_overlays`:
   "quietly underneath", keep 25 or go lower, never over 50. Tell the person
   they're responsible for having the rights to the music. To leave one clip
   of a set without the call's music, set that clip's `music` to `none`.
+- **Logo:** add a logo only when asked, and only from an image File the
+  person attached or uploaded (PNG, JPEG, or WebP; a PNG with a
+  transparent background looks best). It goes top right by default; set
+  `position` to any corner, `top_center`, `bottom_center`, or
+  `middle_center` when the person asks. It stays clear of captions, and of
+  the app's header and buttons unless you set `safe_zone` to false, which
+  you do only when the person wants it close to the edge or the video isn't
+  for Reels, Shorts, or TikTok. Text overlays sit top centre by default, so
+  with a `top_center` logo put the overlays lower. Keep the default size of
+  15 unless the person wants it bigger or smaller, and use `opacity` 60 to
+  80 for a watermark. Set `logo` on the call so every clip carries it; to leave one
+  clip out, set that clip's `logo` to `none`.
 - **Speed, freeze frames, and push-ins:** use a segment's `speed`,
   `freeze_end_ms`, or `zoom` only when the person asks. Speed runs from 0.5
   to 2; a gentle push-in is `to_percent` 115.
@@ -145,14 +157,14 @@ clip's `text_overlays`:
   wants punchier pacing, such as "make it punchier" after you've removed
   pauses. Recut with the same clips and settings plus `punch_ins`, and keep
   `remove_silences` and snapping on.
-- **A plain cut:** when the person asks only for clips, add no music,
+- **A plain cut:** when the person asks only for clips, add no music, logo,
   speed changes, zooms, or punch-ins.
 
 ### One call for the set
 
 Cut every chosen clip in one call with shared options, so the set looks
-consistent: the same shape, captions, audio, and music. Put a setting on
-one clip only when that clip needs to differ. One clip failing doesn't stop
+consistent: the same shape, captions, audio, music, and logo. Put a setting
+on one clip only when that clip needs to differ. One clip failing doesn't stop
 the others. The result reports each clip; retry only the ones that failed,
 after fixing what the error names.
 
@@ -167,7 +179,7 @@ After cutting, check the clips that matter before you report success. Ask
 - Is the speaker in frame throughout, or cut off at the edges?
 - Are the captions readable, and do they match what's said?
 - Does the clip start on a clear line and end on a finished sentence?
-- Is the requested text, music, or effect there?
+- Is the requested text, music, logo, or effect there?
 
 Fix what fails with another call, or tell the person what's wrong. Also
 read the result's `warnings` and pass on anything you can't fix.

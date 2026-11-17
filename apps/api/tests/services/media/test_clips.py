@@ -1,7 +1,7 @@
 # apps/api/tests/services/media/test_clips.py
 
 """Planning clips: bounds, snapping, input numbering, framing, pauses, captions, transitions,
-text overlays, music, and size.
+text overlays, music, logos, and size.
 """
 
 from dataclasses import replace
@@ -18,6 +18,8 @@ from services.media.captions import (
 )
 from services.media.clips import (
     ClipSource,
+    LogoImage,
+    LogoOptions,
     MusicBed,
     MusicOptions,
     SegmentPace,
@@ -470,3 +472,40 @@ def test_a_lower_overlay_moves_above_lower_captions() -> None:
     # Clear of two lines of 81 pixel captions above the caption margin.
     assert margins["Style: Overlay1"] > margins["Style: Caption"] + 2 * 81
     assert clip.warnings == ("Text overlay 1 moved above the captions.",)
+
+
+def test_a_logo_is_the_last_source_inside_the_safe_zone_unless_off_and_above_captions() -> None:
+    talk = _source(60_000, transcript=_transcript())
+    file = build_file(workspace=build_workspace(), category="image", content_type="image/png")
+    logo = LogoImage(revision=build_file_revision(file), options=LogoOptions())
+
+    corner = plan_clip(
+        [(talk, 0, 8_000)], size=(1080, 1920), framing="center", snap=False, logo=logo
+    )
+    lowered = plan_clip(
+        [(talk, 0, 8_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        captions=CaptionStyle(preset="bold"),
+        logo=replace(logo, options=LogoOptions(position="bottom_right")),
+    )
+    edge = plan_clip(
+        [(talk, 0, 8_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        logo=replace(logo, options=LogoOptions(position="top_center", safe_zone=False)),
+    )
+
+    assert corner.sources == (talk.revision, logo.revision)
+    # 15% of the short edge, in from the 16% of the width and 12% of the height apps cover,
+    # plus 2% of the short edge.
+    arguments = corner.operation.renderer_arguments()
+    assert (arguments["logo_size"], arguments["logo_margins"]) == (162, [195, 252])
+    assert lowered.operation.input_count() == 3
+    # Clear of two lines of 81 pixel captions above the 24% caption margin.
+    assert lowered.operation.renderer_arguments()["logo_margins"][1] > 461 + 2 * 81
+    assert lowered.warnings == ("The logo moved above the captions.",)
+    # Without the safe zone, only the 2% margin; a centred axis has none.
+    assert edge.operation.renderer_arguments()["logo_margins"] == [0, 22]

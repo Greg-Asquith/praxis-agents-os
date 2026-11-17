@@ -14,24 +14,36 @@ from models.files import FileRevision
 from services.files.contract import contract_for_content_type, stored_max_size_bytes
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
-from services.media.captions import CaptionStyle, PlacedOverlay, TextOverlay, subtitle_file
+from services.media.captions import (
+    CaptionStyle,
+    PlacedOverlay,
+    TextOverlay,
+    TextPosition,
+    caption_reach,
+    safe_area,
+    subtitle_file,
+)
 from services.media.domain import (
     MAX_CUT_KEEP_RANGES,
     MAX_CUT_SHOT_CUTS,
     MAX_FADE_MS,
+    MAX_LOGO_OPACITY,
     MAX_MUSIC_VOLUME,
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
     MAX_TRANSITION_MS,
     MAX_ZOOM_PERCENT,
+    MIN_LOGO_OPACITY,
     MIN_OUTPUT_FPS,
     MIN_TRANSITION_MS,
     MIN_ZOOM_PERCENT,
     AudioCurve,
+    CutLogo,
     CutMusic,
     CutOperation,
     CutSegment,
     CutTransition,
+    LogoPosition,
     Transcript,
     TranscriptWord,
     TransitionStyle,
@@ -63,6 +75,11 @@ DEFAULT_DIP_TRANSITION_MS = 500
 DIP_STYLES = frozenset({"fadeblack", "fadewhite"})
 # Output sizes round to even pixels, so a shape this close to the clip's is the same shape.
 SHAPE_TOLERANCE = 0.01
+MIN_LOGO_SIZE_PERCENT = 5
+MAX_LOGO_SIZE_PERCENT = 30
+MAX_LOGO_MARGIN_PERCENT = 10
+# A logo position's first word, as the caption position at that edge.
+LOGO_EDGES: dict[str, TextPosition] = {"top": "top", "middle": "middle", "bottom": "lower"}
 
 
 class TransitionOptions(BaseModel):
@@ -144,6 +161,43 @@ class MusicOptions(BaseModel):
     fade_out_ms: int = Field(default=1000, ge=0, le=MAX_FADE_MS)
 
 
+class LogoOptions(BaseModel):
+    """Where a logo sits on a clip and how strongly it shows."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    position: LogoPosition = "top_right"
+    size_percent: int = Field(
+        default=15,
+        ge=MIN_LOGO_SIZE_PERCENT,
+        le=MAX_LOGO_SIZE_PERCENT,
+        description="The logo's longer side, as a percentage of the frame's short edge.",
+    )
+    opacity: int = Field(
+        default=100,
+        ge=MIN_LOGO_OPACITY,
+        le=MAX_LOGO_OPACITY,
+        description="100 is solid; 60 to 80 reads as a watermark.",
+    )
+    margin_percent: int = Field(
+        default=2,
+        ge=0,
+        le=MAX_LOGO_MARGIN_PERCENT,
+        description=(
+            "Extra space between the logo and the edge, or the safe zone, as a percentage of the "
+            "frame's short edge."
+        ),
+    )
+    safe_zone: bool = Field(
+        default=True,
+        description=(
+            "Keep the logo clear of the header, buttons, and caption area that Reels, Shorts, "
+            "and TikTok show over the frame. Set false when the person wants it close to the "
+            "edge or the video isn't for those apps."
+        ),
+    )
+
+
 class SegmentZoom(BaseModel):
     """How close a segment's picture is at its start and end; it moves smoothly between."""
 
@@ -167,6 +221,14 @@ class MusicBed:
     revision: FileRevision
     metadata: VideoMetadata
     options: MusicOptions
+
+
+@dataclass(frozen=True)
+class LogoImage:
+    """An authorised workspace image revision to place on a clip."""
+
+    revision: FileRevision
+    options: LogoOptions
 
 
 @dataclass(frozen=True)
@@ -219,6 +281,7 @@ class PlannedClip:
     captions: str | None = None
     overlays: tuple[PlacedOverlay, ...] = ()
     music: MusicBed | None = None
+    logo: LogoImage | None = None
 
     @property
     def duration_ms(self) -> int:
@@ -289,6 +352,7 @@ def plan_clip(
     zooms: Sequence[SegmentZoom | None] = (),
     punch_ins: bool = False,
     remove_black_bars: bool | None = None,
+    logo: LogoImage | None = None,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, builds captions and text
     overlays, and adds any music.
@@ -298,7 +362,8 @@ def plan_clip(
     ``zooms`` have one entry per segment, or none to play every segment as it is.
     ``punch_ins`` zooms in at every other jump cut that pause removal makes. Black bars are
     removed as ``remove_black_bars`` says, or by default when a video's shape differs from the
-    clip's. Raises ValueError with a reason to show.
+    clip's. A ``logo`` sits at its position, clear of captions on its edge and, in its safe
+    zone, of what social apps show over the frame's edges. Raises ValueError with a reason to show.
     """
     joins = [
         (own or transition or HARD_CUT).cut_transition()
@@ -342,6 +407,11 @@ def plan_clip(
             size=size, words=words, captions=captions, overlays=placed
         )
         warnings += moved
+    placed_logo = None
+    if logo:
+        cut_logo, moved_logo = _place_logo(logo.options, size, captions)
+        placed_logo = (logo, cut_logo)
+        warnings += moved_logo
     operation, sources = _cut_operation(
         planned,
         joins,
@@ -354,6 +424,7 @@ def plan_clip(
         fade_out_ms=fade_out_ms,
         audio=audio,
         music=music,
+        logo=placed_logo,
         remove_black_bars=(
             any(_changes_shape(segment.source.metadata, size) for segment in planned)
             if remove_black_bars is None
@@ -368,6 +439,7 @@ def plan_clip(
         captions=caption_text,
         overlays=placed,
         music=music,
+        logo=logo,
     )
     limit_ms = max_clip_ms()
     if clip.duration_ms > limit_ms:
@@ -380,6 +452,48 @@ def plan_clip(
     if music:
         _require_music_fits(music, clip.duration_ms)
     return clip
+
+
+def _place_logo(
+    options: LogoOptions, size: tuple[int, int], captions: CaptionStyle | None
+) -> tuple[CutLogo, tuple[str, ...]]:
+    """Places a logo at its position, clear of captions on its edge and, in its safe zone, of
+    what social apps show over the frame's edges.
+    """
+    width, height = size
+    short = min(size)
+    box = round(short * options.size_percent / 100)
+    gap = round(short * options.margin_percent / 100)
+    vertical, horizontal = options.position.split("_")
+    edge = LOGO_EDGES[vertical]
+    inset_x = inset_y = 0
+    if options.safe_zone:
+        sides, margins = safe_area(size)
+        inset_x = round(width * sides[1 if horizontal == "right" else 0])
+        inset_y = round(height * margins[edge] / 100)
+    # A centred axis ignores its margin.
+    margin_x = 0 if horizontal == "center" else inset_x + gap
+    margin_y = 0 if edge == "middle" else inset_y + gap
+    moved: tuple[str, ...] = ()
+    if captions:
+        position, reach = caption_reach(captions, size)
+        if position == edge == "middle":
+            raise ValueError(
+                "The logo and the captions are both in the middle of the frame. Move one of them."
+            )
+        if position == edge and reach + gap > margin_y:
+            margin_y = reach + gap
+            moved = (f"The logo moved {'above' if edge == 'lower' else 'below'} the captions.",)
+    if margin_y + box > height:
+        raise ValueError("The logo doesn't fit beside the captions. Make it smaller.")
+    logo = CutLogo(
+        position=options.position,
+        size_px=box,
+        margin_x_px=margin_x,
+        margin_y_px=margin_y,
+        opacity=options.opacity,
+    )
+    return logo, moved
 
 
 def _changes_shape(metadata: VideoMetadata, size: tuple[int, int]) -> bool:
@@ -465,10 +579,11 @@ def _cut_operation(
     fade_out_ms: int,
     audio: ClipAudio,
     music: MusicBed | None,
+    logo: tuple[LogoImage, CutLogo] | None,
     remove_black_bars: bool,
 ) -> tuple[CutOperation, tuple[FileRevision, ...]]:
     """Returns the renderer operation and its sources: one input per distinct video revision,
-    then the music.
+    then the music, then the logo.
     """
     keep = tuple(
         (position, first, end)
@@ -516,9 +631,11 @@ def _cut_operation(
         normalize_loudness=audio.normalize,
         music=CutMusic(**music.options.model_dump()) if music else None,
         remove_black_bars=remove_black_bars,
+        logo=logo[1] if logo else None,
     )
     music_source = (music.revision,) if music else ()
-    return operation, (*revisions.values(), *music_source)
+    logo_source = (logo[0].revision,) if logo else ()
+    return operation, (*revisions.values(), *music_source, *logo_source)
 
 
 def _overlap_joins(
