@@ -92,9 +92,14 @@ below and say which ones you chose.
 
 ### Defaults for reels
 
-- `aspect_ratio` `9:16` with `framing` `auto`, which follows the speaker's
-  face. Use `fit` when the whole frame matters, such as slides or a wide
-  shot with several people.
+- `aspect_ratios` `["9:16"]` with `framing` `auto`, which follows the
+  speaker's face. Use `fit` when the whole frame matters, such as slides or
+  a wide shot with several people.
+- When the person wants the clips for several platforms, such as Reels and
+  YouTube, list each shape they need, up to three, such as
+  `["9:16", "1:1", "16:9"]`, in the same call. Each clip saves once per
+  shape, cut at the same points. Add a shape only when they ask for it or
+  name a platform that needs it.
 - Black bars around the picture, such as a talk recorded letterboxed, come
   off when the shape changes. Leave `remove_black_bars` out unless the
   person asks to keep the bars or to remove them without changing the shape.
@@ -176,8 +181,8 @@ clip's `text_overlays`:
 Cut every chosen clip in one call with shared options, so the set looks
 consistent: the same shape, captions, audio, music, and logo. Put a setting
 on one clip only when that clip needs to differ. One clip failing doesn't stop
-the others. The result reports each clip; retry only the ones that failed,
-after fixing what the error names.
+the others. The result reports each clip in each shape; retry only the
+clips and shapes that failed, after fixing what the error names.
 
 Clips save in a folder named after the first video. Use `folder` only when
 the person names one.

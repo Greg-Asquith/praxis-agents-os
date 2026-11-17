@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Every platform's shape in one request: `cut_video_clips` takes
+  `aspect_ratios`, up to three shapes such as 9:16, 1:1, and 16:9, in place
+  of `aspect_ratio`. Each clip saves once per shape, cut at the same points,
+  in the clip's folder; the first shape keeps the clip's name and the others
+  add theirs, such as `Talk 0.41-1.10 1x1.mp4`. The clip card shows each
+  clip once with a toggle between its shapes.
 - Title and end cards on reels: a `cut_video_clips` segment can be a card,
   such as "Follow for part 2" at the end, held in silence for 0.5 to 12
   seconds over a colour or an image File the person gave. It joins with the

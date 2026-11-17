@@ -311,7 +311,7 @@ cases:
         tool_name: cut_video_clips
         args:
           clips: [{segments: [{file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000249a1", label: "Pricing workshop keynote.mp4"}, start_ms: 754120, end_ms: 801360}]}]
-          aspect_ratio: "9:16"
+          aspect_ratios: ["9:16"]
           captions: bold
           remove_silences: true
         fixture_path: "fixtures/video_evals/cut_video_clips_discounts_reel.json"

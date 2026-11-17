@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import { useVideoPreview } from "@/features/conversations/hooks/use-video-preview"
@@ -22,9 +23,11 @@ import {
   cutVideoClipsPlan,
   cutVideoClipsResult,
   type VideoClip,
+  type VideoClipShapes,
 } from "@/features/conversations/native-tools/video-tools"
 import { formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
+import { cn } from "@/lib/utils"
 
 const FRAMING_LABELS: Record<string, string> = {
   auto: "Follow Speaker",
@@ -50,10 +53,12 @@ export function CutVideoClipsRow({
     return null
   }
   const total = result.clips.length
+  const shapes = result.clips[0]?.shapes.length ?? 1
+  const files = total * shapes
   const clips =
-    result.saved === total
-      ? `${String(total)} ${pluralize(total, "Clip")}`
-      : `${String(result.saved)} of ${String(total)} Clips Saved`
+    result.saved === files
+      ? `${String(total)} ${pluralize(total, "Clip")}${shapes > 1 ? ` in ${String(shapes)} Shapes` : ""}`
+      : `${String(result.saved)} of ${String(files)} ${shapes > 1 ? "Videos" : "Clips"} Saved`
   return (
     <ToolResultCard
       ariaLabel="Cut video clips"
@@ -85,16 +90,24 @@ export function CutVideoClipsRow({
 // The settings the call asked for, as card details.
 function settingDetails(args: unknown): ToolResultDetail[] {
   const settings = isRecord(args) ? args : {}
-  const shape = settings["aspect_ratio"]
+  const shapes = Array.isArray(settings["aspect_ratios"])
+    ? [...new Set(settings["aspect_ratios"].filter((shape) => typeof shape === "string"))]
+    : []
   // Framing only matters when the shape changes; the tool defaults to auto.
-  const framing =
-    typeof shape === "string" && shape !== "original"
-      ? FRAMING_LABELS[typeof settings["framing"] === "string" ? settings["framing"] : "auto"]
-      : undefined
+  const framing = shapes.some((shape) => shape !== "original")
+    ? FRAMING_LABELS[typeof settings["framing"] === "string" ? settings["framing"] : "auto"]
+    : undefined
   const captions =
     typeof settings["captions"] === "string" ? CAPTION_LABELS[settings["captions"]] : undefined
   return [
-    ...(typeof shape === "string" ? [{ label: "Shape", value: shape }] : []),
+    ...(shapes.length > 0
+      ? [
+          {
+            label: pluralize(shapes.length, "Shape"),
+            value: shapes.map((shape) => shapeLabel(shape)).join(", "),
+          },
+        ]
+      : []),
     ...(framing ? [{ label: "Framing", value: framing }] : []),
     ...(captions ? [{ label: "Captions", value: captions }] : []),
     ...(settings["remove_silences"] === true ? [{ label: "Pauses", value: "Removed" }] : []),
@@ -137,54 +150,96 @@ function ClipFolders({ folders }: { folders: CutVideoClipsResult["folders"] }) {
   )
 }
 
-function ClipTile({ clip }: { clip: VideoClip }) {
+function shapeLabel(shape: string | null) {
+  return shape === "original" ? "Original" : (shape ?? "")
+}
+
+// A clip's tile plays one shape at a time; a clip cut in several shapes switches between them.
+function ClipTile({ clip: { shapes } }: { clip: VideoClipShapes }) {
+  const [shown, setShown] = useState(0)
+  const clip = shapes[shown] ?? shapes[0]
+  if (!clip) {
+    return null
+  }
+  return (
+    <div className="min-w-0">
+      <ClipPlayer clip={clip} />
+      {shapes.length > 1 ? (
+        <ToggleGroup
+          aria-label={`Shapes of clip ${String(clip.index)}`}
+          className="mt-1.5"
+          onValueChange={(next) => {
+            // Pressing the shown shape again would clear it, so only a new choice counts.
+            const chosen = shapes.findIndex(
+              (_, index) => index !== shown && next.includes(String(index))
+            )
+            if (chosen >= 0) setShown(chosen)
+          }}
+          spacing={0.5}
+          value={[String(shown)]}
+        >
+          {shapes.map((shape, index) => (
+            <ToggleGroupItem
+              className={cn(
+                "text-muted-foreground aria-pressed:bg-muted aria-pressed:text-foreground h-6 min-w-10 px-2 text-xs tabular-nums hover:cursor-pointer",
+                !shape.video && "text-destructive aria-pressed:text-destructive"
+              )}
+              key={`${String(index)}-${shape.name}`}
+              title={shape.error ?? undefined}
+              value={String(index)}
+            >
+              {shapeLabel(shape.aspectRatio)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      ) : null}
+      <ClipCaption clip={clip} />
+    </div>
+  )
+}
+
+function ClipPlayer({ clip }: { clip: VideoClip }) {
   const [open, setOpen] = useState(false)
   const length = clip.durationMs === null ? null : formatDuration(clip.durationMs, "milliseconds")
   if (!clip.video) {
     return (
-      <div className="min-w-0">
-        <div className="border-destructive/40 bg-destructive/5 flex aspect-video flex-col items-center justify-center gap-1.5 rounded-md border p-3 text-center">
-          <TriangleAlertIcon className="text-destructive size-4" />
-          <p className="text-destructive line-clamp-3 text-xs">{clip.error}</p>
-        </div>
-        <ClipCaption clip={clip} />
+      <div className="border-destructive/40 bg-destructive/5 flex aspect-video flex-col items-center justify-center gap-1.5 rounded-md border p-3 text-center">
+        <TriangleAlertIcon className="text-destructive size-4" />
+        <p className="text-destructive line-clamp-3 text-xs">{clip.error}</p>
       </div>
     )
   }
   const video = clip.video
   return (
-    <div className="min-w-0">
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger
-          render={
-            <button
-              aria-label={`Play ${clip.name}`}
-              className="group focus-visible:ring-ring/50 bg-media relative block aspect-video w-full overflow-hidden rounded-md border outline-none focus-visible:ring-3"
-              type="button"
-            />
-          }
-        >
-          <ClipPoster fileId={video.fileId} />
-          <span className="bg-media-overlay/10 group-hover:bg-media-overlay/30 absolute inset-0 flex items-center justify-center transition-colors">
-            <span className="bg-media-overlay/60 text-media-foreground flex size-9 items-center justify-center rounded-full">
-              <PlayIcon className="size-4 fill-current" />
-            </span>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <button
+            aria-label={`Play ${clip.name}`}
+            className="group focus-visible:ring-ring/50 bg-media relative block aspect-video w-full overflow-hidden rounded-md border outline-none focus-visible:ring-3"
+            type="button"
+          />
+        }
+      >
+        <ClipPoster fileId={video.fileId} />
+        <span className="bg-media-overlay/10 group-hover:bg-media-overlay/30 absolute inset-0 flex items-center justify-center transition-colors">
+          <span className="bg-media-overlay/60 text-media-foreground flex size-9 items-center justify-center rounded-full">
+            <PlayIcon className="size-4 fill-current" />
           </span>
-          {length ? (
-            <span className="bg-media-overlay/70 text-media-foreground absolute right-1.5 bottom-1.5 rounded px-1.5 py-0.5 text-[11px] tabular-nums">
-              {length}
-            </span>
-          ) : null}
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="truncate pr-8">{clip.name}</DialogTitle>
-          </DialogHeader>
-          {open ? <VideoFileCard autoPlay className="max-w-none" video={video} /> : null}
-        </DialogContent>
-      </Dialog>
-      <ClipCaption clip={clip} />
-    </div>
+        </span>
+        {length ? (
+          <span className="bg-media-overlay/70 text-media-foreground absolute right-1.5 bottom-1.5 rounded px-1.5 py-0.5 text-[11px] tabular-nums">
+            {length}
+          </span>
+        ) : null}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-8">{clip.name}</DialogTitle>
+        </DialogHeader>
+        {open ? <VideoFileCard autoPlay className="max-w-none" video={video} /> : null}
+      </DialogContent>
+    </Dialog>
   )
 }
 

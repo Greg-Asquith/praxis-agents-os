@@ -172,10 +172,13 @@ function videoMoment(value: unknown): VideoMoment | null {
 
 export const CUT_VIDEO_CLIPS_TOOL_NAME = "cut_video_clips"
 
+// One clip in one shape, saved as its own File.
 export type VideoClip = {
   index: number
   name: string
-  // The saved File, or null when this clip failed.
+  // Such as "9:16", or null for a result without one.
+  aspectRatio: string | null
+  // The saved File, or null when this clip failed in this shape.
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
@@ -213,12 +216,16 @@ const LOGO_POSITION_LABELS: Record<string, string> = {
   bottom_right: "Bottom Right",
 }
 
+// A clip and each shape it was cut in, in the order the call listed them.
+export type VideoClipShapes = { index: number; shapes: VideoClip[] }
+
 export type CutVideoClipsResult = {
-  clips: VideoClip[]
+  clips: VideoClipShapes[]
   // Where the saved clips went, in order of first use.
   folders: ClipFolder[]
   // Who is responsible for the music's rights, when any clip has music.
   musicNotice: string | null
+  // Files saved, one per clip and shape.
   saved: number
   // What the call applied to every clip, shown once on the card.
   soundLevelled: boolean
@@ -233,9 +240,13 @@ export function cutVideoClipsResult(value: unknown, args?: unknown): CutVideoCli
   }
   const callMusic = isRecord(args) ? musicArgument(args["music"]) : null
   const callLogo = isRecord(args) ? logoArgument(args["logo"]) : null
-  const clips = value["clips"].map((clip) => videoClip(clip, callMusic, callLogo))
-  if (clips.some((clip) => clip === null)) {
+  const files = value["clips"].map((clip) => videoClip(clip, callMusic, callLogo))
+  if (files.some((clip) => clip === null)) {
     return null
+  }
+  const clips = new Map<number, VideoClip[]>()
+  for (const file of files as VideoClip[]) {
+    clips.set(file.index, [...(clips.get(file.index) ?? []), file])
   }
   const folders = new Map<string, ClipFolder>()
   for (const clip of value["clips"]) {
@@ -250,7 +261,7 @@ export function cutVideoClipsResult(value: unknown, args?: unknown): CutVideoCli
   }
   const raw = value["clips"].filter(isRecord)
   return {
-    clips: clips as VideoClip[],
+    clips: [...clips].map(([index, shapes]) => ({ index, shapes })),
     folders: [...folders.values()],
     musicNotice: typeof value["music_notice"] === "string" ? value["music_notice"] : null,
     saved: value["saved"],
@@ -284,6 +295,7 @@ function videoClip(
   return {
     index: value["index"],
     name: value["name"],
+    aspectRatio: typeof value["aspect_ratio"] === "string" ? value["aspect_ratio"] : null,
     video,
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
     ranges: segments.map((segment) =>

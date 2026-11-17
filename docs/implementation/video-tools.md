@@ -438,7 +438,7 @@ tear.
 
 ### Clips
 
-`cut_video_clips(clips, aspect_ratio?, framing?, remove_black_bars?, captions?,
+`cut_video_clips(clips, aspect_ratios?, framing?, remove_black_bars?, captions?,
 caption_style?, remove_silences?, punch_ins?, transition?, audio?, music?, logo?, folder?)` renders up to five clips and saves
 each as a new video File. It is an internal write, `auto` by default. Its
 arguments are as follows:
@@ -466,10 +466,22 @@ arguments are as follows:
   without its length bounds. A move of a second or more comes back as a
   warning. The first snap on a video transcribes it and measures its shots; a
   video with no audio, or no transcription provider, snaps to shots only.
-- **Shape:** `aspect_ratio` is `original` (the first video's upright shape),
-  `9:16`, `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side, at the
-  first video's frame rate rounded into 24 to 60. `framing` is `auto` (the
+- **Shape:** `aspect_ratios` lists one to three shapes (default
+  `["original"]`): `original` (the first video's upright shape), `9:16`,
+  `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side, at the first
+  video's frame rate rounded into 24 to 60. `framing` is `auto` (the
   default, renderer `reframe`), `center`, or `fit`.
+- **Shapes:** each clip is planned and rendered once per shape, with the
+  same transcript and shot cuts, so every shape snaps to the same cuts and
+  differs only in framing and what depends on the frame size (caption and
+  logo placement, black bars). A repeated shape renders once. The first
+  shape keeps the clip's name; the others add the shape, such as
+  `Talk 0.41-1.10 1x1.mp4` (`Original` for `original`). Every shape saves in
+  the clip's folder, and the result has one entry per clip and shape, in
+  clip order, each with `index` and `aspect_ratio`; `count`, `saved`, and
+  `failed` count those Files. A clip can fail in one shape and save in
+  another. The renderer's `cut` operation is unchanged: the API calls it
+  once per shape.
 - **Black bars:** `remove_black_bars` crops letterbox or pillarbox bars from
   each segment before it's framed, so the picture fills the new shape. Omitted,
   it's on for a clip when any of its videos' upright shape differs from the
@@ -613,8 +625,9 @@ The call fails with a reason before anything renders when:
 
 Clips render three at a time. One clip failing doesn't stop the others. Each
 saved clip stores the renderer's probe on its revision, so it is ready at
-once. The result reports every clip with its status, ranges, warnings, and
-any failure reason, and the call fails only when no clip is saved. Each call
+once. The result reports every clip in every shape with its status,
+ranges, warnings, and any failure reason, and the call fails only when
+nothing is saved. Each call
 records a `video_clips` audit event on every source video.
 
 ### Output folders
@@ -657,7 +670,7 @@ run's lease heartbeat continues during the call, and
 | `generate_image_from_video`, `ask_video` | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
 | `transcribe_video` | One renderer operation (`MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 s) plus 900 s for transcription |
 | `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
-| `cut_video_clips` | `transcribe_video`'s timeout, plus one renderer operation for shot cuts, plus one per round of three clips |
+| `cut_video_clips` | `transcribe_video`'s timeout, plus one renderer operation for shot cuts, plus one per round of three renders (up to 15: five clips in three shapes) |
 
 When a timeout passes, Pydantic AI cancels the call and returns a retry to
 the model. Tools write their output File only after the provider returns, so
@@ -698,7 +711,7 @@ The tool rows add the following:
   conversation can't take a turn.
 - **`ask_video`:** the range it watched, with the question and answer.
 - **`cut_video_clips`:** the card's details show what the call applied to
-  every clip: shape, framing, captions, pauses, **Sound** (Levelled, Voice
+  every clip: shapes, framing, captions, pauses, **Sound** (Levelled, Voice
   Cleaned Up), **Music** (the track, its volume, and Under Speech or
   Throughout), **Logo** (the File, its position, **Safe Zone Off** when off, and its
   opacity below 100%),
@@ -710,10 +723,14 @@ The tool rows add the following:
   where its music differs from the call's, **No Logo** or **Different Logo**
   where its logo does, and overlay text and times, plus
   a link to the output folder and the music rights notice. The effects line
-  wraps rather than truncating. Selecting a clip opens a player; a failed
-  clip shows its reason.
+  wraps rather than truncating. A clip cut in several shapes has one tile
+  with a toggle of its shapes (such as **9:16** and **1:1**) that switches
+  the still, player, name, and warnings; a shape that failed shows in red
+  with its reason. The summary reads **3 Clips in 2 Shapes**, or **5 of 6
+  Videos Saved**. Selecting a clip opens a player; a failed clip shows its
+  reason.
 - **`cut_video_clips` approval:** the tool is automatic by default; when an
-  owner sets it to ask first, the approval card shows shape, framing,
+  owner sets it to ask first, the approval card shows shapes, framing,
   captions, and folder, the settings shared by every clip (sound, music,
   logo, pauses, punch-ins, and black bars when the call sets them), and a table with each clip's segments
   (a card as **Brand.png Card (3 s)**), finishing,

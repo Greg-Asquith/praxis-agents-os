@@ -2,9 +2,10 @@
 
 """Cuts clips from workspace videos, joining ranges in order, and saves each as a new File."""
 
+from itertools import product
 from math import ceil
 from pathlib import PurePath
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -91,6 +92,7 @@ from services.storage.paths import safe_filename
 from utils.validation import normalize_optional_text
 
 MAX_CLIPS = 5
+MAX_ASPECT_RATIOS = 3
 MAX_TEXT_OVERLAYS = 5
 MAX_CARD_TEXTS = 3
 MAX_CLIP_NAME_CHARS = 120
@@ -252,9 +254,11 @@ def cut_video_clips_available() -> bool:
         "joins up to ten segments in order; segments can come from different videos, as "
         "ranges or whole videos. Call it directly, never from run_code, with every clip of a "
         "set in one call. Pass the start_ms and end_ms that find_video_moments returned "
-        "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok. When "
-        "the shape changes, framing 'auto' (the default) crops to follow the speaker's face, "
-        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill; "
+        "rather than inventing times. aspect_ratios 9:16 suits Reels, Shorts, and TikTok; "
+        "list up to three shapes, such as 9:16, 1:1, and 16:9, to save every clip in each "
+        "platform's shape from one call. When the shape changes, framing 'auto' (the "
+        "default) crops to follow the speaker's face, 'center' crops the middle, and 'fit' "
+        "shows the whole frame over a blurred fill; "
         "black bars around the picture are removed first. "
         "captions burns in the spoken words: 'bold' for punchy reels, 'clean' for a subtle "
         "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
@@ -295,7 +299,7 @@ def cut_video_clips_available() -> bool:
     timeout=RENDERER_CALL_SECONDS
     + TRANSCRIPTION_ALLOWANCE_SECONDS
     + RENDERER_CALL_SECONDS
-    + ceil(MAX_CLIPS / RENDER_CONCURRENCY) * RENDERER_CALL_SECONDS,
+    + ceil(MAX_CLIPS * MAX_ASPECT_RATIOS / RENDER_CONCURRENCY) * RENDERER_CALL_SECONDS,
     availability_check=cut_video_clips_available,
     presentation=ToolPresentation(
         icon="video",
@@ -307,7 +311,7 @@ def cut_video_clips_available() -> bool:
         approve_label="Approve & Cut",
         # The web card shows the clips and their finishing options from the structured fields.
         arg_fields=(
-            ToolFieldPresentation(key="aspect_ratio", label="Aspect Ratio"),
+            ToolFieldPresentation(key="aspect_ratios", label="Shapes", format="list"),
             ToolFieldPresentation(key="framing", label="Framing", secondary=True),
             ToolFieldPresentation(key="captions", label="Captions", secondary=True),
             ToolFieldPresentation(key="folder", label="Folder", secondary=True),
@@ -330,10 +334,17 @@ async def cut_video_clips(
         list[ClipArgument],
         Field(min_length=1, max_length=MAX_CLIPS, description="The clips to cut, in order."),
     ],
-    aspect_ratio: Annotated[
-        AspectRatio,
-        Field(description="Shape of every clip. 'original' keeps the first video's shape."),
-    ] = "original",
+    aspect_ratios: Annotated[
+        tuple[AspectRatio, ...],
+        Field(
+            min_length=1,
+            max_length=MAX_ASPECT_RATIOS,
+            description=(
+                "Shapes to save every clip in, one File per shape. 'original' keeps the first "
+                "video's shape."
+            ),
+        ),
+    ] = ("original",),
     framing: Annotated[
         Framing,
         Field(
@@ -433,10 +444,11 @@ async def cut_video_clips(
         framing=framing,
         needs_words=style is not None or remove_silences,
     )
-    planned = _plan_clips(
+    shapes = list(dict.fromkeys(aspect_ratios))
+    renders = _plan_clips(
         clips,
         sources,
-        aspect_ratio=aspect_ratio,
+        shapes=shapes,
         framing=framing,
         remove_black_bars=remove_black_bars,
         captions=style,
@@ -450,6 +462,7 @@ async def cut_video_clips(
         images=images,
     )
 
+    planned = [render.request for render in renders]
     # A call's track or logo that every clip overrides is never sent, so only used ones count.
     played = {request.music.revision.file_id for request in planned if request.music}
     shown = {request.logo.revision.file_id for request in planned if request.logo} | {
@@ -470,7 +483,7 @@ async def cut_video_clips(
             revision.id,
             operation="video_clips",
             tool_name="cut_video_clips",
-            details={"clips": len(planned)},
+            details={"clips": len(clips)},
         )
     # The analysis and the record are kept even if every render fails.
     await ctx.deps.db.commit()
@@ -481,16 +494,16 @@ async def cut_video_clips(
     await stage("Saving Clips")
     folders = _ClipFolders(normalize_optional_text(folder))
     results = []
-    for index, (clip, request, outcome) in enumerate(
-        zip(clips, planned, rendered, strict=True), start=1
-    ):
-        first_file = videos[_videos_of(clip)[0].file_id.entity_id][0]
-        name = _clip_name(clip, request, first_file)
+    for render, outcome in zip(renders, rendered, strict=True):
+        first_file = videos[_videos_of(render.clip)[0].file_id.entity_id][0]
+        # The first shape keeps the clip's name; each other shape adds its own.
+        shape = None if render.aspect_ratio == shapes[0] else render.aspect_ratio
+        name = _clip_name(render.clip, render.request, first_file, shape)
         if isinstance(outcome, MediaRendererError):
-            results.append(_failed(index, name, request, outcome.message))
+            results.append(_failed(render, name, outcome.message))
             continue
         clip_folder = await folders.get(ctx, first_file)
-        results.append(await _save_clip(ctx, index, name, request, outcome, clip_folder))
+        results.append(await _save_clip(ctx, render, name, outcome, clip_folder))
     await ctx.deps.db.commit()
     for outcome in rendered:
         if isinstance(outcome, MediaOperationResult):
@@ -500,7 +513,12 @@ async def cut_video_clips(
     if saved == 0:
         raise ToolFailed(
             "No clips were saved. "
-            + " ".join(f"Clip {result['index']}: {result['error']}" for result in results)
+            + " ".join(
+                f"Clip {result['index']}"
+                + (f" ({result['aspect_ratio']})" if len(shapes) > 1 else "")
+                + f": {result['error']}"
+                for result in results
+            )
         )
     summary = {"count": len(results), "saved": saved, "failed": len(results) - saved}
     notice = {"music_notice": MUSIC_RIGHTS_NOTICE} if played else {}
@@ -617,11 +635,20 @@ def _clip_segments(
     ]
 
 
+class _ClipShape(NamedTuple):
+    """One clip planned in one shape, rendered and saved as its own File."""
+
+    index: int
+    clip: ClipArgument
+    aspect_ratio: AspectRatio
+    request: PlannedClip
+
+
 def _plan_clips(
     clips: list[ClipArgument],
     sources: dict[UUID, ClipSource],
     *,
-    aspect_ratio: AspectRatio,
+    shapes: list[AspectRatio],
     framing: Framing,
     remove_black_bars: bool | None,
     captions: CaptionStyle | None,
@@ -633,48 +660,47 @@ def _plan_clips(
     tracks: dict[UUID, tuple[File, FileRevision, VideoMetadata]],
     logo: LogoArgument | None,
     images: dict[UUID, tuple[File, FileRevision]],
-) -> list[PlannedClip]:
+) -> list[_ClipShape]:
+    """Plans each clip once per shape, in clip order; every shape snaps to the same cuts."""
     planned = []
-    for index, clip in enumerate(clips, start=1):
+    for (index, clip), shape in product(enumerate(clips, start=1), shapes):
         first = sources[_videos_of(clip)[0].file_id.entity_id]
+        label = f"Clip {index} ({shape})" if len(shapes) > 1 else f"Clip {index}"
         try:
-            planned.append(
-                plan_clip(
-                    _clip_segments(clip, sources, images),
-                    size=output_size(aspect_ratio, first.metadata),
-                    framing=framing,
-                    snap=clip.snap,
-                    captions=captions,
-                    remove_silences=remove_silences,
-                    transition=clip.transition or transition,
-                    transitions_in=[segment.transition_in for segment in clip.segments],
-                    fade_in_ms=clip.fade_in_ms,
-                    fade_out_ms=clip.fade_out_ms,
-                    overlays=clip.text_overlays,
-                    audio=audio,
-                    music=None
-                    if clip.music == "none"
-                    else _clip_music(clip.music or music, tracks),
-                    paces=[
-                        SegmentPace(
-                            speed_percent=round(segment.speed * 100),
-                            freeze_end_ms=segment.freeze_end_ms,
-                        )
-                        if isinstance(segment, ClipSegmentArgument)
-                        else SegmentPace()
-                        for segment in clip.segments
-                    ],
-                    zooms=[
-                        segment.zoom if isinstance(segment, ClipSegmentArgument) else None
-                        for segment in clip.segments
-                    ],
-                    punch_ins=punch_ins,
-                    remove_black_bars=remove_black_bars,
-                    logo=_clip_logo(clip.logo, logo, images),
-                )
+            request = plan_clip(
+                _clip_segments(clip, sources, images),
+                size=output_size(shape, first.metadata),
+                framing=framing,
+                snap=clip.snap,
+                captions=captions,
+                remove_silences=remove_silences,
+                transition=clip.transition or transition,
+                transitions_in=[segment.transition_in for segment in clip.segments],
+                fade_in_ms=clip.fade_in_ms,
+                fade_out_ms=clip.fade_out_ms,
+                overlays=clip.text_overlays,
+                audio=audio,
+                music=None if clip.music == "none" else _clip_music(clip.music or music, tracks),
+                paces=[
+                    SegmentPace(
+                        speed_percent=round(segment.speed * 100),
+                        freeze_end_ms=segment.freeze_end_ms,
+                    )
+                    if isinstance(segment, ClipSegmentArgument)
+                    else SegmentPace()
+                    for segment in clip.segments
+                ],
+                zooms=[
+                    segment.zoom if isinstance(segment, ClipSegmentArgument) else None
+                    for segment in clip.segments
+                ],
+                punch_ins=punch_ins,
+                remove_black_bars=remove_black_bars,
+                logo=_clip_logo(clip.logo, logo, images),
             )
         except ValueError as exc:
-            raise ModelRetry(f"Clip {index}: {exc}") from exc
+            raise ModelRetry(f"{label}: {exc}") from exc
+        planned.append(_ClipShape(index, clip, shape, request))
     return planned
 
 
@@ -717,9 +743,8 @@ async def _clip_sources(
 
 async def _save_clip(
     ctx: RunContext[RuntimeDeps],
-    index: int,
+    render: _ClipShape,
     name: str,
-    request: PlannedClip,
     outcome: MediaOperationResult,
     folder: FileFolder,
 ) -> dict[str, object]:
@@ -743,9 +768,9 @@ async def _save_clip(
             await ctx.deps.db.flush()
     except AppValidationError as exc:
         reason = "The clip is too large to save." if exc.field == "content" else exc.message
-        return _failed(index, name, request, reason)
+        return _failed(render, name, reason)
     except MediaRendererError as exc:
-        return _failed(index, name, request, exc.message)
+        return _failed(render, name, exc.message)
     await create_conversation_file_references(
         ctx.deps.db,
         workspace_id=ctx.deps.workspace.id,
@@ -755,7 +780,8 @@ async def _save_clip(
     )
     metadata = outcome.result
     return {
-        "index": index,
+        "index": render.index,
+        "aspect_ratio": render.aspect_ratio,
         "status": "saved",
         "name": saved.file.name,
         "file_id": str(saved.file.id),
@@ -773,7 +799,7 @@ async def _save_clip(
         "loudness_lufs": metadata.loudness_lufs,
         "black_bars_removed": metadata.black_bars_removed,
         "folder": {"id": str(folder.id), "name": folder.name},
-        **_plan_output(request),
+        **_plan_output(render.request),
     }
 
 
@@ -801,13 +827,14 @@ class _ClipFolders:
         return self._resolved[key]
 
 
-def _failed(index: int, name: str, request: PlannedClip, reason: str) -> dict[str, object]:
+def _failed(render: _ClipShape, name: str, reason: str) -> dict[str, object]:
     return {
-        "index": index,
+        "index": render.index,
+        "aspect_ratio": render.aspect_ratio,
         "status": "failed",
         "name": name,
         "error": reason,
-        **_plan_output(request),
+        **_plan_output(render.request),
     }
 
 
@@ -901,10 +928,18 @@ def _overlays(overlays: tuple[PlacedOverlay, ...]) -> list[dict[str, object]]:
     ]
 
 
-def _clip_name(clip: ClipArgument, request: PlannedClip, first_file: File) -> str:
+def _clip_name(
+    clip: ClipArgument, request: PlannedClip, first_file: File, shape: AspectRatio | None
+) -> str:
+    """The clip's own name or its first video's name and times, then ``shape`` if given, such
+    as "1x1" (a colon isn't safe in every file system).
+    """
+    suffix = ""
+    if shape:
+        suffix = " Original" if shape == "original" else f" {shape.replace(':', 'x')}"
     if clip.name and clip.name.strip():
-        return safe_filename(f"{PurePath(clip.name.strip()).stem}.mp4")
+        return safe_filename(f"{PurePath(clip.name.strip()).stem}{suffix}.mp4")
     first = next(segment for segment in request.segments if segment.source)
     times = f"{format_duration(first.start_ms)}-{format_duration(first.end_ms)}".replace(":", ".")
     more = f" +{len(request.segments) - 1}" if len(request.segments) > 1 else ""
-    return safe_filename(f"{PurePath(first_file.name).stem} {times}{more}.mp4")
+    return safe_filename(f"{PurePath(first_file.name).stem} {times}{more}{suffix}.mp4")

@@ -112,7 +112,7 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
     result = await run_scenario(
         db_session_factory,
         context,
-        model=cut_once({"clips": clips, "aspect_ratio": "9:16", "captions": "bold"}),
+        model=cut_once({"clips": clips, "aspect_ratios": ["9:16"], "captions": "bold"}),
     )
 
     assert result.run.status == "completed"
@@ -172,6 +172,48 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
         and revision.media_metadata == {**CLIP, "loudness_lufs": None}
         for file, revision in saved
     )
+
+
+async def test_each_shape_of_a_clip_is_saved_beside_it_with_the_same_cuts(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(("Our pricing is per seat.", 10_000, 25_000),),
+    )
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once(
+            {
+                "clips": [{"segments": [segment(talk, 12_000, 20_000)]}],
+                "aspect_ratios": ["9:16", "1:1", "9:16"],
+            }
+        ),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    # A repeated shape renders once; every shape snaps to the same sentence.
+    assert sorted(
+        (request["arguments"]["width"], request["arguments"]["height"]) for request in renderer
+    ) == [(1080, 1080), (1080, 1920)]
+    assert all(request["arguments"]["segments"] == [[0, 10_000, 25_000]] for request in renderer)
+    # The first shape keeps the clip's name, and the others sit beside it in its folder.
+    assert [(clip["index"], clip["aspect_ratio"], clip["name"]) for clip in output["clips"]] == [
+        (1, "9:16", "Pricing talk 0.10-0.25.mp4"),
+        (1, "1:1", "Pricing talk 0.10-0.25 1x1.mp4"),
+    ]
+    assert len({clip["folder"]["id"] for clip in output["clips"]}) == 1
 
 
 async def test_a_clip_of_a_clip_joins_the_original_videos_folder(
@@ -387,7 +429,7 @@ async def test_the_persons_logo_goes_on_every_clip_that_keeps_it_and_its_read_is
                     {"segments": [segment(talk, 0, 5_000)], "snap": False},
                     {"segments": [segment(talk, 5_000, 10_000)], "snap": False, "logo": "none"},
                 ],
-                "aspect_ratio": "9:16",
+                "aspect_ratios": ["9:16"],
                 "logo": {"file_id": logo, "opacity": 70},
             }
         ),
@@ -447,7 +489,7 @@ async def test_an_end_card_shows_the_persons_image_after_the_video_and_its_read_
                 "clips": [
                     {"segments": [segment(talk, 0, 5_000), {"card": card}], "snap": False},
                 ],
-                "aspect_ratio": "9:16",
+                "aspect_ratios": ["9:16"],
             }
         ),
     )

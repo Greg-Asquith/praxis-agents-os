@@ -85,7 +85,9 @@ describe("cutVideoClipsResult", () => {
       { music: { file_id: { entity_kind: "file", entity_id: "track", label: "Upbeat.mp3" } } }
     )
 
-    expect(result?.clips.map((item) => [item.effects, item.error])).toEqual([
+    expect(
+      result?.clips.flatMap(({ shapes }) => shapes.map((item) => [item.effects, item.error]))
+    ).toEqual([
       [
         [
           "Black Bars Removed",
@@ -105,6 +107,29 @@ describe("cutVideoClipsResult", () => {
       true,
       true,
       true,
+    ])
+  })
+
+  it("groups each clip's shapes in the order they were cut", () => {
+    const file = (index: number, shape: string) => ({
+      index,
+      aspect_ratio: shape,
+      status: "saved",
+      name: `Talk ${String(index)} ${shape}.mp4`,
+      file_id: `clip-${String(index)}-${shape}`,
+      media_type: "video/mp4",
+      segments: [],
+    })
+    const result = cutVideoClipsResult({
+      saved: 4,
+      clips: [file(1, "9:16"), file(1, "1:1"), file(2, "9:16"), file(2, "1:1")],
+    })
+
+    expect(
+      result?.clips.map(({ index, shapes }) => [index, shapes.map((shape) => shape.aspectRatio)])
+    ).toEqual([
+      [1, ["9:16", "1:1"]],
+      [2, ["9:16", "1:1"]],
     ])
   })
 })
