@@ -183,8 +183,9 @@ def cut_video_clips_available() -> bool:
     code_eligible=False,
     description=(
         "Cut up to five clips from workspace videos and save each as a new video File. Each clip "
-        "joins one or more segments in order; segments can come from different videos, as "
-        "ranges or whole videos. Pass the start_ms and end_ms that find_video_moments returned "
+        "joins up to ten segments in order; segments can come from different videos, as "
+        "ranges or whole videos. Call it directly, never from run_code, with every clip of a "
+        "set in one call. Pass the start_ms and end_ms that find_video_moments returned "
         "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok. When "
         "the shape changes, framing 'auto' (the default) crops to follow the speaker's face, "
         "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. "
@@ -206,7 +207,8 @@ def cut_video_clips_available() -> bool:
         "when asked. punch_ins 'auto' zooms in on every other jump cut that remove_silences "
         "makes, which hides the jump; use it when the person wants punchier pacing. Clips save "
         "in a folder named after their first video unless folder names another. One clip "
-        "failing doesn't stop the others; the result reports each clip."
+        "failing doesn't stop the others; the result reports each clip. For the reels "
+        "workflow, call load_capability with internal-video-creation-and-editing."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,

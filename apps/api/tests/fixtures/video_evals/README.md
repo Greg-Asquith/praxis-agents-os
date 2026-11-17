@@ -8,6 +8,10 @@ with the production code for a 45-minute pricing talk:
 - `find_video_moments_pricing_talk.json`: a `find_video_moments` result with
   five moments, each built by the tool's `_moment_output`, so titles, hooks,
   reasons, and excerpts are untrusted nodes.
+- `ask_video_transition_glitch.json`: an `ask_video` result for a reel cut
+  from the talk, whose answer (an untrusted node) describes a split-frame
+  tear at a wipe between two white screens. It mirrors the owner test of
+  2026-10-13, where a clean wipe was described this way.
 
-Rebuild them when the attachment note or the moments result changes, so the
+Rebuild them when the attachment note or a tool's result changes, so the
 evals show models what production returns.

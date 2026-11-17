@@ -381,7 +381,11 @@ When fewer moments survive than asked for, the result says so in `note`.
 `ask_video(file_id, question, start?, end?, detail?)` answers one question
 with `MM:SS` references, as an untrusted-content node. One call covers at
 most `VIDEO_MOMENTS_WINDOW_SECONDS`, at medium media resolution up to 10
-minutes and low beyond that. It doesn't read the transcript.
+minutes and low beyond that. It doesn't read the transcript. The result's
+`how_to_report` says the answer comes from sampled frames, so a fault it
+describes at a transition or in a single frame is unconfirmed. In an owner
+test a clean wipe between two white screens was described as a split-frame
+tear.
 
 | Setting | Default | Purpose |
 |---|---:|---|
@@ -526,6 +530,21 @@ a name clash) and linked by `file_folders.source_file_id`.
   audited as a `file_folder` create by the agent. A partial unique index
   keeps one live folder per video. Renaming the folder keeps the link;
   deleting it means the next output creates a new one.
+
+### Video skill and evals
+
+The internal skill `runtime/internal_skills/video-creation-and-editing.md`
+(**Video Creation & Editing**) holds the working rules: which tool to use,
+starting from an attached video, agreeing the brief, finding moments before
+cutting, the defaults for reels, text on screen, the finishing options, one
+call for a set, checking clips with `ask_video` without overclaiming a fault
+it can't see, cost, untrusted content, and reporting. Tool descriptions carry
+the hard limits and point to it. Each tool slice that changes what an agent
+can do with video updates the skill in the same change, never before the
+tool exists. The `video_*` cases in `apps/api/evals/datasets/agent_behavior.yaml`
+check that agents find moments before cutting, cut the returned ranges in one
+`cut_video_clips` call rather than from `run_code`, and report a glitch
+`ask_video` describes at a transition as unconfirmed.
 
 ## Long media calls
 

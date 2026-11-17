@@ -91,6 +91,8 @@ Reusable _procedural_ knowledge: how an agent should perform a class of task.
   creating Office files and for totalling saved rows. `forecasting` covers
   gathering history for `forecast_series`, holidays and planned events, when
   not to forecast, and explaining the range and backtest.
+  `video-creation-and-editing` covers the reels workflow: agreeing the brief,
+  finding moments before cutting, finishing, checking clips, and reporting.
 - **Agent authoring.** Agents find and read skills with `search_skills` and
   `load_skill`. Auto-mounted `create_skill` creates a workspace skill,
   or a platform skill when the user ticks the required share option on the

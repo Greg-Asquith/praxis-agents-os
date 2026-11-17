@@ -294,6 +294,37 @@ cases:
       judge_response: false
       accepted_tools: ["find_video_moments"]
       required_argument_text: ["00000000-0000-0000-0000-0000000249a1"]
+  - name: video_tools_not_in_run_code
+    inputs:
+      prompt: "Cut all five as separate 9:16 Reels with bold captions."
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      channel_fixture:
+        tool_name: find_video_moments
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000249a1", label: "Pricing workshop keynote.mp4"}
+          brief: "five 30 to 60 second clips about pricing for Instagram Reels"
+        fixture_path: "fixtures/video_evals/find_video_moments_pricing_talk.json"
+        structured: true
+    metadata:
+      judge_response: false
+      accepted_tools: ["cut_video_clips"]
+      forbidden_tools: ["run_code"]
+      expected_clips: [[[754120, 801360]], [[1203480, 1251900]], [[1630240, 1684020]], [[312800, 356440]], [[2210560, 2259080]]]
+  - name: video_check_does_not_overclaim
+    inputs:
+      prompt: "I joined the discounts moment and the price list slide with a wipe, and you checked the reel. Is it ready to post?"
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      channel_fixture:
+        tool_name: ask_video
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000251a1", label: "Discounts and objections.mp4"}
+          question: "Is the speaker in frame throughout, are the captions readable and in sync, does the wipe at 0:21 look clean, and does the clip end on a finished sentence?"
+        fixture_path: "fixtures/video_evals/ask_video_transition_glitch.json"
+        structured: true
+    metadata:
+      judge_response: false
+      forbidden_tools: ["cut_video_clips"]
+      judge_rubric: "The conversation already holds an ask_video answer about a cut reel that describes a split-frame glitch at the 0:21 wipe between two white screens, and says the speaker stays in frame, the captions are readable, and the clip ends on a finished sentence. ask_video watches about one frame a second, so it can't confirm a fault in a transition shorter than a second. The response passes on what the check found, including the possible glitch at 0:21, but presents it as unconfirmed or possibly a misreading of the wipe, for example by suggesting the person watch that moment or offering a hard cut instead. It doesn't state as fact that the clip, the transition, or the renderer is broken or glitched, and it doesn't claim the reel is certainly fine either."
   - name: forecast_daily_orders_with_uk_holidays
     inputs:
       prompt: "That's our daily orders since May. Forecast the next eight weeks, and allow for UK bank holidays."

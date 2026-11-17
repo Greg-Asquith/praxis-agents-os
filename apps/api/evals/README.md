@@ -62,8 +62,13 @@ expects `find_video_moments` before any cut. `video_cut_chosen_moments` puts a
 `find_video_moments` result in history (`structured: true` parses the JSON
 fixture, so its untrusted titles are framed as in production) and checks with
 `ExpectedClips` that one `cut_video_clips` call cuts the two moments the
-person named, as separate clips with the result's exact times. Fixtures live
-in `tests/fixtures/video_evals/`.
+person named, as separate clips with the result's exact times.
+`video_tools_not_in_run_code` puts the same result in history, asks for all
+five, and checks one direct `cut_video_clips` call with every range, never
+`run_code`. `video_check_does_not_overclaim` puts an `ask_video` answer in
+history that describes a split-frame tear at a wipe, and its `judge_rubric`
+checks the agent reports it as unconfirmed rather than as a renderer fault.
+Fixtures live in `tests/fixtures/video_evals/`.
 
 The `forecast_*` cases need `DATA_SCIENCE_URL` set so `forecast_series`
 mounts; nothing is forecast, because the runner stops at the first call.
