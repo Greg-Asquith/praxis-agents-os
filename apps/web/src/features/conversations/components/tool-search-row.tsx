@@ -35,6 +35,7 @@ export function ToolSearchRow({ activity, defaultOpen }: ToolSearchRowProps) {
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     return (
       <FanOutSkeleton
+        running={activity.status === "running"}
         heading={<ToolHeading icon={SearchIcon}>Find Tools</ToolHeading>}
         label={query ? `Finding tools for ${query}…` : "Finding tools…"}
         {...(query ? { summary: `Search: ${query}` } : {})}

@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/hooks/use-elapsed-seconds.ts
+// apps/web/src/lib/use-elapsed-seconds.ts
 
 import { useEffect, useState } from "react"
 

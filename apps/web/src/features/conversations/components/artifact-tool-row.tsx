@@ -62,6 +62,7 @@ export function ArtifactToolRow({ activity, defaultOpen }: ArtifactToolRowProps)
     const summary = artifactPendingSummary(activity)
     return (
       <FanOutSkeleton
+        running={activity.status === "running"}
         heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(summary ? { summary } : {})}

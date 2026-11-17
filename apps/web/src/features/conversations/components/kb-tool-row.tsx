@@ -38,6 +38,7 @@ export function KbToolRow({ activity, defaultOpen }: KbToolRowProps) {
     const state = kbPendingState(activity)
     return state ? (
       <FanOutSkeleton
+        running={activity.status === "running"}
         heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(state.summary ? { summary: state.summary } : {})}

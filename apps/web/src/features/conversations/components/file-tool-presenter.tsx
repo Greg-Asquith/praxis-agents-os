@@ -23,13 +23,12 @@ export const fileToolPresenter: ToolRowPresenter = {
   handlesApprovals: true,
   key: "file-tools",
   matches: fileToolRowMatches,
-  render: ({ activity, approvalDecision, defaultOpen, label, live, ui }) => (
+  render: ({ activity, approvalDecision, defaultOpen, label, ui }) => (
     <FileToolRow
       activity={activity}
       {...(approvalDecision ? { approvalDecision } : {})}
       defaultOpen={defaultOpen}
       label={label ?? activity.name}
-      live={live}
       ui={ui ?? null}
     />
   ),

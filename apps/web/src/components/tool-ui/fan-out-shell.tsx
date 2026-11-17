@@ -5,6 +5,7 @@ import { AlertCircleIcon, ChevronRightIcon, CircleCheckIcon } from "lucide-react
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useElapsedSeconds } from "@/lib/use-elapsed-seconds"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import type { FanOutEntry } from "@/components/tool-ui/fan-out"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
@@ -246,11 +247,14 @@ function identity(value: string) {
 export function FanOutSkeleton({
   heading,
   label,
+  running = false,
   summary,
   trailing,
 }: {
   heading?: ReactNode
   label: string
+  // Counts the seconds since the card appeared, for someone watching the call run.
+  running?: boolean
   summary?: string
   trailing?: ReactNode
 }) {
@@ -273,9 +277,19 @@ export function FanOutSkeleton({
             ) : null}
           </div>
         </div>
-        {trailing ?? <Skeleton className="mr-2 h-5 w-14 rounded-full" />}
+        {trailing ??
+          (running ? <RunningSeconds /> : <Skeleton className="mr-2 h-5 w-14 rounded-full" />)}
       </div>
       <span className="sr-only">{label}</span>
     </section>
+  )
+}
+
+function RunningSeconds() {
+  const seconds = useElapsedSeconds(true)
+  return (
+    <span className="text-muted-foreground mr-2 ml-auto shrink-0 text-right text-xs">
+      {String(seconds)}s
+    </span>
   )
 }

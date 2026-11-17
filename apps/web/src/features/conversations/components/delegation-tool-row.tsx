@@ -39,16 +39,16 @@ type DelegationToolRowProps = {
   activity: ToolActivity
   approvalDecision?: ToolApprovalDecisionControls
   defaultOpen: boolean
-  live?: boolean
 }
 
 export function DelegateAgentListRow({
   activity,
   defaultOpen,
-}: Omit<DelegationToolRowProps, "approvalDecision" | "live">) {
+}: Omit<DelegationToolRowProps, "approvalDecision">) {
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
+        running
         heading={<DelegationHeading icon="list">Available Agents</DelegationHeading>}
         label="Finding available agents…"
         summary="Checking who can help"
@@ -102,7 +102,6 @@ export function DelegationToolRow({
   activity,
   approvalDecision,
   defaultOpen,
-  live = false,
 }: DelegationToolRowProps) {
   const shared = use(SharedTranscriptContext)
   const presentationFor = useToolPresentations()
@@ -160,7 +159,7 @@ export function DelegationToolRow({
       defaultOpen={defaultOpen || inProgress || failed || denied}
       details={delegationDetails(delegate)}
       heading={<DelegationHeading delegate={delegate}>{heading}</DelegationHeading>}
-      trailing={<ActivityStatusBadge liveRunning={live && status === "running"} status={status} />}
+      trailing={<ActivityStatusBadge liveRunning={status === "running"} status={status} />}
     >
       <div className="flex min-w-0 flex-col gap-5">
         {delegate.taskPreview ? <DelegationAsk task={delegate.taskPreview} /> : null}

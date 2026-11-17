@@ -145,7 +145,7 @@ function VisibleToolCallRow({
         iconToken={ui?.icon ?? null}
       />
     )
-  } else if (live && !compact && activity.status === "running") {
+  } else if (!compact && activity.status === "running") {
     defaultRow = (
       <RunningToolCard
         headline={headlineForActivity(activity, title, ui)}
@@ -166,7 +166,7 @@ function VisibleToolCallRow({
         }
         suffix={
           <ActivityStatusSuffix
-            liveRunning={live && activity.status === "running"}
+            liveRunning={activity.status === "running"}
             status={activity.status}
             suffix={outcomeMetric ?? toolStatusSuffix(activity)}
           />
@@ -300,7 +300,7 @@ function RunningToolCard({
       }
       label={`${headline}, in progress`}
       {...(stage ? { summary: stage } : {})}
-      trailing={<ActivityStatusSuffix liveRunning status="running" suffix={null} />}
+      running
     />
   )
 }

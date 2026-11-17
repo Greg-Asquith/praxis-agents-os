@@ -19,6 +19,7 @@ export function CompletionReportRow({ activity, defaultOpen = false }: Completio
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={ClipboardCheckIcon}>Completion Check</ToolHeading>}
         label="Checking completion…"
         summary="Preparing the completion verdict"

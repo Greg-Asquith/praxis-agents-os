@@ -11,7 +11,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import type { DelegationToolActivity, ToolActivity } from "@/features/conversations/message-parts"
-import { useElapsedSeconds } from "@/features/conversations/hooks/use-elapsed-seconds"
+import { useElapsedSeconds } from "@/lib/use-elapsed-seconds"
 import { cn } from "@/lib/utils"
 
 type ActivityStatus = ToolActivity["status"] | DelegationToolActivity["status"]

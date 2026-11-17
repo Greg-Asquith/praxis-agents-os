@@ -75,6 +75,7 @@ export function DocumentToolRow({
     const heading = `${RUNNING_VERBS[kind]} ${callTarget(activity, kind) ?? neutralTarget(kind)}`
     return (
       <FanOutSkeleton
+        running={activity.status === "running"}
         heading={<ToolHeading icon={KIND_ICONS[kind]}>{heading}</ToolHeading>}
         label={activity.status === "running" ? `${heading}…` : "Waiting to start…"}
       />

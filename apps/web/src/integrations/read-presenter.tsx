@@ -48,7 +48,7 @@ export function defineIntegrationReadPresenter<Result>(
     matches: (activity) => activity.name === variant.tool,
     render: ({ activity, defaultOpen }) => {
       if (activity.status === "running") {
-        return <FanOutSkeleton heading={heading} label={variant.progressLabel} />
+        return <FanOutSkeleton heading={heading} label={variant.progressLabel} running />
       }
       const envelope = parseResultPreview(activity.result)
       const preview = envelope ?? parseResultPreview(activity.resultPreview)
@@ -121,7 +121,7 @@ export function defineIntegrationResultPresenter<Result>(
     matches: (activity) => activity.name === variant.tool,
     render: ({ activity, defaultOpen }) => {
       if (activity.status === "running") {
-        return <FanOutSkeleton heading={heading} label={variant.progressLabel} />
+        return <FanOutSkeleton heading={heading} label={variant.progressLabel} running />
       }
       const envelope = parseResultPreview(activity.result)
       const preview = envelope ?? parseResultPreview(activity.resultPreview)

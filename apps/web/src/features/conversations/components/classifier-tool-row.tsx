@@ -38,6 +38,7 @@ export function ClassifierToolRow({
     const count = classifierItems(activity.args)?.length ?? 0
     return (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={SparklesIcon}>{label}</ToolHeading>}
         label={count > 0 ? `Classifying ${String(count)} items…` : "Classifying items…"}
         {...(args ? { summary: labelSummary(args.labels) } : {})}

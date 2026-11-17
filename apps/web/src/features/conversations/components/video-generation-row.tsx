@@ -8,10 +8,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { AiGeneratedBadge } from "@/features/files/components/file-status-badge"
-import {
-  ActivityStatusBadge,
-  ActivityStatusSuffix,
-} from "@/features/conversations/components/tool-activity-status"
+import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -119,7 +116,7 @@ export function EditVideoLoadingRow({ activity }: { activity: ToolActivity }) {
       heading={<ToolHeading icon={WandSparklesIcon}>Edit Video</ToolHeading>}
       label="Editing a video"
       summary={`${activity.progressStage ?? "Editing Video"} · Usually takes 1 to 3 minutes`}
-      trailing={<ActivityStatusSuffix liveRunning status="running" suffix={null} />}
+      running
     />
   )
 }
@@ -132,7 +129,7 @@ export function GenerateVideoLoadingRow({ activity }: { activity: ToolActivity }
       heading={<ToolHeading icon={ClapperboardIcon}>Generate Video</ToolHeading>}
       label="Generating a video"
       summary={`${stage} · ${generateVideoPlan(activity.args)} · Usually takes 1 to 3 minutes`}
-      trailing={<ActivityStatusSuffix liveRunning status="running" suffix={null} />}
+      running
     />
   )
 }

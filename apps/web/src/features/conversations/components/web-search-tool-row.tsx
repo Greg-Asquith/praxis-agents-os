@@ -24,6 +24,7 @@ export function WebSearchToolRow({
     const query = webSearchQuery(activity.args)
     return query ? (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={GlobeIcon}>Web Search</ToolHeading>}
         label={`Searching ${query}…`}
         summary={`Search: ${query}`}

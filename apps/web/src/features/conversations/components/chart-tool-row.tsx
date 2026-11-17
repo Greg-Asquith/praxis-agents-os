@@ -40,6 +40,7 @@ export function ChartToolRow({ activity }: { activity: ToolActivity }) {
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={BarChart3Icon}>Build Chart</ToolHeading>}
         label="Building chart…"
         summary="Preparing the chart"

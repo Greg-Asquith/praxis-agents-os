@@ -22,6 +22,7 @@ export function SkillDocumentReadRow({ activity, defaultOpen = false }: SkillDoc
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
+        running
         heading={heading}
         label="Reading skill document…"
         summary={document ?? skill ?? "Loading guidance"}

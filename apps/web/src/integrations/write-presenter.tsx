@@ -131,6 +131,7 @@ export function defineIntegrationWriteVariant<Args, Result>(
               ? variant.waitingLabel
               : approvalCopy(variant.progressLabel, args)
           }
+          running={activity.status === "running"}
         />
       )
     }

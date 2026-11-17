@@ -234,6 +234,7 @@ function SkillPendingRow({ activity }: Pick<SkillToolRowProps, "activity">) {
   const state = skillPendingState(activity)
   return (
     <FanOutSkeleton
+      running={activity.status === "running"}
       heading={<ToolHeading icon={SparklesIcon}>{state.heading}</ToolHeading>}
       label={state.runningLabel}
       {...(state.summary ? { summary: state.summary } : {})}

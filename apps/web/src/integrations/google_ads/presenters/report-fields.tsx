@@ -134,6 +134,7 @@ export const googleAdsReportFieldsPresenter: ToolRowPresenter = {
 function reportFieldsSkeleton(exact: boolean) {
   return (
     <FanOutSkeleton
+      running
       heading={heading(exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields")}
       label={`${exact ? "Getting" : "Listing"} Google Ads report field metadata`}
     />

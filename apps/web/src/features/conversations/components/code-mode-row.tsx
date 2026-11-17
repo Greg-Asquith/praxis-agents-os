@@ -82,6 +82,7 @@ export function CodeModeRow({
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={Workflow}>Script</ToolHeading>}
         label="Running script…"
         summary={reason}

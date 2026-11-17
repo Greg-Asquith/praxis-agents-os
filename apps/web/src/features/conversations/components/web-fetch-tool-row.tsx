@@ -23,6 +23,7 @@ export function WebFetchToolRow({
     const url = webFetchUrl(activity.args)
     return url ? (
       <FanOutSkeleton
+        running
         heading={<ToolHeading icon={LinkIcon}>Web Fetch</ToolHeading>}
         label={`Fetching ${url}…`}
         summary={`URL: ${url}`}

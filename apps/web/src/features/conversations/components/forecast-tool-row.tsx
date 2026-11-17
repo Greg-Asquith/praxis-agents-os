@@ -48,7 +48,12 @@ export function ForecastToolRow({ activity }: { activity: ToolActivity }) {
 
   if (!result) {
     return (
-      <FanOutSkeleton heading={heading} label="Forecasting…" summary="Preparing the forecast" />
+      <FanOutSkeleton
+        running={activity.status === "running"}
+        heading={heading}
+        label="Forecasting…"
+        summary="Preparing the forecast"
+      />
     )
   }
   const { chart } = result

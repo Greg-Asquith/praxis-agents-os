@@ -84,6 +84,7 @@ export function MemoryToolRow({
     const state = memoryPendingState(activity)
     return state ? (
       <FanOutSkeleton
+        running={activity.status === "running"}
         heading={<ToolHeading icon={BrainIcon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(state.summary ? { summary: state.summary } : {})}
