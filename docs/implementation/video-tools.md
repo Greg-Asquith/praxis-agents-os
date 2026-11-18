@@ -4,7 +4,7 @@ Read this before changing the media renderer, its API client, video
 generation, or anything that decodes, cuts, or measures video. For upload limits and video in chat, see
 [Storage and files](storage-and-files.md#video-uploads-and-attachments).
 
-The agent has five video tools. Each is hidden when its dependencies are
+The agent has six video tools. Each is hidden when its dependencies are
 missing, rather than failing at call time:
 
 | Tool | Needs | Effect |
@@ -773,8 +773,8 @@ clip.
 
 The save appends a revision with `expected_current_revision_id` set to the
 base, so a File changed during the edit saves nothing and the record is
-marked `failed`. A call that finds its own record `saved` returns that
-revision. The result has the revision ID and number, the base, the cost,
+marked `failed`, as does a File deleted during the edit. A call that finds
+its own record `saved` returns that revision. The result has the revision ID and number, the base, the cost,
 the model's notes as untrusted content, and the reminder to check with
 `ask_video`. The row plays the clip, says **Saved As Version N**, and shows
 the instruction; while it runs it's a collapsed loading card.
@@ -801,9 +801,10 @@ either `previous_interaction_id` and the instruction as `input`, or an
 `previous_interaction_id` alongside a task. On the Gemini API, Google
 doesn't edit uploaded video from the EEA, Switzerland, or the UK. It takes
 the request, then fails the interaction as `INVALID_ARGUMENT` with no
-reason, so on the Gemini API a failed interaction whose input held a video
-(and that wasn't a content refusal) returns a message suggesting a clip
-generated in Praxis or Vertex.
+reason, so on the Gemini API an `INVALID_ARGUMENT` failure of an interaction
+whose input held a video (and that wasn't a content refusal) returns a
+message that names the restriction, suggests a clip generated in Praxis or
+Vertex, and says to try again from anywhere else.
 
 The client sends each request with SDK retries off, because a retried create is a
 second paid clip, then polls the interaction every 5 seconds. Reads that fail

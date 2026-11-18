@@ -154,22 +154,19 @@ default. _(enforced)_ The following rules define the defaults:
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. _(enforced)_
 - `generate_video` and `edit_video` are billed to the deployment's own
-  Google account, like
-  every model call (each deployment runs in the customer's infrastructure
-  with their own provider accounts). It costs about $0.07 to $0.21 a second
-  of clip, so each defaults to `approval` and shows the model on the card
-  (`edit_video` shows the full instruction). Plan 250 lets an owner set them
-  to `auto` per workspace or agent,
-  unlike ad spend, which is approval-only. Each call writes a
-  `media_generations` record before the provider call and records the
-  provider's ID before waiting, so one tool call never pays twice.
-  _(enforced)_
+  Google account, like every model call (each deployment runs in the
+  customer's infrastructure with their own provider accounts). A clip costs
+  about $0.07 to $0.21 a second, so each tool defaults to `approval` and
+  shows the model, the full prompt or instruction, and the estimated cost on
+  the card. Unlike ad spend, which is approval-only, an owner can set them
+  to `auto` per workspace or agent. Each call writes a `media_generations`
+  record before the provider call and records the provider's ID before
+  waiting, so one tool call never pays twice. _(enforced)_
 - Omni video generation runs on Google's `global` endpoint, which may
-  process data outside the EU (accepted by the operator on 2026-10-01), and
-  keeps each interaction on Google's side (`store: true`, decided
-  2026-11-17) so a later edit can chain from it. Google's retention period
-  for stored interactions isn't confirmed. On Vertex, Omni is offered only
-  when `GOOGLE_VERTEX_LOCATION` is `auto` or `global`, so pinning a
+  process data outside the EU, and keeps each interaction on Google's side
+  (`store: true`) so a later edit can chain from it. Google's retention
+  period for stored interactions isn't confirmed. On Vertex, Omni is offered
+  only when `GOOGLE_VERTEX_LOCATION` is `auto` or `global`, so pinning a
   regional location turns it off. _(enforced)_
 - The Google Search Console Indexing API tool is also `approval` with
   `supports_auto=False`. Each action consumes a shared daily quota and Google

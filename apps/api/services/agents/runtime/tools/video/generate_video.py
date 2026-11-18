@@ -18,6 +18,7 @@ from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
 from sqlalchemy import select
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
 from models.files import File, FileRevision
@@ -332,7 +333,7 @@ async def generate_video(
     task = _task(image_file_ids, reference_video_file_ids)
     entry, route = resolve_media_model(model, task)
     request = VideoGenerationRequest(
-        provider_model=route.provider_model(TASK),
+        provider_model=route.provider_model(task),
         prompt=prompt,
         aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO,
         resolution=resolution or DEFAULT_RESOLUTION,
@@ -498,16 +499,16 @@ async def _save(
         duration_seconds=request.duration_seconds,
     )
     try:
-        stored = await save_new_file(
-            deps,
-            name=_file_name(name or request.prompt),
-            content=video.content,
-            media_type=video.media_type,
-            folder=OutputFolderResolver(folder),
-            details={"source": "video_generation", "media_generation_id": str(record.id)},
-        )
-    except (AppValidationError, ConflictError) as exc:
-        await deps.db.rollback()
+        async with deps.db.begin_nested():
+            stored = await save_new_file(
+                deps,
+                name=_file_name(name or request.prompt),
+                content=video.content,
+                media_type=video.media_type,
+                folder=OutputFolderResolver(folder),
+                details={"source": "video_generation", "media_generation_id": str(record.id)},
+            )
+    except (AppValidationError, AuthorizationError, ConflictError) as exc:
         await settle_media_generation(deps.db, record, "failed", error=exc.message)
         raise ToolFailed(f"The clip was generated but couldn't be saved: {exc.message}") from exc
     revision = await deps.db.get(FileRevision, stored.revision_id)

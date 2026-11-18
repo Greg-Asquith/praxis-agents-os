@@ -42,7 +42,7 @@ it("preserves the same-run proposal revision through awaiting status and clears 
   expect(client.getQueryData<ConversationActiveRunResponse>(key)?.approval_revision).toBeNull()
 })
 
-it("refreshes Files saved by a nested document edit once the stream ends", async () => {
+it("refreshes Files saved by a nested document edit or a video edit once the stream ends", async () => {
   const client = new QueryClient()
   const saved: StreamSavedFiles = { callNames: new Map(), fileIds: new Set() }
   const nested = { ...envelope, tool_call_id: "child-1", parent_tool_call_id: "script-1" }
@@ -65,10 +65,26 @@ it("refreshes Files saved by a nested document edit once the stream ends", async
       },
     },
   })
+  collectStreamSavedFiles(saved, {
+    event: "tool.result",
+    data: {
+      ...envelope,
+      tool_call_id: "edit-1",
+      name: "edit_video",
+      result: {
+        file_id: "file-3",
+        name: "cup.mp4",
+        media_type: "video/mp4",
+        model: "omni-1.2-flash",
+        revision_number: 2,
+      },
+    },
+  })
   for (const key of [
     filesQueryKeys.list({}),
     filesQueryKeys.revisions("file-1"),
     filesQueryKeys.detail("file-2"),
+    filesQueryKeys.preview("file-3"),
   ]) {
     client.setQueryData(key, { stale: true })
   }
@@ -84,4 +100,6 @@ it("refreshes Files saved by a nested document edit once the stream ends", async
   expect(invalidated(filesQueryKeys.list({}))).toBe(true)
   expect(invalidated(filesQueryKeys.revisions("file-1"))).toBe(true)
   expect(invalidated(filesQueryKeys.detail("file-2"))).toBe(false)
+  // The edited video's cached preview is the previous version's clip.
+  expect(invalidated(filesQueryKeys.preview("file-3"))).toBe(true)
 })

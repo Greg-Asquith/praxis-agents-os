@@ -17,7 +17,8 @@ from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
 from sqlalchemy import select
 
-from core.exceptions.general import AppValidationError, ConflictError
+from core.exceptions.auth import AuthorizationError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from models.files import File, FileRevision
 from models.media_generation import MediaGeneration
@@ -349,7 +350,7 @@ async def _save(
                     "base_revision_id": str(base_revision_id),
                 },
             )
-    except (AppValidationError, ConflictError) as exc:
+    except (AppValidationError, AuthorizationError, ConflictError, NotFoundError) as exc:
         message = (
             "The video changed while it was being edited, so the edit wasn't saved."
             if isinstance(exc, ConflictError)

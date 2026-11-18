@@ -42,8 +42,9 @@ _UNAVAILABLE = "Google couldn't generate the video. Try again in a few minutes."
 # Google names QuickTime differently from the standard type.
 _GOOGLE_MEDIA_TYPES = {"video/quicktime": "video/mov"}
 _REGION = (
-    "Google doesn't edit uploaded video from this deployment's region. Edit a clip generated "
-    "in Praxis instead, or ask an admin to use Google Vertex AI."
+    "Google couldn't use the uploaded video. The Gemini API it doesn't edit uploaded video "
+    "from the EEA, Switzerland, or the UK: edit a clip generated in Praxis instead, or ask an "
+    "admin to use Google AI via GCP instead. Anywhere else, try again in a few minutes."
 )
 
 
@@ -207,12 +208,18 @@ async def _cancel(client: "AsyncClient", external_id: str) -> None:
 def generated_video(interaction: "Interaction", *, max_bytes: int) -> GeneratedVideo:
     """Returns the clip from a finished interaction, refusing a failure or an oversized clip."""
     if interaction.status != "completed":
-        messages = [error.message or "" for error in interaction.errors or ()]
+        errors = interaction.errors or ()
+        messages = [error.message or "" for error in errors]
         messages += [_step_error(step) for step in interaction.steps or ()]
         failure = _failure(" ".join(messages))
         # The Gemini API takes an uploaded clip from an EEA, Swiss, or UK caller, then fails
         # it as INVALID_ARGUMENT with no reason given (2026-11-17).
-        if not failure.refused and not settings.GOOGLE_VERTEX_AI and _uploaded_video(interaction):
+        if (
+            not failure.refused
+            and not settings.GOOGLE_VERTEX_AI
+            and any(error.code == "INVALID_ARGUMENT" for error in errors)
+            and _uploaded_video(interaction)
+        ):
             raise VideoGenerationError(_REGION)
         raise failure
     video = interaction.output_video

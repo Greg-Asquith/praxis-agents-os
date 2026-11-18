@@ -12,6 +12,10 @@ import type {
 } from "@/features/conversations/types"
 import type { StreamEvent, StreamRunStatus } from "@/features/conversations/stream/protocol"
 import { documentToolResult } from "@/features/conversations/native-tools/document-tools"
+import {
+  EDIT_VIDEO_TOOL_NAME,
+  editVideoResult,
+} from "@/features/conversations/native-tools/video-tools"
 import { filesQueryKeys } from "@/features/files/api/list-files"
 
 export const EMPTY_CONVERSATION_MESSAGES = {
@@ -140,6 +144,9 @@ export function collectStreamSavedFiles(saved: StreamSavedFiles, streamEvent: St
   const name = streamEvent.data.name ?? saved.callNames.get(streamEvent.data.tool_call_id)
   const result = name ? documentToolResult(name, streamEvent.data.result) : null
   if (result?.kind === "edit" || result?.kind === "create") saved.fileIds.add(result.file.fileId)
+  // An edited video is a new revision of the same File, so its cached preview is the old clip.
+  const edited = name === EDIT_VIDEO_TOOL_NAME ? editVideoResult(streamEvent.data.result) : null
+  if (edited) saved.fileIds.add(edited.video.fileId)
 }
 
 export async function invalidateStreamQueries(
@@ -160,7 +167,7 @@ export async function invalidateStreamQueries(
     queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
   ]
 
-  // Document edits and creates save new revisions, so refresh Files once the stream ends.
+  // Document and video edits save new revisions, so refresh Files once the stream ends.
   if (savedFileIds.size > 0) {
     invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }))
     for (const fileId of savedFileIds) {

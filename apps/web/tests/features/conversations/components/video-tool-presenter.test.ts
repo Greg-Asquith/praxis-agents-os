@@ -109,13 +109,26 @@ describe("video tool rows", () => {
       label: "Generate Video",
       live: true,
       providerKey: null,
-      ui: null,
+      ui: {
+        icon: "video",
+        running_label: "Generating a Video",
+        completed_label: "Generated {name}",
+        failed_label: "Couldn't Generate the Video",
+        approval_title: "Generate a Video",
+        approval_prompt: "The agent wants to generate a video from this prompt: {prompt}",
+        approve_label: "Approve & Generate",
+        arg_fields: [],
+        result_fields: [],
+      },
     })
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, { client: new QueryClient() }, row)
+    )
 
     // 8 seconds at 1080p's $0.1043 a second, not 720p's $0.0695.
-    expect(
-      renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, row))
-    ).toContain("About $0.83")
+    expect(html).toContain("About $0.83")
+    // The prompt template is filled from the call's arguments.
+    expect(html).not.toContain("{prompt}")
   })
 
   it("leaves a video result to a specific presenter that claims it", () => {

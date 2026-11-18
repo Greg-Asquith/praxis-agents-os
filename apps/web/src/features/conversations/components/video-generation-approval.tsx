@@ -5,6 +5,7 @@ import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval
 import type { EditedValues } from "@/components/tool-ui/edited-values"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import { toolUiApprovalPrompt } from "@/features/conversations/tool-ui"
 import type { VideoCostEstimate } from "@/features/conversations/native-tools/video-tools"
 import type { ToolUi } from "@/features/tools/types"
 
@@ -24,6 +25,7 @@ export function VideoGenerationApproval({
 }) {
   const fields = ui?.arg_fields ?? []
   const cost = estimate(activity.args, controls.decision.edits)
+  const prompt = ui ? toolUiApprovalPrompt(ui, activity) : null
   return (
     <ApprovalDecisionBlock
       activity={activity}
@@ -33,7 +35,7 @@ export function VideoGenerationApproval({
       fields={fields}
       iconToken={ui?.icon ?? "video"}
       label={label}
-      {...(ui?.approval_prompt ? { prompt: ui.approval_prompt } : {})}
+      {...(prompt ? { prompt } : {})}
       title={ui?.approval_title ?? label}
     >
       {cost ? (

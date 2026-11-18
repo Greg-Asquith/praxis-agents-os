@@ -246,5 +246,5 @@ def test_an_upload_the_gemini_api_fails_from_this_region_says_so(monkeypatch) ->
         ],
     )
 
-    with pytest.raises(VideoGenerationError, match="region"):
+    with pytest.raises(VideoGenerationError, match="EEA"):
         omni.generated_video(failed, max_bytes=10_000_000)

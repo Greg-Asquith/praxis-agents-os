@@ -249,14 +249,12 @@ export function FanOutSkeleton({
   label,
   running = false,
   summary,
-  trailing,
 }: {
   heading?: ReactNode
   label: string
   // Counts the seconds since the card appeared, for someone watching the call run.
   running?: boolean
   summary?: string
-  trailing?: ReactNode
 }) {
   // Matches a collapsed ToolResultCard header so a running row doesn't jump when it settles.
   return (
@@ -277,8 +275,7 @@ export function FanOutSkeleton({
             ) : null}
           </div>
         </div>
-        {trailing ??
-          (running ? <RunningSeconds /> : <Skeleton className="mr-2 h-5 w-14 rounded-full" />)}
+        {running ? <RunningSeconds /> : <Skeleton className="mr-2 h-5 w-14 rounded-full" />}
       </div>
       <span className="sr-only">{label}</span>
     </section>
