@@ -7,6 +7,7 @@ import re
 from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.microsoft_graph import entra_oauth_config
 from services.integrations.plugin import (
+    IntegrationMailMergeDefinition,
     IntegrationPreviewDefinition,
     IntegrationProviderPlugin,
     OAuthClientConfig,
@@ -16,6 +17,7 @@ from .discover_resources import discover_resources
 from .entity_resolvers import OUTLOOK_ATTACHMENT_RESOLVER, OUTLOOK_MESSAGE_RESOLVER
 from .file_sources import ATTACHMENT_FILE_SOURCE
 from .operations.preview_message import fetch_message_preview
+from .operations.send_merge_message import open_merge_sender
 from .settings import outlook_mail_settings
 from .tools import TOOL_DEFINITIONS
 
@@ -71,4 +73,5 @@ PROVIDER = IntegrationProviderPlugin(
             ref_pattern=re.compile(r"[A-Za-z0-9_+/=-]{1,512}"),
         ),
     ),
+    mail_merge=IntegrationMailMergeDefinition(open_sender=open_merge_sender),
 )

@@ -14,6 +14,7 @@ from core.database import get_maintenance_async_db_session_factory
 from core.exceptions.general import AppValidationError
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.audit_event import AuditEvent
+from models.mail_merge import MailMerge
 from models.session import Session
 from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
@@ -137,6 +138,19 @@ async def test_update_user_deactivation_stops_runs_and_reactivation_keeps_schedu
     await db_session.flush()
     membership, schedule, schedule_run = await _owner_with_claimed_schedule_run(db_session, target)
     session_result = await session_manager.create_session(db_session, str(target.id))
+    merge = MailMerge(
+        workspace_id=membership.workspace_id,
+        created_by_user_id=target.id,
+        tool_call_id="call-1",
+        provider_key="gmail",
+        sender_address="target@example.com",
+        subject_template="Hello",
+        body_template="<p>Hi</p>",
+        content_fingerprint="0" * 64,
+        status="paused",
+    )
+    db_session.add(merge)
+    await db_session.flush()
 
     result = await update_user(
         db_session,
@@ -153,6 +167,9 @@ async def test_update_user_deactivation_stops_runs_and_reactivation_keeps_schedu
     await db_session.refresh(schedule)
     assert schedule.is_active is False
     assert schedule.next_run_at is None
+    # A paused merge can't be resumed to send as someone who can no longer act.
+    await db_session.refresh(merge)
+    assert (merge.status, merge.stop_reason) == ("stopped", "sender_removed")
 
     # The membership survives deactivation, but the run claimed beforehand is still refused.
     await db_session.refresh(membership)
@@ -175,6 +192,7 @@ async def test_update_user_deactivation_stops_runs_and_reactivation_keeps_schedu
         "fields": ["is_active"],
         "revoked_sessions": 1,
         "disabled_schedules": 1,
+        "stopped_mail_merges": 1,
     }
 
     await update_user(

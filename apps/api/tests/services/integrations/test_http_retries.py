@@ -153,7 +153,7 @@ async def test_http_date_retry_after_parser() -> None:
         headers={"Retry-After": "Fri, 10 Jul 2099 12:00:00 GMT"},
         request=request,
     )
-    assert integration_http._retry_after_seconds(response) > 0
+    assert integration_http.retry_after_seconds(response) > 0
 
 
 @pytest.mark.parametrize(

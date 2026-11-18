@@ -63,6 +63,28 @@ completion or approval suspension does not interrupt its own finaliser.
 Shutdown failures remain distinct from human cancellation, and scheduled-run
 settlement uses a bounded cleanup path.
 
+## Mail merge sending
+
+`mail_merge.send` sends an approved merge's emails from the sender's own
+mailbox, so a retry could email someone twice. It is workspace-owned, deduplicated by merge, and sends at most 25 emails or
+runs about 8 minutes before it queues the next chunk with `run_after`. Its
+handler timeout is 10 minutes and it has three attempts.
+
+It is safe to run twice because no email is sent without proof:
+
+- Each email goes through a provider draft whose IDs are committed before
+  the send request, and its row is marked `sending` first.
+- A later attempt, after a crash, timeout, or lost lease, reconciles every
+  `sending` row from those IDs before it sends anything. A draft still
+  waiting is sent again; one the provider can't account for becomes
+  `unverified` and is never resent.
+- Before each send it checks the lease, the merge status, the sender's
+  membership, the sending budget, and the Do Not Email guard, under the
+  merge's row lock.
+
+`on_final_failure` stops the merge and marks rows caught mid-send
+`unverified`. See [Mail merge](mail-merge.md).
+
 ## Platform File maintenance
 
 Platform File extraction uses the actor-owned `files.extract_platform` kind.

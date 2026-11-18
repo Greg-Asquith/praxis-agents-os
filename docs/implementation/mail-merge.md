@@ -8,10 +8,10 @@ recipient, and its placeholders are filled in mechanically from that person's
 row. Merges are for Google Workspace and Microsoft 365 mailboxes; personal
 Gmail and Outlook.com accounts keep lower caps as a safe default.
 
-**Status:** pending. The records, template rendering, recipient checks, and
-sending budget described on this page are implemented as backend services. No
-agent tool, approval card, background sender, or route uses them yet, so an
-operator can't start a merge.
+**Status:** pending. The records, template rendering, recipient checks,
+sending budget, provider senders, and background sender described on this
+page are implemented as backend services. No agent tool, approval card, or
+route creates a merge yet, so an operator can't start one.
 
 ## Records
 
@@ -119,6 +119,86 @@ than being refused.
 Test sends from the approval card are pending, so the budget counts only
 merge sends.
 
+## Sending
+
+The `mail_merge.send` background job is the only sender
+(`services/mail_merge/send_merge_chunk.py`). `queue_merge_send` queues it for
+a merge. Each job sends at most 25 emails, or stops starting sends after
+about 8 minutes, then queues the next chunk. Sends from one merge are
+`MAIL_MERGE_SEND_INTERVAL_SECONDS` apart, give or take 30%.
+
+Before each send, under the merge's row lock, the job checks that:
+
+- It still holds its job lease.
+- The merge is still `sending`, so a pause or cancel takes effect before the
+  next email.
+- The sender is still an active member of the workspace.
+- The mailbox has budget left. Otherwise the next chunk waits until the
+  oldest counted send leaves the 24-hour window.
+- The Do Not Email guard doesn't refuse the address. An address listed after
+  approval is `skipped`.
+
+It then claims the next `pending` row with `FOR UPDATE SKIP LOCKED`, marks it
+`sending` with `attempted_at`, and commits before calling the provider. Every
+email has a pending audit event when it's claimed and a terminal one with its
+outcome, both written in the same transaction as the row's status.
+
+### Provider senders
+
+Each mail provider contributes a `mail_merge` definition to its plugin: a
+factory that opens a sender for the merge's personal connection, and the
+scopes a merge needs. The sender creates a draft with one To address, sends
+it, and checks a stored draft. The draft's IDs are committed before the send:
+
+| Provider | Stored before the send | Not sent | Sent | Couldn't Confirm |
+| --- | --- | --- | --- | --- |
+| Gmail | Draft ID and thread ID | `drafts.get` finds the draft | The draft is gone and its thread holds a `SENT` message | The draft is gone and nothing in its thread was sent |
+| Outlook | Immutable draft ID and `internetMessageId` | The draft ID opens a message with `isDraft` true | It opens with `isDraft` false | The draft ID opens nothing |
+
+Gmail replaces the Message-ID of every email it sends, so its sender reads
+the sent copy's Message-ID into `message_id_header` after the send. A
+Gmail connection without `gmail.compose`, granted before that scope was
+requested, pauses the merge for a reconnect before any send.
+
+Both senders map their providers' throttling as rejected, so the row can wait
+and the same draft is checked and sent later. Other tools keep the shared
+error mapping. For the error shapes, see the Gmail client and
+[Microsoft Graph](integrations/microsoft-graph.md#mail-merge-sends).
+
+### Reconcile before any resend
+
+A row left `sending` by a crash, a timeout, or a lost lease is settled at the
+start of the next job, before anything else is sent:
+
+- A row with no draft ID stopped before its draft existed and returns to
+  `pending`.
+- A draft that's still waiting returns the row to `pending`. A `pending` row
+  that already has a draft is always checked again before it's sent, so a
+  draft someone sent by hand isn't sent twice.
+- A sent draft makes the row `sent`. Anything else makes it `unverified`.
+
+When a send's response is lost, the job checks the draft at once. A draft
+still waiting means the send failed, and the row is `failed`. If the check
+also fails, the row stays `sending` for the next job.
+
+### Stop rules
+
+The job applies these rules:
+
+| Event | Effect |
+| --- | --- |
+| The provider throttles a request | The row returns to `pending`; the next chunk runs after `Retry-After`, at most 15 minutes |
+| The mailbox reaches its provider's daily limit | The row returns to `pending`, and the merge is `paused` with `stop_reason` `daily_limit` |
+| Authentication or permission fails, or the connection is gone or lacks a scope | `paused` with `stop_reason` `reconnect` |
+| Five settled rows in a row failed | `stopped` with `stop_reason` `repeated_failures` |
+| Praxis reaches its own Gmail API quota (`403 dailyLimitExceeded`) | `stopped` with `stop_reason` `platform_quota` |
+| The sender leaves the workspace, or is deactivated or deleted | `stopped` with `stop_reason` `sender_removed`; unsent rows stay unsent |
+| The job fails on its last attempt | `stopped` with `stop_reason` `send_failed`; rows caught mid-send become `unverified` |
+
+Deactivating or deleting a user stops their unfinished merges in every
+workspace, alongside their schedules (`stop_user_mail_merges`). The job's
+membership check before each send covers leaving one workspace.
+
 ## Settings
 
 Every mail merge setting is listed in `apps/api/.env.example` and in
@@ -135,23 +215,9 @@ Every mail merge setting is listed in `apps/api/.env.example` and in
 
 These parts aren't built:
 
-- Provider senders for Gmail and Outlook. Both send through a draft whose
-  IDs are stored before the send, so Praxis can tell after a crash whether
-  the email went:
-  - **Outlook:** the stored draft ID is immutable and follows the email
-    into Sent Items. `isDraft=true` means not sent; `isDraft=false` means
-    sent.
-  - **Gmail:** Gmail gives the sent copy a new Message-ID and message ID,
-    but keeps the draft's thread. A draft that still exists means not
-    sent; a missing draft with a `SENT` message in the stored thread means
-    sent; anything else is Couldn't Confirm and is never resent. Gmail
-    connections request `gmail.compose` for this; a connection made before
-    that permission was added must reconnect before it can send a merge.
-- On Microsoft 365, going over the daily limit arrives as a bounce after a
-  successful send, not as an error, so the sending budget is the guard
-  that keeps a mailbox under its limit.
-- The `mail_merge_send` background job, which re-checks the Do Not Email
-  guard, the sender's membership, and the budget before each send.
 - The `gmail_send_mail_merge` and `outlook_mail_send_mail_merge` tools, the
   approval card, and the required test send to the operator's own address.
+  Test sends must be recorded where `get_send_budget` counts them.
 - The progress card with Pause, Resume, Cancel, and a results download.
+- Bounce matching. Gmail rows keep the sent copy's Message-ID, and Outlook
+  rows keep the draft's, for when it's built.

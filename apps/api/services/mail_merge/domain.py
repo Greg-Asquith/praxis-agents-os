@@ -2,6 +2,8 @@
 
 """The mail merge and recipient lifecycles."""
 
+MAIL_MERGE_SEND_JOB_KIND = "mail_merge.send"
+
 MERGE_STATUS_QUEUED = "queued"
 MERGE_STATUS_SENDING = "sending"
 MERGE_STATUS_PAUSED = "paused"
@@ -12,6 +14,14 @@ MERGE_STATUS_STOPPED = "stopped"
 FINAL_MERGE_STATUSES = frozenset(
     {MERGE_STATUS_COMPLETED, MERGE_STATUS_CANCELLED, MERGE_STATUS_STOPPED}
 )
+
+# Why a merge paused or stopped, so the operator can be told in plain words.
+STOP_REASON_DAILY_LIMIT = "daily_limit"
+STOP_REASON_RECONNECT = "reconnect"
+STOP_REASON_REPEATED_FAILURES = "repeated_failures"
+STOP_REASON_SENDER_REMOVED = "sender_removed"
+STOP_REASON_PLATFORM_QUOTA = "platform_quota"
+STOP_REASON_SEND_FAILED = "send_failed"
 
 # A paused merge resumes through queued, so the active-mailbox index is checked again.
 ALLOWED_MERGE_TRANSITIONS: dict[str, frozenset[str]] = {

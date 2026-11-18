@@ -22,8 +22,12 @@ def graph_client_for_connection(
     connection: IntegrationConnection,
     *,
     expected_provider_key: str,
+    send_errors: bool = False,
 ) -> MicrosoftGraphClient:
-    """Create a paced Graph client from a visible personal connection."""
+    """Create a paced Graph client from a visible personal connection.
+
+    Set `send_errors` for a sender that paces itself, so throttling is reported as rejected.
+    """
     access_token = build_personal_oauth_access_token_resolver(
         db,
         connection,
@@ -38,6 +42,7 @@ def graph_client_for_connection(
         access_token,
         provider_key=expected_provider_key,
         pacing_key=str(connection.id),
+        send_errors=send_errors,
     )
 
 

@@ -139,6 +139,18 @@ class IntegrationRateLimitError(IntegrationError):
     _status_override = 429
     _title_override = "Integration Rate Limit Error"
 
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None, **kwargs: Any):
+        super().__init__(message, **kwargs)
+        # The provider's Retry-After, when it sent one.
+        self.retry_after_seconds = retry_after_seconds
+
+
+class IntegrationSendingLimitError(IntegrationError):
+    """Raised when a mailbox reaches its provider's daily sending limit."""
+
+    _status_override = 429
+    _title_override = "Integration Sending Limit Error"
+
 
 class IntegrationTimeoutError(IntegrationError):
     """Raised when an integration operation times out."""

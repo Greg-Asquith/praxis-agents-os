@@ -14,8 +14,10 @@ from core.exceptions.integration import (
     IntegrationNotFoundError,
     IntegrationPermissionError,
     IntegrationRateLimitError,
+    IntegrationSendingLimitError,
     IntegrationValidationError,
 )
+from services.integrations.http import retry_after_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,32 @@ def graph_response_error(
     if code == "activityLimitReached" and response.status_code != 429:
         return IntegrationRateLimitError("Microsoft Graph rate limit exceeded", **context)
     return None
+
+
+def graph_send_error(
+    response: httpx2.Response, *, provider_key: str, operation: str
+) -> IntegrationError | None:
+    """Maps throttling for senders that pace themselves; Graph processes no throttled request.
+
+    Microsoft doesn't document `ErrorExceededMessageLimit`, but it is reported for a mailbox
+    over its daily limit, which Exchange usually reports later as a bounce instead.
+    """
+    if response.status_code != 429:
+        return None
+    context = {
+        "provider_key": provider_key,
+        "operation": operation,
+        "failure_disposition": IntegrationFailureDisposition.REJECTED,
+    }
+    if _graph_error_code(response) == "ErrorExceededMessageLimit":
+        return IntegrationSendingLimitError(
+            "The mailbox reached its daily sending limit", error_code="daily_limit", **context
+        )
+    return IntegrationRateLimitError(
+        "Microsoft Graph asked Praxis to slow down",
+        retry_after_seconds=retry_after_seconds(response),
+        **context,
+    )
 
 
 def graph_write_error(

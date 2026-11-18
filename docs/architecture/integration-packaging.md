@@ -216,6 +216,8 @@ class IntegrationProviderPlugin:
     entity_resolvers: tuple[EntityResolverDefinition, ...] = ()
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: TableScopeAdapter | None = None
+    knowledge_source: IntegrationKnowledgeSourceDefinition | None = None
+    mail_merge: IntegrationMailMergeDefinition | None = None  # merge sender
 ```
 
 `OAuthClientConfig.protocol` declares each provider's authorization
@@ -231,6 +233,12 @@ response uses `scope_resource_prefix`; the callback strips the prefix and
 matches scopes without case sensitivity while preserving manifest spelling.
 `classify_token_error` can map a provider error body to a stable recovery code
 without exposing provider-controlled error text.
+
+A mail provider's `mail_merge` definition opens a sender for one personal
+connection and names the scopes a merge needs. The sender creates a draft,
+sends it, and checks a stored draft after a crash, so the platform's
+background job can send merges without importing provider packages. See
+[Mail merge](../implementation/mail-merge.md).
 
 A discovery function normally returns its resource sequence directly. If a
 provider can return useful resources after a bounded partial failure, it returns

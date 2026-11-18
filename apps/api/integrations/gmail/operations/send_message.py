@@ -86,15 +86,15 @@ def html_to_text(html: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
-async def send_message(
-    client: GmailClient,
+def build_raw_message(
     *,
     to: list[str],
     subject: str,
     body_html: str,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
-) -> dict[str, Any]:
+) -> str:
+    """Returns the base64url MIME message, with HTML and a derived plain-text part."""
     html = sanitize_preview_html(body_html)
     message = EmailMessage()
     message["To"] = ", ".join(to)
@@ -105,7 +105,19 @@ async def send_message(
     message["Subject"] = subject
     message.set_content(html_to_text(html))
     message.add_alternative(html, subtype="html")
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+    return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+
+
+async def send_message(
+    client: GmailClient,
+    *,
+    to: list[str],
+    subject: str,
+    body_html: str,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None,
+) -> dict[str, Any]:
+    raw = build_raw_message(to=to, subject=subject, body_html=body_html, cc=cc, bcc=bcc)
     payload = await client.post(
         "users/me/messages/send",
         operation="send_message",

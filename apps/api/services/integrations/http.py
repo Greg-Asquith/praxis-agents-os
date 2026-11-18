@@ -322,10 +322,11 @@ async def _run_with_retries[T](
     if counter is not None:
         counter.requests += 1
 
+    response: httpx2.Response | None = None
     for attempt in range(settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS):
         last_status = None
         last_error = None
-        response: httpx2.Response | None = None
+        response = None
         if counter is not None:
             counter.attempts += 1
         try:
@@ -361,6 +362,7 @@ async def _run_with_retries[T](
     return _raise_final_request_error(
         last_status=last_status,
         last_error=last_error,
+        retry_after=retry_after_seconds(response) if response is not None else None,
         operation=operation,
         provider_key=provider_key,
         policy=policy,
@@ -372,6 +374,7 @@ def _raise_final_request_error(
     *,
     last_status: int | None,
     last_error: Exception | None,
+    retry_after: float | None,
     operation: str,
     provider_key: str,
     policy: IntegrationRequestPolicy,
@@ -388,14 +391,16 @@ def _raise_final_request_error(
         ),
     }
     if last_status == 429:
-        raise IntegrationRateLimitError("Integration rate limit exceeded", **context)
+        raise IntegrationRateLimitError(
+            "Integration rate limit exceeded", retry_after_seconds=retry_after, **context
+        )
     if isinstance(last_error, (TimeoutError, httpx2.TimeoutException)):
         raise IntegrationTimeoutError("Integration request timed out", **context)
     raise IntegrationConnectionError("Integration provider request failed", **context)
 
 
 def _retry_delay(response: httpx2.Response | None, attempt: int) -> float:
-    retry_after = _retry_after_seconds(response) if response is not None else None
+    retry_after = retry_after_seconds(response) if response is not None else None
     if retry_after is not None:
         return min(retry_after, settings.INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS)
     return settings.INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR * (2**attempt)
@@ -432,7 +437,8 @@ def _raise_response_error(
         )
 
 
-def _retry_after_seconds(response: httpx2.Response) -> float | None:
+def retry_after_seconds(response: httpx2.Response) -> float | None:
+    """Returns the seconds a throttled response asks the caller to wait, if it says."""
     if response.status_code not in {429, 503, 529}:
         return None
     raw = response.headers.get("Retry-After")

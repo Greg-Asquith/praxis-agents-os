@@ -4,6 +4,7 @@
 
 from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import (
+    IntegrationMailMergeDefinition,
     IntegrationPreviewDefinition,
     IntegrationProviderPlugin,
     OAuthClientConfig,
@@ -12,6 +13,7 @@ from services.integrations.plugin import (
 
 from .discover_resources import discover_resources
 from .entity_resolvers import GMAIL_MESSAGE_RESOLVER
+from .operations.send_merge_message import open_merge_sender
 from .preview import PREVIEW_OPERATION, fetch_message_preview
 from .settings import gmail_settings
 from .tools import TOOL_DEFINITIONS
@@ -19,6 +21,7 @@ from .tools import TOOL_DEFINITIONS
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
 
 
 def oauth_config() -> OAuthClientConfig:
@@ -45,7 +48,7 @@ PROVIDER = IntegrationProviderPlugin(
             "email",
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.send",
-            "https://www.googleapis.com/auth/gmail.compose",
+            GMAIL_COMPOSE_SCOPE,
         ),
         capability_flags=frozenset({"read", "write"}),
         resource_types=("gmail_mailbox",),
@@ -62,5 +65,8 @@ PROVIDER = IntegrationProviderPlugin(
             operation=PREVIEW_OPERATION,
             fetch=fetch_message_preview,
         ),
+    ),
+    mail_merge=IntegrationMailMergeDefinition(
+        open_sender=open_merge_sender, required_scopes=frozenset({GMAIL_COMPOSE_SCOPE})
     ),
 )

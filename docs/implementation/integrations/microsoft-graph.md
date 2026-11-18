@@ -850,6 +850,28 @@ pending evidence and the mutation to execute. The callbacks share cancellation
 and outcome handling. The shared runner owns audit persistence and invokes the
 mutation only after recording pending intent.
 
+### Mail merge sends
+
+Mail merges send from the background `mail_merge.send` job, not from an agent
+tool, through `operations/send_merge_message.py`. The sender reuses
+`create_draft` and `send_message` with one To address:
+
+- The draft's immutable ID and its `internetMessageId` are committed before
+  the send request. `MailWriteState` keeps the `internetMessageId` that Graph
+  returns when it creates the draft, and the sent copy keeps it.
+- After a crash, reconcile reads the stored draft ID, which follows the email
+  into Sent Items. `isDraft` true means not sent, false means sent, and a
+  missing item means Couldn't Confirm. It never searches.
+- The merge client is built with `send_errors=True`. Graph processes no
+  throttled request, so every `429` becomes a `REJECTED`
+  `IntegrationRateLimitError` with Graph's `Retry-After`, and
+  `ErrorExceededMessageLimit` becomes `IntegrationSendingLimitError`. Other
+  Outlook tools keep the shared mapping.
+
+Exchange Online usually reports a mailbox over its daily limit as a bounce
+after a `202`, not as an error. The mail merge sending budget is what keeps a
+mailbox under its limit. See [Mail merge](../mail-merge.md).
+
 ## Operator setup
 
 Follow the [Microsoft Entra app registration guide](../../guides/microsoft-entra-app-registration.md).

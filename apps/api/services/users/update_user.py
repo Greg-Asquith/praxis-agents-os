@@ -12,6 +12,7 @@ from core.exceptions.general import AppValidationError
 from models.user import User
 from services.agent_schedules.disable_user_schedules import disable_user_schedules
 from services.audit_events import AuditAction, record_user_audit_event
+from services.mail_merge import stop_user_mail_merges
 from services.users.schemas import UserRead, UserUpdateRequest
 from services.users.utils import get_user_or_raise
 
@@ -28,6 +29,7 @@ async def update_user(
     changed_fields: list[str] = []
     revoked_sessions = 0
     disabled_schedules = 0
+    stopped_mail_merges = 0
 
     if "display_name" in payload.model_fields_set and payload.display_name != user.display_name:
         user.display_name = payload.display_name
@@ -49,6 +51,13 @@ async def update_user(
                     user_id=user.id,
                     reason="user_deactivated",
                 )
+                stopped_mail_merges = await stop_user_mail_merges(
+                    db,
+                    request=request,
+                    actor=actor,
+                    user_id=user.id,
+                    reason="user_deactivated",
+                )
 
     if changed_fields:
         await db.flush()
@@ -62,6 +71,7 @@ async def update_user(
                 "fields": changed_fields,
                 "revoked_sessions": revoked_sessions,
                 "disabled_schedules": disabled_schedules,
+                "stopped_mail_merges": stopped_mail_merges,
             },
         )
         await db.refresh(user)

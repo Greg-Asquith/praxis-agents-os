@@ -112,6 +112,8 @@ class MailWriteState:
 
     message_id: str | None = None
     web_link: str | None = None
+    # Outlook sets it on the draft and keeps it when the draft is sent.
+    internet_message_id: str | None = None
     step: str = "draft"
     applied_steps: list[str] = field(default_factory=list)
 
@@ -127,6 +129,7 @@ class MailWriteState:
             )
         self.message_id = message_id
         self.web_link = text(payload.get("webLink"), 2_000) or None
+        self.internet_message_id = text(payload.get("internetMessageId"), 998) or None
         self.applied_steps.append(self.step)
 
 

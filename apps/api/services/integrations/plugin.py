@@ -6,7 +6,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -351,6 +351,64 @@ class IntegrationEventDefinition:
 
 
 @dataclass(frozen=True)
+class MailMergeMessage:
+    """One filled merge email with exactly one recipient."""
+
+    to: str
+    subject: str
+    body_html: str
+
+
+@dataclass(frozen=True)
+class MailMergeDraft:
+    """Provider IDs stored before the send, so a crash is reconciled instead of resent."""
+
+    draft_id: str
+    thread_id: str | None = None
+    message_id_header: str | None = None
+
+
+@dataclass(frozen=True)
+class MailMergeDelivery:
+    """What the provider shows about one merge draft.
+
+    `unsent` proves the draft is still waiting, so sending it again is safe. `unknown` means
+    the provider can't prove either way, and the email is never sent again automatically.
+    """
+
+    state: Literal["sent", "unsent", "unknown"]
+    provider_message_id: str | None = None
+    message_id_header: str | None = None
+
+
+class MailMergeSender(Protocol):
+    """Sends merge emails through drafts from one personal mailbox.
+
+    Raising `IntegrationSendingLimitError` means the mailbox reached its daily limit, and a
+    `REJECTED` `IntegrationRateLimitError` means the provider refused the request unsent.
+    """
+
+    async def create_draft(self, message: MailMergeMessage) -> MailMergeDraft: ...
+
+    async def send_draft(self, draft: MailMergeDraft) -> MailMergeDelivery: ...
+
+    async def check_draft(self, draft: MailMergeDraft) -> MailMergeDelivery: ...
+
+
+OpenMailMergeSenderFn = Callable[["AsyncSession", "IntegrationConnection"], MailMergeSender]
+
+
+@dataclass(frozen=True)
+class IntegrationMailMergeDefinition:
+    """How a mail provider sends merge emails from a personal connection."""
+
+    # Called with no open transaction; token failures raise IntegrationAuthError later.
+    open_sender: OpenMailMergeSenderFn
+    # A connection granted before these scopes were requested must reconnect first.
+    required_scopes: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
 class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest
     discover_resources: DiscoverResourcesFn | None
@@ -363,6 +421,7 @@ class IntegrationProviderPlugin:
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: "TableScopeAdapter | None" = None
     knowledge_source: IntegrationKnowledgeSourceDefinition | None = None
+    mail_merge: IntegrationMailMergeDefinition | None = None
 
 
 PROVIDER_PLUGINS: dict[str, IntegrationProviderPlugin] = {}

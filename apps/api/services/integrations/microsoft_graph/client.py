@@ -18,6 +18,7 @@ from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationConnectionError,
     IntegrationDownloadTooLargeError,
+    IntegrationError,
     IntegrationFailureDisposition,
     IntegrationTimeoutError,
     IntegrationValidationError,
@@ -31,7 +32,7 @@ from services.integrations.http import (
 )
 
 from .download_logging import suppress_download_logging
-from .errors import graph_response_error, upload_response_error
+from .errors import graph_response_error, graph_send_error, upload_response_error
 from .pacing import paced_request
 from .preauthenticated import PreauthenticatedFileAuth
 
@@ -92,11 +93,14 @@ class MicrosoftGraphClient:
         provider_key: str,
         client: httpx2.AsyncClient | None = None,
         pacing_key: str | None = None,
+        send_errors: bool = False,
     ) -> None:
         self._access_token = access_token
         self._provider_key = provider_key
         self._client = client
         self._pacing_key = pacing_key
+        # Only senders that pace themselves opt in; other tools keep the shared mapping.
+        self._send_errors = send_errors
 
     async def get(
         self,
@@ -410,11 +414,7 @@ class MicrosoftGraphClient:
             provider_key=self._provider_key,
             policy=policy,
             client=self._client,
-            response_error_mapper=lambda value: graph_response_error(
-                value,
-                provider_key=self._provider_key,
-                operation=operation,
-            ),
+            response_error_mapper=lambda value: self._response_error_for(value, operation),
             attempt_context=lambda: self._request_attempt(request_headers),
             headers=request_headers,
             **kwargs,
@@ -423,6 +423,14 @@ class MicrosoftGraphClient:
         if request_id:
             logger.debug("Microsoft Graph request completed", extra={"request_id": request_id})
         return response
+
+    def _response_error_for(
+        self, response: httpx2.Response, operation: str
+    ) -> IntegrationError | None:
+        context = {"provider_key": self._provider_key, "operation": operation}
+        if self._send_errors and (error := graph_send_error(response, **context)) is not None:
+            return error
+        return graph_response_error(response, **context)
 
     async def _get_bytes_with_client(
         self,
