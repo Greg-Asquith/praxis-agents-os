@@ -566,6 +566,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Connecting Gmail also asks for permission to manage drafts. Gmail
+  accounts connected earlier keep working as before.
 - `gmail_send_message` takes one plain email address per recipient. A value
   with a display name, or with two addresses in it, is rejected before
   approval, so the address checked against the Do Not Email list is the

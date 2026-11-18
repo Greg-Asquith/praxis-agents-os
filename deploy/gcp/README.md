@@ -351,6 +351,16 @@ deploy/entra/register-apps.sh \
       [Register Microsoft Entra applications](../../docs/guides/microsoft-entra-app-registration.md)
       for multi-tenant registration and the manual alternative.
 
+- [ ] If Gmail is enabled, add its scopes to the Google OAuth consent
+      screen's data access list: `gmail.readonly`, `gmail.send`, and
+      `gmail.compose`. Google classes all three as restricted. An
+      **Internal** consent screen (users in your own Google Workspace
+      organisation only) needs no Google review. An **External** app in
+      production needs Google's verification, including a security
+      assessment, before anyone outside the test-user list can connect.
+      A Gmail connection made before `gmail.compose` was requested keeps
+      working, and reconnecting grants the new permission.
+
 There is no CI deploy workflow; deploys run from an authenticated operator
 machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 

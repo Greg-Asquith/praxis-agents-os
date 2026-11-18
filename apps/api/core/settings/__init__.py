@@ -31,6 +31,7 @@ from core.settings.gcp import GcpSettingsMixin
 from core.settings.integrations import IntegrationsSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.kb import KBSettingsMixin
+from core.settings.mail_merge import MailMergeSettingsMixin
 from core.settings.media import RENDERER_STORAGE_PROVIDERS, MediaSettingsMixin
 from core.settings.memory import MemorySettingsMixin
 from core.settings.microsoft_graph import MicrosoftGraphSettingsMixin
@@ -72,6 +73,7 @@ class Settings(
     IntegrationsSettingsMixin,
     JobsSettingsMixin,
     KBSettingsMixin,
+    MailMergeSettingsMixin,
     MediaSettingsMixin,
     MemorySettingsMixin,
     MicrosoftGraphSettingsMixin,

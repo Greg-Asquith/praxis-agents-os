@@ -45,6 +45,7 @@ PROVIDER = IntegrationProviderPlugin(
             "email",
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/gmail.compose",
         ),
         capability_flags=frozenset({"read", "write"}),
         resource_types=("gmail_mailbox",),
