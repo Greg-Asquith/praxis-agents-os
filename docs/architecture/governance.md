@@ -51,6 +51,8 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 | Edit published platform Artifacts directly or through agents _(enforced)_                       | —         | ✓      | ✓     | ✓     |
 | Create/revoke artifact share links _(enforced)_                                                 | —         | —      | ✓     | ✓     |
 | View audit log _(enforced: MANAGER)_                                                            | —         | —      | ✓     | ✓     |
+| View and add to the Do Not Email list _(enforced: EDITOR)_                                      | —         | ✓      | ✓     | ✓     |
+| Remove an address from the Do Not Email list _(enforced: MANAGER)_                              | —         | —      | ✓     | ✓     |
 | Remove other workspace members _(enforced; super-admin exception below)_                        | —         | —      | ✓     | ✓     |
 | View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
 | Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
@@ -210,6 +212,38 @@ can't be recorded. A write with checkpoints but no terminal record stopped
 mid-way, so recovery lists it as uncertain with the IDs it learned. Operators
 reconcile from those IDs in the provider's own tools; nothing resumes or
 resends the write. _(enforced: `services/integrations/operations.py`)_
+
+### Do Not Email
+
+Each workspace keeps one Do Not Email list
+(`workspace_email_suppressions`). Every entry has a required reason, and
+every addition and removal writes an audit event with the address and the
+reason. Members add addresses; only owners and admins remove them, because a
+removal lets agents email that person again. Read-only members can't see the
+list. An entry also covers the other ways of writing the same mailbox: the
+check ignores case, a plus-tag on any domain (`dana+news@` is `dana@`), and
+dots in a Gmail address, and treats `googlemail.com` as `gmail.com`. Each
+entry stores that form as its `match_key`, which is unique in the workspace.
+It doesn't cover a whole domain. The send tools accept one plain address per
+recipient, with no display name, so the string they check is the address the
+provider delivers to.
+_(enforced: `routes/email_suppressions/`, `utils/validation.py`)_
+
+Every agent email send checks the list when it sends, not only at approval,
+so an address added after approval is still refused. The check is one
+function, `find_suppressed_recipients`
+(`services/email_suppressions/check_recipients.py`), which single sends
+reach through `refuse_suppressed_recipients`. It is called by
+`gmail_send_message`, `outlook_mail_send_message`,
+`outlook_mail_reply_to_message`, `outlook_mail_forward_message`, and
+`outlook_mail_send_draft` after the final recipients are known and before
+the provider's send request. Replies and forwards read the draft's
+recipients back from Outlook first, because Outlook fills them in. A single
+send with any listed recipient sends nothing, because a partial send isn't
+what the operator approved. The approval card also names listed recipients
+it can resolve from the arguments and blocks approval until they're
+removed. The tool result names the refused address so the agent can drop
+it; no tool reads the list or its reasons. _(enforced)_
 
 ## 3. Retention and deletion
 

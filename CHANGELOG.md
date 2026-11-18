@@ -12,6 +12,15 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Keep a workspace Do Not Email list: in **Workspace Settings > Do Not
+  Email**, members paste one or many addresses with a reason, and owners and
+  admins can remove them. Every change is in the audit log. No agent can
+  then email a listed person from Gmail or Outlook: a send, reply, forward,
+  or saved draft that includes one sends nothing and names the address, and
+  the approval card blocks approval while a listed address is still a
+  recipient. The check runs when the email is sent, so an address added
+  after approval is still refused. An entry also covers a plus-tag version
+  of the address and, for Gmail, versions with different dots.
 - Generate a shot that looks like the person's own product, place, or
   presenter: `generate_video` takes up to six workspace images
   (`image_file_ids`) and up to three clips of 3 seconds or less
@@ -557,6 +566,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- `gmail_send_message` takes one plain email address per recipient. A value
+  with a display name, or with two addresses in it, is rejected before
+  approval, so the address checked against the Do Not Email list is the
+  address Gmail delivers to.
 - The Active Context prompt block names each target's provider and type
   (`provider: Outlook Mail, type: outlook_mailbox`), so an agent can tell a
   Gmail mailbox from an Outlook one by more than its address.

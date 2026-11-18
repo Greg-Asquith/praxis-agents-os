@@ -17,6 +17,7 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.email_suppressions import flag_suppressed_recipients
 from services.integrations.approved_display_args import approved_display_args
 from services.integrations.context.targeted import run_context_scope
 from services.integrations.operations import run_audited_integration_operation
@@ -36,6 +37,7 @@ from .utils import (
     mailbox_client_for_principal,
     outlook_mail_available,
     pending_write_detail,
+    refuse_listed_recipients,
     single_mailbox_entry,
 )
 
@@ -48,11 +50,13 @@ async def draft_display_args(deps: RuntimeDeps, args: dict) -> dict:
     client = await mailbox_client_for_principal(
         deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
     )
-    draft = await read_draft(client, message_id=reference.message_id)
-    return {
-        "message": reference.model_dump(mode="json"),
-        "_draft": draft.approval_details(),
-    }
+    details = (await read_draft(client, message_id=reference.message_id)).approval_details()
+    return await flag_suppressed_recipients(
+        deps.db,
+        workspace_id=deps.workspace.id,
+        display_args={"message": reference.model_dump(mode="json"), "_draft": details},
+        addresses=[*details["to"], *details["cc"], *details["bcc"]],
+    )
 
 
 async def outlook_mail_send_draft(
@@ -91,6 +95,19 @@ async def outlook_mail_send_draft(
             )
 
             async def mutate() -> None:
+                await refuse_listed_recipients(
+                    ctx,
+                    state,
+                    [
+                        item.email_address.address
+                        for item in (
+                            *draft.to_recipients,
+                            *draft.cc_recipients,
+                            *draft.bcc_recipients,
+                        )
+                    ],
+                    operation="send_draft",
+                )
                 await send_message(client, state=state)
 
             return PreparedMailWrite(pending, mutate)

@@ -3,6 +3,7 @@
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
 import type { ToolRowPresenter } from "@/integrations/contract"
+import { doNotEmailProblem } from "@/integrations/do-not-email"
 import { OutlookDraftReview } from "@/integrations/outlook_mail/components/draft-review"
 import { outlookDraftReview } from "@/integrations/outlook_mail/lib/draft-review"
 import { outlookMessageReference } from "@/integrations/outlook_mail/lib/write-args"
@@ -62,7 +63,12 @@ export const outlookMailSendDraftPresenter: ToolRowPresenter = {
         prompt={PROMPT}
         toolName={activity.name}
         validationError={
-          draft ? null : "The draft could not be reviewed. Decline and prepare it again."
+          draft
+            ? doNotEmailProblem(
+                activity.args,
+                "Decline, then remove them from the draft in Outlook."
+              )
+            : "The draft could not be reviewed. Decline and prepare it again."
         }
       >
         {draft ? <OutlookDraftReview draft={draft} /> : null}

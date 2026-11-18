@@ -23,6 +23,7 @@ from services.integrations.operations import run_audited_integration_operation
 from services.integrations.previews.sanitize import sanitize_preview_html
 
 from ..operations.create_reply_draft import create_reply_draft
+from ..operations.read_draft_recipients import read_draft_recipients
 from ..operations.send_message import send_message
 from ..operations.utils import MailWriteState, reject_draft_attachments
 from ..references import OutlookMessageReference
@@ -35,9 +36,10 @@ from .utils import (
     PreparedMailWrite,
     bounded_output,
     mailbox_client,
-    mutation_display_args,
     outlook_mail_available,
     pending_write_detail,
+    recipient_display_args,
+    refuse_listed_recipients,
     single_mailbox_entry,
 )
 
@@ -76,6 +78,12 @@ async def outlook_mail_forward_message(
                     body_html=html,
                     to=args.to,
                 )
+                # Check what the saved draft will send to, not only the approved To list.
+                state.step = "check_recipients"
+                recipients = await read_draft_recipients(
+                    client, message_id=state.message_id, operation="forward_message"
+                )
+                await refuse_listed_recipients(ctx, state, recipients, operation="forward_message")
                 state.step = "check_attachments"
                 await reject_draft_attachments(
                     client, message_id=state.message_id, operation="forward_message"
@@ -126,7 +134,7 @@ DEFINITION = RuntimeToolDefinition(
     output_model=ForwardOutput,
     integration_binding=OUTLOOK_MAIL_WRITE_BINDING,
     availability_check=outlook_mail_available,
-    approval_display_args=partial(mutation_display_args, ForwardInput),
+    approval_display_args=partial(recipient_display_args, ForwardInput),
     presentation=ToolPresentation(
         icon="outlook_mail",
         running_label="Forwarding Outlook email",

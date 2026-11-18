@@ -90,6 +90,18 @@ The following contracts apply in this area:
   callbacks, fan-out serialisers, or copied outer result fields. A genuine
   one-request/many-context topology may retain a narrowly named adapter that
   delegates persistence to the shared runner.
+- A tool that sends email calls `refuse_suppressed_recipients`
+  (`services/email_suppressions/`) with every final To, Cc, and Bcc address
+  inside its audited operation, before the provider's send request. It first
+  rejects any recipient that isn't one plain address (`validate_bare_email`),
+  because the check reads each value as one address. A listed
+  address refuses the whole send with `error_code` `do_not_email`, so the
+  refusal is audited and the agent sees which address to drop. Its approval
+  display callback calls `flag_suppressed_recipients` for the recipients it
+  can resolve, and its presenter passes the display to `doNotEmailProblem`
+  (`apps/web/src/integrations/do-not-email.ts`) to block approval.
+  `gmail_send_message` and the Outlook send tools do this; see
+  [Do Not Email](../../architecture/governance.md#do-not-email).
 
 ## Transport safety and entity resolvers
 

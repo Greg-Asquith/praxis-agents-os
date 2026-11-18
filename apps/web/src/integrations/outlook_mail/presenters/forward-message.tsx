@@ -1,6 +1,7 @@
 // apps/web/src/integrations/outlook_mail/presenters/forward-message.tsx
 
 import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
+import { doNotEmailProblem } from "@/integrations/do-not-email"
 import { outlookForwardDetails } from "@/integrations/outlook_mail/lib/tool-details"
 import { outlookForwardArgs } from "@/integrations/outlook_mail/lib/write-args"
 import { defineOutlookWriteVariant } from "@/integrations/outlook_mail/presenters/write-presenter"
@@ -18,6 +19,8 @@ export const outlookMailForwardPresenter = createIntegrationWritePresenter({
       details: outlookForwardDetails,
       parseArgs: outlookForwardArgs,
       prompt: "Your message is sent above the quoted conversation.",
+      validateArgs: (value) =>
+        doNotEmailProblem(value, "Remove them from the recipients to send this email."),
       view: (args) => ({
         body: args?.body ?? null,
         icons: MAIL_OUTCOME_ICONS,

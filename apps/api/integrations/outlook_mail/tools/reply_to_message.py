@@ -23,6 +23,7 @@ from services.integrations.operations import run_audited_integration_operation
 from services.integrations.previews.sanitize import sanitize_preview_html
 
 from ..operations.create_reply_draft import create_reply_draft
+from ..operations.read_draft_recipients import read_draft_recipients
 from ..operations.send_message import send_message
 from ..operations.utils import MailWriteState, reject_draft_attachments
 from ..references import OutlookMessageReference
@@ -38,6 +39,7 @@ from .utils import (
     mutation_display_args,
     outlook_mail_available,
     pending_write_detail,
+    refuse_listed_recipients,
     single_mailbox_entry,
 )
 
@@ -75,6 +77,12 @@ async def outlook_mail_reply_to_message(
                     action="createReplyAll" if args.reply_all else "createReply",
                     body_html=html,
                 )
+                # Graph fills in a reply's recipients, so read back what the draft will send to.
+                state.step = "check_recipients"
+                recipients = await read_draft_recipients(
+                    client, message_id=state.message_id, operation="reply_to_message"
+                )
+                await refuse_listed_recipients(ctx, state, recipients, operation="reply_to_message")
                 state.step = "check_attachments"
                 await reject_draft_attachments(
                     client, message_id=state.message_id, operation="reply_to_message"

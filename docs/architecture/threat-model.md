@@ -51,6 +51,15 @@ Delimiters reduce authority confusion but do not make model behavior
 deterministic. Authorization, approval, workspace isolation, dispatch audit,
 output validation, and run envelopes remain independent enforcement layers.
 
+An email recipient can come from untrusted content, such as an address in a
+fetched email or a pasted spreadsheet. Every agent email send checks its
+final recipients against the workspace Do Not Email list when it sends, so an
+injected or stale address that is on the list is refused even after the
+operator approved the send. A reply or forward reads its recipients back
+from the provider before the check. The agent learns only which address was
+refused, never the list or its reasons. See
+[Do Not Email](governance.md#do-not-email).
+
 ### Database workspace-isolation backstop
 
 Workspace-confidential Postgres tables use forced row-level security in

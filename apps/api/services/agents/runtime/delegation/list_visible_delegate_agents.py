@@ -16,6 +16,7 @@ from services.agents.runtime.delegation.utils import (
     normalized_allowed_agent_ids,
     visible_delegate_filters,
 )
+from utils.search import contains_pattern
 
 
 async def list_visible_delegate_agents(
@@ -37,7 +38,8 @@ async def list_visible_delegate_agents(
     filters = visible_delegate_filters(fresh_caller, workspace=workspace)
     if agent_ids is not None:
         filters.append(Agent.id.in_(list(agent_ids)))
-    if pattern := _search_pattern(search):
+    if search.strip():
+        pattern = contains_pattern(search)
         filters.append(
             or_(
                 Agent.name.ilike(pattern, escape="\\"),
@@ -54,11 +56,3 @@ async def list_visible_delegate_agents(
     allowed_ids = normalized_allowed_agent_ids(fresh_caller.allowed_agent_ids or [])
     ordered = [agent_by_id[agent_id] for agent_id in allowed_ids if agent_id in agent_by_id]
     return ordered[offset : offset + limit]
-
-
-def _search_pattern(search: str) -> str | None:
-    normalized = search.strip()
-    if not normalized:
-        return None
-    escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"

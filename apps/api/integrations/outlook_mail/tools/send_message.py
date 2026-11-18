@@ -39,9 +39,10 @@ from .utils import (
     PreparedMailWrite,
     bounded_output,
     mailbox_client,
-    mutation_display_args,
     outlook_mail_available,
     pending_write_detail,
+    recipient_display_args,
+    refuse_listed_recipients,
     single_mailbox_entry,
 )
 
@@ -78,6 +79,12 @@ async def outlook_mail_send_message(
             )
 
             async def mutate() -> None:
+                await refuse_listed_recipients(
+                    ctx,
+                    state,
+                    [*args.to, *(args.cc or ()), *(args.bcc or ())],
+                    operation="send_message",
+                )
                 await create_draft(
                     client,
                     state=state,
@@ -132,7 +139,7 @@ DEFINITION = RuntimeToolDefinition(
     output_model=SendOutput,
     integration_binding=OUTLOOK_MAIL_WRITE_BINDING,
     availability_check=outlook_mail_available,
-    approval_display_args=partial(mutation_display_args, SendMessageInput),
+    approval_display_args=partial(recipient_display_args, SendMessageInput),
     presentation=ToolPresentation(
         icon="outlook_mail",
         running_label="Sending Outlook email",

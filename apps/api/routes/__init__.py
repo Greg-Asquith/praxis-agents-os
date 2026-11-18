@@ -13,6 +13,7 @@ from routes.audit_events import router as audit_events_router
 from routes.auth import router as auth_router
 from routes.classifiers import router as classifiers_router
 from routes.conversations import router as conversations_router
+from routes.email_suppressions import router as email_suppressions_router
 from routes.files import router as files_router
 from routes.health import router as health_router
 from routes.integrations import router as integrations_router
@@ -39,6 +40,7 @@ api_router.include_router(audit_events_router)
 api_router.include_router(auth_router)
 api_router.include_router(classifiers_router)
 api_router.include_router(conversations_router)
+api_router.include_router(email_suppressions_router)
 api_router.include_router(files_router)
 api_router.include_router(integrations_router)
 api_router.include_router(kb_router)

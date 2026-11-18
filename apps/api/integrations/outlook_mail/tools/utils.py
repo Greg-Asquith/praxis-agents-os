@@ -21,6 +21,11 @@ from services.audit_events import (
     TerminalIntegrationOperationDetail,
     terminal_applied_operation_detail,
 )
+from services.email_suppressions import (
+    SUPPRESSED_RECIPIENT_ERROR_CODE,
+    flag_suppressed_recipients,
+    refuse_suppressed_recipients,
+)
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.microsoft_graph import (
     MicrosoftGraphClient,
@@ -207,7 +212,9 @@ def failed_write_outcome(entry, pending, state: MailWriteState, exc):
         else integration_failure_code(exc)
     )
     detail = None
-    if state.message_id and ("draft" in state.applied_steps or state.step == "send"):
+    if error_code == SUPPRESSED_RECIPIENT_ERROR_CODE:
+        detail = exc.user_message
+    elif state.message_id and ("draft" in state.applied_steps or state.step == "send"):
         detail = (
             "Outlook could not confirm the change. Check the message before trying again."
             if ambiguous
@@ -239,6 +246,27 @@ def attach_write_cancellation(exc, pending, state: MailWriteState):
         state,
         ambiguous=disposition is IntegrationFailureDisposition.AMBIGUOUS,
         error_code="cancelled",
+    )
+
+
+async def refuse_listed_recipients(ctx, state: MailWriteState, addresses, *, operation: str):
+    """Refuses the send before Graph's send request when any recipient is on the Do Not Email list."""
+    state.step = "check_recipients"
+    await refuse_suppressed_recipients(
+        ctx.deps.db,
+        workspace_id=ctx.deps.workspace.id,
+        addresses=addresses,
+        provider_key="outlook_mail",
+        operation=operation,
+    )
+
+
+async def recipient_display_args(input_model, deps, args: dict) -> dict:
+    """Adds listed recipients to the mutation display so the card blocks approval."""
+    return await flag_suppressed_recipients(
+        deps.db,
+        workspace_id=deps.workspace.id,
+        display_args=mutation_display_args(input_model, deps, args),
     )
 
 

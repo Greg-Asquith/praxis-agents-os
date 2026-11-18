@@ -22,6 +22,7 @@ from models.classifiers import Classifier  # noqa: F401
 from models.conversation import Conversation, ConversationMessage  # noqa: F401
 from models.conversation_summary import ConversationSummary  # noqa: F401
 from models.conversation_todos import ConversationTodoList  # noqa: F401
+from models.email_suppression import WorkspaceEmailSuppression  # noqa: F401
 from models.embedding_usage import EmbeddingTokenUsage  # noqa: F401
 from models.files import File, FileFolder, FileReference, FileRevision, FileUpload  # noqa: F401
 from models.integration_context import (  # noqa: F401

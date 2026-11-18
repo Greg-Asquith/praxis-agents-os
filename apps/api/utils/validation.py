@@ -25,6 +25,17 @@ def validate_email(email: str) -> None:
         raise AppValidationError("Invalid email address", field="email")
 
 
+def validate_bare_email(email: str) -> None:
+    """Accepts one address with no display name, comment, or quoting.
+
+    Send tools compare recipients with the Do Not Email list as exact strings, so the string
+    they check must be the address the provider delivers to.
+    """
+    validate_email(email)
+    if email.count("@") != 1 or any(char.isspace() or char in '<>,;()"' for char in email):
+        raise AppValidationError("Enter one email address without a display name", field="email")
+
+
 def validate_password_strength(password: str) -> None:
     if len(password) < 8:
         raise AppValidationError("Password must be at least 8 characters", field="password")

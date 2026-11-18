@@ -2,6 +2,7 @@
 
 import { MessageWriteOutcome, type MessageOutcomeView } from "@/components/tool-ui/message-outcome"
 import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
+import { doNotEmailProblem } from "@/integrations/do-not-email"
 import { gmailRecipientRows, gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
 import {
   parseGmailSendArgs,
@@ -20,6 +21,8 @@ export const gmailSendPresenter = createIntegrationWritePresenter({
       approval: {
         parseArgs: parseGmailSendArgs,
         prompt: "The agent wants to send this email from the selected mailbox.",
+        validateArgs: (value) =>
+          doNotEmailProblem(value, "Remove them from the recipients to send this email."),
       },
       copy: { effect: "sent", object: "email", verb: "Send" },
       details: gmailSendDetails,

@@ -767,6 +767,18 @@ Approval display arguments include default values while replay arguments
 remain separate. Optional reply targets remain null when another field
 changes.
 
+The four sending tools check the workspace
+[Do Not Email](../../architecture/governance.md#do-not-email) list before
+Graph's send request. Send message checks its arguments before it creates the
+draft. Reply and forward read the draft's To, Cc, and Bcc back from Graph
+after creating it, because Graph fills in a reply's recipients; recipients
+that can't be read stop the send. Send draft checks the draft it already read.
+A listed recipient refuses the whole send with `error_code` `do_not_email`
+and a detail that names the address. Any draft created is left unsent and
+returned in the result. Send message, forward, and send draft also list
+listed recipients in their approval display under `_do_not_email`, and the
+card blocks approval while any of them is still a recipient.
+
 To finish a draft workflow, use `outlook_mail_send_draft` with the reference
 returned by `outlook_mail_create_draft`. Reply and send-message tools create
 another draft and are not substitutes for sending the saved draft.

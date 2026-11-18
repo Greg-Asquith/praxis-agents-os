@@ -64,9 +64,6 @@ Every member of a workspace has one of four roles:
   files, the Knowledge Base, memory, and artifacts. Agents don't make
   changes on behalf of a read-only member.
 
-To change a member's role, remove them and invite them again with the new
-role.
-
 ## The built-in agent
 
 Every workspace has one built-in agent, named after the workspace, such as
@@ -398,10 +395,9 @@ it.
 
 ## Workspace settings
 
-To open workspace settings, click your name in the sidebar, then click
-**Workspace Settings**. Everyone sees **Details** and **Members**. Owners and
-admins also see **Invitations**, **Tools**, **Classifiers**, **AI Usage**,
-and **Audit Log**.
+In **Workspace Settings**, everyone sees **Details** and **Members**, and
+all but read-only members see **Do Not Email**. Owners and admins also see
+**Invitations**, **Tools**, **Classifiers**, **AI Usage**, and **Audit Log**.
 
 ### Details
 
@@ -412,12 +408,9 @@ conversations with all members. Click **Save Changes**.
 
 ### Tools
 
-The **Tools** tab sets which optional tools agents can use and whether they
-ask first. Each tool has these settings:
-
-- **Automatic**: agents use the tool without asking.
-- **Ask first**: a person approves each use.
-- **Off**: no agent in the workspace can use the tool.
+The **Tools** tab sets each optional tool to **Automatic** (agents use it
+without asking), **Ask first** (a person approves each use), or **Off** (no
+agent in the workspace can use it).
 
 A custom agent can choose **Auto** or **Approval** for itself, and its
 choice wins over this tab. It can't use a tool that is **Off** here. Core
@@ -438,6 +431,12 @@ To invite someone:
 
 The **Members** tab lists everyone and their role. Owners and admins can
 remove members from a team workspace.
+
+### Do Not Email
+
+No agent emails anyone on this list. A send that includes one sends nothing
+and names them, so drop them and try again. Only owners and admins remove
+addresses.
 
 ## Things the platform doesn't do
 

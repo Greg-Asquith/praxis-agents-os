@@ -12,6 +12,7 @@ dependencies = [
     "croniter>=6.2.4",
     "cryptography>=50.0.0",
     "defusedxml==0.7.1",
+    "email-validator>=2.3.0",
     "fastapi>=0.141.1",
     "firecrawl-anydoc==0.1.8",
     "greenlet>=3.5.4",

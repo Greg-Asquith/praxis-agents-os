@@ -44,6 +44,7 @@ DIRECT_TABLES = (
     "embedding_token_usage",
     "scratch_entries",
     "workspace_tool_settings",
+    "workspace_email_suppressions",
     "integration_context_groups",
     "active_context_selections",
     "audit_events",

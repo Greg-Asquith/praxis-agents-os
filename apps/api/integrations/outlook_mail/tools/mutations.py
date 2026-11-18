@@ -7,7 +7,7 @@ from typing import Annotated, Self
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from core.exceptions.general import AppValidationError
-from utils.validation import validate_email
+from utils.validation import validate_bare_email
 
 from ..references import OutlookMessageReference
 
@@ -15,11 +15,9 @@ from ..references import OutlookMessageReference
 def validate_address(value: str) -> str:
     validate_single_line(value)
     try:
-        validate_email(value)
+        validate_bare_email(value)
     except AppValidationError:
-        raise ValueError("Enter a valid email address.") from None
-    if value.count("@") != 1 or any(char.isspace() or char in "<>,;" for char in value):
-        raise ValueError("Enter one email address without a display name.")
+        raise ValueError("Enter one email address without a display name.") from None
     return value
 
 

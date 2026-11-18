@@ -40,6 +40,7 @@ class AuditResourceType(StrEnum):
     AGENT_SCHEDULE = "agent_schedule"
     AGENT_SCHEDULE_RUN = "agent_schedule_run"
     CLASSIFIER = "classifier"
+    EMAIL_SUPPRESSION = "email_suppression"
     SKILL = "skill"
     FILE = "file"
     FILE_FOLDER = "file_folder"

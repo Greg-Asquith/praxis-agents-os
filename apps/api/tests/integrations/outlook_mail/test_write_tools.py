@@ -44,9 +44,17 @@ def provider(monkeypatch):
         "id": "draft/==",
         "webLink": "https://outlook.office.com/mail/id/draft",
         "body": {"contentType": "html", "content": QUOTED},
+        "toRecipients": [{"emailAddress": {"address": "dana@example.com"}}],
+        "ccRecipients": [],
+        "bccRecipients": [],
     }
+    attachments = {"value": []}
     client = SimpleNamespace(
-        get=AsyncMock(return_value={"value": []}),
+        get=AsyncMock(
+            side_effect=lambda path, **_kwargs: (
+                attachments if path.endswith("/attachments") else payload
+            )
+        ),
         post=AsyncMock(return_value=payload),
         patch=AsyncMock(return_value=payload),
         paginate=AsyncMock(return_value=[{"id": "folder-id", "displayName": "Invoices"}]),
@@ -58,13 +66,17 @@ def provider(monkeypatch):
     )
     for name in ARGS:
         monkeypatch.setattr(f"integrations.outlook_mail.tools.{name}.mailbox_client", factory)
-    return SimpleNamespace(client=client, factory=factory, audit=audit)
+    return SimpleNamespace(client=client, factory=factory, audit=audit, attachments=attachments)
 
 
-async def invoke(name, args=None, entries=None):
+async def invoke(name, args=None, entries=None, listed=()):
     module = importlib.import_module(f"integrations.outlook_mail.tools.{name}")
     return await getattr(module, f"outlook_mail_{name}")(
-        context(*(entries if entries is not None else [entry()]), tool_name=f"outlook_mail_{name}"),
+        context(
+            *(entries if entries is not None else [entry()]),
+            tool_name=f"outlook_mail_{name}",
+            listed=listed,
+        ),
         **(ARGS[name] if args is None else args),
     )
 
@@ -195,6 +207,16 @@ async def test_send_failure_retains_draft_and_records_exact_effects(provider, am
     ]
 
 
+async def test_reply_to_a_listed_sender_sends_nothing_and_reports_the_unsent_draft(provider):
+    result = await invoke("reply_to_message", listed=["dana@example.com"])
+    data = result["results"][0]["data"]
+    assert data["outcome"] == "failed"
+    assert data["error_code"] == "do_not_email"
+    assert "dana@example.com" in data["detail"]
+    assert data["message"].message_id == "draft/=="
+    assert not any(call.args[0].endswith("/send") for call in provider.client.post.await_args_list)
+
+
 async def test_cancelled_send_closes_terminal_evidence_and_propagates(provider):
     cancelled = asyncio.CancelledError()
     cancelled.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
@@ -313,8 +335,8 @@ async def test_graph_wire_requests_retain_immutable_ids_and_no_send_mail_shortcu
         len(requests)
         == {
             "send_message": 2,
-            "reply_to_message": 4,
-            "forward_message": 4,
+            "reply_to_message": 5,
+            "forward_message": 5,
             "create_draft": 1,
             "move_message": 1,
             "update_message": 1,
@@ -396,7 +418,7 @@ async def test_invalid_approval_projection_keeps_private_values_out_of_logs(
     ],
 )
 async def test_generated_draft_attachment_rejection_preserves_effects(provider, name, attachments):
-    provider.client.get.return_value = attachments
+    provider.attachments.update(attachments)
     result = await invoke(name)
     data = result["results"][0]["data"]
     assert data["outcome"] == "failed"
@@ -404,7 +426,6 @@ async def test_generated_draft_attachment_rejection_preserves_effects(provider, 
     assert data["message"].message_id == "draft/=="
     assert "Check the message in Outlook" in data["detail"]
     provider.client.post.assert_awaited_once()
-    provider.client.get.assert_awaited_once()
     assert provider.client.get.await_args.args == ("/me/messages/draft%2F%3D%3D/attachments",)
     patch = provider.client.patch.await_args.kwargs["json"]
     assert patch["body"]["content"] == sanitize_preview_html(HTML) + QUOTED

@@ -3,6 +3,7 @@
 """Shared Outlook mailbox and run context fixtures."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
@@ -23,11 +24,12 @@ def entry(mailbox_id="mailbox"):
     )
 
 
-def context(*entries, tool_name):
+def context(*entries, tool_name, listed=()):
+    """Builds a run context whose Do Not Email lookup returns `listed`."""
     return SimpleNamespace(
         deps=SimpleNamespace(
             active_context=ResolvedActiveContext(entries=entries),
-            db=object(),
+            db=SimpleNamespace(scalars=AsyncMock(return_value=list(listed))),
             user=object(),
             workspace=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4(), name="Mail agent"),

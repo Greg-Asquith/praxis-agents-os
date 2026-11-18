@@ -1,6 +1,7 @@
 // apps/web/src/integrations/outlook_mail/presenters/send-message.tsx
 
 import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
+import { doNotEmailProblem } from "@/integrations/do-not-email"
 import {
   outlookRecipientRows,
   outlookSendDetails,
@@ -21,6 +22,8 @@ export const outlookMailSendPresenter = createIntegrationWritePresenter({
       details: outlookSendDetails,
       parseArgs: outlookSendArgs,
       prompt: "The agent wants to send this email from the selected mailbox.",
+      validateArgs: (value) =>
+        doNotEmailProblem(value, "Remove them from the recipients to send this email."),
       view: (args) => ({
         body: args?.body ?? null,
         icons: MAIL_OUTCOME_ICONS,

@@ -35,6 +35,7 @@ from services.files.visibility import visible_file_filter
 from services.kb.visibility import visible_document_filter
 from services.memories.authorisation import visible_memory_filter
 from utils.content import ContentScope
+from utils.search import contains_pattern
 
 
 def register_internal_entity_resolvers() -> None:
@@ -82,14 +83,6 @@ def _offset(cursor: str | None) -> int:
     except ValueError:
         return 0
     return max(value, 0)
-
-
-def _pattern(search: str) -> str | None:
-    normalized = search.strip()
-    if not normalized:
-        return None
-    escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
 
 
 def _ids(values: Sequence[Any], *, kind: str) -> set[UUID]:
@@ -158,8 +151,8 @@ async def _search_memories(ctx, search, _dependent_args, page_size, cursor):
         visible_memory_filter(workspace_id=ctx.workspace.id, user_id=ctx.actor.id),
         AgentMemory.status == "active",
     ]
-    pattern = _pattern(search)
-    if pattern:
+    if search.strip():
+        pattern = contains_pattern(search)
         filters.append(
             or_(
                 AgentMemory.title.ilike(pattern, escape="\\"),
@@ -208,8 +201,8 @@ def _memory_choice(memory: AgentMemory) -> EntityChoice:
 async def _search_artifacts(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
     filters = [visible_artifact_filter(ctx.workspace.id)]
-    pattern = _pattern(search)
-    if pattern:
+    if search.strip():
+        pattern = contains_pattern(search)
         filters.append(Artifact.title.ilike(pattern, escape="\\"))
     rows = list(
         await ctx.db.scalars(
@@ -260,8 +253,8 @@ async def _search_documents(ctx, search, _dependent_args, page_size, cursor):
     filters = [
         visible_document_filter(ctx.workspace.id, ctx.actor.id),
     ]
-    pattern = _pattern(search)
-    if pattern:
+    if search.strip():
+        pattern = contains_pattern(search)
         filters.append(
             or_(
                 KBDocument.title.ilike(pattern, escape="\\"),
@@ -313,8 +306,8 @@ def _document_choice(document: KBDocument) -> EntityChoice:
 async def _search_files(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
     filters = [visible_file_filter(ctx.workspace.id), File.is_tool_result.is_(False)]
-    pattern = _pattern(search)
-    if pattern:
+    if search.strip():
+        pattern = contains_pattern(search)
         filters.append(File.name.ilike(pattern, escape="\\"))
     rows = list(
         await ctx.db.scalars(

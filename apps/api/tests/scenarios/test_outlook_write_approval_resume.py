@@ -59,13 +59,16 @@ async def test_reply_resume_preserves_consent_and_durable_evidence(
         "services.agents.runtime.entity_references.service.resolve_authorized_references", resolve
     )
     provider = AsyncMock()
-    provider.get.return_value = {"value": []}
     provider.post.return_value = {
         "id": "reply-id",
         "body": {"contentType": "html", "content": "<p>Quoted</p>"},
+        "toRecipients": [{"emailAddress": {"address": "sender@example.com"}}],
         "ccRecipients": [{"emailAddress": {"address": "inherited@example.com"}}],
         "bccRecipients": [{"emailAddress": {"address": "inherited-bcc@example.com"}}],
     }
+    provider.get.side_effect = lambda path, **_kwargs: (
+        {"value": []} if path.endswith("/attachments") else provider.post.return_value
+    )
     monkeypatch.setattr(
         f"integrations.outlook_mail.tools.{'create_draft' if is_draft else 'reply_to_message'}.mailbox_client",
         AsyncMock(return_value=provider),

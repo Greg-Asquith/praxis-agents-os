@@ -15,6 +15,7 @@ from services.artifacts.schemas import ArtifactListResponse
 from services.artifacts.utils import artifact_to_summary
 from services.artifacts.visibility import visible_artifact_filter, visible_artifact_revision_filter
 from utils.content import ContentScope
+from utils.search import contains_pattern
 
 
 async def list_artifacts(
@@ -37,8 +38,7 @@ async def list_artifacts(
     if conversation_id is not None:
         filters.append(Artifact.conversation_id == conversation_id)
     if search:
-        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped}%"
+        pattern = contains_pattern(search)
         filters.append(
             or_(
                 Artifact.title.ilike(pattern, escape="\\"),

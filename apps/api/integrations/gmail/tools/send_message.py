@@ -4,9 +4,10 @@
 
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 from pydantic_ai import ModelRetry, RunContext
 
+from core.exceptions.general import AppValidationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -24,6 +25,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
     terminal_applied_operation_detail,
 )
+from services.email_suppressions import flag_suppressed_recipients, refuse_suppressed_recipients
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
 from services.integrations.context.results import serialize_fan_out_results
@@ -31,6 +33,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from utils.validation import validate_bare_email
 
 from ..operations.send_message import send_message
 from .schemas import GmailSendOutput
@@ -42,9 +45,22 @@ from .utils import (
 )
 
 
+def _plain_address(value: str) -> str:
+    # A display name or a second address in one value would get past the Do Not Email check.
+    value = value.strip()
+    try:
+        validate_bare_email(value)
+    except AppValidationError:
+        raise ValueError("Give each recipient as one email address, without a name.") from None
+    return value
+
+
+Recipient = Annotated[str, AfterValidator(_plain_address)]
+
+
 async def gmail_send_message(
     ctx: RunContext[RuntimeDeps],
-    to: Annotated[list[str], Field(min_length=1, description="Recipient email addresses.")],
+    to: Annotated[list[Recipient], Field(min_length=1, description="Recipient email addresses.")],
     subject: Annotated[str, Field(description="Email subject.")],
     body_html: Annotated[
         str,
@@ -55,10 +71,16 @@ async def gmail_send_message(
             )
         ),
     ],
-    cc: Annotated[list[str] | None, Field(description="Optional CC recipients.")] = None,
-    bcc: Annotated[list[str] | None, Field(description="Optional BCC recipients.")] = None,
+    cc: Annotated[list[Recipient] | None, Field(description="Optional CC recipients.")] = None,
+    bcc: Annotated[list[Recipient] | None, Field(description="Optional BCC recipients.")] = None,
 ) -> dict[str, Any]:
-    recipients = [value.strip() for value in to if value.strip()]
+    try:
+        recipients, cc, bcc = (
+            [_plain_address(value) for value in values or () if value.strip()]
+            for values in (to, cc, bcc)
+        )
+    except ValueError as exc:
+        raise ModelRetry(str(exc)) from None
     if not recipients:
         raise ModelRetry("gmail_send_message requires at least one recipient.")
 
@@ -66,11 +88,18 @@ async def gmail_send_message(
         pending_detail = _pending_operation_detail(
             entry,
             recipient_count=len(recipients),
-            cc_count=len(cc or ()),
-            bcc_count=len(bcc or ()),
+            cc_count=len(cc),
+            bcc_count=len(bcc),
         )
 
         async def execute() -> Any:
+            await refuse_suppressed_recipients(
+                ctx.deps.db,
+                workspace_id=ctx.deps.workspace.id,
+                addresses=[*recipients, *cc, *bcc],
+                provider_key="gmail",
+                operation="send_message",
+            )
             client = await gmail_client(ctx, entry)
             result = await send_message(
                 client,
@@ -105,6 +134,12 @@ async def gmail_send_message(
         operation=operation,
     )
     return {"results": serialize_fan_out_results(results)}
+
+
+async def _display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    return await flag_suppressed_recipients(
+        deps.db, workspace_id=deps.workspace.id, display_args=args
+    )
 
 
 def _pending_operation_detail(
@@ -159,6 +194,7 @@ DEFINITION = RuntimeToolDefinition(
     output_model=GmailSendOutput,
     integration_binding=GMAIL_WRITE_BINDING,
     availability_check=gmail_available,
+    approval_display_args=_display_args,
     presentation=ToolPresentation(
         icon="gmail",
         running_label="Sending Gmail Message",

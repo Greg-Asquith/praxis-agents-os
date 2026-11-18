@@ -187,6 +187,23 @@ async def test_approval_contains_all_recipients_and_sanitised_body(draft_context
     fixture.client.post.assert_not_awaited()
 
 
+async def test_listed_recipient_is_flagged_for_approval_and_refused_keeping_the_draft(
+    draft_context,
+):
+    fixture = draft_context
+    fixture.ctx.deps.db.scalars.return_value = ["dana@example.com"]
+    display = await draft_display_args(fixture.ctx.deps, {"message": REFERENCE.model_dump()})
+    assert display["_do_not_email"] == ["dana@example.com"]
+
+    result = await outlook_mail_send_draft(fixture.ctx, REFERENCE)
+    data = result["results"][0]["data"]
+    assert data["outcome"] == "failed"
+    assert data["error_code"] == "do_not_email"
+    assert "dana@example.com" in data["detail"]
+    assert data["message"].message_id == REFERENCE.message_id
+    fixture.client.post.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "error_type",
     [

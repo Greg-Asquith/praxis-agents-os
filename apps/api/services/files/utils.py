@@ -27,6 +27,7 @@ from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
 from utils.content import ContentScope, can_manage_platform_content
 from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
+from utils.search import contains_pattern
 
 logger = logging.getLogger(__name__)
 
@@ -589,8 +590,7 @@ async def get_file_copy_source(
 
 def file_name_search_filter(search: str) -> ColumnElement[bool]:
     """Matches file names without treating search characters as LIKE wildcards."""
-    escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return File.name.ilike(f"%{escaped}%", escape="\\")
+    return File.name.ilike(contains_pattern(search), escape="\\")
 
 
 def file_sort_column(
