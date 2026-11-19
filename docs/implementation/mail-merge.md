@@ -2,8 +2,9 @@
 
 # Mail merge
 
-A mail merge sends one personal email to each person on a list, from the
-operator's own Gmail or Outlook mailbox, after one approval. Each email has one
+A mail merge, also called a bulk send, sends one personal email to each
+person on a list, from the operator's own Gmail or Outlook mailbox, after one
+approval. Each email has one
 recipient, and its placeholders are filled in mechanically from that person's
 row. Merges are for Google Workspace and Microsoft 365 mailboxes; personal
 Gmail and Outlook.com accounts keep lower caps as a safe default.
@@ -285,6 +286,30 @@ a note when any row couldn't be confirmed, and the results table with outcome
 tabs, which opens on Failed when anything failed. The table's CSV download is
 the results export. The tool result also tells the agent the merge is already
 approved and sending.
+
+## Skill and evals
+
+The internal skill `runtime/internal_skills/mail-merge.md` (**Mail Merge &
+Bulk Send**) holds the working rules, and its description names the other
+words people use for a merge, such as bulk send and mass email. It covers:
+
+- Using a merge tool for more than about five people, never a send tool in a
+  loop.
+- Reading every row with `read_table` or `airtable_list_records`, copying
+  each address exactly, and keeping rows with problems for the card.
+- Splitting full names, and leaving `first_name` empty rather than guessing,
+  so the row shows as Needs Attention.
+- Writing one template with placeholders and fallbacks, with no one's
+  details in it.
+- What the test send, approval, and result mean, so the agent doesn't ask
+  for a second approval or resend.
+
+The tool descriptions carry the hard limits and name bulk sends too. The
+`mail_merge_*` cases in `apps/api/evals/datasets/agent_behavior.yaml` check
+that a 40-row file becomes one merge call, that "email each of these people
+separately" doesn't loop the send tool, and that unclear names are left for
+the operator. Their `ExpectedMerge` evaluator renders every row with the
+production template code.
 
 ## Settings
 

@@ -22,6 +22,54 @@ so loading them at import time slows every cold start, and a deployment should
 load only the providers it calls. The clean-process test in
 `tests/contract/test_entrypoint_imports.py` fails if startup loads any of them.
 
+### GPT-6.2 Astra and Sol
+
+OpenAI released both models on 17 November 2026. Astra is a **Max** option and
+Sol is **Powerful**. Both accept text and images, return text, and support
+streaming, function calls, and structured output through the Responses API.
+Each has a 1,050,000-token context, with up to 922,000 input and 128,000
+output tokens. See the [Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)
+and [Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol) model cards.
+
+Standard prices are in USD per million tokens for prompts up to 272,000
+input tokens. The model and pricing checks took place on 19 November 2026.
+
+| Model | Input | Cached input | 30-minute cache write | Output |
+| --- | --- | --- | --- | --- |
+| `gpt-6.2-astra` | $8 | $0.40 | $10 | $40 |
+| `gpt-6.2-sol` | $2 | $0.10 | $2.50 | $10 |
+
+Above that threshold, input and cache rates double and output costs 1.5 times
+the base rate for the whole request. Usage estimates use base rates.
+Pydantic AI 2.71 supplies the reasoning profiles. Both models accept `low`
+through `max` and map disabled or minimal thinking to `low`. OpenAI returned
+both IDs to the configured account. See [OpenAI pricing](https://developers.openai.com/api/docs/pricing)
+and the [GPT-6.2 migration guide](https://developers.openai.com/api/docs/guides/latest-model).
+
+### Gemini 4 Neon
+
+Google released `gemini-4-neon` on 18 November 2026. It is a **Powerful**
+option alongside Argon. Neon accepts text, images, documents, audio, and video
+and supports streaming, function calls, and structured output. Input, thinking,
+and output share a 1,048,576-token context. A foreground segment can generate
+up to 65,536 tokens. Long-decode continuation and billing remain unverified
+in Praxis. See the [Google Cloud model card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-neon).
+
+The Gemini API and Vertex returned the model to the configured accounts on
+19 November 2026. Vertex supports `global`, `us`, and `eu`; automatic routing
+uses `eu`. Pydantic AI 2.71 recognises Neon's four thinking levels on the
+Gemini API. Praxis supplies the same levels on Vertex, where the SDK would
+otherwise send `MINIMAL` for disabled thinking. Both transports accept
+`low`, `medium`, `high` (the provider default), and `xhigh`. See the
+[Vertex developer guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-neon).
+
+Usage estimates use the Gemini API rates of $3 input, $0.15 cached input,
+and $15 output per million tokens. Implicit caching has no separate write
+charge on that API. Vertex regional rates are $3.30, $0.165, and $16.50,
+respectively. Vertex lists cache writes from 12 January 2027 at $3.75 globally
+and $4.125 regionally. The ledger excludes these writes and regional premiums. See [Gemini API pricing](https://aistudio.google.com/docs/pricing#gemini-4-neon)
+and [Vertex pricing](https://cloud.google.com/model-garden/pricing).
+
 ### Claude Fable 5.2
 
 The [model overview](https://platform.claude.com/docs/en/models/fable-5-2/overview),
@@ -97,14 +145,14 @@ Hydrogen accepts text, images, audio, video, and PDFs, and supports function
 calls and structured output. Vertex supports `global`, `us`, and `eu`;
 `GOOGLE_VERTEX_LOCATION=auto` selects `eu`. Google documents `low`, `medium`,
 `high` (the default), and `xhigh` thinking. It rejects `minimal` and
-`thinking_budget`. Pydantic AI 2.68 doesn't profile Hydrogen and sends `xhigh`
-as `HIGH`, so `provider_model_profile` adds always-on thinking and the `low`,
-`medium`, and `high` levels. The UI's `minimal` preference and disabled
-thinking both send `low`.
+`thinking_budget`. Pydantic AI 2.71 supplies all four levels. Praxis marks thinking as
+always enabled. Disabled or minimal thinking sends `low`.
 
 The [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-hydrogen)
 lists standard prices of $1.50 input, $0.075 cache read, and $7.50 output per
-million tokens, with no dated change. Thinking tokens count as output. Implicit
+million tokens. Through 31 December 2026, 3.8 Flash costs half as much for
+uncached input and output. On 1 January 2027 its input and output rates
+match Hydrogen's, and its cache reads rise to $0.15. Thinking tokens count as output. Implicit
 caching has no separate write charge. Long decode is pending, as it is for
 Carbon and Argon.
 
@@ -543,7 +591,7 @@ Pydantic AI leaves uncategorised. Only rate limits tell the user to try again
 later. The shared transport pools
 up to 1,000 connections, 100 kept alive, matching the provider SDKs.
 
-The API locks Pydantic AI, slim, evals, and graph to 2.67.0, with OpenAI
+The API locks Pydantic AI, slim, evals, and graph to 2.71.0, with OpenAI
 3.40.0, Anthropic 2.5.0, and Google Gen AI 2.34.0. The manifest retains minimum
 version ranges. The OpenAI SDK comes through Pydantic AI's `openai` extra
 (`openai>=3.31.0`), which includes the Decisions API. It explicitly selects Pydantic AI's `retries` extra and
@@ -554,9 +602,8 @@ have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
 required. Monty is pinned to 1.0.0.
 
 The [2.67 release](https://github.com/pydantic/pydantic-ai/releases/tag/v2.67.0)
-adds native Fable 5.2 and Gemini 4 Carbon profiles. The Gemini 4 override
-retains only always-on thinking. Native web and image helpers keep using
-capability arguments, which remain supported as provider-specific native-tool
+adds native Fable 5.2 and Gemini 4 Carbon profiles. Native web and image
+helpers keep using capability arguments, which remain supported as provider-specific native-tool
 fields move to `provider_settings`. Structured output cut off at `max_tokens`
 and failing validation raises `UnexpectedModelBehavior` immediately instead
 of retrying the same token limit. The runtime uses its existing failure path.

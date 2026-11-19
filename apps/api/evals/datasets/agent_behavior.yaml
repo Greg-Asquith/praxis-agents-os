@@ -433,6 +433,75 @@ cases:
       judge_response: false
       forbidden_tools: ["forecast_series"]
       judge_rubric: "The conversation already holds a forecast_series result with reliability low: about 9 enquiries a week, likely 4 to 15, typically off by 35% in testing against 34% for the average of past values, with caveats about small counts and less than two years of history. The response gives the figure and the range; says plainly that the forecast tested no better than the plain average, so it's a guide to the usual level; and mentions that the counts are small or the history is short. It doesn't present the figures as a confident prediction and doesn't describe the model as accurate."
+  - name: mail_merge_bulk_send_from_file
+    inputs:
+      prompt: "Can you do a bulk send from my Gmail to everyone on this list? Invite them to our open day on Thursday 3 December, 10am to 4pm, at our Leeds studio. Greet each person by first name and mention their business."
+      tool_names: ["gmail_send_mail_merge", "gmail_send_message"]
+      active_context:
+        - {provider_key: gmail, resource_type: gmail_mailbox, external_id: "mailbox-1", display_name: "robin@studio.example.com", write_allowed: true}
+      channel_fixture:
+        tool_name: read_table
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-00000000334a", label: "Open day invite list.csv"}
+          limit: 200
+        fixture_path: "fixtures/mail_merge_evals/read_table_contacts.json"
+        structured: true
+    metadata:
+      judge_response: false
+      expected_merge:
+        tool: gmail_send_mail_merge
+        fixture_path: "fixtures/mail_merge_evals/contacts.csv"
+        email_column: Email
+        name_column: Name
+        rendered_columns: [Company]
+  - name: mail_merge_not_send_loop
+    inputs:
+      prompt: "Email each of these people separately from my Gmail to thank them for coming to yesterday's pricing workshop, and say the slides are at https://example.com/slides. Use their first names. Alex Rivera alex.rivera@example.com, Dana Cole dana@example.org, Kai Brennan kai.brennan@example.net, Sasha Ward sasha.ward@example.com, Quinn Harper quinn@example.org, Morgan Lee morgan.lee@example.com, Jordan Blake jordan@example.net."
+      tool_names: ["gmail_send_mail_merge", "gmail_send_message"]
+      active_context:
+        - {provider_key: gmail, resource_type: gmail_mailbox, external_id: "mailbox-1", display_name: "robin@studio.example.com", write_allowed: true}
+    metadata:
+      judge_response: false
+      forbidden_tools: ["gmail_send_message"]
+      expected_merge:
+        tool: gmail_send_mail_merge
+        people:
+          alex.rivera@example.com: Alex
+          dana@example.org: Dana
+          kai.brennan@example.net: Kai
+          sasha.ward@example.com: Sasha
+          quinn@example.org: Quinn
+          morgan.lee@example.com: Morgan
+          jordan@example.net: Jordan
+  - name: mail_merge_unclear_names_left_for_person
+    inputs:
+      prompt: "Send a mail merge from my Outlook to everyone in this supplier contacts file. Say our office is closed from 23 December to 2 January, and orders placed after 19 December will ship in January. Start each email with Hi and their first name."
+      tool_names: ["outlook_mail_send_mail_merge", "outlook_mail_send_message"]
+      active_context:
+        - {provider_key: outlook_mail, resource_type: outlook_mailbox, external_id: "mailbox-1", display_name: "robin@studio.example.com", write_allowed: true}
+      channel_fixture:
+        tool_name: read_table
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-00000000334c", label: "Supplier contacts.csv"}
+          limit: 200
+        fixture_path: "fixtures/mail_merge_evals/read_table_contacts_ambiguous.json"
+        structured: true
+    metadata:
+      judge_response: false
+      forbidden_tools: ["outlook_mail_send_message"]
+      expected_merge:
+        tool: outlook_mail_send_mail_merge
+        people:
+          priya@northgate.example.com: Priya
+          reception@lindenclinic.example.com: ""
+          j.okafor@example.org: ""
+          accounts@harbourjoinery.example.com: ""
+          tom@example.net: Tom
+          hughes.family@example.net: ""
+          sofia.moreno@example.org: Sofia
+          dan.kim@example.com: Daniel
+          mateo@rossigelato.example.com: Mateo
+          hannah.price@example.org: Hannah
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."
@@ -442,6 +511,7 @@ evaluators:
   - AcceptedToolCall: {}
   - ExpectedClips: {}
   - ExpectedForecast: {}
+  - ExpectedMerge: {}
   - ExpectedTools: {}
   - ForbiddenArgumentText: {}
   - ForbiddenTools: {}

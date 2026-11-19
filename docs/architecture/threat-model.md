@@ -60,6 +60,15 @@ from the provider before the check. The agent learns only which address was
 refused, never the list or its reasons. See
 [Do Not Email](governance.md#do-not-email).
 
+A mail merge's recipient list often comes from untrusted content, such as a
+spreadsheet File or Airtable records. Its field values are data, never
+template: the merge fills them in mechanically, HTML-escapes them in the
+body, refuses a line break in the subject, and sanitises the filled body
+again. The list the operator approves is frozen as the merge's rows, so
+later content can't add a recipient. The Do Not Email guard runs again
+before each email, so an address listed after approval is skipped. See
+[mail merge](../implementation/mail-merge.md).
+
 ### Database workspace-isolation backstop
 
 Workspace-confidential Postgres tables use forced row-level security in

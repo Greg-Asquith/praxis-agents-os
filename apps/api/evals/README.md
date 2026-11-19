@@ -92,6 +92,21 @@ would treat the result's figures as invented.
 checks that the answer passes the warning on instead of sounding confident.
 Fixtures live in `tests/fixtures/forecast_evals/`.
 
+The `mail_merge_*` cases select a Gmail or Outlook mailbox with send access
+and mount that provider's merge and single-send tools; they need the
+provider's OAuth client ID set so the tools mount. Nothing is sent, because
+the runner stops at the first call. `mail_merge_bulk_send_from_file` puts a
+40-row `read_table` result in history and asks for a "bulk send";
+`mail_merge_not_send_loop` lists seven people in the prompt and asks to email
+each separately; and `mail_merge_unclear_names_left_for_person` puts a file
+with names such as "Dr Patel" and "Accounts Team" in history. `ExpectedMerge`
+checks that the first call is one merge tool call to exactly the expected
+addresses. It renders every row with the production template code: clear
+first names must be filled in, along with any columns the case names, and
+unclear ones must be left empty with no fallback, so the row would show as
+Needs Attention. No recipient's address or details may be written into the
+template itself. Fixtures live in `tests/fixtures/mail_merge_evals/`.
+
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`
 run normally, `search_skills` finds no workspace skills, `read_todos` finds no

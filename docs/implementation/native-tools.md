@@ -102,7 +102,8 @@ that can't do its task fails startup.
 | ID | Route and provider model | Estimate | Processed |
 | --- | --- | --- | --- |
 | `nano-banana-2.1` | `google`: `gemini-nano-banana-2.1` | $0.034 per 1K image | Globally |
-| `gpt-image-2.5` | `openai`: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` for edits | About $0.053 per 1024² image at medium quality (billed by token) | Globally |
+| `gpt-image-2.6` | `openai`: `gpt-image-2.6-flare`, `gpt-image-2.6-sunburst` for edits | About $0.043 per 1024 × 1024 output at medium quality | Globally |
+| `gpt-image-2.5` | `openai`: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` for edits | About $0.013 per 1024 × 1024 output at medium quality | Globally |
 | `omni-1.2-flash` | `google`: `gemini-omni-1.2-flash` | $0.07 a second at 720p, $0.10 at 1080p, $0.21 at 4K, and $0.009 a second of input clip for an edit (billed by token) | Globally |
 
 A model is available when one of its routes is configured: Google and OpenAI
@@ -132,9 +133,9 @@ The catalogue price is an estimate for the card; the video cards also show
 the call's estimated cost (see [video tools](video-tools.md#generation)), and
 a test keeps a 10 second 720p Omni estimate within half a cent of the billed
 token price. Usage reads price the calls
-themselves in `services/ai_usage/pricing.py`: GPT Image 2.5 by its text and
-image tokens, Nano Banana per image (see [AI usage](ai-usage.md)). SVG output for vector models
-is pending with the first route that serves one (353 or 354).
+themselves in `services/ai_usage/pricing.py`: GPT Image by its text and
+image tokens, Nano Banana per image (see [AI usage](ai-usage.md)). Both GPT
+Image versions produce raster images in Praxis.
 
 ### Providers
 
@@ -155,8 +156,10 @@ Gemini API, and otherwise inline up to `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES`
 tools preserve the source file and revision ids in their result and
 generated-file audit evidence.
 
-OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation
-and `gpt-image-2.5-sunburst` for editing. The approved prompt reaches the API
+When OpenAI supplies the image fallback, generation uses `gpt-image-2.6-flare`
+and edits use `gpt-image-2.6-sunburst`. An explicit GPT Image 2.5 selection
+uses its corresponding Flare or Sunburst route. Both versions call the Images
+API directly. The approved prompt reaches the API
 unchanged, including whitespace, without a helper model or added instructions.
 Requests and usage rows name the provider's image model; file-tool results
 return the catalogue ID as `model`, the route as `model_provider`, and the
@@ -167,7 +170,8 @@ size when omitted, PNG output, and single edit source. The shared provider
 transport owns retries; SDK retries are disabled. Known moderation blocks
 produce a prompt-revision outcome; other provider errors produce safe tool
 failures. Cancellation propagates. Google retains its Pydantic AI helper.
-Paid live verification of the direct 2.5 calls remains pending before release.
+OpenAI returned both 2.6 model IDs on 19 November 2026. Paid generation and
+editing remain unverified. See the [image cost calculator](https://developers.openai.com/api/docs/guides/image-generation#calculating-costs) for the output estimates.
 
 Pydantic AI's `ImageGenerator` (OpenAI, Google, and xAI adapters; rechecked
 at 2.68 on 2026-11-17, with no Runway, Replicate, or video adapter) is not

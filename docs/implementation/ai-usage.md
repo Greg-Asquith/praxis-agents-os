@@ -15,6 +15,14 @@ past usage retains its effective-dated estimates. Image output charges are
 outside the token table. The table scrolls within the modal and keeps its
 column headings visible. Click **Close** or press **Escape** to dismiss it.
 
+Standard rates apply from release for [GPT-6.2 Astra and Sol](model-providers.md#gpt-62-astra-and-sol)
+on 17 November 2026 and [Gemini 4 Neon](model-providers.md#gemini-4-neon)
+on 18 November 2026. OpenAI estimates use short-context input, cached input,
+30-minute cache writes, and output. Neon uses Gemini API implicit-cache rates. Historical GPT-5.6 Sol usage
+uses promotional rates from 21 August 2026. OpenAI lists 30 November 2026
+as the promotion end. The post-promotion estimate needs confirmation.
+See the [GPT-5.6 Sol model card](https://developers.openai.com/api/docs/models/gpt-5.6-sol).
+
 Gemini 4 Argon rates apply from 13 October 2026: $2 input, $0.10 cached input,
 and $10 output per million tokens. From 1 December 2026, these rates become
 $4, $0.20, and $20. Thinking tokens count as output. Implicit caching has no
@@ -104,15 +112,15 @@ The following contracts apply in this area:
   ($0.006) from `AUDIO_INPUT_PRICES`, effective from 13 October 2026, and
   count its requests as priced. Gemini transcription rows are priced by
   their tokens like any other Gemini call.
-- Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
+- Direct GPT Image 2.5 and 2.6 requests record one invocation under Flare or Sunburst,
   with no Luna token charge. Returned input/output totals and bounded
   text/image modality details are retained. Missing usage stays unknown;
   attempted requests still record an invocation. Reads sum each bucket's
   `input_image_tokens` and `output_text_tokens` details and price the tokens
-  from `IMAGE_TOKEN_PRICES` (effective from 9 September 2026): $5 per million
-  text input tokens, $8 image input, and $30 image output, with text output
-  unbilled, following OpenAI's
-  [model page](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare).
+  from `IMAGE_TOKEN_PRICES`. Rates apply from 8 September 2026 for 2.5 and
+  4 November 2026 for 2.6. Both cost $5 for text input, $8 for image input,
+  and $30 for image output per million tokens. Text output is unbilled. See
+  [image pricing](https://developers.openai.com/api/docs/pricing#image-generation).
   The Images API reports no cached input, so all input is priced uncached. A
   row without modality details prices its input at the text rate. These calls
   count as priced image generations. Historical Responses helper rows retain

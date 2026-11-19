@@ -12,6 +12,15 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Send a mail merge, or bulk send, from your own Gmail or Outlook: ask an
+  agent to email everyone on a spreadsheet, CSV file, or Airtable table, and
+  it writes one email with each person's details filled in. The approval
+  card shows every recipient, flags names it couldn't work out, and needs
+  you to send yourself a test before approving. Emails then go out in the
+  background, a few seconds apart, with Pause, Resume, and Cancel on the
+  card and a results table you can download. Anyone on the Do Not Email
+  list is skipped, and a mailbox never uses more than half its daily
+  sending limit.
 - Keep a workspace Do Not Email list: in **Workspace Settings > Do Not
   Email**, members paste one or many addresses with a reason, and owners and
   admins can remove them. Every change is in the audit log. No agent can

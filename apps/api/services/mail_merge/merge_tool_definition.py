@@ -86,8 +86,9 @@ def mail_merge_tool_definition(
             "in the background after the user approves. Write the subject and body once with "
             "placeholders such as {{first_name}}, or {{first_name|there}} for a fallback; "
             "Praxis fills them in for each person. Put any other placeholder values in a "
-            "recipient's fields. Use this whenever the same message goes to more than a few "
-            f"people, never {send_tool_name} in a loop. At most 500 recipients. The user sends "
+            "recipient's fields. Use this for any mail merge or bulk send: whenever the same "
+            f"message goes to more than a few people, never {send_tool_name} in a loop. At most "
+            "500 recipients. The user sends "
             "themselves a test from the approval card before approving. A result means the "
             "user approved and the emails are sending; the card shows progress."
         ),

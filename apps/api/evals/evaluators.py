@@ -4,7 +4,9 @@
 
 import ast
 import csv
+import html
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +15,15 @@ from pydantic import ValidationError
 from pydantic_ai import Tool
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 
+from core.exceptions.general import AppValidationError
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.mail_merge.recipients import STANDARD_COLUMNS
+from services.mail_merge.render import (
+    MergeTemplate,
+    parse_merge_template,
+    render_merge_email,
+)
+from services.mail_merge.tool_inputs import parse_merge_args
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 
@@ -219,6 +229,101 @@ class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
             return EvaluationReason(value=False, reason="run_code arguments aren't JSON")
         errors = workflow_argument_errors(code, code_eligible_tools(), expected)
         return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+@dataclass
+class ExpectedMerge(Evaluator[dict, EvalOutput, dict]):
+    """Checks the first call is one merge to every expected person, rendered by the production
+    renderer: clear first names filled in, unclear ones left to Needs Attention, and no one's
+    details written into the template."""
+
+    def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
+        expected = (ctx.metadata or {}).get("expected_merge")
+        if not expected:
+            return EvaluationReason(value=True)
+        if not ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="no tool was called")
+        name, arguments = ctx.output.called_tools[0], ctx.output.tool_arguments[0]
+        if name != expected["tool"]:
+            return EvaluationReason(value=False, reason=f"first call was {name}")
+        errors = _direct_argument_errors(name, arguments)
+        if not errors:
+            errors = _merge_errors(json.loads(arguments), expected)
+        more = f"; and {len(errors) - 5} more" if len(errors) > 5 else ""
+        return EvaluationReason(value=not errors, reason="; ".join(errors[:5]) + more or None)
+
+
+def _merge_errors(arguments: dict, expected: Mapping) -> tuple[str, ...]:
+    people = _expected_people(expected)
+    try:
+        args = parse_merge_args(arguments)
+        rows = {row["email"].strip().lower(): row for row in args.rows()}
+        columns = {*STANDARD_COLUMNS, *(key for row in rows.values() for key in row)}
+        template = parse_merge_template(
+            subject=args.subject,
+            body_html=args.body_html,
+            fallbacks=args.fallbacks or {},
+            columns=columns,
+        )
+    except AppValidationError as exc:
+        return (f"the merge would be refused: {exc.message}",)
+    if set(rows) != set(people):
+        return (
+            f"recipients differ: missing {sorted(set(people) - set(rows))}, "
+            f"extra {sorted(set(rows) - set(people))}",
+        )
+    written = html.unescape(f"{args.subject} {args.body_html} {json.dumps(args.fallbacks)}")
+    return tuple(
+        error
+        for email, person in people.items()
+        for error in _person_errors(email, person, rows[email], template, written)
+    )
+
+
+def _person_errors(
+    email: str, person: Mapping[str, str], row: Mapping, template: MergeTemplate, written: str
+) -> list[str]:
+    errors = []
+    if any(_mentions(written, value) for value in (email, *person.values()) if len(value) > 3):
+        errors.append(f"{email}'s details are in the template")
+    first_name = (row.get("first_name") or "").strip()
+    rendered = render_merge_email(template, row).email
+    if not person["first_name"]:
+        if first_name or rendered is not None:
+            errors.append(f"{email} isn't left for the person to check")
+        return errors
+    if rendered is None:
+        return [*errors, f"{email} wouldn't send"]
+    if first_name.lower() != person["first_name"].lower():
+        errors.append(f"{email} has first_name {first_name!r}")
+    text = html.unescape(f"{rendered.subject} {rendered.body_html}")
+    missing = [value for value in person.values() if not _mentions(text, value)]
+    if missing:
+        errors.append(f"{email}'s email lacks {missing}")
+    return errors
+
+
+def _mentions(text: str, value: str) -> bool:
+    return re.search(rf"\b{re.escape(value)}\b", text, re.IGNORECASE) is not None
+
+
+def _expected_people(expected: Mapping) -> dict[str, dict[str, str]]:
+    """Returns each expected address with the values its email must contain, first name first.
+
+    A fixture row's first name is the first word of its name column. An empty first name
+    means the row must be left for the person to check.
+    """
+    if "people" in expected:
+        return {email.lower(): {"first_name": name} for email, name in expected["people"].items()}
+    path = (FIXTURE_ROOT / expected["fixture_path"]).resolve()
+    with path.open(encoding="utf-8") as handle:
+        return {
+            row[expected["email_column"]].lower(): {
+                "first_name": row[expected["name_column"]].split()[0],
+                **{column: row[column] for column in expected.get("rendered_columns", [])},
+            }
+            for row in csv.DictReader(handle)
+        }
 
 
 def _forecast_arguments(name: str, arguments: str) -> tuple[dict | None, str, tuple[str, ...]]:

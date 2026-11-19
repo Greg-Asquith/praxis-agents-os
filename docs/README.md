@@ -34,7 +34,7 @@ Use these references before changing the corresponding behaviour:
 | Media renderer and video operations | [Video tools](implementation/video-tools.md) | [Threat model](architecture/threat-model.md) |
 | Data science service and forecasting | [Data science service](implementation/data-science-service.md) | [Threat model](architecture/threat-model.md) |
 | Knowledge Base imports and source refresh | [Knowledge sources](implementation/knowledge-sources.md) | Agent context |
-| Mail merge records, templates, and sending budgets | [Mail merge](implementation/mail-merge.md) | Governance |
+| Mail merge (bulk send) records, templates, sending budgets, skill, and evals | [Mail merge](implementation/mail-merge.md) | Governance |
 
 ## Operator guides and other design notes
 

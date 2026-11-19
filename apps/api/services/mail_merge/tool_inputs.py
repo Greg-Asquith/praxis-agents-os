@@ -27,7 +27,13 @@ type CellValue = str | int | float | bool
 class MergeRecipientArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: Annotated[str, Field(max_length=320, description="One email address, no name.")]
+    email: Annotated[
+        str,
+        Field(
+            max_length=320,
+            description="One email address, no name, copied exactly as given. Never build one.",
+        ),
+    ]
     first_name: Annotated[str | None, Field(max_length=200)] = None
     last_name: Annotated[str | None, Field(max_length=200)] = None
     fields: Annotated[
