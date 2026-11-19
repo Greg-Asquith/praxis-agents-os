@@ -45,15 +45,20 @@ _PROVIDER_KEY_SETTING = {
 
 def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
     """Supplies profile settings for catalogue models Pydantic AI does not cover."""
-    if provider == PROVIDER_GOOGLE and model in {"gemini-4-argon", "gemini-4-carbon"}:
-        # Pydantic AI supplies the supported levels but lacks always-on thinking.
-        return {"thinking_always_enabled": True}
-    if provider == PROVIDER_GOOGLE and model == "gemini-4-hydrogen":
-        # Pydantic AI 2.68 lacks Hydrogen, which rejects MINIMAL and sends XHIGH as HIGH.
+    if provider == PROVIDER_GOOGLE and model == "gemini-4-neon" and settings.GOOGLE_VERTEX_AI:
+        # Pydantic AI 2.71 sets Neon's documented levels on the Gemini API only.
         return {
             "thinking_always_enabled": True,
-            "google_thinking_levels": frozenset({"LOW", "MEDIUM", "HIGH"}),
+            "google_thinking_levels": frozenset({"LOW", "MEDIUM", "HIGH", "XHIGH"}),
         }
+    if provider == PROVIDER_GOOGLE and model in {
+        "gemini-4-argon",
+        "gemini-4-carbon",
+        "gemini-4-hydrogen",
+        "gemini-4-neon",
+    }:
+        # Pydantic AI supplies the supported levels but lacks always-on thinking.
+        return {"thinking_always_enabled": True}
     if provider == PROVIDER_GOOGLE and model == "gemini-nano-banana-2.1":
         # Pydantic AI detects image models by an `image` substring in their IDs.
         return {

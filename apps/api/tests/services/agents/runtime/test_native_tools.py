@@ -439,7 +439,7 @@ async def test_openai_images_receive_exact_prompt_without_helper(
 ):
     prompt = '  Keep "EXACT wording".\nDo not paraphrase. 🦊  '
     choice = image_generation_tools.resolve_image_model(
-        "gpt-image-2.5", "edit_image" if action == "edit" else "text_to_image"
+        None, "edit_image" if action == "edit" else "text_to_image"
     )
     async with mock_openai_images(monkeypatch) as requests:
         result = await image_generation_tools.run_native_image_generation(
@@ -458,7 +458,7 @@ async def test_openai_images_receive_exact_prompt_without_helper(
         "/v1/images/edits" if action == "edit" else "/v1/images/generations"
     )
     body = image_request(request)
-    model = "gpt-image-2.5-sunburst" if action == "edit" else "gpt-image-2.5-flare"
+    model = "gpt-image-2.6-sunburst" if action == "edit" else "gpt-image-2.6-flare"
     assert body["model"] == model
     assert body["prompt"] == prompt
     assert str(body["n"]) == "1"
@@ -488,7 +488,7 @@ async def test_openai_images_receive_exact_prompt_without_helper(
         "input_image_tokens": 4,
         "output_text_tokens": 0,
         "output_image_tokens": 20,
-        "media_model": "gpt-image-2.5",
+        "media_model": "gpt-image-2.6",
         "lab": "OpenAI",
     }
 

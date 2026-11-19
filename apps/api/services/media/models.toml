@@ -25,12 +25,33 @@ model = "gemini-nano-banana-2.1"
 usd_per_image = "0.0336"
 
 [[models]]
+id = "gpt-image-2.6"
+label = "GPT Image 2.6"
+tasks = ["text_to_image", "edit_image"]
+lab = "OpenAI"
+processing = "global"
+strengths = "fast image generation with Flare and detailed edits of one image with Sunburst"
+indemnified = true
+
+[models.limits]
+aspect_ratios = ["1:1", "2:3", "3:2"]
+max_input_images = 1
+
+[[models.routes]]
+route = "openai"
+model = "gpt-image-2.6-flare"
+task_models = { edit_image = "gpt-image-2.6-sunburst" }
+# Estimated output for 1024x1024 at medium quality, excluding inputs.
+# https://developers.openai.com/api/docs/guides/image-generation#calculating-costs
+usd_per_image = "0.04347"
+
+[[models]]
 id = "gpt-image-2.5"
 label = "GPT Image 2.5"
 tasks = ["text_to_image", "edit_image"]
 lab = "OpenAI"
 processing = "global"
-strengths = "best overall image quality and text in images, with precise edits of one image"
+strengths = "lower output cost at medium quality, with text rendering and single-image editing"
 indemnified = true
 
 [models.limits]
@@ -41,9 +62,9 @@ max_input_images = 1
 route = "openai"
 model = "gpt-image-2.5-flare"
 task_models = { edit_image = "gpt-image-2.5-sunburst" }
-# Billed by token; about $0.053 for a 1024x1024 image at medium quality.
-# https://developers.openai.com/api/docs/models/gpt-image-2.5-flare
-usd_per_image = "0.053"
+# Estimated output for 1024x1024 at medium quality, excluding inputs.
+# https://developers.openai.com/api/docs/guides/image-generation#calculating-costs
+usd_per_image = "0.01317"
 
 [[models]]
 id = "omni-1.2-flash"

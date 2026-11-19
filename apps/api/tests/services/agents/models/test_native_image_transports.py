@@ -120,9 +120,7 @@ async def test_invalid_vertex_image_configuration_never_requests_provider(monkey
                 "unknown-image" if failure == "model" else "nano-banana-2.1", "text_to_image"
             )
         if failure != "model":
-            assert [model.id for model in available_media_models("text_to_image")] == [
-                "gpt-image-2.5"
-            ]
+            assert {model.lab for model in available_media_models("text_to_image")} == {"OpenAI"}
     constructor.assert_not_called()
     assert requests == []
 

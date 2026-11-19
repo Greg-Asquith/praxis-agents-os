@@ -26,6 +26,7 @@ from tests.support.google_native import mock_google_native
     [
         ("gemini-4-hydrogen", False, "minimal"),
         ("gemini-4-carbon", True, False),
+        ("gemini-4-neon", True, "minimal"),
     ],
 )
 async def test_gemini_4_tool_loop_preserves_signatures_and_supported_thinking(
@@ -163,7 +164,8 @@ async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort
     assert result.usage.input_tokens == 3
 
 
-async def test_gpt_6_1_sol_sends_lowest_effort_when_thinking_is_disabled(monkeypatch):
+@pytest.mark.parametrize("model_id", ["gpt-6.1-sol", "gpt-6.2-astra"])
+async def test_always_on_gpt_sends_lowest_effort_when_thinking_is_disabled(monkeypatch, model_id):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     requests = []
@@ -176,7 +178,7 @@ async def test_gpt_6_1_sol_sends_lowest_effort_when_thinking_is_disabled(monkeyp
                 "id": "resp_release",
                 "object": "response",
                 "created_at": 1,
-                "model": "gpt-6.1-sol",
+                "model": model_id,
                 "status": "completed",
                 "output": [],
                 "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
@@ -186,7 +188,7 @@ async def test_gpt_6_1_sol_sends_lowest_effort_when_thinking_is_disabled(monkeyp
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
         model = factory.build_model(
-            resolve_catalog_model("openai", "gpt-6.1-sol", settings_overrides={"thinking": False})
+            resolve_catalog_model("openai", model_id, settings_overrides={"thinking": False})
         )
         await model.request(
             [ModelRequest(parts=[UserPromptPart("Summarise.")])], None, ModelRequestParameters()

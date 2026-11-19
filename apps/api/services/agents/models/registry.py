@@ -31,6 +31,16 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # https://developers.openai.com/api/docs/models/gpt-6.2-astra
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-6.2-astra",
+        display_name="GPT-6.2 Astra",
+        context_window=1_050_000,
+        model_type="max",
+        supports_thinking=True,
+        supports_vision=True,
+    ),
     # https://developers.openai.com/api/docs/models/gpt-6.1-sol
     ModelInfo(
         provider=PROVIDER_OPENAI,
@@ -45,6 +55,16 @@ _CATALOG: tuple[ModelInfo, ...] = (
         provider=PROVIDER_OPENAI,
         model="gpt-6-sol",
         display_name="GPT-6 Sol",
+        context_window=1_050_000,
+        model_type="powerful",
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    # https://developers.openai.com/api/docs/models/gpt-6.2-sol
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-6.2-sol",
+        display_name="GPT-6.2 Sol",
         context_window=1_050_000,
         model_type="powerful",
         supports_thinking=True,
@@ -187,6 +207,19 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-4-argon",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
+    ),
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-neon
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model="gemini-4-neon",
+        display_name="Gemini 4 Neon",
+        context_window=1_048_576,
+        model_type="powerful",
+        supports_thinking=True,
+        supports_vision=True,
+        vertex_model="gemini-4-neon",
         vertex_default_location="eu",
         vertex_supported_locations=("global", "us", "eu"),
     ),

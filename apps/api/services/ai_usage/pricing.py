@@ -75,9 +75,11 @@ def _price(
     )
 
 
-# Standard OpenAI API rates as of 2026-11-05, for prompts up to 272K tokens.
+# Standard OpenAI API rates as of 2026-11-19, for prompts up to 272K tokens.
 # https://developers.openai.com/api/docs/pricing
 _OPENAI_PRICES = (
+    _price("openai", "gpt-6.2-astra", date(2026, 11, 17), "8", "0.4", "10", "40"),
+    _price("openai", "gpt-6.2-sol", date(2026, 11, 17), "2", "0.1", "2.5", "10"),
     # https://developers.openai.com/api/docs/models/gpt-6.1-terra (2026-11-05).
     _price("openai", "gpt-6.1-terra", date(2026, 10, 26), "1", "0.05", "1.25", "5"),
     # https://developers.openai.com/api/docs/models/gpt-6.1-sol (2026-09-29).
@@ -88,6 +90,8 @@ _OPENAI_PRICES = (
     # https://developers.openai.com/api/docs/models/gpt-6-astra (2026-09-07).
     _price("openai", "gpt-6-astra", date(2026, 9, 7), "10", "1", "12.5", "50"),
     _price("openai", "gpt-5.6-sol", date(2026, 7, 9), "5", "0.5", "6.25", "30"),
+    # OpenAI lists 30 November as the promotion end. Check the replacement rate at expiry.
+    _price("openai", "gpt-5.6-sol", date(2026, 8, 21), "4", "0.4", "5", "20"),
     _price("openai", "gpt-5.6-terra", date(2026, 7, 9), "2.5", "0.25", "3.125", "15"),
     _price("openai", "gpt-5.6-terra", date(2026, 7, 30), "2", "0.2", "2.5", "12"),
     _price("openai", "gpt-5.6-luna", date(2026, 7, 9), "1", "0.1", "1.25", "6"),
@@ -126,10 +130,11 @@ _ANTHROPIC_PRICES = (
     _price("anthropic", "claude-haiku-4-5", date(2026, 5, 27), "1", "0.1", "1.25", "5"),
 )
 
-# Standard Gemini Developer API rates as of 2026-09-02. Context-cache storage
+# Standard Gemini Developer API rates as of 2026-11-19. Context-cache storage
 # duration and non-standard execution tiers are outside the ledger contract.
 # https://ai.google.dev/gemini-api/docs/pricing
 _GOOGLE_PRICES = (
+    _price("google", "gemini-4-neon", date(2026, 11, 18), "3", "0.15", "0", "15"),
     # Carbon standard rates checked 2026-11-10; implicit caching has no write charge.
     # https://ai.google.dev/gemini-api/docs/pricing#gemini-4-carbon
     _price("google", "gemini-4-carbon", date(2026, 11, 10), "2", "0.1", "0", "10"),
@@ -149,6 +154,8 @@ _GOOGLE_PRICES = (
     _price("google", "gemini-3.7-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),
     _price("google", "gemini-3.7-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.6-flash", date(2026, 8, 12), "1.5", "0.15", "1.5", "7.5"),
+    _price("google", "gemini-3.6-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),
+    _price("google", "gemini-3.6-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.5-flash", date(2026, 7, 21), "1.5", "0.15", "1.5", "9"),
     _price("google", "gemini-3.5-flash-lite", date(2026, 8, 12), "0.3", "0.03", "0.3", "2.5"),
     _price("google", "gemini-3.1-pro", date(2026, 8, 12), "2", "0.2", "2", "12"),
@@ -236,12 +243,16 @@ IMAGE_OUTPUT_PRICES: tuple[ImageOutputPrice, ...] = (
     *_GOOGLE_IMAGE_OUTPUT_PRICES,
 )
 
-# GPT Image 2.5 bills by token; text output isn't billed. The Images API reports no
-# cached input, so all input is priced at the uncached rates.
-# https://developers.openai.com/api/docs/models/gpt-image-2.5-flare (2026-11-17)
+# The direct Images API bills text and image tokens separately and reports no cache hits.
+# https://developers.openai.com/api/docs/pricing#image-generation
 IMAGE_TOKEN_PRICES: tuple[ImageTokenPrice, ...] = tuple(
-    ImageTokenPrice("openai", model, date(2026, 9, 9), Decimal(5), Decimal(8), Decimal(30))
-    for model in ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst")
+    ImageTokenPrice("openai", model, released, Decimal(5), Decimal(8), Decimal(30))
+    for model, released in (
+        ("gpt-image-2.5-flare", date(2026, 9, 8)),
+        ("gpt-image-2.5-sunburst", date(2026, 9, 8)),
+        ("gpt-image-2.6-flare", date(2026, 11, 4)),
+        ("gpt-image-2.6-sunburst", date(2026, 11, 4)),
+    )
 )
 
 
