@@ -230,12 +230,14 @@ class GenerateVideoOutput(BaseModel):
                 key="image_file_ids",
                 label="Reference Images",
                 format="entity_list",
+                secondary=True,
                 entity_kind="file",
             ),
             ToolFieldPresentation(
                 key="reference_video_file_ids",
                 label="Reference Clips",
                 format="entity_list",
+                secondary=True,
                 entity_kind="file",
             ),
             ToolFieldPresentation(

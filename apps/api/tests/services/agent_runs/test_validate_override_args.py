@@ -127,6 +127,20 @@ async def test_entity_field_rejects_legacy_raw_identifier() -> None:
         )
 
 
+async def test_omitted_optional_entity_lists_do_not_block_approval() -> None:
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call("generate_video", {"prompt": "A kitchen table at dusk"}),
+        override_args=None,
+    )
+
+    assert result is None
+
+
 async def test_entity_override_is_reauthorized_and_canonicalized(monkeypatch) -> None:
     original_id = uuid4()
     selected_id = uuid4()
