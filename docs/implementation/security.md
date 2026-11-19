@@ -41,6 +41,11 @@ The following contracts apply in this area:
   sessions in the same transaction, so reactivation doesn't revive them.
 - OAuth login state is bound to the initiating browser with a short-lived,
   HttpOnly, host-only cookie. Keep that check at the API callback boundary.
+- Sign-in and account linking share each provider's single registered
+  redirect URI (`/oauth/callback`). The web callback route sits outside the
+  signed-out gate and reads the state `type` to choose the flow: link state
+  completes linking for the signed-in user, which the API checks against the
+  state's `user_id`. Login state still sends a signed-in user to `/`.
 - Workspace invitations are delivered only through the operator-shared link;
   email and in-app notification delivery are pending. A pending,
   unexpired invitation permits account creation while `ALLOW_SIGNUP=false`:

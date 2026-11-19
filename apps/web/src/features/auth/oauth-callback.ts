@@ -55,22 +55,25 @@ export function clearOauthCallbackProvider(storageKey: string) {
   window.sessionStorage.removeItem(storageKey)
 }
 
-function providerFromState(state: string | null) {
-  if (!state) {
-    return null
-  }
+export function isOauthLinkState(state: string | undefined) {
+  return statePayload(state ?? null)?.["type"] === "oauth_link_state"
+}
 
-  const payloadSegment = state.split(".")[1]
+function providerFromState(state: string | null) {
+  const provider = statePayload(state)?.["provider"]
+  return validProvider(typeof provider === "string" ? provider : null)
+}
+
+// Reads the unverified state payload for routing only; the API verifies the signature.
+function statePayload(state: string | null) {
+  const payloadSegment = state?.split(".")[1]
   if (!payloadSegment) {
     return null
   }
 
   try {
     const payload: unknown = JSON.parse(decodeBase64Url(payloadSegment))
-    if (!isRecord(payload)) {
-      return null
-    }
-    return validProvider(typeof payload["provider"] === "string" ? payload["provider"] : null)
+    return isRecord(payload) ? payload : null
   } catch {
     return null
   }

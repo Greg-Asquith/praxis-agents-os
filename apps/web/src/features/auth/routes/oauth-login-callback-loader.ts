@@ -36,6 +36,7 @@ export async function loadOAuthLoginCallback(
   const callback = readOauthCallback(OAUTH_LOGIN_PROVIDER_STORAGE_KEY, search)
   if (callback.providerError) {
     return {
+      flow: "login" as const,
       error: `The provider reported an error: ${callback.providerError}.`,
       nextPath: null,
       twoFactorPending: false,
@@ -43,6 +44,7 @@ export async function loadOAuthLoginCallback(
   }
   if (!callback.provider || !callback.code || !callback.state) {
     return {
+      flow: "login" as const,
       error: "This sign-in link is missing required information. Please try signing in again.",
       nextPath: null,
       twoFactorPending: false,
@@ -56,7 +58,12 @@ export async function loadOAuthLoginCallback(
   try {
     response = await completeLoginOnce(input, deps.completeOauthLogin ?? completeOauthLogin)
   } catch (error) {
-    return { error: getErrorMessage(error), nextPath: null, twoFactorPending: false }
+    return {
+      flow: "login" as const,
+      error: getErrorMessage(error),
+      nextPath: null,
+      twoFactorPending: false,
+    }
   }
 
   if (response.user) {
@@ -66,7 +73,7 @@ export async function loadOAuthLoginCallback(
 
   const nextPath = safeRedirectPath(response.next_path)
   if (response.requires_twofa) {
-    return { error: null, nextPath, twoFactorPending: true }
+    return { flow: "login" as const, error: null, nextPath, twoFactorPending: true }
   }
 
   return (deps.redirect ?? fullDocumentRedirect)(nextPath ?? "/")

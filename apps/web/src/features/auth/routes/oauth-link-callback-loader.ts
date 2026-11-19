@@ -33,10 +33,14 @@ export async function loadOAuthLinkCallback(
 ) {
   const callback = readOauthCallback(OAUTH_LINK_PROVIDER_STORAGE_KEY, search)
   if (callback.providerError) {
-    return { error: `The provider reported an error: ${callback.providerError}.` }
+    return {
+      flow: "link" as const,
+      error: `The provider reported an error: ${callback.providerError}.`,
+    }
   }
   if (!callback.provider || !callback.code || !callback.state) {
     return {
+      flow: "link" as const,
       error: "This sign-in link is missing required information. Please try connecting again.",
     }
   }
@@ -48,7 +52,7 @@ export async function loadOAuthLinkCallback(
   try {
     identities = await completeLinkOnce(input, deps.completeOauthLink ?? completeOauthLink)
   } catch (error) {
-    return { error: getErrorMessage(error) }
+    return { flow: "link" as const, error: getErrorMessage(error) }
   }
 
   queryClient.setQueryData(identitiesQueryKey, identities)

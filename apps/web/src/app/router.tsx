@@ -16,7 +16,7 @@ import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { validateArtifactDetailSearch, validateArtifactsSearch } from "@/features/artifacts/search"
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
-import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
+import { isOauthLinkState, validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callback-loader"
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
@@ -85,17 +85,33 @@ const registerRoute = createRoute({
   ),
 })
 
-const oauthLoginCallbackRoute = createRoute({
-  getParentRoute: () => authRoute,
+// Provider sign-in and account linking share one registered redirect URI, so this
+// sits outside the signed-out gate and dispatches on the state type.
+const oauthCallbackLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "oauth-callback",
+  pendingComponent: PendingRoute,
+  component: lazyRouteComponent(() => import("@/routes/auth-layout"), "AuthLayoutRoute"),
+})
+
+const oauthCallbackRoute = createRoute({
+  getParentRoute: () => oauthCallbackLayoutRoute,
   path: OAUTH_LOGIN_CALLBACK_PATH,
   validateSearch: validateOAuthCallbackSearch,
+  beforeLoad: async ({ context, search }) => {
+    if (!isOauthLinkState(search.state) && (await getOptionalCurrentUser(context.queryClient))) {
+      throw redirect({ href: "/" })
+    }
+  },
   loaderDeps: ({ search }) => search,
   loader: ({ context, deps }) =>
-    loadOAuthLoginCallback({ queryClient: context.queryClient, search: deps }),
+    isOauthLinkState(deps.state)
+      ? loadOAuthLinkCallback({ queryClient: context.queryClient, search: deps })
+      : loadOAuthLoginCallback({ queryClient: context.queryClient, search: deps }),
   staleTime: Infinity,
   component: lazyRouteComponent(
-    () => import("@/features/auth/routes/oauth-login-callback-route"),
-    "OAuthLoginCallbackRoute"
+    () => import("@/features/auth/routes/oauth-callback-route"),
+    "OAuthCallbackRoute"
   ),
 })
 
@@ -466,20 +482,6 @@ const profileRoute = createRoute({
   ),
 })
 
-const oauthLinkCallbackRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/oauth/link/callback",
-  validateSearch: validateOAuthCallbackSearch,
-  loaderDeps: ({ search }) => search,
-  loader: ({ context, deps }) =>
-    loadOAuthLinkCallback({ queryClient: context.queryClient, search: deps }),
-  staleTime: Infinity,
-  component: lazyRouteComponent(
-    () => import("@/features/auth/routes/oauth-link-callback-route"),
-    "OAuthLinkCallbackRoute"
-  ),
-})
-
 const integrationOauthCallbackRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/integrations/oauth/callback",
@@ -494,7 +496,8 @@ const integrationOauthCallbackRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
+  authRoute.addChildren([loginRoute, registerRoute]),
+  oauthCallbackLayoutRoute.addChildren([oauthCallbackRoute]),
   appRoute.addChildren([
     contextRoute,
     conversationsRoute,
@@ -522,7 +525,6 @@ const routeTree = rootRoute.addChildren([
     acceptInvitationRoute,
     workspaceSettingsRoute,
     profileRoute,
-    oauthLinkCallbackRoute,
     integrationOauthCallbackRoute,
   ]),
 ])

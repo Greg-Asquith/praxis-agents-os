@@ -75,6 +75,7 @@ describe("secondary OAuth callback loaders", () => {
         linkDeps
       )
     ).resolves.toEqual({
+      flow: "link",
       error: "This sign-in link is missing required information. Please try connecting again.",
     })
     expect(completeOauthLink).not.toHaveBeenCalled()
@@ -92,6 +93,7 @@ describe("secondary OAuth callback loaders", () => {
         linkDeps
       )
     ).resolves.toEqual({
+      flow: "link",
       error: "This sign-in link is missing required information. Please try connecting again.",
     })
     expect(completeOauthLink).not.toHaveBeenCalled()

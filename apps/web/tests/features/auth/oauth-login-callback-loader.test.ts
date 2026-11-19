@@ -52,6 +52,7 @@ describe("OAuth login callback loader", () => {
     )
 
     expect(result).toEqual({
+      flow: "login",
       error: "This sign-in link is missing required information. Please try signing in again.",
       nextPath: null,
       twoFactorPending: false,
@@ -71,6 +72,7 @@ describe("OAuth login callback loader", () => {
     )
 
     expect(result).toEqual({
+      flow: "login",
       error: "This sign-in link is missing required information. Please try signing in again.",
       nextPath: null,
       twoFactorPending: false,
@@ -90,6 +92,7 @@ describe("OAuth login callback loader", () => {
     )
 
     expect(result).toEqual({
+      flow: "login",
       error: "This sign-in link is missing required information. Please try signing in again.",
       nextPath: null,
       twoFactorPending: false,
@@ -114,6 +117,7 @@ describe("OAuth login callback loader", () => {
     const second = await loadOAuthLoginCallback({ queryClient, search }, deps)
 
     expect(first).toEqual({
+      flow: "login",
       error: null,
       nextPath: "/invitations/accept?token=invite-token",
       twoFactorPending: true,
