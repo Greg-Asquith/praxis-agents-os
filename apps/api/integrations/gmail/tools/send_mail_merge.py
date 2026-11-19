@@ -24,7 +24,7 @@ from .utils import GMAIL_WRITE_BINDING, gmail_available, gmail_client_for_princi
 
 async def _open_test_sender(deps: RuntimeDeps, entry: ResolvedContextEntry) -> GmailMergeSender:
     client = await gmail_client_for_principal(
-        deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
+        deps.db, actor=deps.user, workspace=deps.workspace, entry=entry, send_errors=True
     )
     return GmailMergeSender(client)
 

@@ -44,7 +44,7 @@ async def gmail_client(
 
 
 async def gmail_client_for_principal(
-    db, *, actor, workspace, entry: ResolvedContextEntry
+    db, *, actor, workspace, entry: ResolvedContextEntry, send_errors: bool = False
 ) -> GmailClient:
     async def access_token(force: bool) -> str:
         usable = await get_usable_connection_credential(
@@ -64,7 +64,7 @@ async def gmail_client_for_principal(
             raise ModelRetry("The Gmail connection needs to be reconnected.")
         return token
 
-    return GmailClient(access_token)
+    return GmailClient(access_token, send_errors=send_errors)
 
 
 def gmail_available() -> bool:

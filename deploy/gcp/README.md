@@ -353,7 +353,8 @@ deploy/entra/register-apps.sh \
 
 - [ ] If Gmail is enabled, add its scopes to the Google OAuth consent
       screen's data access list: `gmail.readonly`, `gmail.send`, and
-      `gmail.compose`. Google classes all three as restricted. An
+      `gmail.compose`. Google classes `gmail.readonly` and `gmail.compose`
+      as restricted and `gmail.send` as sensitive. An
       **Internal** consent screen (users in your own Google Workspace
       organisation only) needs no Google review. An **External** app in
       production needs Google's verification, including a security

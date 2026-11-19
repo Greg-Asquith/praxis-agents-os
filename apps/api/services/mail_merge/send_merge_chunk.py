@@ -148,6 +148,8 @@ class _MergeChunk:
             claim = await self._claim_next()
             if isinstance(claim, _ChunkEnd):
                 return claim
+            if claim is None:
+                continue
             sends += 1
             end = await self._deliver(claim)
             if end is not None:
@@ -238,8 +240,11 @@ class _MergeChunk:
                 await self._settle(row, delivery)
         return None
 
-    async def _claim_next(self) -> _Claim | _ChunkEnd:
-        """Runs the checks before a send, then marks the next row `sending` and commits."""
+    async def _claim_next(self) -> _Claim | _ChunkEnd | None:
+        """Runs the checks before a send, then marks the next row `sending` and commits.
+
+        Returns None when the row it took failed before any send, so the caller claims again.
+        """
         if not await self._lease_held():
             await self.db.commit()
             return _ChunkEnd()
@@ -266,7 +271,6 @@ class _MergeChunk:
             if await self._on_do_not_email(row):
                 move_recipient(row, RECIPIENT_STATUS_SKIPPED)
                 row.error_code = "do_not_email"
-                await self.db.commit()
                 continue
             return await self._mark_sending(row)
         remaining = await self.db.scalar(
@@ -283,7 +287,7 @@ class _MergeChunk:
             return _ChunkEnd(run_after=_now() + _send_interval())
         return _ChunkEnd(merge_status=MERGE_STATUS_COMPLETED)
 
-    async def _mark_sending(self, row: MailMergeRecipient) -> _Claim | _ChunkEnd:
+    async def _mark_sending(self, row: MailMergeRecipient) -> _Claim | _ChunkEnd | None:
         merge = self.merge
         rendered = render_merge_email(
             MergeTemplate(

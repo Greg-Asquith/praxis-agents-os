@@ -47,7 +47,14 @@ def graph_client_for_connection(
 
 
 def graph_client_for_principal(
-    db: AsyncSession, *, actor, workspace, entry, provider_key: str, reconnect_message: str
+    db: AsyncSession,
+    *,
+    actor,
+    workspace,
+    entry,
+    provider_key: str,
+    reconnect_message: str,
+    send_errors: bool = False,
 ) -> MicrosoftGraphClient:
     """Creates a paced Graph client that acts as the user for one active-context entry."""
 
@@ -63,7 +70,10 @@ def graph_client_for_principal(
         return credential.access_token
 
     return MicrosoftGraphClient(
-        access_token, provider_key=provider_key, pacing_key=str(entry.connection_id)
+        access_token,
+        provider_key=provider_key,
+        pacing_key=str(entry.connection_id),
+        send_errors=send_errors,
     )
 
 

@@ -6,6 +6,12 @@ import { isOneOf, isRecord } from "@/lib/guards"
 type RowStatus = "ready" | "needs_attention" | "skipped"
 type SkipReason = "duplicate" | "sender" | "do_not_email"
 
+export const SKIP_REASON_TEXT: Record<SkipReason, string> = {
+  do_not_email: "On the Do Not Email list",
+  duplicate: "Already in the list",
+  sender: "Your own address",
+}
+
 export type MergeRecipient = {
   email: string
   firstName: string
@@ -30,8 +36,7 @@ export type MailMergeArgs = {
   recipients: MergeRecipient[]
   checks: (RowCheck | null)[]
   sender: string | null
-  budget: { cap: number; remaining: number; freesAt: string | null } | null
-  intervalSeconds: number | null
+  budget: { remaining: number } | null
   estimatedFinish: string | null
   needsReconnect: boolean
   templateProblem: string | null
@@ -44,7 +49,6 @@ export type MailMergeResult = {
   mergeId: string
   sender: string
   sendingTo: number
-  notSent: number
   estimatedFinish: string | null
 }
 
@@ -70,7 +74,12 @@ export function parseMailMergeArgs(value: unknown): MailMergeArgs | null {
     })
   }
   const evidence = isRecord(value["_merge"]) ? value["_merge"] : {}
-  const checked = Array.isArray(evidence["recipients"]) ? evidence["recipients"] : []
+  // A check follows its address, so removing or reordering rows keeps the others' checks.
+  const checked = new Map<string, unknown[]>()
+  for (const item of Array.isArray(evidence["recipients"]) ? evidence["recipients"] : []) {
+    if (!isRecord(item) || typeof item["email"] !== "string") continue
+    checked.set(item["email"], [...(checked.get(item["email"]) ?? []), item])
+  }
   const mailbox = isRecord(value["_mailbox"]) ? value["_mailbox"] : {}
   const budget = isRecord(evidence["budget"]) ? evidence["budget"] : null
   const fallbacks = textRecord(value["fallbacks"])
@@ -79,18 +88,12 @@ export function parseMailMergeArgs(value: unknown): MailMergeArgs | null {
     bodyHtml: value["body_html"],
     fallbacks,
     recipients,
-    checks: recipients.map((recipient, index) => rowCheck(checked[index], recipient)),
+    checks: recipients.map((recipient) =>
+      rowCheck(checked.get(recipient.email.trim().toLowerCase())?.shift())
+    ),
     sender: typeof mailbox["address"] === "string" ? mailbox["address"] : null,
     budget:
-      budget && typeof budget["cap"] === "number" && typeof budget["remaining"] === "number"
-        ? {
-            cap: budget["cap"],
-            remaining: budget["remaining"],
-            freesAt: typeof budget["frees_at"] === "string" ? budget["frees_at"] : null,
-          }
-        : null,
-    intervalSeconds:
-      typeof evidence["interval_seconds"] === "number" ? evidence["interval_seconds"] : null,
+      budget && typeof budget["remaining"] === "number" ? { remaining: budget["remaining"] } : null,
     estimatedFinish:
       typeof evidence["estimated_finish"] === "string" ? evidence["estimated_finish"] : null,
     needsReconnect: evidence["needs_reconnect"] === true,
@@ -106,15 +109,13 @@ export function parseMailMergeResult(value: unknown): MailMergeResult | null {
     !isRecord(value) ||
     typeof value["merge_id"] !== "string" ||
     typeof value["sender"] !== "string" ||
-    typeof value["sending_to"] !== "number" ||
-    typeof value["not_sent"] !== "number"
+    typeof value["sending_to"] !== "number"
   )
     return null
   return {
     mergeId: value["merge_id"],
     sender: value["sender"],
     sendingTo: value["sending_to"],
-    notSent: value["not_sent"],
     estimatedFinish:
       typeof value["estimated_finish"] === "string" ? value["estimated_finish"] : null,
   }
@@ -124,13 +125,18 @@ export function readyCount(args: MailMergeArgs): number {
   return args.checks.filter((check) => check?.status === "ready").length
 }
 
+/** A changed row may be ready; the server checks it at the next test or approval. */
+export function mayHaveReadyRow(args: MailMergeArgs): boolean {
+  return args.checks.some((check) => check === null || check.status === "ready")
+}
+
 /** Why Approve is blocked, or null. The server enforces the test on its own. */
 export function mailMergeProblem(args: MailMergeArgs | null, provider: string): string | null {
   if (!args) return null
   if (args.templateProblem) return args.templateProblem
   if (args.needsReconnect)
-    return `Reconnect ${provider} so Praxis can send through drafts, then send the test.`
-  if (readyCount(args) === 0) return "No recipient is ready to send to."
+    return `Reconnect ${provider} so Praxis can send mail merges, then send the test.`
+  if (!mayHaveReadyRow(args)) return "No recipient is ready to send to."
   if (args.needsTest)
     return args.test
       ? "You changed the email after your test. Send a new test before approving."
@@ -164,10 +170,7 @@ export function finishText(value: string): string {
 
 export const STANDARD_COLUMNS = ["email", "first_name", "last_name"] as const
 
-/**
- * Columns beyond email and names: any a recipient has, then any the subject, body
- * or fallbacks name, so a placeholder added on the card can be filled in per row.
- */
+/** Columns beyond email and names: any a recipient has, or the subject, body or fallbacks name. */
 export function extraColumns(args: MailMergeArgs): string[] {
   const named = [
     ...args.recipients.flatMap((recipient) => Object.keys(recipient.fields)),
@@ -189,10 +192,7 @@ export function recipientValues(recipient: MergeRecipient): Record<string, strin
   }
 }
 
-/**
- * Fills placeholders the way the server does, for the card's preview only.
- * Values and argument fallbacks are escaped in HTML; an inline fallback is template text.
- */
+/** Fills placeholders as the server does, for the preview only; an inline fallback is template text. */
 export function fillMergeTemplate(
   template: string,
   values: Record<string, string>,
@@ -201,10 +201,11 @@ export function fillMergeTemplate(
 ): { text: string; missing: string[] } {
   const missing: string[] = []
   const text = template.replace(PLACEHOLDER, (_match, name: string, inline?: string) => {
-    const value = (values[name] ?? "").trim()
+    // A placeholder such as {{constructor}} must not read an inherited property.
+    const value = (Object.hasOwn(values, name) ? (values[name] ?? "") : "").trim()
     if (value) return html ? escapeHtml(value) : value
     if (inline?.trim()) return inline.trim()
-    const fallback = (fallbacks[name] ?? "").trim()
+    const fallback = (Object.hasOwn(fallbacks, name) ? (fallbacks[name] ?? "") : "").trim()
     if (fallback) return html ? escapeHtml(fallback) : fallback
     missing.push(name)
     return ""
@@ -212,10 +213,8 @@ export function fillMergeTemplate(
   return { text, missing: [...new Set(missing)] }
 }
 
-function rowCheck(value: unknown, recipient: MergeRecipient): RowCheck | null {
+function rowCheck(value: unknown): RowCheck | null {
   if (!isRecord(value) || !isOneOf(STATUSES, value["status"])) return null
-  // A check belongs to the address it was made for; an edited row waits for the next one.
-  if (value["email"] !== recipient.email.trim().toLowerCase()) return null
   return {
     status: value["status"],
     problems: stringList(value["problems"]),
@@ -266,14 +265,14 @@ function text(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
+// Booleans read as the server sends them, so an edited row keeps "Yes" and "No".
 function textRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {}
   return Object.fromEntries(
-    Object.entries(value).flatMap(([key, item]) =>
-      typeof item === "string" || typeof item === "number" || typeof item === "boolean"
-        ? [[key, String(item)]]
-        : []
-    )
+    Object.entries(value).flatMap(([key, item]) => {
+      if (typeof item === "boolean") return [[key, item ? "Yes" : "No"]]
+      return typeof item === "string" || typeof item === "number" ? [[key, String(item)]] : []
+    })
   )
 }
 

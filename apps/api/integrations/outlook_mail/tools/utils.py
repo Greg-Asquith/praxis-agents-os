@@ -78,7 +78,9 @@ async def mailbox_client(ctx, entry) -> MicrosoftGraphClient:
     )
 
 
-async def mailbox_client_for_principal(db, *, actor, workspace, entry) -> MicrosoftGraphClient:
+async def mailbox_client_for_principal(
+    db, *, actor, workspace, entry, send_errors: bool = False
+) -> MicrosoftGraphClient:
     return graph_client_for_principal(
         db,
         actor=actor,
@@ -86,6 +88,7 @@ async def mailbox_client_for_principal(db, *, actor, workspace, entry) -> Micros
         entry=entry,
         provider_key="outlook_mail",
         reconnect_message="The Outlook connection needs to be reconnected.",
+        send_errors=send_errors,
     )
 
 

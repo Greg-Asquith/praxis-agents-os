@@ -839,37 +839,28 @@ describe("optional entity list approval edits", () => {
 })
 
 describe("optional key-value approval edits", () => {
-  it("fills in an optional key-value field the agent left out", () => {
-    const fallbacks: ApprovalField = {
-      key: "fallbacks",
-      label: "Fallbacks",
-      format: "keyvalue",
-      editable: true,
-      secondary: true,
-      min_rows: 0,
-      options: [],
-      placeholder: "",
-    }
-    const approval: PendingToolApproval = {
-      ...approvalIdentity("merge"),
-      tool_call_id: "merge",
-      name: "gmail_send_mail_merge",
-      args: { subject: "Hi {{first_name}}" },
-    }
+  const fallbacks: ApprovalField = {
+    key: "fallbacks",
+    label: "Fallbacks",
+    format: "keyvalue",
+    editable: true,
+    secondary: true,
+    min_rows: 0,
+    options: [],
+    placeholder: "",
+  }
+  const approval: PendingToolApproval = {
+    ...approvalIdentity("merge"),
+    tool_call_id: "merge",
+    name: "gmail_send_mail_merge",
+    args: { subject: "Hi {{first_name}}" },
+  }
+  const decisions: ApprovalDecisionMap = {
+    merge: { decision: "approved", message: "", edits: { fallbacks: { first_name: "there" } } },
+  }
 
-    expect(
-      buildResumeDecisions(
-        [approval],
-        {
-          merge: {
-            decision: "approved",
-            message: "",
-            edits: { fallbacks: { first_name: "there" } },
-          },
-        },
-        () => [fallbacks]
-      )
-    ).toEqual([
+  it("fills in an optional key-value field the agent left out", () => {
+    expect(buildResumeDecisions([approval], decisions, () => [fallbacks])).toEqual([
       {
         approval_id: "merge",
         tool_call_id: "merge",
@@ -877,5 +868,11 @@ describe("optional key-value approval edits", () => {
         override_args: { subject: "Hi {{first_name}}", fallbacks: { first_name: "there" } },
       },
     ])
+  })
+
+  it("still refuses to add a key-value field that isn't optional", () => {
+    expect(
+      buildResumeDecisions([approval], decisions, () => [{ ...fallbacks, secondary: false }])
+    ).toBe("This request can no longer be edited. Refresh and try again.")
   })
 })

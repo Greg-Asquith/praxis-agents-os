@@ -87,7 +87,7 @@ async def _record_merge(
         deps.db, mailbox.connection, mail_merge_definition(provider.provider_key)
     ):
         raise AppValidationError(
-            f"Reconnect {provider.label} so Praxis can send through drafts, then try again."
+            f"Reconnect {provider.label} so Praxis can send mail merges, then try again."
         )
     fallbacks = args.fallbacks or {}
     check = await check_mail_merge(

@@ -25,7 +25,7 @@ from .utils import OUTLOOK_MAIL_WRITE_BINDING, mailbox_client_for_principal, out
 async def _open_test_sender(deps: RuntimeDeps, entry: ResolvedContextEntry) -> OutlookMergeSender:
     return OutlookMergeSender(
         await mailbox_client_for_principal(
-            deps.db, actor=deps.user, workspace=deps.workspace, entry=entry
+            deps.db, actor=deps.user, workspace=deps.workspace, entry=entry, send_errors=True
         )
     )
 

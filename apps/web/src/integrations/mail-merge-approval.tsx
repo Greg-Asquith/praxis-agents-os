@@ -27,8 +27,10 @@ import {
   extraColumns,
   fillMergeTemplate,
   finishText,
+  mayHaveReadyRow,
   readyCount,
   recipientValues,
+  SKIP_REASON_TEXT,
   STANDARD_COLUMNS,
   type MailMergeArgs,
   type MergeRecipient,
@@ -37,11 +39,6 @@ import {
 import { formatTime } from "@/lib/format"
 
 const PAGE_SIZE = 25
-const SKIP_TEXT = {
-  do_not_email: "On the Do Not Email list",
-  duplicate: "Already in the list",
-  sender: "Your own address",
-} as const
 const COLUMNS: DataColumn[] = [
   { key: "email", kind: "text", label: "Email" },
   { key: "name", kind: "text", label: "Name" },
@@ -331,7 +328,7 @@ function TestSend({
           !controls.onReview ||
           Boolean(args.templateProblem) ||
           args.needsReconnect ||
-          readyCount(args) === 0
+          !mayHaveReadyRow(args)
         }
         onClick={controls.onReview}
         type="button"
@@ -407,7 +404,12 @@ function RecipientEditor({
               ariaLabel={column}
               disabled={disabled}
               onCommit={(value) => {
-                onChange({ ...recipient, fields: withField(recipient.fields, column, value) })
+                // An emptied value removes the column from the row, so the fallback applies.
+                const { [column]: _previous, ...rest } = recipient.fields
+                onChange({
+                  ...recipient,
+                  fields: value.trim() ? { ...rest, [column]: value } : rest,
+                })
               }}
               value={recipient.fields[column] ?? ""}
             />
@@ -433,7 +435,7 @@ function StatusCell({ check }: { check: RowCheck | null }) {
   const detail =
     check.status === "skipped"
       ? check.skipReason
-        ? SKIP_TEXT[check.skipReason]
+        ? SKIP_REASON_TEXT[check.skipReason]
         : null
       : [...check.problems, ...check.warnings].join(" ") || null
   return (
@@ -464,16 +466,6 @@ function statusCounts(args: MailMergeArgs) {
 function statusText(check: RowCheck | null): string {
   if (!check) return "Changed"
   return { ready: "Ready", needs_attention: "Needs Attention", skipped: "Skipped" }[check.status]
-}
-
-// An emptied value removes the column from the row, so the fallback applies.
-function withField(
-  fields: Record<string, string>,
-  column: string,
-  value: string
-): Record<string, string> {
-  const { [column]: _previous, ...rest } = fields
-  return value.trim() ? { ...rest, [column]: value } : rest
 }
 
 function rawRecipient(recipient: MergeRecipient): EditedRecords[number] {

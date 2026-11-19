@@ -9,7 +9,12 @@ import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DataTable, type DataColumn, type DataTableTab } from "@/components/ui/data-table"
 import { Progress } from "@/components/ui/progress"
-import { countOf, finishText, type MailMergeResult } from "@/integrations/mail-merge"
+import {
+  countOf,
+  finishText,
+  SKIP_REASON_TEXT,
+  type MailMergeResult,
+} from "@/integrations/mail-merge"
 import {
   mailMergeQueryOptions,
   useMailMergeAction,
@@ -36,9 +41,7 @@ const STATE_BADGES = {
   skipped: "outline",
 } as const
 const REASONS: Record<string, string> = {
-  do_not_email: "On the Do Not Email list",
-  duplicate: "Already in the list",
-  sender: "Your own address",
+  ...SKIP_REASON_TEXT,
   needs_attention: "Needed fixing at approval",
   render_failed: "Couldn't fill in this email",
   send_failed: "The send didn't go through",
@@ -59,6 +62,17 @@ export function MailMergeProgressCard({
   result: MailMergeResult
 }) {
   const progress = useQuery(mailMergeQueryOptions(result.mergeId))
+  if (progress.isError && !progress.data)
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-destructive text-sm" role="alert">
+          Couldn&apos;t load this mail merge&apos;s progress. {progress.error.message}
+        </p>
+        <Button onClick={() => void progress.refetch()} size="sm" type="button" variant="outline">
+          Try Again
+        </Button>
+      </div>
+    )
   if (!progress.data) return <StartedLine pending={progress.isPending} result={result} />
   return <ProgressBody progress={progress.data} providerName={providerName} />
 }

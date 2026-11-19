@@ -150,7 +150,9 @@ prefixed `[Test] ` and a one-line banner naming the recipient whose details
 it used, to the sender's own address only. Before sending, it checks the
 connection's scopes, the 10-test limit, the budget, and the Do Not Email
 guard. A sent test is recorded in `mail_merge_test_sends` and audited; a
-failed one writes a failure audit event on its own transaction.
+failed one writes a failure audit event on its own transaction. The test's
+client opts in to the same send error mapping as the job, so a daily limit
+or a throttle is reported as what it is.
 
 Approval is refused with `approval_review_required` until a test of the
 current `subject`, `body_html`, and `fallbacks` has been sent. Editing any of
@@ -246,7 +248,7 @@ The job applies these rules:
 
 | Event | Effect |
 | --- | --- |
-| The provider throttles a request | The row returns to `pending`; the next chunk runs after `Retry-After`, at most 15 minutes |
+| The provider throttles a request | The row returns to `pending`; the next chunk runs after `Retry-After`, at most 15 minutes, or after one minute when the provider gives none |
 | The mailbox reaches its provider's daily limit | The row returns to `pending`, and the merge is `paused` with `stop_reason` `daily_limit` |
 | Authentication or permission fails, or the connection is gone or lacks a scope | `paused` with `stop_reason` `reconnect` |
 | Five settled rows in a row failed | `stopped` with `stop_reason` `repeated_failures` |

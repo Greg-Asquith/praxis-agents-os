@@ -3,6 +3,7 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
+import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
 export type MailMergeStatus =
   "queued" | "sending" | "paused" | "completed" | "cancelled" | "stopped"
@@ -33,16 +34,15 @@ export type MailMergeAction = "pause" | "resume" | "cancel"
 
 const ACTIVE: ReadonlySet<MailMergeStatus> = new Set(["queued", "sending"])
 
-function mailMergeQueryKey(mergeId: string) {
-  return ["mail-merges", mergeId] as const
-}
+const queryKeys = createWorkspaceScopedQueryKeys("mail-merges")
 
 export function mailMergeQueryOptions(mergeId: string) {
   return queryOptions({
-    queryKey: mailMergeQueryKey(mergeId),
+    queryKey: queryKeys.detail(mergeId),
     queryFn: () => apiRequest<MailMergeProgress>(`/mail-merges/${mergeId}`),
-    // Every few seconds while sending, rarely while paused, never once it has ended.
+    // Every few seconds while sending, rarely while paused, never once it has ended or failed.
     refetchInterval: (query) => {
+      if (query.state.status === "error") return false
       const status = query.state.data?.status
       if (!status || ACTIVE.has(status)) return 3_000
       return status === "paused" ? 30_000 : false
@@ -57,7 +57,7 @@ export function useMailMergeAction(mergeId: string) {
     mutationFn: (action: MailMergeAction) =>
       apiRequest<MailMergeProgress>(`/mail-merges/${mergeId}/${action}`, { method: "POST" }),
     onSuccess: (progress) => {
-      queryClient.setQueryData(mailMergeQueryKey(mergeId), progress)
+      queryClient.setQueryData(queryKeys.detail(mergeId), progress)
     },
   })
 }

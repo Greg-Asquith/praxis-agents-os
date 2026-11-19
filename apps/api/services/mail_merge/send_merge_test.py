@@ -162,7 +162,7 @@ async def _check_can_send(
     definition = mail_merge_definition(provider.provider_key)
     if not await has_merge_scopes(deps.db, mailbox.connection, definition):
         raise AppValidationError(
-            f"Reconnect {provider.label} so Praxis can send through drafts, then send the test.",
+            f"Reconnect {provider.label} so Praxis can send mail merges, then send the test.",
             field="body_html",
         )
     tests = await deps.db.scalar(

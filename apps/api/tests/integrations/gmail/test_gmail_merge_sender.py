@@ -123,3 +123,28 @@ async def test_send_errors_tell_throttling_from_the_daily_limit() -> None:
     for error in (per_minute.value, concurrent.value, daily.value):
         assert error.failure_disposition == IntegrationFailureDisposition.REJECTED
     assert concurrent.value.retry_after_seconds == 30
+
+
+async def test_the_projects_api_quota_is_told_apart_from_the_mailboxs_own_limit() -> None:
+    quota = httpx2.Response(
+        403, json={"error": {"errors": [{"reason": "dailyLimitExceeded"}], "message": "quota"}}
+    )
+    sender = _sender(lambda request: quota)
+
+    with pytest.raises(IntegrationRateLimitError) as error:
+        await sender.send_draft(MailMergeDraft(draft_id="r1", thread_id="t1"))
+
+    assert not isinstance(error.value, IntegrationSendingLimitError)
+    assert error.value.error_code == "platform_quota"
+
+
+async def test_a_client_that_did_not_opt_in_keeps_a_throttled_send_ambiguous() -> None:
+    client = httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(429, json={}))
+    )
+    sender = GmailMergeSender(GmailClient(_token, client=client))
+
+    with pytest.raises(IntegrationRateLimitError) as error:
+        await sender.send_draft(MailMergeDraft(draft_id="r1", thread_id="t1"))
+
+    assert error.value.failure_disposition == IntegrationFailureDisposition.AMBIGUOUS

@@ -365,6 +365,24 @@ async def test_a_gmail_connection_without_draft_permission_pauses_until_reconnec
         await resume_mail_merge(db_session, request=None, **await _as_sender(db_session, merge))
 
 
+async def test_a_row_that_no_longer_fills_the_template_fails_and_the_next_row_still_sends(
+    db_session: AsyncSession, mailbox: FakeMailbox
+) -> None:
+    merge, job = await _merge(db_session, emails=["dana@example.com", "kai@example.com"])
+    first, _second = await _rows(db_session, merge)
+    first.fields = {"email": first.email}
+    await db_session.commit()
+
+    await send_merge_chunk(db_session, job)
+
+    rows = await _rows(db_session, merge)
+    assert [(row.status, row.error_code) for row in rows] == [
+        ("failed", "render_failed"),
+        ("sent", None),
+    ]
+    assert [message.to for message in mailbox.created] == ["kai@example.com"]
+
+
 async def test_five_failures_in_a_row_stop_the_merge(
     db_session: AsyncSession, mailbox: FakeMailbox
 ) -> None:

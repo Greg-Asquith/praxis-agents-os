@@ -67,7 +67,7 @@ Usage estimates use the Gemini API rates of $3 input, $0.15 cached input,
 and $15 output per million tokens. Implicit caching has no separate write
 charge on that API. Vertex regional rates are $3.30, $0.165, and $16.50,
 respectively. Vertex lists cache writes from 12 January 2027 at $3.75 globally
-and $4.125 regionally. The ledger excludes these writes and regional premiums. See [Gemini API pricing](https://aistudio.google.com/docs/pricing#gemini-4-neon)
+and $4.125 regionally. The ledger excludes these writes and regional premiums. See [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
 and [Vertex pricing](https://cloud.google.com/model-garden/pricing).
 
 ### Claude Fable 5.2

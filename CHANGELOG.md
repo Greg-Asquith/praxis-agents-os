@@ -186,6 +186,10 @@ minor release. Patch releases contain backward-compatible fixes only.
   groups can use video without a YouTube connection. Each video has an
   editable title and description on the card. A video Google is still
   processing after two minutes can be finished in a later call.
+- GPT-6.2 Astra as an OpenAI Max model, and GPT-6.2 Sol and Gemini 4 Neon
+  as Powerful models, each with token pricing for usage estimates. GPT
+  Image 2.6 joins the image catalogue and is the default OpenAI image
+  model.
 - Gemini 4 Hydrogen as a Google Standard model. Progress reviews and
   classifiers on the Gemini API use `gemini-decision-1` through the Gemini
   Decisions API; on Vertex they keep structured output.
@@ -575,6 +579,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- `gmail_send_message` always needs approval. An agent or workspace that
+  had it set to run automatically now gets an approval card instead, so a
+  loop of single sends can't stand in for a mail merge.
 - Connecting Gmail also asks for permission to manage drafts. Gmail
   accounts connected earlier keep working as before.
 - `gmail_send_message` takes one plain email address per recipient. A value
@@ -749,6 +756,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Security
 
+- Hono, used only by development tooling, is on 4.13.16, which fixes five
+  advisories in its CSRF, validator, router, and CSS helpers
+  (CVE-2026-126355 to CVE-2026-126359). No production code loads it.
 - `soupsieve` is on 4.1, which fixes two denial of service advisories in CSS
   selector matching (CVE-2026-126190 and CVE-2026-126192). It's a dependency
   of the HTML to Markdown conversion.
