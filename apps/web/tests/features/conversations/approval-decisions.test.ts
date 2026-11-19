@@ -837,3 +837,45 @@ describe("optional entity list approval edits", () => {
     ).toBe("This request can no longer be edited. Refresh and try again.")
   })
 })
+
+describe("optional key-value approval edits", () => {
+  it("fills in an optional key-value field the agent left out", () => {
+    const fallbacks: ApprovalField = {
+      key: "fallbacks",
+      label: "Fallbacks",
+      format: "keyvalue",
+      editable: true,
+      secondary: true,
+      min_rows: 0,
+      options: [],
+      placeholder: "",
+    }
+    const approval: PendingToolApproval = {
+      ...approvalIdentity("merge"),
+      tool_call_id: "merge",
+      name: "gmail_send_mail_merge",
+      args: { subject: "Hi {{first_name}}" },
+    }
+
+    expect(
+      buildResumeDecisions(
+        [approval],
+        {
+          merge: {
+            decision: "approved",
+            message: "",
+            edits: { fallbacks: { first_name: "there" } },
+          },
+        },
+        () => [fallbacks]
+      )
+    ).toEqual([
+      {
+        approval_id: "merge",
+        tool_call_id: "merge",
+        decision: "approved",
+        override_args: { subject: "Hi {{first_name}}", fallbacks: { first_name: "there" } },
+      },
+    ])
+  })
+})

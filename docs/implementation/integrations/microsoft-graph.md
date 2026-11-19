@@ -751,7 +751,11 @@ Select exactly one Outlook mailbox to use these approval-gated tools:
 - `outlook_mail_update_message` changes Read, Flagged, or both. An omitted
   value leaves that property unchanged.
 
-All seven tools work in Code Mode and require approval by default. Move and
+`outlook_mail_send_mail_merge` sends one personal email per recipient from
+the selected mailbox after a required test send; it doesn't work in Code Mode.
+See [mail merge](../mail-merge.md).
+
+The seven tools listed work in Code Mode and require approval by default. Move and
 update also support automatic execution under the operator's configured
 policy. References must belong to the single selected mailbox. Read-only
 mailboxes produce the shared write-denial audit without a provider request.

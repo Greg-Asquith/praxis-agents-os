@@ -30,14 +30,13 @@ from core.exceptions.integration import (
     IntegrationSendingLimitError,
 )
 from core.settings import settings
-from models.integrations import ExternalCredential, IntegrationConnection
+from models.integrations import IntegrationConnection
 from models.jobs import Job
 from models.mail_merge import MailMerge, MailMergeRecipient
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType, AuditStatus
 from services.audit_events.operations import record_operation_audit_event
 from services.email_suppressions import find_suppressed_recipients
 from services.integrations.plugin import (
-    PROVIDER_PLUGINS,
     IntegrationMailMergeDefinition,
     MailMergeDelivery,
     MailMergeDraft,
@@ -46,7 +45,7 @@ from services.integrations.plugin import (
 )
 from services.integrations.utils import integration_failure_code
 from services.jobs.domain import JOB_STATUS_RUNNING
-from services.mail_merge.budget import MailAccountKind, get_send_budget, mail_account_kind
+from services.mail_merge.budget import MailAccountKind, get_send_budget
 from services.mail_merge.domain import (
     MERGE_STATUS_COMPLETED,
     MERGE_STATUS_PAUSED,
@@ -68,7 +67,13 @@ from services.mail_merge.domain import (
 )
 from services.mail_merge.queue_merge_send import queue_merge_send
 from services.mail_merge.render import MergeTemplate, render_merge_email
-from services.mail_merge.utils import move_merge, move_recipient
+from services.mail_merge.utils import (
+    connection_account_kind,
+    has_merge_scopes,
+    mail_merge_definition,
+    move_merge,
+    move_recipient,
+)
 from services.workspaces.utils import get_active_membership
 
 logger = logging.getLogger(__name__)
@@ -170,7 +175,8 @@ class _MergeChunk:
         await set_session_tenant_context(
             self.db, workspace_id=merge.workspace_id, user_id=merge.created_by_user_id
         )
-        definition = _mail_merge_definition(merge.provider_key)
+        # A provider turned off for this deployment raises, so the job fails and stops the merge.
+        definition = mail_merge_definition(merge.provider_key)
         connection = await self._usable_connection(definition)
         if connection is None:
             return _ChunkEnd(merge_status=MERGE_STATUS_PAUSED, stop_reason=STOP_REASON_RECONNECT)
@@ -199,12 +205,7 @@ class _MergeChunk:
             or connection.owner_user_id != merge.created_by_user_id
         ):
             return None
-        granted = await self.db.scalar(
-            select(ExternalCredential.granted_scopes).where(
-                ExternalCredential.id == connection.credential_id
-            )
-        )
-        if not definition.required_scopes <= set(granted or ()):
+        if not await has_merge_scopes(self.db, connection, definition):
             return None
         return connection
 
@@ -264,6 +265,7 @@ class _MergeChunk:
         while (row := await self._next_pending_row()) is not None:
             if await self._on_do_not_email(row):
                 move_recipient(row, RECIPIENT_STATUS_SKIPPED)
+                row.error_code = "do_not_email"
                 await self.db.commit()
                 continue
             return await self._mark_sending(row)
@@ -459,12 +461,10 @@ class _MergeChunk:
 
     async def _account_kind(self) -> MailAccountKind:
         connection = await self.db.get(IntegrationConnection, self.merge.connection_id)
-        metadata = (connection.provider_metadata if connection is not None else None) or {}
-        tenant_id = metadata.get("tenant_id")
-        return mail_account_kind(
+        return connection_account_kind(
+            connection,
             provider_key=self.merge.provider_key,
             sender_address=self.merge.sender_address,
-            tenant_id=tenant_id if isinstance(tenant_id, str) else None,
         )
 
     async def _lock_merge(self) -> MailMerge:
@@ -506,14 +506,6 @@ class _MergeChunk:
         if self.sender is None:
             raise RuntimeError("The mail merge sender isn't open")
         return self.sender
-
-
-def _mail_merge_definition(provider_key: str) -> IntegrationMailMergeDefinition:
-    plugin = PROVIDER_PLUGINS.get(provider_key)
-    if plugin is None or plugin.mail_merge is None:
-        # The provider was turned off for this deployment; the job fails and stops the merge.
-        raise RuntimeError(f"Mail merges aren't available for {provider_key}")
-    return plugin.mail_merge
 
 
 def _draft(row: MailMergeRecipient) -> MailMergeDraft:

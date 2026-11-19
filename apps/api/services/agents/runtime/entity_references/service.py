@@ -367,7 +367,7 @@ async def resolve_runtime_references(
     )
 
 
-async def authorize_entity_field(
+async def authorize_tool_context(
     db: AsyncSession,
     *,
     actor: User,
@@ -375,14 +375,13 @@ async def authorize_entity_field(
     membership: WorkspaceMembership,
     conversation_id: UUID,
     tool_name: str,
-    field_key: str,
-    entity_kind: str | None = None,
     run: AgentRun | None = None,
     tool_call_id: str | None = None,
-) -> AuthorizedEntityField:
-    """Authorises a lookup of one tool field's references for the actor's conversation.
+) -> EntityResolverContext:
+    """Returns the actor's conversation context once the tool is mounted in it.
 
-    A structured field holds several kinds, so its caller names the kind to look up.
+    Raises:
+        AppValidationError: Thrown when the tool isn't available in this conversation.
     """
     conversation = await get_conversation_for_actor(
         db,
@@ -417,6 +416,48 @@ async def authorize_entity_field(
     definition = resolve_runtime_tool_definition(tool_name, workspace_definitions)
     if definition is None:
         raise AppValidationError("Unknown runtime tool", field="tool_name")
+    return EntityResolverContext(
+        db=db,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        conversation=conversation,
+        agent=agent,
+        run=run,
+        active_context=active_context,
+        tool_definition=definition,
+        tool_call_id=tool_call_id,
+    )
+
+
+async def authorize_entity_field(
+    db: AsyncSession,
+    *,
+    actor: User,
+    workspace: Workspace,
+    membership: WorkspaceMembership,
+    conversation_id: UUID,
+    tool_name: str,
+    field_key: str,
+    entity_kind: str | None = None,
+    run: AgentRun | None = None,
+    tool_call_id: str | None = None,
+) -> AuthorizedEntityField:
+    """Authorises a lookup of one tool field's references for the actor's conversation.
+
+    A structured field holds several kinds, so its caller names the kind to look up.
+    """
+    context = await authorize_tool_context(
+        db,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        conversation_id=conversation_id,
+        tool_name=tool_name,
+        run=run,
+        tool_call_id=tool_call_id,
+    )
+    definition = context.tool_definition
     field = next(
         (
             candidate
@@ -439,25 +480,14 @@ async def authorize_entity_field(
             field="field_key",
             details={"entity_kind": kind},
         )
-    if resolver.requires_active_context and active_context.is_empty:
+    if resolver.requires_active_context and context.active_context.is_empty:
         raise AppValidationError(
             "Select a compatible integration context before choosing a target",
             field="field_key",
             details={"entity_kind": kind},
         )
     return AuthorizedEntityField(
-        context=EntityResolverContext(
-            db=db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            conversation=conversation,
-            agent=agent,
-            run=run,
-            active_context=active_context,
-            tool_definition=definition,
-            tool_call_id=tool_call_id,
-        ),
+        context=context,
         resolver=resolver,
         field_key=field.key,
         entity_kind=kind,

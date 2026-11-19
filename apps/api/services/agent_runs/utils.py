@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolFieldPresentation
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
+# Where a review action's display args keep the review fields it acted on.
+REVIEWED_ARGS_DISPLAY_KEY = "_reviewed"
 BLOCKED_ERROR_CODES = frozenset(
     {
         "approval_expired",
@@ -314,6 +316,11 @@ def validate_retained_review(leaf: "DirectApprovalNode", args: dict[str, Any]) -
     display = leaf.metadata.get("display_args")
     if not isinstance(display, dict) or "_approval_display_error" in display:
         raise approval_review_required()
+    if definition.approval_review_action is not None:
+        # Only a completed review action records these, so the proposal alone never passes.
+        display = display.get(REVIEWED_ARGS_DISPLAY_KEY)
+        if not isinstance(display, dict):
+            raise approval_review_required(definition.approval_review_fields[0])
     for key in definition.approval_review_fields:
         field = next(field for field in definition.presentation.arg_fields if field.key == key)
         matches = (
@@ -402,7 +409,10 @@ async def build_review_display_args(
     from pydantic_ai import ModelRetry
 
     from services.agents.runtime.context import RuntimeDeps
-    from services.agents.runtime.entity_references.service import authorize_entity_field
+    from services.agents.runtime.entity_references.service import (
+        authorize_entity_field,
+        authorize_tool_context,
+    )
     from services.agents.runtime.envelope import build_run_envelope
     from services.agents.runtime.sinks import NullSink
 
@@ -411,20 +421,33 @@ async def build_review_display_args(
         for field in definition.presentation.arg_fields
         if field.key == definition.approval_review_fields[0]
     )
-    authorized = await authorize_entity_field(
-        db,
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        conversation_id=run.conversation_id,
-        tool_name=definition.name,
-        field_key=lead.key,
-        # A structured field holds several kinds, so its first kind authorises the review.
-        entity_kind=lead.entity_kinds[0] if lead.format == "structured" else None,
-        run=run,
-        tool_call_id=tool_call_id,
-    )
-    context = authorized.context
+    action = definition.approval_review_action
+    if action is not None:
+        context = await authorize_tool_context(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            conversation_id=run.conversation_id,
+            tool_name=definition.name,
+            run=run,
+            tool_call_id=tool_call_id,
+        )
+    else:
+        authorized = await authorize_entity_field(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            conversation_id=run.conversation_id,
+            tool_name=definition.name,
+            field_key=lead.key,
+            # A structured field holds several kinds, so its first kind authorises the review.
+            entity_kind=lead.entity_kinds[0] if lead.format == "structured" else None,
+            run=run,
+            tool_call_id=tool_call_id,
+        )
+        context = authorized.context
     deps = RuntimeDeps(
         db=db,
         user=actor,
@@ -439,6 +462,14 @@ async def build_review_display_args(
         delegation_depth=run.delegation_depth,
     )
     try:
+        if action is not None:
+            display = await action(deps, tool_call_id, canonical)
+            return {
+                **display,
+                REVIEWED_ARGS_DISPLAY_KEY: {
+                    key: canonical.get(key) for key in definition.approval_review_fields
+                },
+            }
         projected = definition.approval_display_args(deps, canonical)
         display = await projected if isawaitable(projected) else projected
     except ModelRetry as exc:

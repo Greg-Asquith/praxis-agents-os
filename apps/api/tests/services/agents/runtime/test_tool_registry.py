@@ -316,6 +316,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "gmail_read_message": "provider_query",
         "gmail_search_messages": "provider_query",
         "gmail_send_message": "external_write",
+        "gmail_send_mail_merge": "external_write",
         "google_ads_create_keywords": "external_write",
         "google_ads_apply_recommendations": "external_write",
         "google_ads_dismiss_recommendations": "external_write",

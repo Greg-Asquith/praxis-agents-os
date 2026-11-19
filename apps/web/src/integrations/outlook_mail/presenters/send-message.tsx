@@ -2,16 +2,19 @@
 
 import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
 import { doNotEmailProblem } from "@/integrations/do-not-email"
+import { mailMergeWriteVariant } from "@/integrations/mail-merge-presenter"
 import {
   outlookRecipientRows,
   outlookSendDetails,
 } from "@/integrations/outlook_mail/lib/tool-details"
 import { outlookSendArgs } from "@/integrations/outlook_mail/lib/write-args"
+import { outlookMailProvider } from "@/integrations/outlook_mail/provider"
 import { defineOutlookWriteVariant } from "@/integrations/outlook_mail/presenters/write-presenter"
 import { createIntegrationWritePresenter } from "@/integrations/write-presenter"
 
 export const outlookMailSendPresenter = createIntegrationWritePresenter({
   variants: {
+    outlook_mail_send_mail_merge: mailMergeWriteVariant(outlookMailProvider),
     outlook_mail_send_message: defineOutlookWriteVariant({
       copy: {
         check: "Check Sent Items and Drafts in Outlook before trying again.",

@@ -10,6 +10,7 @@ import {
   type GmailSendArgs,
 } from "@/integrations/gmail/lib/write-args"
 import { gmailProvider } from "@/integrations/gmail/provider"
+import { mailMergeWriteVariant } from "@/integrations/mail-merge-presenter"
 import {
   createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
@@ -17,6 +18,7 @@ import {
 
 export const gmailSendPresenter = createIntegrationWritePresenter({
   variants: {
+    gmail_send_mail_merge: mailMergeWriteVariant(gmailProvider),
     gmail_send_message: defineIntegrationWriteVariant<GmailSendArgs, string>(gmailProvider, {
       approval: {
         parseArgs: parseGmailSendArgs,

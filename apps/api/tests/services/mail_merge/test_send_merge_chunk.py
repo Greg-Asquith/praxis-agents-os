@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
+from core.exceptions.auth import AuthorizationError
+from core.exceptions.general import AppValidationError
 from core.exceptions.integration import (
     IntegrationFailureDisposition,
     IntegrationRateLimitError,
@@ -23,6 +25,7 @@ from models.email_suppression import WorkspaceEmailSuppression
 from models.jobs import Job
 from models.mail_merge import MailMerge, MailMergeRecipient
 from models.user import User
+from models.workspace import Workspace, WorkspaceMembership
 from services.integrations import plugin as plugin_module
 from services.integrations.plugin import (
     IntegrationMailMergeDefinition,
@@ -32,7 +35,13 @@ from services.integrations.plugin import (
 )
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_RUNNING
 from services.jobs.handlers import send_mail_merge as _registers_handler  # noqa: F401
-from services.mail_merge import send_merge_chunk
+from services.mail_merge import (
+    cancel_mail_merge,
+    get_mail_merge,
+    pause_mail_merge,
+    resume_mail_merge,
+    send_merge_chunk,
+)
 from services.mail_merge.domain import MAIL_MERGE_SEND_JOB_KIND
 from tests.factories import build_job, build_user, build_workspace, build_workspace_membership
 from tests.factories.integrations import build_external_credential, build_integration_connection
@@ -170,6 +179,21 @@ async def _rows(db: AsyncSession, merge: MailMerge) -> list[MailMergeRecipient]:
             )
         ).all()
     )
+
+
+async def _as_sender(db: AsyncSession, merge: MailMerge) -> dict[str, object]:
+    """The keyword arguments a control route passes, acting as the merge's sender."""
+    actor = await db.get(User, merge.created_by_user_id)
+    membership = await db.scalar(
+        select(WorkspaceMembership).where(WorkspaceMembership.user_id == actor.id)
+    )
+    workspace = await db.get(Workspace, merge.workspace_id)
+    return {
+        "actor": actor,
+        "workspace": workspace,
+        "membership": membership,
+        "merge_id": merge.id,
+    }
 
 
 async def _next_job(db: AsyncSession, merge: MailMerge) -> Job | None:
@@ -323,7 +347,7 @@ async def test_a_deactivated_sender_stops_the_merge_before_the_next_send(
     assert mailbox.created == []
 
 
-async def test_a_gmail_connection_without_draft_permission_pauses_for_reconnect(
+async def test_a_gmail_connection_without_draft_permission_pauses_until_reconnected(
     db_session: AsyncSession, mailbox: FakeMailbox
 ) -> None:
     merge, job = await _merge(
@@ -337,6 +361,8 @@ async def test_a_gmail_connection_without_draft_permission_pauses_for_reconnect(
     await db_session.refresh(merge)
     assert (merge.status, merge.stop_reason) == ("paused", "reconnect")
     assert mailbox.created == []
+    with pytest.raises(AppValidationError, match="Reconnect Gmail"):
+        await resume_mail_merge(db_session, request=None, **await _as_sender(db_session, merge))
 
 
 async def test_five_failures_in_a_row_stop_the_merge(
@@ -357,3 +383,75 @@ async def test_five_failures_in_a_row_stop_the_merge(
     statuses = [row.status for row in await _rows(db_session, merge)]
     assert (merge.status, merge.stop_reason) == ("stopped", "repeated_failures")
     assert statuses == ["failed"] * 5 + ["pending"]
+
+
+async def test_a_paused_merge_sends_nothing_until_resumed(
+    db_session: AsyncSession, mailbox: FakeMailbox
+) -> None:
+    merge, job = await _merge(db_session, emails=["dana@example.com"], status="sending")
+    sender = await _as_sender(db_session, merge)
+
+    paused = await pause_mail_merge(db_session, request=None, **sender)
+    await db_session.commit()
+    await send_merge_chunk(db_session, job)
+
+    assert paused.status == "paused"
+    assert mailbox.created == []
+    resumed = await resume_mail_merge(db_session, request=None, **sender)
+    await db_session.commit()
+    next_job = await _next_job(db_session, merge)
+    assert (resumed.status, next_job is not None) == ("queued", True)
+    await db_session.delete(next_job)
+    await send_merge_chunk(db_session, await _claimed_job(db_session, merge))
+
+    progress = await get_mail_merge(db_session, **sender)
+    assert (progress.status, progress.counts.sent) == ("completed", 1)
+
+
+async def test_cancel_keeps_sent_rows_and_sends_no_more(
+    db_session: AsyncSession, mailbox: FakeMailbox
+) -> None:
+    merge, job = await _merge(
+        db_session, emails=["dana@example.com", "kai@example.com"], status="sending"
+    )
+    first, _ = await _rows(db_session, merge)
+    now = datetime.now(UTC)
+    first.status, first.attempted_at, first.sent_at = "sent", now, now
+    await db_session.commit()
+
+    cancelled = await cancel_mail_merge(
+        db_session, request=None, **await _as_sender(db_session, merge)
+    )
+    await db_session.commit()
+    await send_merge_chunk(db_session, job)
+
+    assert cancelled.status == "cancelled"
+    assert [(row.email, row.state) for row in cancelled.recipients] == [
+        ("dana@example.com", "sent"),
+        ("kai@example.com", "waiting"),
+    ]
+    assert mailbox.created == []
+
+
+async def test_another_member_cannot_see_or_pause_someone_elses_merge(
+    db_session: AsyncSession, mailbox: FakeMailbox
+) -> None:
+    merge, _job = await _merge(db_session, emails=["dana@example.com"], status="sending")
+    colleague = build_user(email=f"colleague-{uuid4().hex}@example.com")
+    db_session.add(colleague)
+    await db_session.flush()
+    membership = build_workspace_membership(workspace_id=merge.workspace_id, user_id=colleague.id)
+    db_session.add(membership)
+    await db_session.flush()
+    as_colleague = {
+        **await _as_sender(db_session, merge),
+        "actor": colleague,
+        "membership": membership,
+    }
+
+    with pytest.raises(AuthorizationError):
+        await pause_mail_merge(db_session, request=None, **as_colleague)
+    with pytest.raises(AuthorizationError):
+        await get_mail_merge(db_session, **as_colleague)
+    await db_session.refresh(merge)
+    assert merge.status == "sending"

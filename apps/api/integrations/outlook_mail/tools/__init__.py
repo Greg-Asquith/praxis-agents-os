@@ -12,6 +12,7 @@ from .save_attachment import DEFINITION as SAVE_ATTACHMENT
 from .search_messages import DEFINITION as SEARCH_MESSAGES
 from .search_people import DEFINITION as SEARCH_PEOPLE
 from .send_draft import DEFINITION as SEND_DRAFT
+from .send_mail_merge import DEFINITION as SEND_MAIL_MERGE
 from .send_message import DEFINITION as SEND_MESSAGE
 from .update_message import DEFINITION as UPDATE_MESSAGE
 
@@ -25,6 +26,7 @@ TOOL_DEFINITIONS = (
     SEARCH_PEOPLE,
     SEND_MESSAGE,
     SEND_DRAFT,
+    SEND_MAIL_MERGE,
     REPLY_TO_MESSAGE,
     FORWARD_MESSAGE,
     CREATE_DRAFT,

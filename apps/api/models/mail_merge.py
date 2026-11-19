@@ -122,3 +122,35 @@ class MailMergeRecipient(Base, UUIDMixin):
         Index("ix_mail_merge_recipients_merge_status", "merge_id", "status", "position"),
         Index("ix_mail_merge_recipients_workspace_attempted", "workspace_id", "attempted_at"),
     )
+
+
+class MailMergeTestSend(Base, UUIDMixin):
+    """One test email a person sent themselves from an approval card, before the merge exists.
+
+    Tests count against the mailbox's daily budget like merge emails.
+    """
+
+    __tablename__ = "mail_merge_test_sends"
+
+    workspace_id = Column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by_user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    connection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_connections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    run_id = Column(
+        UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    tool_call_id = Column(String(128), nullable=False)
+    content_fingerprint = Column(String(64), nullable=False)
+    attempted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_mail_merge_test_sends_connection_attempted", "connection_id", "attempted_at"),
+        Index("ix_mail_merge_test_sends_run_tool_call", "run_id", "tool_call_id"),
+    )

@@ -286,6 +286,14 @@ class RuntimeToolDefinition:
     ) = None
     """Read-only approval preview; may read providers at length but must not write via deps.db."""
     approval_review_fields: tuple[str, ...] = ()
+    approval_review_action: (
+        Callable[[RuntimeDeps, str, dict[str, Any]], Awaitable[dict[str, Any]]] | None
+    ) = None
+    """A person's card action, such as a test send, that replaces the display projection on review.
+
+    Called with the pending tool call's ID and the reviewed arguments. Approval then needs a
+    review of the current review fields, even when nothing was edited.
+    """
     approval_input_model: type[BaseModel] | None = None
     presentation: ToolPresentation = ToolPresentation()
     _serialized_input_schema: dict[str, Any] | None = dataclass_field(
@@ -615,17 +623,22 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             or (field.format == "structured" and field.entity_kinds)
         )
     }
-    # The first review field authorises the review, so it must hold entity references.
+    # The review action, or else the first review field's entity references, authorises it.
     if review_fields and (
         len(review_fields) != len(definition.approval_review_fields)
         or not review_fields.issubset(editable_fields)
-        or definition.approval_review_fields[0] not in entity_fields
+        or (
+            definition.approval_review_action is None
+            and definition.approval_review_fields[0] not in entity_fields
+        )
         or definition.approval_display_args is None
     ):
         raise RuntimeError(
             "Approval review fields require unique editable arguments, led by a field that "
-            "holds entity references, and display projection"
+            "holds entity references unless the tool has a review action, and display projection"
         )
+    if definition.approval_review_action is not None and not review_fields:
+        raise RuntimeError("An approval review action requires approval review fields")
     # Nothing else checks a nested edit's shape, so the tool's own model must.
     if definition.approval_input_model is None and any(
         field.editable and field.format == "structured" for field in presentation.arg_fields

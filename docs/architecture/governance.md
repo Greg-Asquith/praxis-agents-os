@@ -174,6 +174,22 @@ default. _(enforced)_ The following rules define the defaults:
   `supports_auto=False`. Each action consumes a shared daily quota and Google
   permits notifications only for eligible job posting and livestream video
   pages. _(enforced)_
+- Every agent email send is `approval` with `supports_auto=False`
+  (`gmail_send_message`, the Outlook sends, and both mail merge tools), so
+  no agent setting lets one send without a person's approval. _(enforced)_
+- A mail merge (`gmail_send_mail_merge`, `outlook_mail_send_mail_merge`) is
+  batch consent that uses shared quota: one approval sends up to 500 emails
+  from the approver's own mailbox, in the background. Approval needs a test
+  of the current subject, body, and fallbacks, enforced on the server
+  through the review seam; any edit to them needs a new test. The test is an
+  external write before approval, which is acceptable because only a
+  person's click on the card can start it, never the agent; it goes only to
+  the sender's own address, whatever the recipient list says; it passes the
+  Do Not Email guard; and it is audited and counted against the mailbox's
+  daily budget, at most 10 per approval. The approved merge sends nothing
+  inside the turn; a background job sends it and never resends without
+  reconciling first ([mail merge](../implementation/mail-merge.md)).
+  _(enforced)_
 - Non-interactive principals: scheduled runs stamp a server-minted
   side-effect grant at run preparation time; the default is
   `require_approval`, and schedules may explicitly opt into `allow` when

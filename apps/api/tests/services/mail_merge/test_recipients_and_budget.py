@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.email_suppression import WorkspaceEmailSuppression
-from models.mail_merge import MailMerge, MailMergeRecipient
+from models.mail_merge import MailMerge, MailMergeRecipient, MailMergeTestSend
 from services.mail_merge import MailAccountKind, check_mail_merge, get_send_budget
 from tests.factories import build_user, build_workspace
 from tests.factories.integrations import build_external_credential, build_integration_connection
@@ -65,10 +65,10 @@ async def test_rows_are_skipped_for_sender_duplicates_and_do_not_email_but_inval
     ]
 
 
-async def test_budget_counts_attempts_in_the_last_24_hours_and_says_when_a_send_fits_again(
+async def test_budget_counts_merge_and_test_attempts_in_the_last_24_hours_and_says_when_a_send_fits_again(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "MAIL_MERGE_DAILY_CAP_GMAIL_PERSONAL", 3)
+    monkeypatch.setattr(settings, "MAIL_MERGE_DAILY_CAP_GMAIL_PERSONAL", 4)
     user = build_user(email=f"merge-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"merge-{uuid4().hex[:8]}")
     credential = build_external_credential(provider_key="gmail")
@@ -117,11 +117,20 @@ async def test_budget_counts_attempts_in_the_last_24_hours_and_says_when_a_send_
             email="pending@example.com",
         )
     )
+    db_session.add(
+        MailMergeTestSend(
+            workspace_id=workspace.id,
+            connection_id=connection.id,
+            tool_call_id="call-2",
+            content_fingerprint="1" * 64,
+            attempted_at=NOW - timedelta(hours=2),
+        )
+    )
     await db_session.flush()
 
     budget = await get_send_budget(
         db_session, connection_id=connection.id, kind=MailAccountKind.GMAIL_PERSONAL, now=NOW
     )
 
-    assert (budget.used, budget.remaining) == (3, 0)
+    assert (budget.used, budget.remaining) == (4, 0)
     assert budget.frees_at == NOW + timedelta(hours=4)

@@ -8,15 +8,16 @@ recipient, and its placeholders are filled in mechanically from that person's
 row. Merges are for Google Workspace and Microsoft 365 mailboxes; personal
 Gmail and Outlook.com accounts keep lower caps as a safe default.
 
-**Status:** pending. The records, template rendering, recipient checks,
-sending budget, provider senders, and background sender described on this
-page are implemented as backend services. No agent tool, approval card, or
-route creates a merge yet, so an operator can't start one.
+**Status:** an agent can propose a merge with `gmail_send_mail_merge` or
+`outlook_mail_send_mail_merge`, and an operator can test and approve it; the
+background job then sends it, and the tool's card shows progress with Pause,
+Resume, and Cancel. Neither provider has been live-tested with a full merge.
 
 ## Records
 
-Two tables in `models/mail_merge.py` hold a merge. Both carry `workspace_id`
-and have forced row-level security (`core_0082`):
+Three tables in `models/mail_merge.py` hold merges and their tests. All carry
+`workspace_id` and have forced row-level security (`core_0082`,
+`core_0083`):
 
 - **`mail_merges`**: the approved template (`subject_template`,
   `body_template`, `fallbacks`), the mailbox (`connection_id`,
@@ -35,6 +36,11 @@ and have forced row-level security (`core_0082`):
   `sent_at`. Addresses are stored lower-cased and are unique within a merge.
   A row in any status other than `pending` or `skipped` must have an
   `attempted_at`.
+
+- **`mail_merge_test_sends`**: one row per test sent from an approval card,
+  with the connection, the run and tool call, the `content_fingerprint` it
+  tested, and `attempted_at`. Tests count against the budget and are limited
+  to 10 per approval.
 
 The allowed status moves are in `services/mail_merge/domain.py`:
 
@@ -107,8 +113,9 @@ email the mailbox sends, so the budget does the same.
 | Outlook.com | Outlook with the Microsoft consumer tenant, or no recorded tenant | `MAIL_MERGE_DAILY_CAP_OUTLOOK_PERSONAL` | 100 |
 | Microsoft 365 | Outlook with any other tenant | `MAIL_MERGE_DAILY_CAP_MICROSOFT_365` | 5,000 |
 
-`get_send_budget` counts every recipient row of the connection's merges with
-an `attempted_at` in the last 24 hours, whether or not the send was confirmed.
+`get_send_budget` counts every recipient row of the connection's merges, and
+every test send from the connection, with an `attempted_at` in the last 24
+hours, whether or not the send was confirmed.
 When the mailbox is at its cap, `frees_at` gives the time the next send fits.
 `estimate_merge_finish` estimates when a merge finishes at
 `MAIL_MERGE_SEND_INTERVAL_SECONDS` (default 3, at least 2 because Microsoft
@@ -116,8 +123,59 @@ When the mailbox is at its cap, `frees_at` gives the time the next send fits.
 the remaining budget. A larger merge is allowed; it waits for budget rather
 than being refused.
 
-Test sends from the approval card are pending, so the budget counts only
-merge sends.
+## Tools and approval
+
+`gmail_send_mail_merge` and `outlook_mail_send_mail_merge` are built by one
+factory (`services/mail_merge/merge_tool_definition.py`); each provider
+supplies only its mailbox binding and a way to open a sender inside a
+request. Both are `approval` with `supports_auto=False` and aren't
+Code Mode eligible. The arguments are `subject`, `body_html`, `fallbacks`,
+and `recipients`, each recipient an `email`, optional `first_name` and
+`last_name`, and up to 10 more `fields`.
+
+A merge sends from exactly one selected mailbox, which must be the acting
+person's own connection and have an email address. The approval display
+(`describe_merge_approval`) shows that mailbox, every row's check, the
+budget, the pace, the estimated finish, and whether Gmail needs
+reconnecting for `gmail.compose`. A template problem shows on the card and
+blocks approval.
+
+### Required test send
+
+The card's **Send Me a Test** button calls the review seam
+(`approval_review_action`, see [tool dispatch](tool-dispatch.md)).
+`send_merge_test` renders the first ready row and sends it, with the subject
+prefixed `[Test] ` and a one-line banner naming the recipient whose details
+it used, to the sender's own address only. Before sending, it checks the
+connection's scopes, the 10-test limit, the budget, and the Do Not Email
+guard. A sent test is recorded in `mail_merge_test_sends` and audited; a
+failed one writes a failure audit event on its own transaction.
+
+Approval is refused with `approval_review_required` until a test of the
+current `subject`, `body_html`, and `fallbacks` has been sent. Editing any of
+them needs a new test. Recipient edits don't, because the merge checks every
+row again when it's approved and before each send.
+
+### Approval
+
+When approved, `create_mail_merge` checks that the mailbox is the one the
+card showed, runs the recipient checks again on the approved rows, inserts
+the merge and its rows, and queues the first job, then commits so workers
+see it at once. Ready rows are `pending`; other valid, distinct addresses are
+stored as `skipped`. No email is sent inside the turn. Running the same tool
+call again returns the same merge. Another active merge from the same
+mailbox fails the call, because the mailbox sends one merge at a time. The
+agent learns how many emails are sending and how many aren't, never which
+rows were skipped or why.
+
+The card (`apps/web/src/integrations/mail-merge-approval.tsx`) shows the row
+counts, the subject and body with placeholder names, fallbacks, a recipient
+table with a popover editor per row and **Cancel These N** for rows that
+need attention (the editor offers every extra column a recipient has or the
+subject, body or fallbacks name, so a placeholder added on the card can be
+filled in per row), a preview of any selected row in the sandboxed email frame,
+and the test button. The preview fills placeholders in the browser; the test
+is the server's rendering.
 
 ## Sending
 
@@ -199,6 +257,35 @@ Deactivating or deleting a user stops their unfinished merges in every
 workspace, alongside their schedules (`stop_user_mail_merges`). The job's
 membership check before each send covers leaving one workspace.
 
+## Progress and controls
+
+The `/mail-merges` routes (`routes/mail_merges/`) need an editor, and each
+service lets only the merge's sender or a workspace admin or owner act,
+because the rows name every recipient:
+
+| Route | Effect |
+| --- | --- |
+| `GET /mail-merges/{id}` | Status, `stop_reason`, counts, every row's outcome (at most 500), the estimated finish while sending, and when a daily-limit pause has room again |
+| `POST /mail-merges/{id}/pause` | `queued` or `sending` to `paused`. The send job reads the status under the merge's row lock before each email, so nothing more is sent; an email in flight still settles |
+| `POST /mail-merges/{id}/resume` | `paused` to `queued`, and queues the send job. A `reconnect` pause is refused until the connection is active, owned by the sender, and has the merge scopes. After a `daily_limit` pause the job waits for room on its own. Another active merge on the mailbox is a conflict |
+| `POST /mail-merges/{id}/cancel` | Any unfinished merge to `cancelled`. Sent rows stay sent; unsent rows are never sent |
+
+Each control is audited on the merge. Rows read as `waiting`, `sent`,
+`failed`, `unverified` (Couldn't Confirm), or `skipped`, with the reason for
+failed and skipped rows. A row still `sending` when the merge ended reads as
+`unverified`. An address skipped at send time for Do Not Email records
+`do_not_email` as its reason.
+
+The tool's result card (`apps/web/src/integrations/mail-merge-progress.tsx`)
+polls every 3 seconds while the merge is queued or sending, every 30 seconds
+while paused, and stops once it ends. It shows a status badge (Sending,
+Paused, Finished, Cancelled, Stopped) with the reason in plain words, a
+progress bar while running, Pause or Resume and Cancel (with a confirmation),
+a note when any row couldn't be confirmed, and the results table with outcome
+tabs, which opens on Failed when anything failed. The table's CSV download is
+the results export. The tool result also tells the agent the merge is already
+approved and sending.
+
 ## Settings
 
 Every mail merge setting is listed in `apps/api/.env.example` and in
@@ -215,9 +302,5 @@ Every mail merge setting is listed in `apps/api/.env.example` and in
 
 These parts aren't built:
 
-- The `gmail_send_mail_merge` and `outlook_mail_send_mail_merge` tools, the
-  approval card, and the required test send to the operator's own address.
-  Test sends must be recorded where `get_send_budget` counts them.
-- The progress card with Pause, Resume, Cancel, and a results download.
 - Bounce matching. Gmail rows keep the sent copy's Message-ID, and Outlook
   rows keep the draft's, for when it's built.

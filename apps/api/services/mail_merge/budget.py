@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
-from models.mail_merge import MailMerge, MailMergeRecipient
+from models.mail_merge import MailMerge, MailMergeRecipient, MailMergeTestSend
 
 # Providers count their daily limits over a rolling 24 hours, not a calendar day.
 BUDGET_WINDOW = timedelta(hours=24)
@@ -71,26 +71,34 @@ def daily_send_cap(kind: MailAccountKind) -> int:
 async def get_send_budget(
     db: AsyncSession, *, connection_id: UUID, kind: MailAccountKind, now: datetime
 ) -> SendBudget:
-    """Gets the mailbox's budget from merge emails attempted in the last 24 hours.
+    """Gets the mailbox's budget from merge and test emails attempted in the last 24 hours.
 
     Every attempt counts, whether or not it was confirmed, because a provider counts an
     accepted message even when Praxis never learns that it was sent.
     """
     cap = daily_send_cap(kind)
-    attempted = (
-        select(MailMergeRecipient.attempted_at)
+    since = now - BUDGET_WINDOW
+    attempted = union_all(
+        select(MailMergeRecipient.attempted_at.label("attempted_at"))
         .join(MailMerge, MailMerge.id == MailMergeRecipient.merge_id)
         .where(
             MailMerge.connection_id == connection_id,
-            MailMergeRecipient.attempted_at > now - BUDGET_WINDOW,
-        )
-    )
-    used = await db.scalar(select(func.count()).select_from(attempted.subquery())) or 0
+            MailMergeRecipient.attempted_at > since,
+        ),
+        select(MailMergeTestSend.attempted_at.label("attempted_at")).where(
+            MailMergeTestSend.connection_id == connection_id,
+            MailMergeTestSend.attempted_at > since,
+        ),
+    ).subquery()
+    used = await db.scalar(select(func.count()).select_from(attempted)) or 0
     frees_at = None
     if used >= cap:
         # The send that must leave the window before one more fits under the cap.
         oldest = await db.scalar(
-            attempted.order_by(MailMergeRecipient.attempted_at).offset(used - cap).limit(1)
+            select(attempted.c.attempted_at)
+            .order_by(attempted.c.attempted_at)
+            .offset(used - cap)
+            .limit(1)
         )
         frees_at = oldest + BUDGET_WINDOW if oldest is not None else None
     return SendBudget(cap=cap, used=used, frees_at=frees_at)

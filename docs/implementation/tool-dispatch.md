@@ -388,6 +388,15 @@ object lists so its delivery evidence matches the edited selection. Google Ads
 create tools review their nested requests, so Google's dry run covers exactly
 what the operator approves.
 
+A tool can instead declare an `approval_review_action`, a card action that
+runs in place of the display callback on review, with the pending tool call's
+ID. The tool must be mounted in the conversation, but no entity field
+authorises the review. The review stores the review fields it acted on under
+`_reviewed` in the display arguments, and resume compares the approved
+arguments with those values. A proposal has no `_reviewed`, so approval needs
+a review even when nothing was edited. The mail merge tools use this for
+their required test send ([mail merge](mail-merge.md)).
+
 `POST /agent-runs/{run_id}/review-approval` accepts the root run, current
 `approval_revision`, exact `approval_id`, and executable `override_args`. The actor must own the pending run family in the active
 workspace. The same family lock serialises review and resume. Reviews preserve

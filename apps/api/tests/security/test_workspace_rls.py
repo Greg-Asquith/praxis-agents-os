@@ -43,6 +43,7 @@ DIRECT_TABLES = (
     "media_generations",
     "mail_merges",
     "mail_merge_recipients",
+    "mail_merge_test_sends",
     "embedding_token_usage",
     "scratch_entries",
     "workspace_tool_settings",

@@ -7,7 +7,11 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parents[2]
 # Every email send tool calls the Do Not Email guard through its package exports only.
-ALLOWED_PROVIDER_SERVICE_MODULES = {"services.files.contract", "services.email_suppressions"}
+ALLOWED_PROVIDER_SERVICE_MODULES = {
+    "services.files.contract",
+    "services.email_suppressions",
+    "services.mail_merge",
+}
 ALLOWED_PROVIDER_SERVICE_PREFIXES = (
     "services.agents.runtime.context",
     "services.agents.runtime.tools",

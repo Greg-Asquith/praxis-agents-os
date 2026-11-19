@@ -18,6 +18,7 @@ from routes.files import router as files_router
 from routes.health import router as health_router
 from routes.integrations import router as integrations_router
 from routes.kb import router as kb_router
+from routes.mail_merges import router as mail_merges_router
 from routes.memories import router as memories_router
 from routes.meta import router as meta_router
 from routes.models import router as models_router
@@ -44,6 +45,7 @@ api_router.include_router(email_suppressions_router)
 api_router.include_router(files_router)
 api_router.include_router(integrations_router)
 api_router.include_router(kb_router)
+api_router.include_router(mail_merges_router)
 api_router.include_router(memories_router)
 api_router.include_router(meta_router)
 api_router.include_router(models_router)

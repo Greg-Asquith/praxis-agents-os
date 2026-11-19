@@ -189,6 +189,7 @@ DEFINITION = RuntimeToolDefinition(
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
     egress=TOOL_EGRESS_EXTERNAL_WRITE,
     default_policy=TOOL_POLICY_APPROVAL,
+    supports_auto=False,
     takes_ctx=True,
     timeout=60,
     output_model=GmailSendOutput,

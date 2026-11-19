@@ -202,7 +202,9 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
     return mergeScalarEdit(original, edit, field)
   }
   if (Array.isArray(edit)) return mergeListEdit(original, edit, field)
-  return mergeKeyValueEdit(original, edit)
+  // An optional key-value field the agent left out starts empty, so it can still be filled in.
+  const optionalKeyValue = original == null && field?.format === "keyvalue" && field.secondary
+  return mergeKeyValueEdit(optionalKeyValue ? {} : original, edit)
 }
 
 function mergeClearedValue(original: unknown, field?: ApprovalField): unknown {
