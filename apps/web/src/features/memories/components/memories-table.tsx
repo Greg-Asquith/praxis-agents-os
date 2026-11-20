@@ -1,6 +1,6 @@
 // apps/web/src/features/memories/components/memories-table.tsx
 
-import { BrainIcon } from "lucide-react"
+import type { ReactNode } from "react"
 import type { OnChangeFn, PaginationState } from "@tanstack/react-table"
 
 import {
@@ -14,9 +14,6 @@ import {
   paginationStateFromServer,
   paginationStateToServer,
 } from "@/components/data-table/server-state"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { EmptyState } from "@/components/ui/empty-state"
 import {
   ResponsiveList,
   ResponsiveListItem,
@@ -30,12 +27,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  formatMemoryConfidence,
-  memoryScopeLabel,
-} from "@/features/memories/components/memory-display"
+import { memoryUsedByLabel } from "@/features/memories/components/memory-display"
+import { MemoryOriginBadge } from "@/features/memories/components/memory-origin-badge"
 import type { Memory } from "@/features/memories/types"
-import { relativeDateTime, titleCaseToken } from "@/lib/format"
+import { formatDateTime, relativeDateTime } from "@/lib/format"
 
 const columnHelper = createAppColumnHelper<Memory>()
 
@@ -43,36 +38,33 @@ const columns = columnHelper.columns([
   columnHelper.accessor("title", {
     header: ({ header }) => <header.ColumnHeader />,
     cell: ({ getValue }) => getValue(),
-    meta: { label: "Title" },
+    meta: { label: "Memory" },
   }),
-  columnHelper.accessor("scope", {
+  columnHelper.display({
+    id: "origin",
     header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => <ScopeBadge scope={getValue()} />,
-    meta: { label: "Scope" },
+    cell: ({ row }) => <MemoryOriginBadge memory={row.original} />,
+    meta: { label: "Came From" },
   }),
-  columnHelper.accessor("memory_type", {
+  columnHelper.display({
+    id: "used_by",
     header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => titleCaseToken(getValue(), "Memory"),
-    meta: { label: "Type" },
-  }),
-  columnHelper.accessor("agent_name", {
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => getValue() ?? "—",
-    meta: { label: "Agent" },
-  }),
-  columnHelper.accessor("effective_confidence", {
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => formatMemoryConfidence(getValue()),
-    meta: { label: "Confidence" },
+    cell: ({ row }) => memoryUsedByLabel(row.original),
+    meta: { label: "Used By" },
   }),
   columnHelper.accessor("updated_at", {
     header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => <span title={getValue()}>{relativeDateTime(getValue())}</span>,
-    meta: { label: "Updated" },
+    cell: ({ getValue }) => (
+      <span className="whitespace-nowrap" title={formatDateTime(getValue())}>
+        {relativeDateTime(getValue())}
+      </span>
+    ),
+    meta: { label: "Last Changed" },
   }),
 ])
 
 export function MemoriesTable({
+  empty,
   limit,
   memories,
   offset,
@@ -80,6 +72,7 @@ export function MemoriesTable({
   onPageChange,
   total,
 }: {
+  empty: ReactNode
   limit: number
   memories: Memory[]
   offset: number
@@ -102,14 +95,7 @@ export function MemoriesTable({
   })
 
   if (memories.length === 0) {
-    return (
-      <EmptyState
-        description="Agents save durable details here as they work. The memories that relate to a conversation come up in it automatically."
-        icon={<BrainIcon className="size-5" />}
-        size="compact"
-        title="No memories match these filters"
-      />
-    )
+    return empty
   }
 
   return (
@@ -125,16 +111,15 @@ export function MemoriesTable({
                 }}
                 type="button"
               >
-                <span className="font-medium">{memory.title}</span>
+                <MemorySummary memory={memory} />
                 <dl className="grid grid-cols-2 gap-3">
-                  <ResponsiveListMeta label="Scope">{memoryScopeLabel(memory)}</ResponsiveListMeta>
-                  <ResponsiveListMeta label="Type">
-                    {titleCaseToken(memory.memory_type, "Memory")}
+                  <ResponsiveListMeta label="Came From">
+                    <MemoryOriginBadge memory={memory} />
                   </ResponsiveListMeta>
-                  <ResponsiveListMeta label="Confidence">
-                    {formatMemoryConfidence(memory.effective_confidence)}
+                  <ResponsiveListMeta label="Used By">
+                    {memoryUsedByLabel(memory)}
                   </ResponsiveListMeta>
-                  <ResponsiveListMeta label="Updated">
+                  <ResponsiveListMeta label="Last Changed">
                     {relativeDateTime(memory.updated_at)}
                   </ResponsiveListMeta>
                 </dl>
@@ -185,16 +170,15 @@ function MemoryBodyCell({ onOpen }: { onOpen: (memoryId: string) => void }) {
   return (
     <TableCell>
       {cell.column.id === "title" ? (
-        <Button
-          className="h-auto max-w-sm justify-start truncate p-0 font-medium"
+        <button
+          className="focus-visible:ring-ring/50 block w-full max-w-xl rounded-sm text-left outline-none focus-visible:ring-[3px]"
           onClick={() => {
             onOpen(row.original.id)
           }}
           type="button"
-          variant="link"
         >
-          <cell.FlexRender />
-        </Button>
+          <MemorySummary memory={row.original} />
+        </button>
       ) : (
         <cell.FlexRender />
       )}
@@ -202,10 +186,11 @@ function MemoryBodyCell({ onOpen }: { onOpen: (memoryId: string) => void }) {
   )
 }
 
-function ScopeBadge({ scope }: { scope: Memory["scope"] }) {
+function MemorySummary({ memory }: { memory: Memory }) {
   return (
-    <Badge variant="outline">
-      {scope === "user" ? "Personal" : titleCaseToken(scope, "Scope")}
-    </Badge>
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="truncate font-medium hover:underline">{memory.title}</span>
+      <span className="text-muted-foreground truncate text-xs">{memory.content_md}</span>
+    </span>
   )
 }

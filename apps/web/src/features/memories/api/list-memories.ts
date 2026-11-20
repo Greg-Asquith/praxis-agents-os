@@ -4,7 +4,8 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type {
   MemoriesListResponse,
-  MemoryScope,
+  MemoryAudience,
+  MemoryOrigin,
   MemoryStatus,
   MemoryType,
 } from "@/features/memories/types"
@@ -12,10 +13,12 @@ import { apiRequest } from "@/lib/api/client"
 import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
 export type ListMemoriesParams = {
-  scope?: MemoryScope
+  audience?: MemoryAudience
   memoryType?: MemoryType
   agentId?: string
   status?: MemoryStatus
+  q?: string
+  source?: MemoryOrigin
   limit?: number
   offset?: number
 }
@@ -25,10 +28,12 @@ export const memoriesQueryKeys = createWorkspaceScopedQueryKeys("memories")
 async function listMemories(params: ListMemoriesParams = {}) {
   return apiRequest<MemoriesListResponse>("/memories/", {
     query: {
-      scope: params.scope,
+      audience: params.audience,
       memory_type: params.memoryType,
       agent_id: params.agentId,
       status: params.status ?? "active",
+      q: params.q,
+      source: params.source,
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
     },

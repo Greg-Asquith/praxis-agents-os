@@ -2,19 +2,29 @@
 
 """Read one visible memory and its supersession lineage."""
 
+from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, union
+from sqlalchemy import Row, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from models.agent import Agent
 from models.agent_memories import AgentMemory
+from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
-from services.memories.authorisation import get_visible_memory, visible_memory_filter
-from services.memories.schemas import MemoryDetailResponse, MemoryResponse
+from services.memories.authorisation import (
+    get_visible_memory,
+    visible_memory_filter,
+    visible_source_conversation,
+)
+from services.memories.schemas import (
+    MemoryDetailResponse,
+    MemoryResponse,
+    MemorySourceConversation,
+)
 
 
 async def get_memory_detail(
@@ -63,51 +73,65 @@ async def get_memory_detail(
     ).subquery()
     rows = (
         await db.execute(
-            select(AgentMemory, Agent.name)
+            select(
+                AgentMemory,
+                Agent.name,
+                Conversation.id.label("source_conversation_id"),
+                Conversation.title.label("source_conversation_title"),
+            )
             .join(lineage_ids, lineage_ids.c.id == AgentMemory.id)
             .outerjoin(Agent, Agent.id == AgentMemory.agent_id)
+            .outerjoin(
+                Conversation,
+                visible_source_conversation(workspace=workspace, user_id=actor.id),
+            )
             .where(visible_memory_filter(workspace_id=workspace.id, user_id=actor.id))
         )
     ).all()
-    now = datetime.now(UTC)
-    rows_by_id = {item.id: (item, agent_name) for item, agent_name in rows}
-    predecessors_by_successor = {
-        item.superseded_by_id: item
-        for item, _agent_name in rows
-        if item.superseded_by_id is not None
-    }
+    rows_by_id = {row[0].id: row for row in rows}
+    predecessors_by_successor: dict[UUID, list[AgentMemory]] = defaultdict(list)
+    for item, *_rest in rows:
+        if item.superseded_by_id is not None:
+            predecessors_by_successor[item.superseded_by_id].append(item)
 
-    predecessors: list[AgentMemory] = []
-    cursor = memory
+    # A merge points several memories at one survivor, so walk every branch.
     seen = {memory.id}
-    while (predecessor := predecessors_by_successor.get(cursor.id)) is not None:
-        if predecessor.id in seen:
-            break
-        predecessors.append(predecessor)
-        seen.add(predecessor.id)
-        cursor = predecessor
+    predecessors: list[AgentMemory] = []
+    pending = [memory.id]
+    while pending:
+        for predecessor in predecessors_by_successor.get(pending.pop(), []):
+            if predecessor.id not in seen:
+                seen.add(predecessor.id)
+                predecessors.append(predecessor)
+                pending.append(predecessor.id)
+    predecessors.sort(key=lambda item: (item.created_at, item.id))
 
     successors: list[AgentMemory] = []
     cursor = memory
     while cursor.superseded_by_id is not None:
         successor_row = rows_by_id.get(cursor.superseded_by_id)
-        if successor_row is None:
+        if successor_row is None or successor_row[0].id in seen:
             break
-        successor, _agent_name = successor_row
-        if successor.id in seen:
-            break
+        successor = successor_row[0]
         successors.append(successor)
         seen.add(successor.id)
         cursor = successor
 
-    chain = [*reversed(predecessors), memory, *successors]
-    responses = [
-        MemoryResponse.from_memory(
-            item,
-            agent_name=rows_by_id[item.id][1],
-            now=now,
-        )
-        for item in chain
-    ]
-    current_index = len(predecessors)
-    return MemoryDetailResponse(memory=responses[current_index], chain=responses)
+    now = datetime.now(UTC)
+    chain = [*predecessors, memory, *successors]
+    responses = [_response(rows_by_id[item.id], now=now) for item in chain]
+    return MemoryDetailResponse(memory=responses[len(predecessors)], chain=responses)
+
+
+def _response(row: Row, *, now: datetime) -> MemoryResponse:
+    item, agent_name, conversation_id, conversation_title = row
+    return MemoryResponse.from_memory(
+        item,
+        agent_name=agent_name,
+        source_conversation=(
+            MemorySourceConversation(id=conversation_id, title=conversation_title)
+            if conversation_id is not None
+            else None
+        ),
+        now=now,
+    )

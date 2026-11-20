@@ -1,6 +1,7 @@
 // apps/web/src/features/memories/components/memory-edit-form.tsx
 
-import { useState, type ReactNode, type SyntheticEvent } from "react"
+import { useId, useState, type ReactNode, type SyntheticEvent } from "react"
+import { ChevronDownIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -19,11 +20,15 @@ import { buildFieldErrors } from "@/lib/forms"
 
 export function MemoryEditForm({
   memory,
+  onCancel,
   onSaved,
 }: {
   memory: Memory
+  onCancel: () => void
   onSaved: (memory: Memory) => void
 }) {
+  const advancedId = useId()
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [state, setState] = useState<MemoryFormState>(() => memoryFormState(memory))
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +55,7 @@ export function MemoryEditForm({
     <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>Couldn’t update memory</AlertTitle>
+          <AlertTitle>Couldn’t Update Memory</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -68,7 +73,7 @@ export function MemoryEditForm({
         </FormField>
         <FormField
           error={fieldErrors["memory-content"]}
-          helper="Changing the memory creates a new version so its previous wording remains reviewable."
+          helper="Saving keeps the previous wording in History."
           id="memory-content"
           label="Memory"
         >
@@ -82,7 +87,27 @@ export function MemoryEditForm({
             }}
           />
         </FormField>
-        <FieldGroup className="grid gap-4 sm:grid-cols-2">
+        <Button
+          aria-controls={advancedId}
+          aria-expanded={advancedOpen}
+          className="text-muted-foreground w-fit"
+          onClick={() => {
+            setAdvancedOpen((current) => !current)
+          }}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Advanced
+          <ChevronDownIcon
+            className={advancedOpen ? "rotate-180 transition-transform" : "transition-transform"}
+            data-icon="inline-end"
+          />
+        </Button>
+        <FieldGroup
+          className={advancedOpen ? "grid gap-4 sm:grid-cols-2" : "hidden"}
+          id={advancedId}
+        >
           <FormField
             error={fieldErrors["memory-importance"]}
             id="memory-importance"
@@ -104,7 +129,7 @@ export function MemoryEditForm({
             error={fieldErrors["memory-expiry"]}
             helper="Leave blank to keep the current expiry."
             id="memory-expiry"
-            label="Expires in days"
+            label="Expires In Days"
           >
             <Input
               aria-invalid={Boolean(fieldErrors["memory-expiry"])}
@@ -120,7 +145,10 @@ export function MemoryEditForm({
           </FormField>
         </FieldGroup>
       </FieldGroup>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button onClick={onCancel} type="button" variant="outline">
+          Cancel
+        </Button>
         <Button disabled={mutation.isPending} type="submit">
           {mutation.isPending ? "Saving…" : "Save Changes"}
         </Button>

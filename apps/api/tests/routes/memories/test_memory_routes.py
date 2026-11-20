@@ -16,7 +16,12 @@ from models.agent_memories import AgentMemory
 from models.audit_event import AuditEvent
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
-from tests.factories import build_user, build_workspace, build_workspace_membership
+from tests.factories import (
+    build_conversation,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.auth import bearer_headers
 
 
@@ -182,6 +187,89 @@ async def test_purging_middle_version_relinks_the_chain(
         headers=member.headers,
     )
     assert [item["id"] for item in detail.json()["chain"]] == [str(memory.id), latest_id]
+
+
+async def test_source_filter_lets_a_persons_edit_outrank_how_a_memory_began(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    workspace, agent = await _workspace_with_agent(db_session)
+    member = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
+    saved = _memory(workspace=workspace, agent=agent, user=member.user, title="Saved")
+    learned = _memory(workspace=workspace, agent=agent, user=member.user, title="Learned")
+    learned.source = "dream"
+    learned.created_by = "system"
+    edited_learned = _memory(workspace=workspace, agent=agent, user=member.user, title="Edited")
+    edited_learned.source = "dream"
+    edited_learned.created_by = "system"
+    edited_learned.last_edited_by_user_at = func.now()
+    db_session.add_all([saved, learned, edited_learned])
+    await db_session.commit()
+
+    titles = {}
+    for origin in ("learned", "agent", "person"):
+        response = await db_async_client.get(
+            "/api/v1/memories/", headers=member.headers, params={"source": origin}
+        )
+        titles[origin] = [memory["title"] for memory in response.json()["memories"]]
+
+    assert titles == {"learned": ["Learned"], "agent": ["Saved"], "person": ["Edited"]}
+
+
+async def test_source_conversation_is_only_named_to_people_who_can_open_it(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    workspace, agent = await _workspace_with_agent(db_session)
+    owner = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
+    colleague = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
+    conversation = build_conversation(
+        user=owner.user, workspace=workspace, title="Private salary chat"
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    memory = _memory(workspace=workspace, agent=agent, user=owner.user, scope="workspace")
+    memory.source_conversation_id = conversation.id
+    db_session.add(memory)
+    await db_session.commit()
+
+    as_owner = await db_async_client.get("/api/v1/memories/", headers=owner.headers)
+    as_colleague = await db_async_client.get("/api/v1/memories/", headers=colleague.headers)
+    colleague_detail = await db_async_client.get(
+        f"/api/v1/memories/{memory.id}", headers=colleague.headers
+    )
+
+    assert as_owner.json()["memories"][0]["source_conversation_title"] == "Private salary chat"
+    hidden = as_colleague.json()["memories"][0]
+    assert hidden["source_conversation_id"] is None
+    assert hidden["source_conversation_title"] is None
+    assert colleague_detail.json()["memory"]["source_conversation_id"] is None
+
+
+async def test_history_lists_every_memory_a_merge_replaced(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    workspace, agent = await _workspace_with_agent(db_session)
+    member = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
+    survivor = _memory(workspace=workspace, agent=agent, user=member.user, title="Survivor")
+    db_session.add(survivor)
+    await db_session.flush()
+    sources = [
+        _memory(workspace=workspace, agent=agent, user=member.user, title=title)
+        for title in ("First", "Second")
+    ]
+    for source in sources:
+        source.status = "superseded"
+        source.superseded_by_id = survivor.id
+    db_session.add_all(sources)
+    await db_session.commit()
+
+    detail = await db_async_client.get(f"/api/v1/memories/{survivor.id}", headers=member.headers)
+
+    chain = detail.json()["chain"]
+    assert {item["title"] for item in chain[:2]} == {"First", "Second"}
+    assert chain[-1]["id"] == str(survivor.id)
 
 
 async def _workspace_with_agent(db: AsyncSession) -> tuple[Workspace, Agent]:

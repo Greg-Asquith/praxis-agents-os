@@ -30,6 +30,10 @@ import { integrationProvidersQueryOptions } from "@/features/integrations/api/li
 import { validateFilesSearch } from "@/features/files/search"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { memoriesQueryOptions } from "@/features/memories/api/list-memories"
+import {
+  DEFAULT_MEMORY_FILTERS,
+  memoryListParams,
+} from "@/features/memories/components/memory-filters"
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
 import { workspacesQueryOptions } from "@/features/workspaces/api/list-workspaces"
 import { loadAcceptInvitation } from "@/features/workspaces/routes/accept-invitation-loader"
@@ -308,7 +312,7 @@ const memoriesRoute = createRoute({
         agentsQueryOptions({ includeInactive: true, limit: 100 })
       ),
       context.queryClient.ensureQueryData(
-        memoriesQueryOptions({ status: "active", limit: 50, offset: 0 })
+        memoriesQueryOptions(memoryListParams(DEFAULT_MEMORY_FILTERS, 0))
       ),
     ])
   },

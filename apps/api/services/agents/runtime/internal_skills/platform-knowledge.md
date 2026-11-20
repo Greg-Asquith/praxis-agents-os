@@ -358,15 +358,14 @@ conversations, and save them without asking. A memory comes up when it
 relates to what was asked, not in every conversation. For anything an agent
 must follow every time, put it in the agent's instructions instead.
 
-Each memory belongs to one of three scopes. **Agent** memories, the usual
-choice, are used only by the agent that saved them. **Personal** memories
-are about you and are visible only to you. **Workspace** memories are used
-by every agent in the workspace.
-
-In **Memory**, you can filter by scope, type, and agent, then click
-**Edit Memory** to correct one, **Archive** it, or **Delete Permanently**.
-Deleting a workspace memory needs an owner or admin. You can't add a memory
-by hand; to make an agent remember something, tell it in a conversation.
+In **Memory**, **Shared** memories are visible to everyone in the
+workspace and **Private** ones only to you. **Used By** says whether every
+agent uses a memory or only the one that saved it. Each row says where it came from, such as **Learned
+Automatically** or **Saved by Agent**. Click one to see **Where This Came
+From** and its **History**, then **Edit** or **Forget** it. **Bring Up
+Automatically** off keeps it searchable only. Forgetting a workspace memory
+needs an owner or admin. You can't add a memory by hand; tell an agent in a
+conversation instead.
 
 ## Schedules
 

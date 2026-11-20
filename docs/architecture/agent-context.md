@@ -291,15 +291,29 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
 - **Tools.** Auto-mounted `save_memory`, `search_memory`, `update_memory`, and
   `forget_memory` go through the audited tool registry and run without
   approval unless the agent or workspace approval policy asks for it.
-- **Management.** `/memories` routes, `services/memories/`, web UI where
-  operators review, correct, archive, and purge memories. Every human edit
+- **Management.** `/memories` routes, `services/memories/`, and the
+  **Memory** page (`apps/web/src/features/memories/`), where people review,
+  correct, forget (archive), and purge memories. The page has two tabs,
+  **Shared** (workspace and agent scopes, which every member can see) and
+  **Private** (the viewer's user scope), from the list's `audience` filter
+  and `audience_counts`; a **Used By** column says whether every agent or
+  only one uses a shared memory. It also has a search (`q`, a literal match on title and content), and
+  a `source` filter: `person` is a row a person wrote or edited
+  (`created_by = 'user'` or `last_edited_by_user_at` set), which outranks
+  `learned` (`source = 'dream'`) and `agent` (everything else). Each row
+  returns `source_conversation_id` and `source_conversation_title` only when
+  the viewer could open that conversation (their own, or shared in an active
+  team workspace), so a memory never names another person's private chat.
+  The detail's history walks every predecessor, so a merge lists each memory
+  it replaced. Every human edit
   sets `last_edited_by_user_at`, including an in-place title, importance, or
   expiry change, so automatic upkeep can tell a person's memory from the row.
   An edit with `recall_disabled: true` sets `recall_disabled_at`, so the
   memory stays searchable but never comes up by itself; a content edit keeps
   it. Owners and admins turn recall off for the workspace with
-  `memory_recall_enabled` on `PATCH /workspaces/{id}`. The page controls for
-  both are pending (plan 335 slice E1).
+  `memory_recall_enabled` on `PATCH /workspaces/{id}`; the Memory page has
+  both controls (**Bring Up Automatically** per memory, and **Use Memories
+  Automatically** in its Settings popover for owners and admins).
 - **Learning from past conversations.** Internally called dreaming; the
   product never uses that word. It's off unless `MEMORY_DREAM_ENABLED` is
   true; a workspace setting and the default-on switch are pending. Once per `MEMORY_DREAM_INTERVAL_SECONDS` the worker starts one

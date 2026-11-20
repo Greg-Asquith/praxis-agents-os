@@ -12,8 +12,10 @@ from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import NotFoundError
 from models.agent import Agent
 from models.agent_memories import AgentMemory
+from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.conversations.utils import shared_conversation_predicate
 from services.memories.domain import MEMORY_SCOPE_USER, MEMORY_SCOPE_WORKSPACE
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
 
@@ -30,6 +32,21 @@ def visible_memory_filter(
             AgentMemory.scope != MEMORY_SCOPE_USER,
             AgentMemory.user_id == user_id,
         ),
+    )
+
+
+def visible_source_conversation(
+    *,
+    workspace: Workspace,
+    user_id: UUID,
+) -> ColumnElement[bool]:
+    """Joins a memory's conversation only when the viewer could open it."""
+    return and_(
+        Conversation.id == AgentMemory.source_conversation_id,
+        Conversation.workspace_id == workspace.id,
+        Conversation.deleted.is_(False),
+        workspace.status == "active",
+        or_(Conversation.user_id == user_id, shared_conversation_predicate(workspace)),
     )
 
 

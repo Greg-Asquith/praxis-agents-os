@@ -5,6 +5,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { MemoryOriginBadge } from "@/features/memories/components/memory-origin-badge"
 import type { Memory } from "@/features/memories/types"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -29,8 +30,10 @@ export function SupersessionChain({
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="font-heading font-medium">Version History</h3>
-          <p className="text-muted-foreground text-sm">{chain.length} saved versions</p>
+          <h3 className="font-heading font-medium">History</h3>
+          <p className="text-muted-foreground text-sm">
+            {chain.length} versions, including any memories merged into this one
+          </p>
         </div>
         <Button
           aria-controls={historyId}
@@ -42,7 +45,7 @@ export function SupersessionChain({
           type="button"
           variant="outline"
         >
-          {open ? "Hide Versions" : `Show ${String(chain.length)} Versions`}
+          {open ? "Hide History" : "Show History"}
           {open ? (
             <ChevronUpIcon data-icon="inline-end" />
           ) : (
@@ -52,7 +55,7 @@ export function SupersessionChain({
       </div>
       {open ? (
         <ol className="border-border flex flex-col border-l" id={historyId}>
-          {chain.map((memory, index) => (
+          {chain.map((memory) => (
             <li
               className={cn(
                 "relative ml-4 rounded-lg p-3",
@@ -70,10 +73,11 @@ export function SupersessionChain({
                   type="button"
                   variant="link"
                 >
-                  Version {index + 1}
+                  {memory.title}
                 </Button>
-                {memory.id === currentId ? <Badge variant="secondary">Selected</Badge> : null}
-                <span className="text-xs">{formatDateTime(memory.updated_at)}</span>
+                {memory.id === currentId ? <Badge variant="secondary">Showing</Badge> : null}
+                <MemoryOriginBadge memory={memory} />
+                <span className="text-xs">{formatDateTime(memory.created_at)}</span>
               </div>
               <p className="mt-2 line-clamp-3 text-sm whitespace-pre-wrap">{memory.content_md}</p>
             </li>

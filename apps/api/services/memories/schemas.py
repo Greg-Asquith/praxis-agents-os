@@ -36,6 +36,10 @@ class MemoryResponse(BaseModel):
     archived_at: datetime | None
     archive_reason: str | None
     recall_disabled_at: datetime | None
+    last_edited_by_user_at: datetime | None
+    # Set only when the viewer can open the conversation the memory came from.
+    source_conversation_id: UUID | None
+    source_conversation_title: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -45,6 +49,7 @@ class MemoryResponse(BaseModel):
         memory: AgentMemory,
         *,
         agent_name: str | None = None,
+        source_conversation: "MemorySourceConversation | None" = None,
         now: datetime | None = None,
     ) -> "MemoryResponse":
         measured_at = now or datetime.now(UTC)
@@ -69,15 +74,33 @@ class MemoryResponse(BaseModel):
             archived_at=memory.archived_at,
             archive_reason=memory.archive_reason,
             recall_disabled_at=memory.recall_disabled_at,
+            last_edited_by_user_at=memory.last_edited_by_user_at,
+            source_conversation_id=source_conversation.id if source_conversation else None,
+            source_conversation_title=source_conversation.title if source_conversation else None,
             created_at=memory.created_at,
             updated_at=memory.updated_at,
         )
+
+
+class MemorySourceConversation(BaseModel):
+    """The conversation a memory came from, as the viewer may see it."""
+
+    id: UUID
+    title: str | None
+
+
+class MemoryAudienceCounts(BaseModel):
+    """Matching memories per audience, for the page's tabs."""
+
+    private: int = 0
+    shared: int = 0
 
 
 class MemoriesListResponse(OffsetPage):
     """Paginated memory-management response."""
 
     memories: list[MemoryResponse]
+    audience_counts: MemoryAudienceCounts
 
 
 class MemoryDetailResponse(BaseModel):
