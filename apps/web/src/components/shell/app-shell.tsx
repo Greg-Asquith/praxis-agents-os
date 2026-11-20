@@ -15,6 +15,7 @@ import { shouldRedirectHomeForWorkspaceSwitch } from "@/components/shell/workspa
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useLogoutMutation } from "@/features/auth/api/logout"
 import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
+import { NotificationBell } from "@/features/notifications/components/notification-bell"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { cn } from "@/lib/utils"
 
@@ -97,6 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 search={location.search}
               />
             </div>
+            <NotificationBell />
             <div className="hidden shrink-0 md:block">
               <WorkspaceSwitcher
                 setWorkspaceBySlug={switchWorkspace}

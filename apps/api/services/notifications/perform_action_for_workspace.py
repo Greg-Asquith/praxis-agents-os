@@ -4,6 +4,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,9 +29,9 @@ async def perform_action_for_workspace(
     db: AsyncSession,
     *,
     user: User,
-    notification_id: str,
+    notification_id: UUID,
     action_key: str,
-    active_workspace_id: str | None,
+    active_workspace_id: UUID,
 ) -> dict[str, Any]:
     note = await get_notification_or_raise(db, notification_id=notification_id)
     authorize_active_workspace(note, active_workspace_id=active_workspace_id)

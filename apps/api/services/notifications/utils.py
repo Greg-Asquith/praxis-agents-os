@@ -3,7 +3,9 @@
 """Shared helpers for notification service operations."""
 
 from typing import Any
+from uuid import UUID
 
+from sqlalchemy import ColumnElement, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
@@ -44,15 +46,21 @@ def authorize_and_claim_user_notification(
 def authorize_active_workspace(
     note: Notification,
     *,
-    active_workspace_id: str | None,
+    active_workspace_id: UUID,
 ) -> None:
-    """Require notification workspace to match the active workspace, when provided."""
-    if (
-        note.workspace_id
-        and active_workspace_id
-        and str(note.workspace_id) != str(active_workspace_id)
-    ):
+    """Require a workspace notification to belong to the active workspace."""
+    if note.workspace_id is not None and note.workspace_id != active_workspace_id:
         raise AuthorizationError("Notification does not belong to the active workspace")
+
+
+def inbox_conditions(*, user_id: UUID, workspace_id: UUID) -> list[ColumnElement[bool]]:
+    """Unarchived rows for one person in the active workspace, plus their rows with no workspace."""
+    return [
+        Notification.recipient_user_id == user_id,
+        or_(Notification.workspace_id == workspace_id, Notification.workspace_id.is_(None)),
+        Notification.deleted.is_(False),
+        Notification.archived.is_(False),
+    ]
 
 
 def validate_actions(notification_type: str, actions: list[dict[str, Any]]) -> None:
@@ -76,7 +84,7 @@ def validate_actions(notification_type: str, actions: list[dict[str, Any]]) -> N
 async def get_notification_or_raise(
     db: AsyncSession,
     *,
-    notification_id: str,
+    notification_id: UUID,
 ) -> Notification:
     """Fetch a notification or raise the standard not-found exception."""
     note = await db.get(Notification, notification_id)

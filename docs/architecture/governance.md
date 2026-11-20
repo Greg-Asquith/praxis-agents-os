@@ -381,9 +381,14 @@ during a streamed response; they are not monetary guarantees. _(enforced)_
 
 ## 6. Notification policy
 
-In-app delivery uses the notification service at
-`services/notifications/service.py`. Public notification routes and UI are
-pending. Email delivery is pending until a digest exists. Workspace invitations
+In-app delivery uses the notification service package
+`services/notifications/`. Each person reads their own notifications from the
+bell in the app header, which lists rows for the active workspace and rows
+with no workspace, such as a personal connection's. The routes under
+`/notifications` return and change only the signed-in person's rows; the
+recipient check in `services/notifications/utils.py` stands on top of row-level
+security, which lets every workspace member see the workspace's rows. Email
+delivery is pending. Workspace invitations
 create neither email nor in-app notifications, so the inviting operator shares the returned link.
 A pending, unexpired invitation may admit account creation while signup is
 closed; OAuth requires the provider-verified address and auto-accepts on full

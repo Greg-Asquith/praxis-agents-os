@@ -41,7 +41,8 @@ The sidebar has five main pages:
 
 The sidebar also lists your conversations. A shield icon means a
 conversation needs approval and a dot means it has a result you haven't
-read. To switch workspace, use the workspace menu at the top of the page.
+read. The bell at the top lists your notifications, and the workspace
+menu beside it switches workspace.
 To open **Profile Settings**, **Workspaces**, or **Workspace Settings**,
 click your name in the sidebar.
 
@@ -442,4 +443,4 @@ Say so plainly when someone asks for these:
 - Edit or branch an earlier message, or delete a conversation.
 - Add a memory by hand on the **Memory** page.
 - Change a member's role without removing and re-inviting them.
-- Send invitation emails or in-app notifications.
+- Send email, such as invitations or failure alerts.

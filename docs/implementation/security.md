@@ -47,7 +47,7 @@ The following contracts apply in this area:
   completes linking for the signed-in user, which the API checks against the
   state's `user_id`. Login state still sends a signed-in user to `/`.
 - Workspace invitations are delivered only through the operator-shared link;
-  email and in-app notification delivery are pending. A pending,
+  invitations send no email and create no in-app notification. A pending,
   unexpired invitation permits account creation while `ALLOW_SIGNUP=false`:
   OAuth matches a provider-verified email (Google, GitHub's verified-email
   result, or Microsoft UPN), while password registration requires the raw

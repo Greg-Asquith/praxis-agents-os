@@ -22,6 +22,7 @@ from routes.mail_merges import router as mail_merges_router
 from routes.memories import router as memories_router
 from routes.meta import router as meta_router
 from routes.models import router as models_router
+from routes.notifications import router as notifications_router
 from routes.platform_usage import router as platform_usage_router
 from routes.schedules import router as schedules_router
 from routes.security_events import router as security_events_router
@@ -49,6 +50,7 @@ api_router.include_router(mail_merges_router)
 api_router.include_router(memories_router)
 api_router.include_router(meta_router)
 api_router.include_router(models_router)
+api_router.include_router(notifications_router)
 api_router.include_router(platform_usage_router)
 api_router.include_router(schedules_router)
 api_router.include_router(security_events_router)

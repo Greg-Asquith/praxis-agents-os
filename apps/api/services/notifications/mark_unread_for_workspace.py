@@ -2,6 +2,8 @@
 
 """Mark a notification unread."""
 
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.notification import Notification
@@ -24,8 +26,8 @@ async def mark_unread_for_workspace(
     db: AsyncSession,
     *,
     user: User,
-    notification_id: str,
-    active_workspace_id: str | None,
+    notification_id: UUID,
+    active_workspace_id: UUID,
 ) -> Notification:
     note = await get_notification_or_raise(db, notification_id=notification_id)
     authorize_active_workspace(note, active_workspace_id=active_workspace_id)

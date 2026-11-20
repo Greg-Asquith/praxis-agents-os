@@ -2,6 +2,8 @@
 
 """Archive or unarchive a notification."""
 
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.notification import Notification
@@ -24,9 +26,9 @@ async def set_archived_for_workspace(
     db: AsyncSession,
     *,
     user: User,
-    notification_id: str,
+    notification_id: UUID,
     archived: bool,
-    active_workspace_id: str | None,
+    active_workspace_id: UUID,
 ) -> Notification:
     note = await get_notification_or_raise(db, notification_id=notification_id)
     authorize_active_workspace(note, active_workspace_id=active_workspace_id)
