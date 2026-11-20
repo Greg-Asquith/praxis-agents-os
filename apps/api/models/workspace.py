@@ -51,6 +51,9 @@ class Workspace(BaseModel):
     memory_recall_enabled = Column(
         Boolean, default=True, nullable=False, server_default=text("true")
     )
+    memory_learning_enabled = Column(
+        Boolean, default=True, nullable=False, server_default=text("true")
+    )
     # Model for agents that do not pin their own; null uses the settings default.
     default_model_provider = Column(String(50), nullable=True)
     default_model = Column(String(100), nullable=True)

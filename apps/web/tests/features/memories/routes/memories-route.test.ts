@@ -23,6 +23,7 @@ vi.mock("@/features/workspaces/components/use-active-workspace", () => ({
       is_personal: false,
       current_user_role: "owner",
       memory_recall_enabled: true,
+      memory_learning_enabled: true,
     },
   }),
 }))

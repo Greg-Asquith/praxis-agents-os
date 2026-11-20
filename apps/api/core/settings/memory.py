@@ -97,10 +97,6 @@ class MemorySettingsMixin:
     MEMORY_SWEEP_INTERVAL_SECONDS: int = Field(
         default=3600, gt=0, description="Interval between expired-memory sweeps."
     )
-    MEMORY_DREAM_ENABLED: bool = Field(
-        default=True,
-        description="Learn from finished conversations in the background (internally, dreaming).",
-    )
     MEMORY_DREAM_MODEL_PROVIDER: str = Field(
         default="openai", description="Provider for learning from finished conversations."
     )

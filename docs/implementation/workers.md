@@ -65,16 +65,18 @@ settlement uses a bounded cleanup path.
 
 ## Learning from conversations
 
-While `MEMORY_DREAM_ENABLED` is true, startup ensures the system job
+Startup ensures the system job
 `memory.dream_schedule`, which queues its successor after
 `MEMORY_DREAM_INTERVAL_SECONDS`. Each pass fails any run left unfinished for
 a whole interval, then creates a `memory_dream_runs` row and a
-workspace-owned `memory.dream` job for each workspace that is due. That job
+workspace-owned `memory.dream` job for each workspace that is due and has
+`memory_learning_enabled` on. That job
 runs under the workspace's tenant context and advances the run by one status
 (`collecting`, `extracting`, then `consolidating`, which applies and
 completes in the same transaction). Its hash is the run and status, and a
 job whose status no longer matches the run changes nothing, so a repeat
-writes nothing twice. A job that fails for good marks its run `failed`.
+writes nothing twice. A job that fails for good marks its run `failed`, and
+so does the next step after the workspace switch goes off.
 
 ## Mail merge sending
 

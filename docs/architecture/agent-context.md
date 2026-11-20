@@ -315,11 +315,18 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
   both controls (**Bring Up Automatically** per memory, and **Use Memories
   Automatically** in its Settings popover for owners and admins).
 - **Learning from past conversations.** Internally called dreaming; the
-  product never uses that word. It's off unless `MEMORY_DREAM_ENABLED` is
-  true; a workspace setting and the default-on switch are pending. Once per `MEMORY_DREAM_INTERVAL_SECONDS` the worker starts one
-  run for each workspace with a direct conversation that finished a run
-  since the last completed dream (`memory_dream_runs`, whose newest
-  `window_end` is the watermark). The run reads up to
+  product never uses that word. It's always on for a deployment, and owners
+  and admins turn it off for a workspace with `memory_learning_enabled` on
+  `PATCH /workspaces/{id}`
+  (**Learn From Past Conversations** in the Memory page's Settings popover
+  and in Workspace Settings). Once per `MEMORY_DREAM_INTERVAL_SECONDS` the
+  worker starts one run for each learning workspace with a direct
+  conversation that finished a run since the last completed dream
+  (`memory_dream_runs`, whose newest `window_end` is the watermark). A run
+  already under way when the switch goes off fails at its next step
+  (`error_code='disabled'`) and makes no more model calls. Turning it back
+  on resumes from the watermark, so the next dream may read conversations
+  that finished while it was off. The run reads up to
   `MEMORY_DREAM_MAX_CONVERSATIONS` conversations, oldest first, and leaves
   the rest for the next run. Each conversation is read from where the last
   dream stopped, as labelled plain text in the untrusted frame, with tool

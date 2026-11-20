@@ -98,11 +98,11 @@ async def advance_dream_run(db: AsyncSession, job: Job, *, model: Model | None =
     if run is None or run.status != job.payload.get("status"):
         return
     now = datetime.now(UTC)
-    if not settings.MEMORY_DREAM_ENABLED:
+    workspace = await db.get(Workspace, run.workspace_id)
+    if not workspace.memory_learning_enabled:
         move_dream_run(run, DREAM_STATUS_FAILED, now=now, error_code=DREAM_ERROR_DISABLED)
         await db.flush()
         return
-    workspace = await db.get(Workspace, run.workspace_id)
     if run.status == DREAM_STATUS_COLLECTING:
         await _collect(db, run, workspace=workspace, now=now)
     elif run.status == DREAM_STATUS_EXTRACTING:

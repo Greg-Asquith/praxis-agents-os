@@ -15,9 +15,7 @@ from services.memories.dream.domain import MEMORY_DREAM_JOB_KIND, MEMORY_DREAM_S
 
 @job_handler(kind=MEMORY_DREAM_SCHEDULE_JOB_KIND, timeout=120.0)
 async def handle_memory_dream_schedule(db: AsyncSession, job: Job) -> None:
-    """Start due dreams and schedule the next pass while the feature is on."""
-    if not settings.MEMORY_DREAM_ENABLED:
-        return
+    """Start due dreams and schedule the next pass."""
     now = datetime.now(UTC)
     await schedule_dreams(db, now=now)
 

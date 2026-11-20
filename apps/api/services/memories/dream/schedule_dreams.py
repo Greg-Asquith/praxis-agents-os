@@ -1,6 +1,6 @@
 # apps/api/services/memories/dream/schedule_dreams.py
 
-"""Start one dream for each workspace with conversations finished since its last dream."""
+"""Start one dream for each learning workspace with conversations finished since its last dream."""
 
 import logging
 from datetime import datetime, timedelta
@@ -62,6 +62,7 @@ async def schedule_dreams(db: AsyncSession, *, now: datetime) -> int:
             .where(
                 Workspace.deleted.is_(False),
                 Workspace.status == "active",
+                Workspace.memory_learning_enabled.is_(True),
                 Workspace.id.not_in(unfinished),
                 # A repeated schedule pass inside one interval starts nothing new.
                 func.coalesce(watermarks.c.watermark, now - interval) <= now - interval / 2,

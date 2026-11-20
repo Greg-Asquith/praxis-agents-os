@@ -95,6 +95,7 @@ export function WorkspaceSettingsForm() {
         payload: {
           name: formString(formData, "name").trim(),
           ...defaultModelPayload(formString(formData, "default_model")),
+          memory_learning_enabled: formData.has("memory_learning_enabled"),
           ...(!workspace.is_personal && {
             conversations_shared_by_default: formData.has("conversations_shared_by_default"),
           }),
@@ -281,6 +282,25 @@ export function WorkspaceSettingsForm() {
                 />
               </Field>
             )}
+            <Field orientation="horizontal" data-disabled={!canManage}>
+              <FieldContent>
+                <FieldLabel htmlFor="settings-memory-learning">
+                  Learn From Past Conversations
+                </FieldLabel>
+                <FieldDescription id="settings-memory-learning-description">
+                  Agents look back over finished conversations and remember what will help next
+                  time. What comes from a private conversation stays private. Review what they
+                  remember on the Memories page.
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                id="settings-memory-learning"
+                name="memory_learning_enabled"
+                aria-describedby="settings-memory-learning-description"
+                defaultChecked={workspace.memory_learning_enabled}
+                disabled={!canManage}
+              />
+            </Field>
           </FieldGroup>
         </CardContent>
         <CardFooter className="justify-between gap-3">

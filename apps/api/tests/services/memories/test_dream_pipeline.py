@@ -43,7 +43,6 @@ _CANDIDATE = re.compile(r'\{"conversation": "(k\d+)", "title": "([^"]+)", "conte
 
 @pytest.fixture(autouse=True)
 def _dreaming_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "MEMORY_DREAM_ENABLED", True)
     # Usage rows commit on the test's one connection, which can't take concurrent savepoints.
     monkeypatch.setattr(
         sys.modules["services.memories.dream.advance_dream_run"], "EXTRACTION_CONCURRENCY", 1
@@ -283,6 +282,29 @@ async def test_capped_dream_leaves_the_rest_for_the_next_dream(
     assert [entry["id"] for entry in run.conversations] == [str(first.id)]
     second_finished = datetime.now(UTC) - timedelta(minutes=30)
     assert run.window_end < second_finished
+
+
+async def test_learning_switched_off_stops_the_dream_and_starts_no_more(
+    db_session: AsyncSession, memory_context: MemoryContext
+) -> None:
+    await _finished_conversation(
+        db_session,
+        memory_context,
+        user=memory_context.user,
+        workspace=memory_context.workspace,
+        visibility="workspace",
+        text="Remember: Billing day is the 15th.",
+    )
+    await schedule_dreams(db_session, now=datetime.now(UTC))
+    run = await _workspace_run(db_session, memory_context)
+    memory_context.workspace.memory_learning_enabled = False
+    await db_session.flush()
+    scripted = _ScriptedModel()
+
+    await _run_to_end(db_session, run, scripted.model)
+
+    assert (run.status, run.error_code, scripted.prompts) == ("failed", "disabled", [])
+    assert await schedule_dreams(db_session, now=datetime.now(UTC)) == 0
 
 
 def test_transcript_frames_hostile_content_and_redacts_credentials() -> None:

@@ -15,12 +15,15 @@ import {
 } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { useUpdateWorkspaceMutation } from "@/features/workspaces/api/update-workspace"
-import type { Workspace } from "@/features/workspaces/types"
+import type { Workspace, WorkspaceUpdateRequest } from "@/features/workspaces/types"
 import { getErrorMessage } from "@/lib/api/errors"
 
 export function MemorySettingsPopover({ workspace }: { workspace: Workspace }) {
-  const recallId = useId()
   const mutation = useUpdateWorkspaceMutation()
+
+  function update(payload: MemorySwitchPayload) {
+    mutation.mutate({ workspaceId: workspace.id, payload })
+  }
 
   return (
     <Popover>
@@ -36,27 +39,24 @@ export function MemorySettingsPopover({ workspace }: { workspace: Workspace }) {
         <PopoverHeader>
           <PopoverTitle>Memory Settings</PopoverTitle>
         </PopoverHeader>
-        <Field data-disabled={mutation.isPending} orientation="horizontal">
-          <FieldContent>
-            <FieldLabel htmlFor={recallId}>Use Memories Automatically</FieldLabel>
-            <FieldDescription id={`${recallId}-description`}>
-              Each conversation starts with the memories that relate to it. When off, agents still
-              find memories by searching.
-            </FieldDescription>
-          </FieldContent>
-          <Switch
-            aria-describedby={`${recallId}-description`}
-            checked={workspace.memory_recall_enabled}
-            disabled={mutation.isPending}
-            id={recallId}
-            onCheckedChange={(checked) => {
-              mutation.mutate({
-                workspaceId: workspace.id,
-                payload: { memory_recall_enabled: checked },
-              })
-            }}
-          />
-        </Field>
+        <MemorySwitch
+          checked={workspace.memory_learning_enabled}
+          description="Agents look back over finished conversations and remember what will help next time. Anything from a private conversation stays private to you."
+          disabled={mutation.isPending}
+          label="Learn From Past Conversations"
+          onCheckedChange={(checked) => {
+            update({ memory_learning_enabled: checked })
+          }}
+        />
+        <MemorySwitch
+          checked={workspace.memory_recall_enabled}
+          description="Each conversation starts with the memories that relate to it. When off, agents still find memories by searching."
+          disabled={mutation.isPending}
+          label="Use Memories Automatically"
+          onCheckedChange={(checked) => {
+            update({ memory_recall_enabled: checked })
+          }}
+        />
         {mutation.error ? (
           <Alert variant="destructive">
             <AlertDescription>{getErrorMessage(mutation.error)}</AlertDescription>
@@ -64,5 +64,42 @@ export function MemorySettingsPopover({ workspace }: { workspace: Workspace }) {
         ) : null}
       </PopoverContent>
     </Popover>
+  )
+}
+
+type MemorySwitchPayload = Pick<
+  WorkspaceUpdateRequest,
+  "memory_learning_enabled" | "memory_recall_enabled"
+>
+
+function MemorySwitch({
+  checked,
+  description,
+  disabled,
+  label,
+  onCheckedChange,
+}: {
+  checked: boolean
+  description: string
+  disabled: boolean
+  label: string
+  onCheckedChange: (checked: boolean) => void
+}) {
+  const id = useId()
+
+  return (
+    <Field data-disabled={disabled} orientation="horizontal">
+      <FieldContent>
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <FieldDescription id={`${id}-description`}>{description}</FieldDescription>
+      </FieldContent>
+      <Switch
+        aria-describedby={`${id}-description`}
+        checked={checked}
+        disabled={disabled}
+        id={id}
+        onCheckedChange={onCheckedChange}
+      />
+    </Field>
   )
 }

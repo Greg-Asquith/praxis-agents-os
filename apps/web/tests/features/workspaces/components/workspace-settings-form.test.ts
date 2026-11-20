@@ -66,7 +66,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it("sends the default sharing switch value in the workspace update", async () => {
+it("sends the switch values in the workspace update", async () => {
   state.update.mockResolvedValue({ slug: "team" })
 
   for (const shared of [true, false]) {
@@ -74,7 +74,11 @@ it("sends the default sharing switch value in the workspace update", async () =>
     await submitForm(shared)
     expect(state.update).toHaveBeenCalledWith({
       workspaceId: "team",
-      payload: { name: "Updated team", conversations_shared_by_default: shared },
+      payload: {
+        name: "Updated team",
+        memory_learning_enabled: false,
+        conversations_shared_by_default: shared,
+      },
     })
   }
 })

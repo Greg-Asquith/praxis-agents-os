@@ -355,18 +355,19 @@ appear when the platform administrator has turned on artifact sharing.
 ### Memory
 
 Agents remember preferences, decisions, and project details across
-conversations, and save them without asking. A memory comes up when it
-relates to what was asked, not in every conversation. For anything an agent
-must follow every time, put it in the agent's instructions instead.
+conversations. They save memories as they work and learn from past
+conversations. A memory comes up when it's relevant. For rules an agent must
+always follow, use its instructions.
 
 In **Memory**, **Shared** memories are visible to everyone in the
 workspace and **Private** ones only to you. **Used By** says whether every
-agent uses a memory or only the one that saved it. Each row says where it came from, such as **Learned
-Automatically** or **Saved by Agent**. Click one to see **Where This Came
-From** and its **History**, then **Edit** or **Forget** it. **Bring Up
-Automatically** off keeps it searchable only. Forgetting a workspace memory
-needs an owner or admin. You can't add a memory by hand; tell an agent in a
-conversation instead.
+agent uses a memory or only the one that saved it. Each row says where it
+came from, such as **Learned Automatically** or **Saved by Agent**. Click one
+to see **Where This Came From** and its **History**, then **Edit** or
+**Forget** it. **Bring Up Automatically** off keeps it searchable only.
+Forgetting a workspace memory needs an owner or admin. They can also turn
+off **Learn From Past Conversations** or **Use Memories Automatically** in
+**Settings**.
 
 ## Schedules
 

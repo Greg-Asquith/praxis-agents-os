@@ -21,6 +21,7 @@ class WorkspaceRead(BaseModel):
     is_personal: bool
     conversations_shared_by_default: bool
     memory_recall_enabled: bool
+    memory_learning_enabled: bool
     default_model_provider: str | None = None
     default_model: str | None = None
     status: str
@@ -62,6 +63,7 @@ class WorkspaceCreateRequest(BaseModel):
 class WorkspaceUpdateRequest(BaseModel):
     conversations_shared_by_default: bool | None = None
     memory_recall_enabled: bool | None = None
+    memory_learning_enabled: bool | None = None
     default_model_provider: str | None = Field(default=None, max_length=50)
     default_model: str | None = Field(default=None, max_length=100)
     name: str | None = Field(default=None, max_length=255)

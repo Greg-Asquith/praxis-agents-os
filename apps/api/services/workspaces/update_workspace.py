@@ -23,6 +23,8 @@ from services.workspaces.utils import (
 )
 from utils.slugify import slugify
 
+_MEMORY_SWITCHES = ("memory_recall_enabled", "memory_learning_enabled")
+
 
 async def update_workspace(
     db: AsyncSession,
@@ -60,18 +62,9 @@ async def update_workspace(
             workspace.conversations_shared_by_default = payload.conversations_shared_by_default
             changed_fields.append("conversations_shared_by_default")
 
-    if "memory_recall_enabled" in payload.model_fields_set:
-        if payload.memory_recall_enabled is None:
-            raise AppValidationError(
-                "memory_recall_enabled cannot be null", field="memory_recall_enabled"
-            )
-        if payload.memory_recall_enabled != workspace.memory_recall_enabled:
-            audit_details["memory_recall_enabled"] = {
-                "previous": workspace.memory_recall_enabled,
-                "value": payload.memory_recall_enabled,
-            }
-            workspace.memory_recall_enabled = payload.memory_recall_enabled
-            changed_fields.append("memory_recall_enabled")
+    for field in _MEMORY_SWITCHES:
+        if field in payload.model_fields_set:
+            _apply_switch(workspace, payload, field, changed_fields, audit_details)
 
     if payload.model_fields_set & {"default_model_provider", "default_model"}:
         previous = (workspace.default_model_provider, workspace.default_model)
@@ -134,3 +127,21 @@ async def update_workspace(
         await db.refresh(workspace)
 
     return WorkspaceRead.from_workspace(workspace, current_user_role=membership.role)
+
+
+def _apply_switch(
+    workspace: Workspace,
+    payload: WorkspaceUpdateRequest,
+    field: str,
+    changed_fields: list[str],
+    audit_details: dict[str, Any],
+) -> None:
+    """Sets one on/off workspace setting, recording its previous value for the audit event."""
+    value = getattr(payload, field)
+    if value is None:
+        raise AppValidationError(f"{field} cannot be null", field=field)
+    previous = getattr(workspace, field)
+    if value != previous:
+        audit_details[field] = {"previous": previous, "value": value}
+        setattr(workspace, field, value)
+        changed_fields.append(field)

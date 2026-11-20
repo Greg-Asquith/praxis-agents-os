@@ -53,6 +53,7 @@ const target: Workspace = {
   is_personal: false,
   conversations_shared_by_default: false,
   memory_recall_enabled: true,
+  memory_learning_enabled: true,
   default_model_provider: null,
   default_model: null,
   status: "active",
