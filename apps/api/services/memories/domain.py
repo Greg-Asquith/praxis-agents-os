@@ -11,8 +11,6 @@ from models.agent_memories import AgentMemory
 MEMORY_SCOPE_AGENT = "agent"
 MEMORY_SCOPE_USER = "user"
 MEMORY_SCOPE_WORKSPACE = "workspace"
-MEMORY_KIND_CORE = "core"
-MEMORY_KIND_NOTE = "note"
 MEMORY_TYPE_FACT = "fact"
 MEMORY_TYPE_PREFERENCE = "preference"
 MEMORY_TYPE_EPISODE = "episode"
@@ -30,9 +28,10 @@ MEMORY_CREATED_BY_USER = "user"
 MEMORY_CREATED_BY_SYSTEM = "system"
 MEMORY_EMBED_JOB_KIND = "memory.embed"
 MEMORY_TOOL_NAMES = frozenset({"save_memory", "search_memory", "update_memory", "forget_memory"})
+# Metadata key on the turn content that carries recalled memories; never sent to the model.
+RECALLED_MEMORY_IDS_KEY = "recalled_memory_ids"
 
 type MemoryScope = Literal["agent", "user", "workspace"]
-type MemoryKind = Literal["core", "note"]
 type MemoryType = Literal["fact", "preference", "episode", "outcome"]
 type MemorySource = Literal["interactive", "scheduled", "delegated", "event", "user", "dream"]
 type MemoryCreatedBy = Literal["agent", "user", "system"]

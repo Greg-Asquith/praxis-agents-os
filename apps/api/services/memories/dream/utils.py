@@ -24,8 +24,6 @@ from services.memories.domain import (
     ARCHIVE_REASON_FORGOTTEN,
     ARCHIVE_REASON_USER_DELETED,
     MEMORY_CREATED_BY_USER,
-    MEMORY_KIND_CORE,
-    MEMORY_KIND_NOTE,
     MEMORY_SCOPE_AGENT,
     MEMORY_SCOPE_USER,
     MEMORY_SCOPE_WORKSPACE,
@@ -35,7 +33,7 @@ from services.memories.domain import (
 from services.memories.dream.domain import (
     DREAM_RUN_SUBJECT_TYPE,
     DREAM_STATUS_COMPLETED,
-    DUPLICATE_CLUSTER_RECENT_NOTES,
+    DUPLICATE_CLUSTER_RECENT_MEMORIES,
     DUPLICATE_CLUSTER_SIMILARITY,
     FINAL_DREAM_STATUSES,
     MAX_DUPLICATE_PAIRS,
@@ -156,12 +154,11 @@ async def duplicate_pairs(
         )
         .where(
             target_filter,
-            AgentMemory.kind == MEMORY_KIND_NOTE,
             active_memory_filter(),
             AgentMemory.embedding.is_not(None),
         )
         .order_by(AgentMemory.updated_at.desc(), AgentMemory.id)
-        .limit(DUPLICATE_CLUSTER_RECENT_NOTES)
+        .limit(DUPLICATE_CLUSTER_RECENT_MEMORIES)
         .subquery()
     )
     left, right = aliased(recent), aliased(recent)
@@ -181,12 +178,8 @@ async def duplicate_pairs(
 
 
 def is_protected_memory(memory: AgentMemory) -> bool:
-    """A person's memory, one a person edited, and core memory are never changed by a dream."""
-    return (
-        memory.created_by == MEMORY_CREATED_BY_USER
-        or memory.last_edited_by_user_at is not None
-        or memory.kind == MEMORY_KIND_CORE
-    )
+    """A person's memory and one a person edited are never changed by a dream."""
+    return memory.created_by == MEMORY_CREATED_BY_USER or memory.last_edited_by_user_at is not None
 
 
 def named_memories(operation: DreamOperation) -> list[str]:

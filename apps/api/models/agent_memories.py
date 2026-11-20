@@ -22,7 +22,7 @@ from models.base import Base, TimestampMixin, UUIDMixin
 
 
 class AgentMemory(Base, UUIDMixin, TimestampMixin):
-    """One versioned core memory or searchable note."""
+    """One versioned memory, recalled by relevance or found by search."""
 
     __tablename__ = "agent_memories"
 
@@ -37,7 +37,6 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=True
     )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    kind = Column(String(8), nullable=False, server_default=text("'note'"))
     memory_type = Column(String(16), nullable=False, server_default=text("'fact'"))
     title = Column(String(200), nullable=False)
     content_md = Column(Text, nullable=False)
@@ -80,6 +79,8 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
     )
     # Set on every human edit, so a dream can tell a person's memory without reading audit.
     last_edited_by_user_at = Column(DateTime(timezone=True), nullable=True)
+    # Set by a person only: the memory stays searchable but never comes up in a turn by itself.
+    recall_disabled_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("scope IN ('agent','user','workspace')", name="agent_memories_scope_check"),
@@ -89,7 +90,6 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
             "(scope = 'workspace' AND agent_id IS NULL AND user_id IS NULL)",
             name="agent_memories_scope_refs_check",
         ),
-        CheckConstraint("kind IN ('core','note')", name="agent_memories_kind_check"),
         CheckConstraint(
             "memory_type IN ('fact','preference','episode','outcome')",
             name="agent_memories_type_check",
@@ -130,14 +130,6 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
             "created_by IN ('agent','user','system')", name="agent_memories_created_by_check"
         ),
         Index("ix_agent_memories_workspace_scope_status", "workspace_id", "scope", "status"),
-        Index(
-            "ix_agent_memories_active_core_scope",
-            "workspace_id",
-            "scope",
-            "agent_id",
-            "user_id",
-            postgresql_where=text("status = 'active' AND kind = 'core'"),
-        ),
         Index(
             "ix_agent_memories_active_expiry",
             "expires_at",

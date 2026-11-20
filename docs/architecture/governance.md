@@ -107,22 +107,28 @@ default. _(enforced)_ The following rules define the defaults:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
-  scratch, Praxis Files, memory notes, KB documents — Praxis owns the
+  scratch, Praxis Files, memories, KB documents — Praxis owns the
   KB) are internal in the run envelope. Their tool-level approval policy
   can still be stricter: durable Praxis file writes require approval even
   though they do not cross the Praxis boundary, and agent-initiated KB
   document writes default `approval` through the KB write-policy choke
   point. _(enforced for todos, scratch, Praxis Files, and auto-mounted
-  memory notes. There is deliberately no agent KB write tool; the recorded
+  memory. There is deliberately no agent KB write tool; the recorded
   default applies when one ships.)_
-- Core-memory saves and updates always require approval, even though memory is
-  Praxis-internal state and the tools are auto-mounted. The conditional check
-  remains inside the tool body so an agent policy cannot weaken it.
-  _(enforced)_
-- Learning from past conversations writes and tidies memory notes without
-  approval, as the agent's own note writes do. It never writes or changes
-  core memory, a person's memory, or one a person edited, and its changes
-  keep their history. _(enforced; off by default)_
+- Memory saves, updates, and forgets run without approval (owner,
+  2026-11-20). There is no core kind that needs approval; anything that must
+  shape every conversation belongs in the agent's instructions, which a
+  person edits. An agent or workspace approval policy can still require
+  approval for the memory tools. _(enforced)_
+- Learning from past conversations writes and tidies memories without
+  approval, as the agent's own memory writes do. It never changes a person's
+  memory or one a person edited, and its changes keep their history.
+  _(enforced; off by default)_
+- Memories that relate to a message come up in that turn without approval
+  (owner, 2026-11-20). Recall reads only the scopes visible to the run, and a
+  person controls it by editing or forgetting a memory, stopping one coming
+  up automatically, or turning recall off for the workspace (owners and
+  admins). _(enforced; the page controls are pending)_
 - Agent skill writes (`create_skill`, `update_skill`) always require approval.
   They are internal writes, but any agent that can see a saved skill may
   follow it, so the tools support only the `approval` policy. Agents can

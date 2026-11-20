@@ -244,7 +244,6 @@ def _memory(
         scope=scope,
         agent_id=agent.id if scope == "agent" else None,
         user_id=user.id if scope == "user" else None,
-        kind="core",
         memory_type="fact",
         title=title,
         content_md="The original durable detail.",

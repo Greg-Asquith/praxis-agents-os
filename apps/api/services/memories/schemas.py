@@ -18,7 +18,6 @@ class MemoryResponse(BaseModel):
 
     id: UUID
     scope: Literal["agent", "user", "workspace"]
-    kind: Literal["core", "note"]
     memory_type: Literal["fact", "preference", "episode", "outcome"]
     status: Literal["active", "superseded", "archived"]
     title: str
@@ -36,6 +35,7 @@ class MemoryResponse(BaseModel):
     superseded_by_id: UUID | None
     archived_at: datetime | None
     archive_reason: str | None
+    recall_disabled_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -51,7 +51,6 @@ class MemoryResponse(BaseModel):
         return cls(
             id=memory.id,
             scope=memory.scope,
-            kind=memory.kind,
             memory_type=memory.memory_type,
             status=memory.status,
             title=memory.title,
@@ -69,6 +68,7 @@ class MemoryResponse(BaseModel):
             superseded_by_id=memory.superseded_by_id,
             archived_at=memory.archived_at,
             archive_reason=memory.archive_reason,
+            recall_disabled_at=memory.recall_disabled_at,
             created_at=memory.created_at,
             updated_at=memory.updated_at,
         )
@@ -94,3 +94,5 @@ class MemoryUpdateRequest(BaseModel):
     content_md: str | None = Field(default=None, min_length=1)
     importance: int | None = Field(default=None, ge=1, le=5)
     expires_in_days: int | None = Field(default=None, gt=0)
+    # True stops the memory coming up in a turn by itself; it stays searchable.
+    recall_disabled: bool | None = None

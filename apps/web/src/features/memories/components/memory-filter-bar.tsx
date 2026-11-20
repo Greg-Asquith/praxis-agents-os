@@ -18,7 +18,7 @@ import {
   DEFAULT_MEMORY_FILTERS,
   type MemoryFilters,
 } from "@/features/memories/components/memory-filters"
-import type { MemoryKind, MemoryScope, MemoryStatus, MemoryType } from "@/features/memories/types"
+import type { MemoryScope, MemoryStatus, MemoryType } from "@/features/memories/types"
 
 const ALL = "__all__"
 
@@ -47,17 +47,6 @@ export function MemoryFilterBar({
         ]}
         onChange={(value) => {
           updateFilter("scope", value as MemoryScope | "")
-        }}
-      />
-      <FilterSelect
-        label="Kind"
-        value={filters.kind}
-        options={[
-          ["core", "Core"],
-          ["note", "Note"],
-        ]}
-        onChange={(value) => {
-          updateFilter("kind", value as MemoryKind | "")
         }}
       />
       <FilterSelect
@@ -158,7 +147,6 @@ function FilterSelect({
 function sameFilters(left: MemoryFilters, right: MemoryFilters) {
   return (
     left.scope === right.scope &&
-    left.kind === right.kind &&
     left.memoryType === right.memoryType &&
     left.agentId === right.agentId &&
     left.status === right.status

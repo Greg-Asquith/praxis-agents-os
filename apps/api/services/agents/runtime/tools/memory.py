@@ -1,16 +1,12 @@
 # apps/api/services/agents/runtime/tools/memory.py
 
-"""Agent-memory tools use conditional ApprovalRequired and approved replay.
-
-Pydantic AI exposes ``RunContext.tool_call_approved`` on replay, and the
-runtime dispatch layer preserves tool-body ``ApprovalRequired`` requests.
-"""
+"""Agent-memory tools: save, search, update, and forget memories visible to the run."""
 
 from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field
-from pydantic_ai import ApprovalRequired, ModelRetry, RunContext
+from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
@@ -31,18 +27,11 @@ from services.agents.runtime.tools.memory_results import (
 from services.agents.runtime.tools.registry import runtime_tool
 from services.memories import (
     forget_memory as forget_memory_service,
-    get_memory,
     save_memory as save_memory_service,
     search_memories,
     update_memory as update_memory_service,
 )
-from services.memories.domain import (
-    MEMORY_KIND_CORE,
-    MemoryKind,
-    MemoryProvenance,
-    MemoryScope,
-    MemoryType,
-)
+from services.memories.domain import MemoryProvenance, MemoryScope, MemoryType
 
 
 def _provenance(ctx: RunContext[RuntimeDeps]) -> MemoryProvenance:
@@ -59,7 +48,6 @@ def _memory_summary(memory: AgentMemory) -> dict[str, object]:
     return {
         "id": str(memory.id),
         "scope": memory.scope,
-        "kind": memory.kind,
         "memory_type": memory.memory_type,
         "title": memory.title,
         "importance": memory.importance,
@@ -97,12 +85,6 @@ def _service_retry(exc: Exception) -> ModelRetry:
         failed_label="Couldn't Save Memory",
         arg_fields=(
             ToolFieldPresentation(
-                key="kind",
-                label="Kind",
-                editable=True,
-                options=("core", "note"),
-            ),
-            ToolFieldPresentation(
                 key="scope",
                 label="Scope",
                 editable=True,
@@ -137,7 +119,6 @@ async def save_memory(
     title: Annotated[str, Field(min_length=1, max_length=200)],
     content: Annotated[str, Field(min_length=1)],
     scope: MemoryScope = "agent",
-    kind: MemoryKind = "note",
     memory_type: MemoryType = "fact",
     importance: Annotated[int, Field(ge=1, le=5)] = 3,
     expires_in_days: Annotated[int | None, Field(gt=0)] = None,
@@ -145,8 +126,6 @@ async def save_memory(
     save_as_new: bool = False,
 ) -> dict[str, object]:
     """Save a memory with explicit near-duplicate resolution."""
-    if kind == MEMORY_KIND_CORE and not ctx.tool_call_approved:
-        raise ApprovalRequired(metadata={"reason": "core_memory_write"})
     try:
         result = await save_memory_service(
             ctx.deps.db,
@@ -154,7 +133,6 @@ async def save_memory(
             agent=ctx.deps.agent,
             user=ctx.deps.user,
             scope=scope,
-            kind=kind,
             memory_type=memory_type,
             title=title,
             content_md=content,
@@ -215,7 +193,6 @@ async def search_memory(
     ctx: RunContext[RuntimeDeps],
     query: Annotated[str, Field(min_length=1, max_length=1000)],
     scope: MemoryScope | None = None,
-    kind: MemoryKind | None = None,
     memory_type: MemoryType | None = None,
     limit: Annotated[int, Field(ge=1, le=settings.MEMORY_SEARCH_MAX_LIMIT)] = (
         settings.MEMORY_SEARCH_DEFAULT_LIMIT
@@ -230,7 +207,6 @@ async def search_memory(
             user=ctx.deps.user,
             query=query,
             scope=scope,
-            kind=kind,
             memory_type=memory_type,
             limit=limit,
         )
@@ -245,7 +221,6 @@ async def search_memory(
                 description=f"{hit.memory.memory_type.title()} · {hit.memory.scope.title()} memory",
             ).model_dump(mode="json"),
             "scope": hit.memory.scope,
-            "kind": hit.memory.kind,
             "memory_type": hit.memory.memory_type,
             "title": hit.memory.title,
             "content": hit.memory.content_md,
@@ -326,18 +301,9 @@ async def update_memory(
     importance: Annotated[int | None, Field(ge=1, le=5)] = None,
     expires_in_days: Annotated[int | None, Field(gt=0)] = None,
 ) -> dict[str, object]:
-    """Update a memory; core targets conditionally require approval."""
+    """Update one visible memory, preserving content history."""
     try:
         parsed_id = internal_entity_id(memory_id)
-        target = await get_memory(
-            ctx.deps.db,
-            workspace=ctx.deps.workspace,
-            agent=ctx.deps.agent,
-            user=ctx.deps.user,
-            memory_id=parsed_id,
-        )
-        if target.kind == MEMORY_KIND_CORE and not ctx.tool_call_approved:
-            raise ApprovalRequired(metadata={"reason": "core_memory_write"})
         result = await update_memory_service(
             ctx.deps.db,
             workspace=ctx.deps.workspace,
@@ -399,18 +365,9 @@ async def forget_memory(
     memory_id: MemoryReference,
     reason: str | None = None,
 ) -> dict[str, object]:
-    """Archive one visible memory; core targets conditionally require approval."""
+    """Archive one visible memory."""
     try:
         parsed_id = internal_entity_id(memory_id)
-        target = await get_memory(
-            ctx.deps.db,
-            workspace=ctx.deps.workspace,
-            agent=ctx.deps.agent,
-            user=ctx.deps.user,
-            memory_id=parsed_id,
-        )
-        if target.kind == MEMORY_KIND_CORE and not ctx.tool_call_approved:
-            raise ApprovalRequired(metadata={"reason": "core_memory_write"})
         result = await forget_memory_service(
             ctx.deps.db,
             workspace=ctx.deps.workspace,

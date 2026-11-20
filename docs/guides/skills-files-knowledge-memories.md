@@ -115,7 +115,11 @@ Knowledge Base.
 ## Memories retain useful context over time
 
 Memories store preferences, decisions, and ongoing project context across
-conversations. Agents can save durable core memories and searchable notes.
+conversations. Agents save them as they work, without asking.
+When you send a message, the memories that relate to it come up with it
+automatically, so the agent starts with what matters to what you asked.
+Anything that must shape every conversation belongs in the agent's
+instructions instead.
 
 In **Memories**, you can review saved information, correct it while preserving
 revision history, archive it, or permanently delete it.

@@ -17,7 +17,6 @@ from services.audit_events.operations import safe_record_operation_audit_event
 from services.memories.domain import (
     ARCHIVE_REASON_CONSOLIDATED,
     MEMORY_CREATED_BY_SYSTEM,
-    MEMORY_KIND_NOTE,
     MEMORY_SOURCE_DREAM,
     MEMORY_STATUS_ARCHIVED,
     MEMORY_STATUS_SUPERSEDED,
@@ -125,7 +124,6 @@ async def _apply_all(
         agent_id=target.agent.id,
         user_id=target.user.id,
         scope=target.scope,
-        kind=MEMORY_KIND_NOTE,
     )
     rows = await db.scalars(
         select(AgentMemory)
@@ -220,7 +218,7 @@ async def _write_content(
         memory_type = sources[0].memory_type
         importance = max(source.importance for source in sources)
     try:
-        validate_memory_content(kind=MEMORY_KIND_NOTE, title=title, content_md=operation.content_md)
+        validate_memory_content(title=title, content_md=operation.content_md)
     except AppValidationError:
         return SKIP_INVALID_CONTENT
     # Without a vector neither the removed-memory check nor dedup can run, so fail closed.
@@ -243,7 +241,6 @@ async def _write_content(
         agent=target.agent,
         user=target.user,
         scope=target.scope,
-        kind=MEMORY_KIND_NOTE,
         memory_type=memory_type,
         title=title,
         content_md=operation.content_md,

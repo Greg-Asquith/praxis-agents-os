@@ -5,6 +5,7 @@
 import asyncio
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -16,6 +17,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     PartDeltaEvent,
     PartStartEvent,
+    TextContent,
     TextPart,
     TextPartDelta,
     ToolCallPart,
@@ -29,6 +31,7 @@ from pydantic_evals import Dataset
 from pydantic_evals.evaluators import LLMJudge
 
 import services.agents.runtime.capabilities as runtime_capabilities
+from core.settings import settings
 from evals.evaluators import (
     FIXTURE_ROOT,
     AcceptedToolCall,
@@ -47,6 +50,7 @@ from evals.evaluators import (
 from evals.memory_calibration import main as run_memory_calibration
 from evals.memory_dreaming import run_memory_dreaming_eval
 from models.agent import Agent
+from models.agent_memories import AgentMemory
 from services.agents.models import (
     build_model,
     close_vertex_clients,
@@ -58,6 +62,8 @@ from services.agents.runtime.history import HistoryCompaction
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.memories.domain import RECALLED_MEMORY_IDS_KEY
+from services.memories.recall_memories import render_recalled_memories
 from services.runtime_catalogs import assemble_runtime_catalogs
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
@@ -136,7 +142,10 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
 
 
 def _user_prompt(inputs: EvalInputs) -> str | list[UserContent]:
-    """Adds an attachment fixture as chat sends it: a text part after the prompt."""
+    """Adds an attachment or recalled memory fixture as a turn sends it: a part after the prompt."""
+    recalled = _recalled_memory_fixture(inputs)
+    if recalled is not None:
+        return [inputs["prompt"], recalled]
     attachment = inputs.get("attachment")
     if not attachment:
         return inputs["prompt"]
@@ -191,6 +200,30 @@ def _active_context_fixture(inputs: EvalInputs) -> ResolvedActiveContext | None:
             )
         )
     return ResolvedActiveContext(source="conversation", entries=tuple(entries))
+
+
+def _recalled_memory_fixture(inputs: EvalInputs) -> TextContent | None:
+    """Renders a fixture as one learned memory through production recall rendering."""
+    fixture = inputs.get("recalled_memory_fixture")
+    if not fixture:
+        return None
+    path = (FIXTURE_ROOT / str(fixture["fixture_path"])).resolve()
+    if not path.is_relative_to(FIXTURE_ROOT.resolve()):
+        raise ValueError("Recalled memory fixture path must stay under the shared fixture root")
+    memory = AgentMemory(
+        id=uuid5(NAMESPACE_URL, str(path)),
+        title=str(fixture["title"]),
+        content_md=path.read_text(encoding="utf-8"),
+        source="dream",
+        created_by="system",
+        created_at=datetime(2026, 11, 18, tzinfo=UTC),
+    )
+    block, _shown = render_recalled_memories(
+        [memory],
+        budget=settings.MEMORY_RECALL_CHAR_BUDGET,
+        line_max_chars=settings.MEMORY_RECALL_CHAR_BUDGET,
+    )
+    return TextContent(block, metadata={RECALLED_MEMORY_IDS_KEY: [str(memory.id)]})
 
 
 def _channel_fixture_history(inputs: EvalInputs):

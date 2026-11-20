@@ -29,7 +29,6 @@ from services.embeddings.domain import (
 from services.memories.domain import (
     ARCHIVE_REASON_USER_DELETED,
     MEMORY_EMBED_JOB_KIND,
-    MEMORY_KIND_CORE,
     MEMORY_SCOPE_AGENT,
     MEMORY_SCOPE_USER,
     MEMORY_SCOPE_WORKSPACE,
@@ -39,7 +38,6 @@ from services.memories.domain import (
     MEMORY_TYPE_FACT,
     MEMORY_TYPE_OUTCOME,
     MEMORY_TYPE_PREFERENCE,
-    MemoryKind,
     MemoryProvenance,
     MemoryScope,
     MemoryType,
@@ -48,8 +46,6 @@ from services.memories.domain import (
 
 def effective_confidence(memory: AgentMemory, *, now: datetime) -> float:
     """Return read-time confidence without mutating the row."""
-    if memory.kind == MEMORY_KIND_CORE:
-        return float(memory.confidence)
     rates = {
         MEMORY_TYPE_FACT: settings.MEMORY_DECAY_RATE_FACT,
         MEMORY_TYPE_PREFERENCE: settings.MEMORY_DECAY_RATE_PREFERENCE,
@@ -140,7 +136,7 @@ def active_memory_filter(*, now: datetime | None = None) -> ColumnElement[bool]:
     )
 
 
-def validate_memory_content(*, kind: MemoryKind, title: str, content_md: str) -> None:
+def validate_memory_content(*, title: str, content_md: str) -> None:
     """Validate user/model-authored memory content."""
     if not title.strip():
         raise AppValidationError("Memory title is required", field="title")
@@ -152,11 +148,7 @@ def validate_memory_content(*, kind: MemoryKind, title: str, content_md: str) ->
         )
     if not content_md.strip():
         raise AppValidationError("Memory content is required", field="content")
-    limit = (
-        settings.MEMORY_CORE_MAX_CHARS
-        if kind == MEMORY_KIND_CORE
-        else settings.MEMORY_NOTE_MAX_CHARS
-    )
+    limit = settings.MEMORY_MAX_CHARS
     if len(content_md) > limit:
         raise AppValidationError(
             "Memory content exceeds the character limit",
@@ -190,16 +182,15 @@ async def lock_memory_scope(
     agent_id: UUID,
     user_id: UUID,
     scope: MemoryScope,
-    kind: MemoryKind,
 ) -> None:
-    """Serialize writes that share a deduplication and core-cap collection."""
+    """Serialize writes that share a deduplication collection."""
     scope_agent_id, scope_user_id = memory_scope_refs(
         scope,
         agent_id=agent_id,
         user_id=user_id,
     )
     scope_ref = scope_agent_id or scope_user_id or workspace_id
-    lock_material = f"{workspace_id}:{scope}:{scope_ref}:{kind}".encode()
+    lock_material = f"{workspace_id}:{scope}:{scope_ref}".encode()
     lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
     await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
@@ -286,7 +277,6 @@ async def find_near_duplicate(
     agent_id: UUID,
     user_id: UUID,
     scope: MemoryScope,
-    kind: MemoryKind,
     vector: list[float],
     embedding_provider: str,
     embedding_model: str,
@@ -304,7 +294,6 @@ async def find_near_duplicate(
                 agent_id=agent_id,
                 user_id=user_id,
             ),
-            AgentMemory.kind == kind,
             active_memory_filter(),
             AgentMemory.embedding.is_not(None),
             AgentMemory.embedding_provider == embedding_provider,
@@ -329,7 +318,6 @@ def build_memory(
     agent_id: UUID,
     user_id: UUID,
     scope: MemoryScope,
-    kind: MemoryKind,
     memory_type: MemoryType,
     title: str,
     content_md: str,
@@ -346,7 +334,6 @@ def build_memory(
         scope=scope,
         agent_id=scope_agent_id,
         user_id=scope_user_id,
-        kind=kind,
         memory_type=memory_type,
         title=title.strip(),
         content_md=content_md.strip(),

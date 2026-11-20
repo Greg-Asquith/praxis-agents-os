@@ -9,6 +9,7 @@ export type Workspace = {
   icon_url: string | null
   is_personal: boolean
   conversations_shared_by_default: boolean
+  memory_recall_enabled: boolean
   default_model_provider: string | null
   default_model: string | null
   status: string
@@ -33,6 +34,7 @@ export type WorkspaceCreateRequest = {
 
 export type WorkspaceUpdateRequest = {
   conversations_shared_by_default?: boolean
+  memory_recall_enabled?: boolean
   default_model_provider?: string | null
   default_model?: string | null
   name?: string | null

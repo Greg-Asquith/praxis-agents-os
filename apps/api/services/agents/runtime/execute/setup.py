@@ -7,7 +7,6 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
@@ -73,7 +72,7 @@ from services.conversation_summaries.load_history_summary import load_history_su
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
-from services.memories.core_block import load_core_memories, render_core_memory_block
+from services.memories.recall_memories import recall_memories
 from services.tools import get_workspace_tool_defaults
 from services.tools.domain import WorkspaceToolDefaults
 
@@ -202,18 +201,6 @@ async def prepare_runtime(
         user=user,
         workspace=workspace,
     )
-    core_memories = await load_core_memories(
-        db,
-        workspace=workspace,
-        agent=agent,
-        user=user,
-    )
-    core_memory_block = render_core_memory_block(
-        core_memories,
-        now=datetime.now(UTC),
-        budget=settings.MEMORY_CORE_CHAR_BUDGET,
-        line_max_chars=settings.MEMORY_CORE_LINE_MAX_CHARS,
-    )
     try:
         active_context = await resolve_active_context(
             db,
@@ -270,7 +257,6 @@ async def prepare_runtime(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         conversation_context_block=conversation_context_block,
-        core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
         completion_contract=completion_contract,
         completion_tool_names=completion_tool_names,
@@ -307,6 +293,39 @@ async def prepare_runtime(
         built_agent=built_agent,
         deps=deps,
     )
+
+
+async def add_recalled_memories(
+    db: AsyncSession,
+    *,
+    run: AgentRun,
+    agent: Agent,
+    user_prompt: str | Sequence[UserContent],
+    history: Sequence[ModelMessage],
+) -> str | Sequence[UserContent]:
+    """Add the memories that relate to the turn's text after it; recall never fails a turn."""
+    query = (
+        user_prompt
+        if isinstance(user_prompt, str)
+        else " ".join(item for item in user_prompt if isinstance(item, str))
+    )
+    try:
+        async with db.begin_nested():
+            user, workspace, _membership = await load_actor_context(db, run)
+            recalled = await recall_memories(
+                db, workspace=workspace, agent=agent, user=user, query=query, history=history
+            )
+    except Exception:
+        logger.exception(
+            "Memory recall failed; continuing without memories",
+            extra={"agent_run_id": str(run.id)},
+        )
+        return user_prompt
+    if recalled is None:
+        return user_prompt
+    if isinstance(user_prompt, str):
+        return [user_prompt, recalled]
+    return [*user_prompt, recalled]
 
 
 async def assemble_user_prompt(
@@ -350,7 +369,6 @@ async def build_agent_for_run(
     message_history: Sequence[ModelMessage] | None,
     deferred_tool_results: DeferredToolResults | None,
     conversation_context_block: str,
-    core_memory_block: str,
     completion_contract_block: str,
     completion_contract: ScheduleCompletionContract | None,
     completion_tool_names: Sequence[str],
@@ -389,7 +407,6 @@ async def build_agent_for_run(
         history=history,
         include_delegation=enable_delegation,
         conversation_context_block=conversation_context_block,
-        core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,
@@ -403,7 +420,6 @@ async def build_agent_for_run(
         force_delegation_tools=force_delegation_tools,
         include_subagents=include_subagents,
         conversation_context_block=conversation_context_block,
-        core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
         completion_contract=completion_contract,
         available_files=available_files,
@@ -451,7 +467,6 @@ async def _prepare_history_compaction(
     history: list[ModelMessage],
     include_delegation: bool,
     conversation_context_block: str,
-    core_memory_block: str,
     completion_contract_block: str,
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
@@ -467,7 +482,6 @@ async def _prepare_history_compaction(
         agent,
         include_delegation=include_delegation,
         conversation_context_block=conversation_context_block,
-        core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
         available_files=available_files,
         active_context=active_context,

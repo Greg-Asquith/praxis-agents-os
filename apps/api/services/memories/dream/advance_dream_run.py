@@ -31,7 +31,7 @@ from services.ai_usage.utils import usage_values
 from services.audit_events.enums import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import safe_record_operation_audit_event
 from services.conversation_review import collect_finished_conversations, render_transcript
-from services.memories.domain import MEMORY_KIND_CORE, MEMORY_SCOPE_WORKSPACE, MemoryScope
+from services.memories.domain import MEMORY_SCOPE_WORKSPACE, MemoryScope
 from services.memories.dream.apply_dream_operations import apply_dream_operations
 from services.memories.dream.domain import (
     DREAM_AUDIT_ACTOR,
@@ -44,6 +44,7 @@ from services.memories.dream.domain import (
     DREAM_STATUS_FAILED,
     EXTRACTION_CONCURRENCY,
     FINAL_DREAM_STATUSES,
+    KNOWN_MEMORIES_PER_SCOPE,
     MAX_CANDIDATES_PER_CONVERSATION,
     DreamConsolidation,
     DreamExtraction,
@@ -164,7 +165,7 @@ async def _extract(
     for entry in run.conversations:
         scope, user_id = conversation_scope(workspace, entry)
         if (scope, user_id) not in known_by_scope:
-            known_by_scope[(scope, user_id)] = await _known_core_memories(
+            known_by_scope[(scope, user_id)] = await _known_memories(
                 db, workspace=workspace, scope=scope, entry=entry
             )
         messages = await load_message_history_span(
@@ -326,7 +327,7 @@ async def _consolidation_request(
     return request, prompt
 
 
-async def _known_core_memories(
+async def _known_memories(
     db: AsyncSession, *, workspace: Workspace, scope: MemoryScope, entry: Mapping[str, Any]
 ) -> list[tuple[str, str]]:
     rows = await db.execute(
@@ -338,10 +339,10 @@ async def _known_core_memories(
                 agent_id=UUID(entry["agent_id"]),
                 user_id=UUID(entry["user_id"]),
             ),
-            AgentMemory.kind == MEMORY_KIND_CORE,
             active_memory_filter(),
         )
-        .order_by(AgentMemory.created_at, AgentMemory.id)
+        .order_by(AgentMemory.importance.desc(), AgentMemory.updated_at.desc(), AgentMemory.id)
+        .limit(KNOWN_MEMORIES_PER_SCOPE)
     )
     return list(rows.tuples())
 

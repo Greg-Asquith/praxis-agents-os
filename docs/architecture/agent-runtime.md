@@ -165,8 +165,9 @@ live model settings apply only when the sub-agent's model equals the parent's
 effective model, including one inherited from the workspace default.
 
 A sub-agent has the parent's tool selection and policies, never more. The
-runtime removes delegation, `run_subagent`, and memory writes; it keeps the
-parent's core memory block and memory search. A `model_tier` picks the newest
+runtime removes delegation, `run_subagent`, and memory writes; it keeps
+memory search. Memories recalled for the parent's turn reach a sub-agent only
+through the instructions the parent writes. A `model_tier` picks the newest
 active model of that tier from the parent's provider; without one, it uses the
 workspace default model. A result above the parent's tier, or no match, uses
 the parent's model, and Azure parents always keep their deployment.

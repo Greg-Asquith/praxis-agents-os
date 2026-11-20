@@ -42,7 +42,6 @@ async def _note(db: AsyncSession, context: MemoryContext, *, title: str, content
         agent=context.agent,
         user=context.user,
         scope="workspace",
-        kind="note",
         memory_type="fact",
         title=title,
         content_md=content,

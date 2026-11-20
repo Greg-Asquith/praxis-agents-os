@@ -4,7 +4,6 @@ import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
 import type {
   MemoriesListResponse,
-  MemoryKind,
   MemoryScope,
   MemoryStatus,
   MemoryType,
@@ -14,7 +13,6 @@ import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
 export type ListMemoriesParams = {
   scope?: MemoryScope
-  kind?: MemoryKind
   memoryType?: MemoryType
   agentId?: string
   status?: MemoryStatus
@@ -28,7 +26,6 @@ async function listMemories(params: ListMemoriesParams = {}) {
   return apiRequest<MemoriesListResponse>("/memories/", {
     query: {
       scope: params.scope,
-      kind: params.kind,
       memory_type: params.memoryType,
       agent_id: params.agentId,
       status: params.status ?? "active",

@@ -45,7 +45,6 @@ async def forget_memory(
         agent_id=agent.id,
         user_id=user.id,
         scope=memory.scope,
-        kind=memory.kind,
     )
     await db.refresh(memory)
     if memory.status == MEMORY_STATUS_ARCHIVED:

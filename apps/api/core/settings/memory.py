@@ -57,14 +57,8 @@ class MemorySettingsMixin:
     MEMORY_OUTCOME_TTL_DAYS: int = Field(
         default=180, gt=0, description="Default lifetime for outcome memories."
     )
-    MEMORY_CORE_MAX_PER_SCOPE: int = Field(
-        default=20, gt=0, description="Maximum active core memories in one scope tuple."
-    )
-    MEMORY_CORE_MAX_CHARS: int = Field(
-        default=500, gt=0, description="Maximum content characters in one core memory."
-    )
-    MEMORY_NOTE_MAX_CHARS: int = Field(
-        default=2000, gt=0, description="Maximum content characters in one memory note."
+    MEMORY_MAX_CHARS: int = Field(
+        default=2000, gt=0, description="Maximum content characters in one memory."
     )
     MEMORY_SEARCH_DEFAULT_LIMIT: int = Field(
         default=5, gt=0, description="Default maximum number of memory search results."
@@ -82,13 +76,23 @@ class MemorySettingsMixin:
         gt=0,
         description="Per-search HNSW dynamic candidate list size for memory retrieval.",
     )
-    MEMORY_CORE_CHAR_BUDGET: int = Field(
-        default=2000, gt=0, description="Prompt character budget reserved for core memories."
+    MEMORY_RECALL_MIN_SIMILARITY: float = Field(
+        default=0.32,
+        gt=0,
+        lt=1,
+        description=(
+            "Cosine similarity a memory needs to come up in a turn by itself; "
+            "measured for text-embedding-3-small, so retune when the embedding model changes."
+        ),
     )
-    MEMORY_CORE_LINE_MAX_CHARS: int = Field(
-        default=300,
-        ge=120,
-        description="Maximum characters rendered for one core-memory prompt line.",
+    MEMORY_RECALL_MAX_MEMORIES: int = Field(
+        default=5, gt=0, le=10, description="Most memories that come up in one turn."
+    )
+    MEMORY_RECALL_CHAR_BUDGET: int = Field(
+        default=2000, ge=500, description="Most characters of memories added to one turn."
+    )
+    MEMORY_RECALL_LINE_MAX_CHARS: int = Field(
+        default=300, ge=120, description="Most characters shown for one recalled memory."
     )
     MEMORY_SWEEP_INTERVAL_SECONDS: int = Field(
         default=3600, gt=0, description="Interval between expired-memory sweeps."

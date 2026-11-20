@@ -6,32 +6,26 @@ from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.agent import Agent
-from models.agent_memories import AgentMemory
 from models.user import User
 from models.workspace import Workspace
 from services.embeddings.domain import EmbeddingBatch
 from services.memories.domain import (
-    MEMORY_KIND_CORE,
-    MemoryKind,
     MemoryProvenance,
     MemorySaveResult,
     MemoryScope,
     MemoryType,
 )
 from services.memories.utils import (
-    active_memory_filter,
     build_memory,
     default_expires_at,
     enqueue_memory_embedding,
     find_near_duplicate,
     lock_memory_scope,
-    scope_filter,
     try_embed_memory,
     validate_memory_content,
 )
@@ -44,7 +38,6 @@ async def save_memory(
     agent: Agent,
     user: User,
     scope: MemoryScope,
-    kind: MemoryKind,
     memory_type: MemoryType,
     title: str,
     content_md: str,
@@ -66,7 +59,7 @@ async def save_memory(
         raise AppValidationError("Memory importance must be between 1 and 5", field="importance")
     if expires_in_days is not None and expires_in_days <= 0:
         raise AppValidationError("Memory expiry must be greater than zero", field="expires_in_days")
-    validate_memory_content(kind=kind, title=title, content_md=content_md)
+    validate_memory_content(title=title, content_md=content_md)
 
     embedded = _embedded or await try_embed_memory(
         db,
@@ -82,7 +75,6 @@ async def save_memory(
         agent_id=agent.id,
         user_id=user.id,
         scope=scope,
-        kind=kind,
     )
     nearest = None
     similarity = None
@@ -93,7 +85,6 @@ async def save_memory(
             agent_id=agent.id,
             user_id=user.id,
             scope=scope,
-            kind=kind,
             vector=embedded.vectors[0],
             embedding_provider=embedded.provider,
             embedding_model=embedded.model,
@@ -136,27 +127,6 @@ async def save_memory(
             field="duplicate_of",
         )
 
-    if kind == MEMORY_KIND_CORE:
-        count = await db.scalar(
-            select(func.count(AgentMemory.id)).where(
-                scope_filter(
-                    scope,
-                    workspace_id=workspace.id,
-                    agent_id=agent.id,
-                    user_id=user.id,
-                ),
-                AgentMemory.kind == MEMORY_KIND_CORE,
-                active_memory_filter(),
-                AgentMemory.id.not_in(_replaces_memory_ids) if _replaces_memory_ids else True,
-            )
-        )
-        if int(count or 0) >= settings.MEMORY_CORE_MAX_PER_SCOPE:
-            raise AppValidationError(
-                "Core memory limit reached; update or forget an existing core memory first",
-                field="kind",
-                details={"max_memories": settings.MEMORY_CORE_MAX_PER_SCOPE},
-            )
-
     now = datetime.now(UTC)
     expires_at = (
         now + timedelta(days=expires_in_days)
@@ -168,7 +138,6 @@ async def save_memory(
         agent_id=agent.id,
         user_id=user.id,
         scope=scope,
-        kind=kind,
         memory_type=memory_type,
         title=title,
         content_md=content_md,

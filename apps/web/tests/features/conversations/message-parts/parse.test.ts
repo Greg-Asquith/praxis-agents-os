@@ -45,6 +45,27 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
+  it("shows the person's message without the memories recalled for it", () => {
+    const [parsed] = parseConversationMessages([
+      message("prompt", "user", 1, [
+        {
+          part_kind: "user-prompt",
+          content: [
+            "When do invoices go out?",
+            {
+              kind: "text-content",
+              content: "## Relevant Memories\n\n- Invoice day: the last Friday.",
+              metadata: { recalled_memory_ids: ["memory-1"] },
+            },
+          ],
+        },
+      ]),
+    ])
+
+    expect(parsed?.text).toEqual(["When do invoices go out?"])
+    expect(parsed?.unsupportedParts).toEqual([])
+  })
+
   it("keeps a progress check inside the turn and drops the steer prompt it sent", () => {
     const runMetadata = { agent_run_id: "run-1" }
     const steer = message(

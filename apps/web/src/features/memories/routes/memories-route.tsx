@@ -24,7 +24,6 @@ export function MemoriesRoute() {
   const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
   const { data } = useMemoriesQuery({
     ...(filters.scope ? { scope: filters.scope } : {}),
-    ...(filters.kind ? { kind: filters.kind } : {}),
     ...(filters.memoryType ? { memoryType: filters.memoryType } : {}),
     ...(filters.agentId ? { agentId: filters.agentId } : {}),
     status: filters.status,

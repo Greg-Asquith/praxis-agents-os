@@ -66,6 +66,7 @@ from .finalize import (
 from .settle_failure import settle_failure
 from .settle_interruption import settle_interruption
 from .setup import (
+    add_recalled_memories,
     assemble_user_prompt,
     prepare_runtime,
     start_run,
@@ -162,19 +163,28 @@ async def execute_run(
                 runtime_message_history = message_history
                 eager_message_count = 0
                 user_prompt_persisted = False
-                if user_prompt is not None and run.trigger == RUN_TRIGGER_INTERACTIVE:
+                if user_prompt is not None:
                     if runtime_message_history is None:
                         runtime_message_history = await load_message_history(
                             db,
                             conversation_id=conversation.id,
                         )
+                    # Before the eager write below, so the stored turn is the request the model sees.
+                    prepared_user_prompt = await add_recalled_memories(
+                        db,
+                        run=run,
+                        agent=agent,
+                        user_prompt=user_prompt,
+                        history=runtime_message_history,
+                    )
+                if user_prompt is not None and run.trigger == RUN_TRIGGER_INTERACTIVE:
                     if attachment_file_ids:
                         _user, workspace, _membership = await load_actor_context(db, run)
                         prepared_user_prompt = await assemble_user_prompt(
                             db,
                             workspace=workspace,
                             agent=agent,
-                            user_prompt=user_prompt,
+                            user_prompt=prepared_user_prompt,
                             attachment_file_ids=attachment_file_ids,
                             conversation_id=conversation.id,
                         )

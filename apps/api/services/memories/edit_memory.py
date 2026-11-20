@@ -59,7 +59,12 @@ async def edit_memory(
             created_by_user_id=actor.id,
         ),
     )
-    result.memory.last_edited_by_user_at = datetime.now(UTC)
+    edited_at = datetime.now(UTC)
+    result.memory.last_edited_by_user_at = edited_at
+    if payload.recall_disabled is not None:
+        result.memory.recall_disabled_at = (
+            (result.memory.recall_disabled_at or edited_at) if payload.recall_disabled else None
+        )
     await db.flush()
     if result.superseded_memory_id is None:
         await record_memory_audit(

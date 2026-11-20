@@ -1,12 +1,9 @@
 // apps/web/src/features/memories/components/memory-form-model.ts
 
-import type { Memory, MemoryKind, MemoryUpdateRequest } from "@/features/memories/types"
+import type { Memory, MemoryUpdateRequest } from "@/features/memories/types"
 import type { FormValidationEntry } from "@/lib/forms"
 
-export const MEMORY_CONTENT_LIMITS = {
-  core: 500,
-  note: 2_000,
-} as const satisfies Record<MemoryKind, number>
+const MEMORY_CONTENT_LIMIT = 2_000
 
 export type MemoryFormState = {
   title: string
@@ -24,7 +21,7 @@ export function memoryFormState(memory: Memory): MemoryFormState {
   }
 }
 
-export function validateMemoryForm(state: MemoryFormState, memory: Memory): FormValidationEntry[] {
+export function validateMemoryForm(state: MemoryFormState): FormValidationEntry[] {
   const entries: FormValidationEntry[] = []
   const title = state.title.trim()
   const content = state.content.trim()
@@ -37,18 +34,17 @@ export function validateMemoryForm(state: MemoryFormState, memory: Memory): Form
       message: "Title must be 200 characters or fewer.",
     })
   }
-  const contentLimit = MEMORY_CONTENT_LIMITS[memory.kind]
   if (!content) {
     entries.push({
       fieldId: "memory-content",
       label: "Memory",
       message: "Memory content is required.",
     })
-  } else if (content.length > contentLimit) {
+  } else if (content.length > MEMORY_CONTENT_LIMIT) {
     entries.push({
       fieldId: "memory-content",
       label: "Memory",
-      message: `Memory content must be ${contentLimit.toLocaleString()} characters or fewer.`,
+      message: `Memory content must be ${MEMORY_CONTENT_LIMIT.toLocaleString()} characters or fewer.`,
     })
   }
   if (!Number.isInteger(state.importance) || state.importance < 1 || state.importance > 5) {
@@ -72,10 +68,9 @@ export function validateMemoryForm(state: MemoryFormState, memory: Memory): Form
 }
 
 export function buildMemoryUpdatePayload(
-  state: MemoryFormState,
-  memory: Memory
+  state: MemoryFormState
 ): MemoryUpdateRequest | FormValidationEntry[] {
-  const validation = validateMemoryForm(state, memory)
+  const validation = validateMemoryForm(state)
   if (validation.length > 0) {
     return validation
   }

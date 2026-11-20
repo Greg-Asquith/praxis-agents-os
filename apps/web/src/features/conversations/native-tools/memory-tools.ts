@@ -1,7 +1,7 @@
 // apps/web/src/features/conversations/native-tools/memory-tools.ts
 
 import { normalizeToolArgs } from "@/features/conversations/message-parts"
-import type { MemoryKind, MemoryScope, MemoryType } from "@/features/memories/types"
+import type { MemoryScope, MemoryType } from "@/features/memories/types"
 import { isRecord } from "@/lib/guards"
 
 export const SAVE_MEMORY_TOOL_NAME = "save_memory"
@@ -12,7 +12,6 @@ export const FORGET_MEMORY_TOOL_NAME = "forget_memory"
 export type MemoryToolSummary = {
   id: string
   importance: number
-  kind: MemoryKind
   memory_type: MemoryType
   scope: MemoryScope
   title: string
@@ -27,7 +26,6 @@ export type MemorySearchToolHit = {
   content_truncated: boolean
   effective_confidence: number
   id: string
-  kind: MemoryKind
   memory_type: MemoryType
   scope: MemoryScope
   title: string
@@ -178,7 +176,6 @@ function memoryToolSummary(value: unknown): MemoryToolSummary | null {
     typeof value["id"] !== "string" ||
     typeof value["title"] !== "string" ||
     !isMemoryScope(value["scope"]) ||
-    !isMemoryKind(value["kind"]) ||
     !isMemoryType(value["memory_type"]) ||
     typeof value["importance"] !== "number"
   ) {
@@ -187,7 +184,6 @@ function memoryToolSummary(value: unknown): MemoryToolSummary | null {
   return {
     id: value["id"],
     importance: value["importance"],
-    kind: value["kind"],
     memory_type: value["memory_type"],
     scope: value["scope"],
     title: value["title"],
@@ -204,7 +200,6 @@ function memorySearchHit(value: unknown): MemorySearchToolHit | null {
     typeof value["content"] !== "string" ||
     typeof value["content_truncated"] !== "boolean" ||
     !isMemoryScope(value["scope"]) ||
-    !isMemoryKind(value["kind"]) ||
     !isMemoryType(value["memory_type"]) ||
     typeof value["effective_confidence"] !== "number"
   ) {
@@ -215,7 +210,6 @@ function memorySearchHit(value: unknown): MemorySearchToolHit | null {
     content_truncated: value["content_truncated"],
     effective_confidence: value["effective_confidence"],
     id: value["id"],
-    kind: value["kind"],
     memory_type: value["memory_type"],
     scope: value["scope"],
     title: value["title"],
@@ -224,10 +218,6 @@ function memorySearchHit(value: unknown): MemorySearchToolHit | null {
 
 function isMemoryScope(value: unknown): value is MemoryScope {
   return value === "agent" || value === "user" || value === "workspace"
-}
-
-function isMemoryKind(value: unknown): value is MemoryKind {
-  return value === "core" || value === "note"
 }
 
 function isMemoryType(value: unknown): value is MemoryType {

@@ -8,6 +8,7 @@ from uuid import uuid4
 from models.conversation import ConversationMessage
 from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.conversations.shared_projection import project_shared_message
+from services.memories.domain import RECALLED_MEMORY_IDS_KEY
 
 SECRET = "PRIVATE_SENTINEL"
 
@@ -160,4 +161,28 @@ def test_explicit_null_effective_args_replace_original_proposal():
     row.metadata_json["approval_results"] = {"call": {"effective_args": None}}
     projected = project_shared_message(row)
     assert all(part["args"] is None for part in projected.parts["parts"])
+    assert SECRET not in projected.model_dump_json()
+
+
+def test_recalled_memories_never_reach_a_viewer():
+    row = message(
+        [
+            {
+                "part_kind": "user-prompt",
+                "content": [
+                    "When do invoices go out?",
+                    {
+                        "kind": "text-content",
+                        "content": SECRET,
+                        "metadata": {RECALLED_MEMORY_IDS_KEY: [str(uuid4())]},
+                    },
+                ],
+            }
+        ],
+        role="user",
+    )
+
+    projected = project_shared_message(row)
+
+    assert projected.parts["parts"][0]["content"] == ["When do invoices go out?"]
     assert SECRET not in projected.model_dump_json()

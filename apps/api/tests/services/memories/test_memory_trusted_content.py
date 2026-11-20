@@ -32,7 +32,6 @@ async def test_memory_title_and_content_return_without_untrusted_framing(
         agent=memory_context.agent,
         user=memory_context.user,
         scope="agent",
-        kind="note",
         memory_type="fact",
         title=f"Policy {UNTRUSTED_CONTENT_START}",
         content_md=hostile,

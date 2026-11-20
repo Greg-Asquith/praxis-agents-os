@@ -92,9 +92,6 @@ export function MemoryDetailDialog({
           <DialogHeader>
             <div className="flex flex-wrap items-center gap-2 pr-8">
               <DialogTitle>{memory.title}</DialogTitle>
-              <Badge variant={memory.kind === "core" ? "warning" : "secondary"}>
-                {titleCaseToken(memory.kind, "Memory")}
-              </Badge>
               <Badge variant="outline">{memoryScopeLabel(memory)}</Badge>
             </div>
             <DialogDescription>

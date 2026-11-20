@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.conversation import Conversation, ConversationMessage
 from services.agents.runtime.progress_review.verdict import STEER_METADATA_KEY
 from services.conversations.schemas import ConversationMessageRead
+from services.memories.domain import RECALLED_MEMORY_IDS_KEY
 
 _MISSING_ARGS = object()
 
@@ -144,11 +145,17 @@ def project_shared_message(
 def _display_part(part: dict[str, Any], completed_args: Any) -> dict[str, Any]:
     visible = {key: value for key, value in part.items() if key in _PART_FIELDS}
     if part.get("part_kind") == "user-prompt" and isinstance(part.get("content"), list):
+        # Recalled memories can include the owner's private memories, so viewers never get them.
         visible["content"] = [
             {key: item[key] for key in ("kind", "identifier", "media_type") if key in item}
             if isinstance(item, dict) and item.get("kind") == "binary"
             else item
             for item in part["content"]
+            if not (
+                isinstance(item, dict)
+                and isinstance(item.get("metadata"), dict)
+                and RECALLED_MEMORY_IDS_KEY in item["metadata"]
+            )
         ]
     if completed_args is not _MISSING_ARGS and part.get("part_kind") in _TOOL_PARTS:
         visible["args"] = completed_args

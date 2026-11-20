@@ -29,6 +29,7 @@ from services.conversation_review.domain import (
     TRANSCRIPT_CLIPPED_NOTE,
     TRANSCRIPT_SOURCE_KIND,
 )
+from services.memories.recall_memories import recalled_ids_of
 from utils.json_safe import json_safe_value
 
 
@@ -78,7 +79,12 @@ def _response_blocks(message: ModelResponse) -> list[str]:
 def _user_text(content: Any) -> str:
     if isinstance(content, str):
         return content
-    return "\n".join(item if isinstance(item, str) else "[attachment]" for item in content)
+    # Recalled memories are already memories; learning from them again would echo them back.
+    return "\n".join(
+        item if isinstance(item, str) else "[attachment]"
+        for item in content
+        if not recalled_ids_of(item)
+    )
 
 
 def _tool_result_text(content: Any) -> str:

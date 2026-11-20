@@ -89,7 +89,7 @@ describe("search_memory results", () => {
     expect(
       searchMemoryResult({
         query: "reply style",
-        results: [{ ...searchHit(), kind: "mystery" }],
+        results: [{ ...searchHit(), scope: "mystery" }],
         total: 1,
         matches_found: 1,
         results_truncated: false,
@@ -104,7 +104,6 @@ function memorySummary() {
   return {
     id: "m-1",
     scope: "user",
-    kind: "note",
     memory_type: "preference",
     title: "Prefers concise replies",
     importance: 3,
@@ -117,7 +116,6 @@ function searchHit() {
   return {
     id: "m-1",
     scope: "user",
-    kind: "note",
     memory_type: "preference",
     title: "Prefers concise replies",
     content: "## Style\n\nKeep replies **short**.",

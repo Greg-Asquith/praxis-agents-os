@@ -354,18 +354,16 @@ appear when the platform administrator has turned on artifact sharing.
 ### Memory
 
 Agents remember preferences, decisions, and project details across
-conversations. There are two kinds:
-
-- **Core** memories are a few short facts an agent always has in mind. An
-  agent asks for approval before saving, changing, or forgetting one.
-- **Notes** are saved without asking and found by searching when relevant.
+conversations, and save them without asking. A memory comes up when it
+relates to what was asked, not in every conversation. For anything an agent
+must follow every time, put it in the agent's instructions instead.
 
 Each memory belongs to one of three scopes. **Agent** memories, the usual
 choice, are used only by the agent that saved them. **Personal** memories
 are about you and are visible only to you. **Workspace** memories are used
 by every agent in the workspace.
 
-In **Memory**, you can filter by scope, kind, type, and agent, then click
+In **Memory**, you can filter by scope, type, and agent, then click
 **Edit Memory** to correct one, **Archive** it, or **Delete Permanently**.
 Deleting a workspace memory needs an owner or admin. You can't add a memory
 by hand; to make an agent remember something, tell it in a conversation.

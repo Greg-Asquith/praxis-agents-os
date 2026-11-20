@@ -23,7 +23,6 @@ async def list_memories(
     actor: User,
     workspace: Workspace,
     scope: str | None,
-    kind: str | None,
     memory_type: str | None,
     agent_id: UUID | None,
     status: str,
@@ -37,8 +36,6 @@ async def list_memories(
     ]
     if scope is not None:
         filters.append(AgentMemory.scope == scope)
-    if kind is not None:
-        filters.append(AgentMemory.kind == kind)
     if memory_type is not None:
         filters.append(AgentMemory.memory_type == memory_type)
     if agent_id is not None:

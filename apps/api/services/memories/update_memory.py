@@ -56,7 +56,6 @@ async def update_memory(
         agent_id=agent.id,
         user_id=user.id,
         scope=memory.scope,
-        kind=memory.kind,
     )
     await db.refresh(memory)
     if memory.status != MEMORY_STATUS_ACTIVE:
@@ -73,7 +72,6 @@ async def update_memory(
     content_changed = content_md is not None and content_md.strip() != memory.content_md
     if content_changed:
         validate_memory_content(
-            kind=memory.kind,
             title=resolved_title,
             content_md=content_md,
         )
@@ -83,7 +81,6 @@ async def update_memory(
             agent=agent,
             user=user,
             scope=memory.scope,
-            kind=memory.kind,
             memory_type=memory.memory_type,
             title=resolved_title,
             content_md=content_md,
@@ -98,6 +95,7 @@ async def update_memory(
             raise RuntimeError("Memory supersession did not create a successor")
         if expires_in_days is None:
             successor.expires_at = memory.expires_at
+        successor.recall_disabled_at = memory.recall_disabled_at
         memory.status = MEMORY_STATUS_SUPERSEDED
         memory.superseded_by_id = successor.id
         await db.flush()
@@ -120,7 +118,6 @@ async def update_memory(
     title_changed = title is not None and title.strip() != memory.title
     if title is not None:
         validate_memory_content(
-            kind=memory.kind,
             title=title,
             content_md=memory.content_md,
         )

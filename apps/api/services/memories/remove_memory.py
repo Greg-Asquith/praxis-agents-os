@@ -52,7 +52,6 @@ async def remove_memory(
     )
     details = {
         "scope": memory.scope,
-        "kind": memory.kind,
         "purge": purge,
         "repaired_predecessors": repaired_predecessors,
     }

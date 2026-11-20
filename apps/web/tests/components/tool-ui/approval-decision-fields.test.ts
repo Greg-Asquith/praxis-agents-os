@@ -358,7 +358,6 @@ describe("ApprovalRequestFields", () => {
     const args = {
       title: "Launch guidance",
       content: "Prefer concise release notes.",
-      kind: "core",
       scope: "workspace",
       importance: 5,
       metadata: { source: "agent" },

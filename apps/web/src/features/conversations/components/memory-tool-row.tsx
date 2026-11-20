@@ -56,7 +56,6 @@ export function MemoryToolRow({
   ) {
     const fields = ui?.arg_fields ?? []
     const args = isRecord(activity.args) ? activity.args : {}
-    const kind = typeof args["kind"] === "string" ? args["kind"] : null
     const scope = typeof args["scope"] === "string" ? args["scope"] : null
     return (
       <ApprovalDecisionBlock
@@ -69,14 +68,11 @@ export function MemoryToolRow({
         prompt="The agent wants to save trusted memory that can shape future responses."
         title={ui?.approval_title ?? "Save Memory"}
       >
-        <div className="flex flex-wrap gap-2">
-          {kind ? (
-            <Badge variant={kind === "core" ? "warning" : "secondary"}>
-              {titleCaseToken(kind, "Memory")}
-            </Badge>
-          ) : null}
-          {scope ? <Badge variant="outline">{titleCaseToken(scope, "Scope")} scope</Badge> : null}
-        </div>
+        {scope ? (
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">{titleCaseToken(scope, "Scope")} scope</Badge>
+          </div>
+        ) : null}
       </ApprovalDecisionBlock>
     )
   }
@@ -251,7 +247,6 @@ function MemoryHitItem({ hit, rank }: { hit: MemorySearchToolHit; rank: number }
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="min-w-0 truncate text-sm font-medium">{hit.title}</span>
         <MemoryScopeBadge scope={hit.scope} />
-        <MemoryKindBadge kind={hit.kind} />
         {rank === 1 ? (
           <span
             className="text-muted-foreground ml-auto text-xs"
@@ -357,7 +352,6 @@ function MemorySummaryLine({ memory }: { memory: MemoryToolSummary }) {
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <span className="min-w-0 truncate text-sm font-medium">{memory.title}</span>
       <MemoryScopeBadge scope={memory.scope} />
-      <MemoryKindBadge kind={memory.kind} />
       <span className="text-muted-foreground text-xs">
         {titleCaseToken(memory.memory_type, "Memory")}
       </span>
@@ -369,19 +363,10 @@ function MemoryScopeBadge({ scope }: { scope: MemoryToolSummary["scope"] }) {
   return <Badge variant="outline">{memoryToolScopeLabel(scope)}</Badge>
 }
 
-function MemoryKindBadge({ kind }: { kind: MemoryToolSummary["kind"] }) {
-  return (
-    <Badge variant={kind === "core" ? "warning" : "secondary"}>
-      {titleCaseToken(kind, "Memory")}
-    </Badge>
-  )
-}
-
 function memoryDetailEntries(memory: MemoryToolSummary): ToolResultDetail[] {
   return [
     { label: "Memory", value: memory.title },
     { label: "Scope", summary: false, value: memoryToolScopeLabel(memory.scope) },
-    { label: "Kind", summary: false, value: titleCaseToken(memory.kind, "Memory") },
     { label: "Type", summary: false, value: titleCaseToken(memory.memory_type, "Memory") },
     { label: "Importance", summary: false, value: `${String(memory.importance)} of 5` },
   ]

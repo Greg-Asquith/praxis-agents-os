@@ -3,11 +3,13 @@
 """Runtime tools shared by deterministic Gate G5 scenarios."""
 
 import asyncio
+from importlib import import_module
 
 import pytest
 from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 
+from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -15,6 +17,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EGRESS_EXTERNAL_WRITE,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
+from tests.support.embeddings import FakeEmbeddingProvider
 
 SCENARIO_TOOL_NAMES = (
     "scenario_bad_write",
@@ -22,6 +25,23 @@ SCENARIO_TOOL_NAMES = (
     "scenario_external_write",
     "scenario_fail",
 )
+
+
+@pytest.fixture(autouse=True)
+def offline_memory_embeddings(monkeypatch: pytest.MonkeyPatch):
+    """Embeds memory writes and recall queries offline, so turns never call a provider."""
+    provider = FakeEmbeddingProvider()
+
+    async def fake_embed_texts(_db, texts, **_kwargs):
+        return await provider.embed_texts(
+            texts, model=settings.EMBEDDINGS_MODEL, dimensions=settings.EMBEDDINGS_DIMENSIONS
+        )
+
+    monkeypatch.setattr("services.memories.utils.embed_texts", fake_embed_texts)
+    # The package re-exports the function under the module's name, so patch the module itself.
+    monkeypatch.setattr(
+        import_module("services.memories.search_memories"), "embed_texts", fake_embed_texts
+    )
 
 
 class ScenarioWriteOutput(BaseModel):

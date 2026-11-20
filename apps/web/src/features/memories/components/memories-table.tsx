@@ -50,11 +50,6 @@ const columns = columnHelper.columns([
     cell: ({ getValue }) => <ScopeBadge scope={getValue()} />,
     meta: { label: "Scope" },
   }),
-  columnHelper.accessor("kind", {
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => <KindBadge kind={getValue()} />,
-    meta: { label: "Kind" },
-  }),
   columnHelper.accessor("memory_type", {
     header: ({ header }) => <header.ColumnHeader />,
     cell: ({ getValue }) => titleCaseToken(getValue(), "Memory"),
@@ -109,7 +104,7 @@ export function MemoriesTable({
   if (memories.length === 0) {
     return (
       <EmptyState
-        description="Agents save durable details here as they work. Notes stay searchable, while core memories are available on every relevant run."
+        description="Agents save durable details here as they work. The memories that relate to a conversation come up in it automatically."
         icon={<BrainIcon className="size-5" />}
         size="compact"
         title="No memories match these filters"
@@ -130,10 +125,7 @@ export function MemoriesTable({
                 }}
                 type="button"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <span className="font-medium">{memory.title}</span>
-                  <KindBadge kind={memory.kind} />
-                </div>
+                <span className="font-medium">{memory.title}</span>
                 <dl className="grid grid-cols-2 gap-3">
                   <ResponsiveListMeta label="Scope">{memoryScopeLabel(memory)}</ResponsiveListMeta>
                   <ResponsiveListMeta label="Type">
@@ -207,14 +199,6 @@ function MemoryBodyCell({ onOpen }: { onOpen: (memoryId: string) => void }) {
         <cell.FlexRender />
       )}
     </TableCell>
-  )
-}
-
-function KindBadge({ kind }: { kind: Memory["kind"] }) {
-  return (
-    <Badge variant={kind === "core" ? "warning" : "secondary"}>
-      {titleCaseToken(kind, "Memory")}
-    </Badge>
   )
 }
 

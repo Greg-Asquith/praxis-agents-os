@@ -32,7 +32,7 @@ export function MemoryEditForm({
   async function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    const payload = buildMemoryUpdatePayload(state, memory)
+    const payload = buildMemoryUpdatePayload(state)
     if (Array.isArray(payload)) {
       setFieldErrors(buildFieldErrors(payload))
       return

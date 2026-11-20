@@ -22,10 +22,10 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Answers            | "How do I do this task?"                                                | "Work with this specific document"                                                         | "What does the workspace know?"                                           | "What has the agent learned over time?"                                                             |
 | Content            | Procedural instructions + reference docs                                | Arbitrary documents with revision history                                                  | Canonical markdown, chunked and embedded                                  | Durable facts with provenance                                                                       |
 | Storage            | `skills` table; docs in object storage                                  | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings)                                       |
-| Enters context via | `skills` prompt block + auto-mounted `search_skills` / `load_skill`      | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
+| Enters context via | `skills` prompt block + auto-mounted `search_skills` / `load_skill`      | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Relevant memories recalled with each turn's message + auto-mounted memory tools                     |
 | Retrieval          | Lexical match on name and description                                   | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
 | Scope              | Workspace rows plus platform rows shared with every workspace           | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace and published platform, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
-| Agent-writable     | Yes (`create_skill` / `update_skill`; workspace skills, always approval) | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
+| Agent-writable     | Yes (`create_skill` / `update_skill`; workspace skills, always approval) | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; auto, under the agent and workspace approval policies) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
 ## Built-in agent identity
@@ -55,8 +55,8 @@ created it for workspaces that existed before.
 A sub-agent's `identity` block is the instructions its parent wrote in the
 `run_subagent` call, and a `subagent` block tells it that nobody can answer
 questions and that its final message is all the parent receives. It keeps the
-parent's core memory block and memory search, and drops the memory-saving
-guidance because it has no memory-write tools. See
+parent's memory search, and drops the memory-saving guidance because it has
+no memory-write tools. See
 [agent runtime](agent-runtime.md#sub-agents).
 
 ## Skills
@@ -255,22 +255,51 @@ find. Use a file when the agent must process a specific document.
 Durable, cross-conversation facts associated with a user, agent, or workspace.
 
 - **Model.** `apps/api/models/agent_memories.py`: scoped `agent_memories` rows
-  (`scope ∈ {agent, user, workspace}`, `kind ∈ {core, note}`) with
+  (`scope ∈ {agent, user, workspace}`) with
   backend-minted provenance (source conversation/run, creator), reinforcement
   counters, expiry, and supersession links. Content is markdown in Postgres
-  with `HALFVEC` embeddings.
-- **Runtime.** The backend deduplicates and reinforces matching facts, applies
-  confidence decay and supersession at read time, and renders a budgeted
-  core-memory block through the shared prompt assembler. Search is hybrid RRF
+  with `HALFVEC` embeddings, up to `MEMORY_MAX_CHARS` characters. Every
+  memory is the same kind: none is shown in every conversation, and anything
+  that must shape every conversation belongs in the agent's instructions.
+- **Runtime.** The backend deduplicates and reinforces matching facts and
+  applies confidence decay and supersession at read time. Search is hybrid RRF
   (lexical + semantic + recency) through the shared `services/retrieval/`
   seam.
+- **Recall.** Each turn with a message (a person's turn, a scheduled run's
+  prompt, or a delegated task) searches the memories visible to the run with
+  that message, in `execute_run` before the turn is stored
+  (`services/memories/recall_memories.py`). It keeps up to
+  `MEMORY_RECALL_MAX_MEMORIES` memories that match lexically or reach
+  `MEMORY_RECALL_MIN_SIMILARITY` cosine similarity, within
+  `MEMORY_RECALL_CHAR_BUDGET`, and adds them after the message as a
+  **Relevant Memories** text part. The part's metadata
+  (`recalled_memory_ids`) lists the memories shown, so later turns in the
+  conversation skip them and a replayed turn sends the same request. The
+  block sits in the turn, not the system prompt, so recall never changes the
+  cached prefix; the system prompt has a fixed `memory` block saying memories
+  can follow a message. Each line says who saved the memory and when it last
+  changed. Memories learned from past conversations are in an untrusted frame;
+  memories a person or an agent saved stay plain. Recall skips a memory with
+  `recall_disabled_at` set and every memory when the workspace's
+  `memory_recall_enabled` is false. It checks that a recallable memory exists
+  before embedding the message, and a failure leaves the turn without
+  memories. The conversation view, the shared view, and the transcript that
+  learning reads all leave the part out. A turn without a message (an
+  approval continuation) recalls nothing; the turn that started the run
+  already did. The similarity floor was measured for `text-embedding-3-small`
+  and needs measuring again for another embedding model.
 - **Tools.** Auto-mounted `save_memory`, `search_memory`, `update_memory`, and
-  `forget_memory` go through the audited tool registry; core-memory writes
-  always require approval, and an agent policy cannot weaken that.
+  `forget_memory` go through the audited tool registry and run without
+  approval unless the agent or workspace approval policy asks for it.
 - **Management.** `/memories` routes, `services/memories/`, web UI where
   operators review, correct, archive, and purge memories. Every human edit
   sets `last_edited_by_user_at`, including an in-place title, importance, or
   expiry change, so automatic upkeep can tell a person's memory from the row.
+  An edit with `recall_disabled: true` sets `recall_disabled_at`, so the
+  memory stays searchable but never comes up by itself; a content edit keeps
+  it. Owners and admins turn recall off for the workspace with
+  `memory_recall_enabled` on `PATCH /workspaces/{id}`. The page controls for
+  both are pending (plan 335 slice E1).
 - **Learning from past conversations.** Internally called dreaming; the
   product never uses that word. It's off unless `MEMORY_DREAM_ENABLED` is
   true; a workspace setting and the default-on switch are pending. Once per `MEMORY_DREAM_INTERVAL_SECONDS` the worker starts one
@@ -292,9 +321,9 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
     personal workspace, writes user scope for its owner. The server sets the
     scope and refuses a response that puts private-chat content into
     workspace scope.
-  - **Guards.** The server writes notes with `source='dream'` and
-    `created_by='system'`. It never changes a core memory, a person's memory,
-    or one a person edited, and never recreates a memory archived as
+  - **Guards.** The server writes memories with `source='dream'` and
+    `created_by='system'`. It never changes a person's memory or one a person
+    edited (setting a memory not to come up automatically is an edit), and never recreates a memory archived as
     `forgotten` or `user_deleted`. A merge supersedes every source row to one
     new memory; a retired memory is archived as `consolidated`. Without an
     embedding it writes nothing, since neither check can run.

@@ -12,10 +12,9 @@ def _hit(index: int) -> dict[str, object]:
     return {
         "id": f"memory-{index}",
         "scope": "workspace",
-        "kind": "note",
         "memory_type": "fact",
         "title": f"Memory {index}",
-        "content": "\\quoted\n" * settings.MEMORY_NOTE_MAX_CHARS,
+        "content": "\\quoted\n" * settings.MEMORY_MAX_CHARS,
         "source": "interactive",
         "created_by": "agent",
         "created_by_user_id": None,

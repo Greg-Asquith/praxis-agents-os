@@ -9,8 +9,6 @@ from uuid import uuid4
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.exceptions.general import AppValidationError
-from core.settings import settings
 from models.agent import Agent
 from models.agent_memories import AgentMemory
 from models.jobs import Job
@@ -33,7 +31,6 @@ async def _save(
     title: str = "Client preference",
     content: str = "The client prefers concise weekly reports.",
     scope: str = "agent",
-    kind: str = "note",
     **kwargs,
 ):
     return await save_memory(
@@ -42,7 +39,6 @@ async def _save(
         agent=context.agent,
         user=context.user,
         scope=scope,
-        kind=kind,
         memory_type="preference",
         title=title,
         content_md=content,
@@ -184,58 +180,19 @@ async def test_embedding_failure_queues_a_pending_row(
     assert job.payload == {"memory_id": str(created.memory.id)}
 
 
-async def test_core_cap_rejects_with_actionable_message(
+async def test_expired_rows_do_not_affect_deduplication(
     db_session: AsyncSession,
     memory_context: MemoryContext,
     monkeypatch,
 ) -> None:
     install_fake_embeddings(monkeypatch)
-    monkeypatch.setattr(settings, "MEMORY_CORE_MAX_PER_SCOPE", 1)
-    await _save(db_session, memory_context, kind="core")
-    try:
-        await _save(
-            db_session,
-            memory_context,
-            kind="core",
-            title="Another identity fact",
-            content="A completely unrelated preference about billing.",
-        )
-    except AppValidationError as exc:
-        assert "update or forget" in exc.message
-    else:
-        raise AssertionError("Expected the core-memory cap to reject the write")
-
-
-async def test_expired_rows_do_not_affect_deduplication_or_the_core_cap(
-    db_session: AsyncSession,
-    memory_context: MemoryContext,
-    monkeypatch,
-) -> None:
-    install_fake_embeddings(monkeypatch)
-    expired_note = await _save(db_session, memory_context)
-    expired_note.memory.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    expired_core = await _save(
-        db_session,
-        memory_context,
-        kind="core",
-        title="Expired identity",
-        content="An identity fact that has expired.",
-    )
-    expired_core.memory.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    expired = await _save(db_session, memory_context)
+    expired.memory.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     await db_session.flush()
-    monkeypatch.setattr(settings, "MEMORY_CORE_MAX_PER_SCOPE", 1)
 
-    replacement_note = await _save(db_session, memory_context)
-    replacement_core = await _save(
-        db_session,
-        memory_context,
-        kind="core",
-        title="Current identity",
-        content="A distinct and current identity fact.",
-    )
+    replacement = await _save(db_session, memory_context)
 
-    assert replacement_note.status == "created"
-    assert replacement_core.status == "created"
+    assert replacement.status == "created"
 
 
 async def test_concurrent_duplicate_writes_are_serialized(

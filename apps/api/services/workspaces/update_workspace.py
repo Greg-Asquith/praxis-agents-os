@@ -60,6 +60,19 @@ async def update_workspace(
             workspace.conversations_shared_by_default = payload.conversations_shared_by_default
             changed_fields.append("conversations_shared_by_default")
 
+    if "memory_recall_enabled" in payload.model_fields_set:
+        if payload.memory_recall_enabled is None:
+            raise AppValidationError(
+                "memory_recall_enabled cannot be null", field="memory_recall_enabled"
+            )
+        if payload.memory_recall_enabled != workspace.memory_recall_enabled:
+            audit_details["memory_recall_enabled"] = {
+                "previous": workspace.memory_recall_enabled,
+                "value": payload.memory_recall_enabled,
+            }
+            workspace.memory_recall_enabled = payload.memory_recall_enabled
+            changed_fields.append("memory_recall_enabled")
+
     if payload.model_fields_set & {"default_model_provider", "default_model"}:
         previous = (workspace.default_model_provider, workspace.default_model)
         requested = (payload.default_model_provider, payload.default_model)

@@ -3,7 +3,9 @@
 """Hybrid memory search with scope confinement and lexical degradation."""
 
 import logging
+from collections.abc import Collection
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import Float, case, cast, func, literal, select, union_all, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -23,7 +25,6 @@ from services.embeddings.domain import (
     EmbeddingProviderError,
 )
 from services.memories.domain import (
-    MemoryKind,
     MemoryScope,
     MemorySearchHit,
     MemorySearchResult,
@@ -51,12 +52,18 @@ async def search_memories(
     user: User,
     query: str,
     scope: MemoryScope | None = None,
-    kind: MemoryKind | None = None,
     memory_type: MemoryType | None = None,
     limit: int | None = None,
     provider: EmbeddingProvider | None = None,
+    min_similarity: float | None = None,
+    exclude_ids: Collection[UUID] = (),
+    recallable_only: bool = False,
 ) -> MemorySearchResult:
-    """Search active visible memories using weighted reciprocal-rank fusion."""
+    """Search active visible memories using weighted reciprocal-rank fusion.
+
+    ``min_similarity`` keeps semantic matches at or above that cosine similarity, so
+    a small memory set doesn't rank every memory as a match.
+    """
     normalized_query = query.strip()
     if not normalized_query:
         raise AppValidationError("Memory search query is required", field="query")
@@ -80,10 +87,12 @@ async def search_memories(
         )
     )
     filters = [visibility, active_memory_filter()]
-    if kind is not None:
-        filters.append(AgentMemory.kind == kind)
     if memory_type is not None:
         filters.append(AgentMemory.memory_type == memory_type)
+    if exclude_ids:
+        filters.append(AgentMemory.id.not_in(list(exclude_ids)))
+    if recallable_only:
+        filters.append(AgentMemory.recall_disabled_at.is_(None))
 
     query_vector = None
     embedding_provider = None
@@ -125,6 +134,7 @@ async def search_memories(
     ranked_selects = [select(lexical.c.id, lexical.c.rank, lexical.c.source)]
     if query_vector is not None:
         distance = AgentMemory.embedding.cosine_distance(query_vector)
+        semantic_filters = [] if min_similarity is None else [distance <= 1 - min_similarity]
         semantic = (
             select(
                 AgentMemory.id.label("id"),
@@ -137,6 +147,7 @@ async def search_memories(
                 AgentMemory.embedding_dims == len(query_vector),
                 AgentMemory.embedding_provider == embedding_provider,
                 AgentMemory.embedding_model == embedding_model,
+                *semantic_filters,
             )
             .order_by(distance, AgentMemory.id)
             .limit(_CTE_LIMIT)
@@ -181,12 +192,9 @@ async def search_memories(
         ),
         else_=settings.MEMORY_DECAY_RATE_FACT,
     )
-    sql_confidence = case(
-        (AgentMemory.kind == "core", AgentMemory.confidence),
-        else_=func.greatest(
-            settings.MEMORY_CONFIDENCE_FLOOR,
-            AgentMemory.confidence * func.exp(-decay_rate * age_days),
-        ),
+    sql_confidence = func.greatest(
+        settings.MEMORY_CONFIDENCE_FLOOR,
+        AgentMemory.confidence * func.exp(-decay_rate * age_days),
     )
     ranked_score = (fused.c.score * sql_confidence).label("score")
     rows = (

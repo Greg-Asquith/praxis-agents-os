@@ -52,10 +52,12 @@ DREAM_ERROR_STALLED = "stalled"
 DREAM_ERROR_DISABLED = "disabled"
 
 MAX_CANDIDATES_PER_CONVERSATION = 10
+# The scope's most important memories, shown to extraction so it doesn't repeat them.
+KNOWN_MEMORIES_PER_SCOPE = 20
 NEAREST_MEMORIES_PER_CANDIDATE = 3
 # Below the dedup floor: pairs above it were already refused when written.
 DUPLICATE_CLUSTER_SIMILARITY = 0.85
-DUPLICATE_CLUSTER_RECENT_NOTES = 300
+DUPLICATE_CLUSTER_RECENT_MEMORIES = 300
 MAX_DUPLICATE_PAIRS = 10
 EXTRACTION_CONCURRENCY = 4
 

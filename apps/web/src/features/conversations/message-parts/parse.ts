@@ -711,6 +711,11 @@ function parseUserPromptContent(
       return
     }
 
+    // Memories recalled for the turn go to the agent, not into the person's message.
+    if (isRecord(item["metadata"]) && "recalled_memory_ids" in item["metadata"]) {
+      return
+    }
+
     const text = stringValue(item["text"]) ?? stringValue(item["content"])
     if (text) {
       textSegments.push(text)
