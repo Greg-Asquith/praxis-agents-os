@@ -42,6 +42,22 @@ ALLOWED_DREAM_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 DREAM_AUDIT_ACTOR = "memory.dream"
+MEMORY_DREAM_JOB_KIND = "memory.dream"
+MEMORY_DREAM_SCHEDULE_JOB_KIND = "memory.dream_schedule"
+DREAM_RUN_SUBJECT_TYPE = "memory_dream_run"
+
+# Why a run failed.
+DREAM_ERROR_JOB_FAILED = "job_failed"
+DREAM_ERROR_STALLED = "stalled"
+DREAM_ERROR_DISABLED = "disabled"
+
+MAX_CANDIDATES_PER_CONVERSATION = 10
+NEAREST_MEMORIES_PER_CANDIDATE = 3
+# Below the dedup floor: pairs above it were already refused when written.
+DUPLICATE_CLUSTER_SIMILARITY = 0.85
+DUPLICATE_CLUSTER_RECENT_NOTES = 300
+MAX_DUPLICATE_PAIRS = 10
+EXTRACTION_CONCURRENCY = 4
 
 # Why a valid operation changed nothing.
 SKIP_PROTECTED = "protected"
@@ -115,6 +131,42 @@ type DreamOperation = Annotated[
     DreamCreate | DreamRevise | DreamMerge | DreamRetire | DreamReinforce,
     Field(discriminator="op"),
 ]
+
+
+class DreamCandidate(BaseModel):
+    """Something one conversation showed is worth remembering."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(description="A short label for the memory.")
+    content_md: str = Field(description="The current understanding, as one or two sentences.")
+    memory_type: MemoryType
+    importance: int = Field(default=3, ge=1, le=5)
+    evidence: str = Field(description="A short quote from the conversation that supports it.")
+    corrects: str | None = Field(
+        default=None,
+        description="What earlier understanding this replaces, when the conversation corrected one.",
+    )
+
+
+class DreamExtraction(BaseModel):
+    """Extraction output for one conversation. An empty list is the usual answer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memories: list[DreamCandidate]
+
+
+class DreamConsolidation(BaseModel):
+    """Consolidation output for one scope. An empty list changes nothing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operations: list[DreamOperation]
+
+
+class DreamStepError(Exception):
+    """Every model call in a step failed, so the job retries instead of moving on."""
 
 
 @dataclass(frozen=True)

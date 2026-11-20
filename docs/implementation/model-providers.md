@@ -423,8 +423,8 @@ The provider type defaults are GPT-6.1 Sol for OpenAI **Powerful**, Luna for
 OpenAI **Standard**, Opus 5.5 for Anthropic **Powerful**, and Sonnet 5.5 for
 Anthropic **Standard**. OpenAI has no **Light** model. Existing saved agent
 model selections remain explicit. GPT-6 Luna is also the default for unpinned agents,
-conversation names, history summaries, Knowledge Base annotations, native
-classification, and the OpenAI web-search fallback. Environment overrides take
+conversation names, history summaries, learning from conversations, Knowledge
+Base annotations, native classification, and the OpenAI web-search fallback. Environment overrides take
 precedence. Restart API and worker processes after updating local settings, or
 follow the deployment runbook for a deployed environment.
 

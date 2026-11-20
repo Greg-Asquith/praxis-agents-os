@@ -55,6 +55,7 @@ class AuditResourceType(StrEnum):
     KB_DOCUMENT = "kb_document"
     ARTIFACT = "artifact"
     MEMORY = "memory"
+    MEMORY_DREAM_RUN = "memory_dream_run"
     CONVERSATION_SHARING = "conversation_sharing"
     ARTIFACT_SHARE = "artifact_share"
 

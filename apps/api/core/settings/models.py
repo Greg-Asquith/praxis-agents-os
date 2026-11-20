@@ -290,8 +290,9 @@ class LLMSettingsMixin:
         """Require credentials for the active providers in production.
 
         Active providers back the default agent, conversation naming, history
-        summarization, or progress reviews. Local/development may run without
-        keys; tests construct settings without them. Registry membership is
+        summarization, progress reviews, or learning from conversations when it
+        is on. Local/development may run without keys; tests construct settings
+        without them. Registry membership is
         validated at resolution time, not here, to keep settings free of service
         imports.
         """
@@ -305,6 +306,8 @@ class LLMSettingsMixin:
             self.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER,
             self.AGENT_RUN_PROGRESS_REVIEW_PROVIDER,
         }
+        if getattr(self, "MEMORY_DREAM_ENABLED", False):
+            active_providers.add(self.MEMORY_DREAM_MODEL_PROVIDER)
         missing = [
             requirement
             for provider in active_providers

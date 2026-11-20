@@ -96,9 +96,12 @@ The following contracts apply in this area:
   price at `gpt-6-luna` token rates; Decisions-specific rates are pending.
   Gemini Decisions rows carry input tokens only and price at
   `gemini-decision-1`'s $0.10 per million input tokens.
-- `memory_dreaming` is reserved for learning from past conversations (plan
-  335). Nothing records under it until the background job ships in slice B.
-  The usage page labels it "Learning from conversations".
+- `memory_dreaming` records learning from past conversations: one
+  row per extraction call, with the conversation, and one per scope's
+  consolidation call. Each run also sums its tokens in
+  `memory_dream_runs.usage_totals`. Candidate embeddings record under
+  `embedding_memory_dedup`. The usage page labels the purpose "Learning from
+  conversations".
 - Video helpers record under `video_understanding`, `video_generation`, or
   `video_transcription`, with tokens as the provider reports them.
   `generate_video` and `edit_video` record one `video_generation` row per

@@ -14,6 +14,7 @@ from services.agents.models.registry import (
 from services.agents.models.resolution import (
     resolve_agent_model,
     resolve_catalog_model,
+    resolve_dream_model,
     resolve_history_summary_model,
     resolve_model_context_budget,
     resolve_naming_model,
@@ -34,6 +35,7 @@ __all__ = [
     "qualified_id",
     "resolve_agent_model",
     "resolve_catalog_model",
+    "resolve_dream_model",
     "resolve_history_summary_model",
     "resolve_model_context_budget",
     "resolve_naming_model",

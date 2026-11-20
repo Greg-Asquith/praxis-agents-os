@@ -45,6 +45,7 @@ from evals.evaluators import (
     WorkflowArguments,
 )
 from evals.memory_calibration import main as run_memory_calibration
+from evals.memory_dreaming import run_memory_dreaming_eval
 from models.agent import Agent
 from services.agents.models import (
     build_model,
@@ -329,6 +330,7 @@ async def main() -> None:
         dataset = _load_dataset(judge_model)
         report = await dataset.evaluate(_run_case)
         report.print()
+        await run_memory_dreaming_eval(judge_model)
     finally:
         await close_vertex_clients()
 

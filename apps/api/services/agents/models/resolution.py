@@ -257,6 +257,11 @@ def resolve_history_summary_model() -> ResolvedModel:
     return resolve_catalog_model(provider, model)
 
 
+def resolve_dream_model() -> ResolvedModel:
+    """Resolve the fixed model that learns from finished conversations."""
+    return resolve_catalog_model(settings.MEMORY_DREAM_MODEL_PROVIDER, settings.MEMORY_DREAM_MODEL)
+
+
 def resolve_progress_review_model() -> ResolvedModel:
     """Resolve the fixed model that reviews a run's progress at its step limit."""
     provider = settings.AGENT_RUN_PROGRESS_REVIEW_PROVIDER

@@ -271,20 +271,37 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
   operators review, correct, archive, and purge memories. Every human edit
   sets `last_edited_by_user_at`, including an in-place title, importance, or
   expiry change, so automatic upkeep can tell a person's memory from the row.
-- **Learning from past conversations (pending).** Internally called
-  dreaming; the product never uses that word. The store and the apply engine
-  are in place (`services/memories/dream/`, `memory_dream_runs`); the
-  background job and model calls are pending (plan 335 slice B). The model
-  returns typed operations (`create`, `revise`, `merge`, `retire`,
-  `reinforce`) that name memories only by references the server supplied.
-  The server writes notes with `source='dream'` and `created_by='system'`,
-  sets the scope itself, and refuses a response that names an unknown
-  memory or puts private-chat content into workspace scope. It never
-  changes a core memory, a person's memory, or one a person edited, and
-  never recreates a memory archived as `forgotten` or `user_deleted`. A
-  merge supersedes every source row to one new memory; a retired memory is
-  archived as `consolidated`. Without an embedding it writes nothing, since
-  neither check can run.
+- **Learning from past conversations.** Internally called dreaming; the
+  product never uses that word. It's off unless `MEMORY_DREAM_ENABLED` is
+  true; a workspace setting and the default-on switch are pending. Once per `MEMORY_DREAM_INTERVAL_SECONDS` the worker starts one
+  run for each workspace with a direct conversation that finished a run
+  since the last completed dream (`memory_dream_runs`, whose newest
+  `window_end` is the watermark). The run reads up to
+  `MEMORY_DREAM_MAX_CONVERSATIONS` conversations, oldest first, and leaves
+  the rest for the next run. Each conversation is read from where the last
+  dream stopped, as labelled plain text in the untrusted frame, with tool
+  results clipped and credential-shaped values redacted
+  (`services/conversation_review/`). A small helper model
+  (`MEMORY_DREAM_MODEL`) first lists what each conversation showed is worth
+  remembering, then, once per scope, chooses typed operations (`create`,
+  `revise`, `merge`, `retire`, `reinforce`) over those candidates and the
+  nearest existing memories. Operations name memories only by references the
+  server supplied.
+  - **Scope.** A workspace-visible conversation in a team workspace writes
+    workspace scope; a private conversation, or any conversation in a
+    personal workspace, writes user scope for its owner. The server sets the
+    scope and refuses a response that puts private-chat content into
+    workspace scope.
+  - **Guards.** The server writes notes with `source='dream'` and
+    `created_by='system'`. It never changes a core memory, a person's memory,
+    or one a person edited, and never recreates a memory archived as
+    `forgotten` or `user_deleted`. A merge supersedes every source row to one
+    new memory; a retired memory is archived as `consolidated`. Without an
+    embedding it writes nothing, since neither check can run.
+  - **Failure.** A failed model call changes nothing for that conversation or
+    scope, and that conversation is read again by a later dream. When every
+    call in a step fails, the job retries, and a run whose job fails for good
+    is marked failed, so the next dream reads the same window.
 
 Use memory for information learned during a conversation that must shape later
 conversations. Store reference documents in the Knowledge Base and working

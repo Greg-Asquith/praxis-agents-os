@@ -93,3 +93,27 @@ class MemorySettingsMixin:
     MEMORY_SWEEP_INTERVAL_SECONDS: int = Field(
         default=3600, gt=0, description="Interval between expired-memory sweeps."
     )
+    MEMORY_DREAM_ENABLED: bool = Field(
+        default=True,
+        description="Learn from finished conversations in the background (internally, dreaming).",
+    )
+    MEMORY_DREAM_MODEL_PROVIDER: str = Field(
+        default="openai", description="Provider for learning from finished conversations."
+    )
+    MEMORY_DREAM_MODEL: str = Field(
+        default="gpt-6-luna", description="Model for learning from finished conversations."
+    )
+    MEMORY_DREAM_INTERVAL_SECONDS: int = Field(
+        default=86_400, ge=3600, description="Interval between learning passes per workspace."
+    )
+    MEMORY_DREAM_MAX_CONVERSATIONS: int = Field(
+        default=20, gt=0, description="Most conversations one learning pass reads."
+    )
+    MEMORY_DREAM_TRANSCRIPT_MAX_CHARS: int = Field(
+        default=40_000,
+        ge=2_000,
+        description="Most transcript characters read from one conversation; the newest are kept.",
+    )
+    MEMORY_DREAM_MAX_OPERATIONS_PER_SCOPE: int = Field(
+        default=20, gt=0, description="Most memory changes one learning pass applies per scope."
+    )

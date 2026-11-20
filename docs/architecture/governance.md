@@ -119,6 +119,10 @@ default. _(enforced)_ The following rules define the defaults:
   Praxis-internal state and the tools are auto-mounted. The conditional check
   remains inside the tool body so an agent policy cannot weaken it.
   _(enforced)_
+- Learning from past conversations writes and tidies memory notes without
+  approval, as the agent's own note writes do. It never writes or changes
+  core memory, a person's memory, or one a person edited, and its changes
+  keep their history. _(enforced; off by default)_
 - Agent skill writes (`create_skill`, `update_skill`) always require approval.
   They are internal writes, but any agent that can see a saved skill may
   follow it, so the tools support only the `approval` policy. Agents can
