@@ -40,12 +40,15 @@ from services.ai_usage.schemas import (
 
 _MILLION = Decimal(1_000_000)
 _HUNDRED = Decimal(100)
-# Ledger details that select an output price, grouped on as `UsageBucket` fields.
+# Ledger details that select a price, grouped on as `UsageBucket` fields.
 _OUTPUT_PRICE_DETAIL_KEYS = (
     "image_model",
     "image_quality",
     "image_size",
+    "processing",
 )
+# OpenAI, Anthropic, and Gemini bill batch requests at half their standard token rates.
+_BATCH_PRICE_FACTOR = Decimal("0.5")
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,8 @@ class UsageBucket:
     image_model: str | None = None
     image_quality: str | None = None
     image_size: str | None = None
+    # "batch" for requests a provider batch API ran.
+    processing: str | None = None
     audio_seconds: Decimal = Decimal(0)
     input_image_tokens: int = 0
     output_text_tokens: int = 0
@@ -145,7 +150,7 @@ def usage_range_days(usage_range: UsageRange) -> list[date]:
 
 
 def output_price_columns() -> list[Label]:
-    """Returns the output-price details as labelled columns to select and group on."""
+    """Returns the price-selecting details as labelled columns to select and group on."""
     return [AIUsageEvent.details[key].astext.label(key) for key in _OUTPUT_PRICE_DETAIL_KEYS]
 
 
@@ -162,7 +167,7 @@ def metered_quantity_columns() -> list[Label]:
 
 
 def output_price_values(row: Any) -> dict[str, Any]:
-    """Returns the `UsageBucket` output-price fields of a row selected with both helpers."""
+    """Returns the `UsageBucket` price fields of a row selected with both helpers."""
     return {
         **{key: getattr(row, key) for key in _OUTPUT_PRICE_DETAIL_KEYS},
         "audio_seconds": Decimal(row.audio_seconds or 0),
@@ -172,12 +177,13 @@ def output_price_values(row: Any) -> dict[str, Any]:
 
 
 def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
-    return (
+    cost = (
         Decimal(bucket.uncached_input_tokens) * price.input_usd_per_mtok
         + Decimal(bucket.cache_read_tokens) * price.cache_read_usd_per_mtok
         + Decimal(bucket.cache_write_tokens) * price.cache_write_usd_per_mtok
         + Decimal(bucket.output_tokens) * price.output_usd_per_mtok
     ) / _MILLION
+    return cost * _BATCH_PRICE_FACTOR if bucket.processing == "batch" else cost
 
 
 def image_token_cost(bucket: UsageBucket, price: ImageTokenPrice) -> Decimal:

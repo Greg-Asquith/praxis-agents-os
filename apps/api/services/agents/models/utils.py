@@ -33,6 +33,10 @@ from services.agents.models.domain import (
 )
 
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
+# OpenAI, Anthropic, and Gemini batch creates. A retry after the provider may have created
+# the batch would submit it twice, so only failures to connect are retried.
+_BATCH_CREATE_PATH_SUFFIXES = ("/batches", ":batchGenerateContent")
+_UNSENT_REQUEST_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout)
 # The provider SDKs' own pool; a custom transport ignores client-level limits.
 _PROVIDER_POOL_LIMITS = httpx.Limits(max_connections=1000, max_keepalive_connections=100)
 _PROVIDER_KEY_SETTING = {
@@ -85,17 +89,26 @@ class _ProviderRetryTransport(httpx.AsyncBaseTransport):
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        batch_create = request.method == "POST" and request.url.path.endswith(
+            _BATCH_CREATE_PATH_SUFFIXES
+        )
+        retryable = (
+            _UNSENT_REQUEST_ERRORS
+            if batch_create
+            else (httpx.TransportError, httpx.HTTPStatusError)
+        )
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.attempts),
             wait=self.wait,
-            retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+            retry=retry_if_exception_type(retryable),
             reraise=True,
         ):
             with attempt:
                 response = await self.wrapped.handle_async_request(request)
                 response.request = request
                 if (
-                    response.status_code in _RETRYABLE_HTTP_STATUSES
+                    not batch_create
+                    and response.status_code in _RETRYABLE_HTTP_STATUSES
                     and attempt.retry_state.attempt_number < self.attempts
                 ):
                     await response.aclose()

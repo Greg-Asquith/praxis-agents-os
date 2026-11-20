@@ -218,7 +218,9 @@ async def test_query_stamps_labels_location_and_retains_rows() -> None:
         "praxis_run": "run",
     }
     assert query_request["json"]["requestId"] == "00000000-0000-0000-0000-000000000089"
-    assert query_request["request_timeout"] == 65
+    assert query_request["json"]["timeoutMs"] == 300_000
+    assert query_request["json"]["jobTimeoutMs"] == "300000"
+    assert query_request["request_timeout"] == 305
     assert result["rows"][0]["campaign"] == "Quarterly revenue"
     assert result["row_filters_applied"] is False
     assert client.calls[0]["json"] == {
@@ -509,6 +511,7 @@ async def _run_operation(
     client: "_QueryClient",
     *,
     max_bytes: int = 1024,
+    timeout_seconds: int = 300,
     query: str = "SELECT * FROM `analytics.marketing.campaign_daily`",
 ):
     return await run_query(
@@ -529,7 +532,7 @@ async def _run_operation(
         },
         request_id="00000000-0000-0000-0000-000000000089",
         max_bytes_billed=max_bytes,
-        timeout_seconds=60,
+        timeout_seconds=timeout_seconds,
     )
 
 

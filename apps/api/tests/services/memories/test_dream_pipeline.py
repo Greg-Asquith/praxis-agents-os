@@ -5,9 +5,10 @@
 import json
 import re
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai.messages import (
@@ -18,6 +19,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models.batch import Batch
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,12 +28,14 @@ from core.database import set_session_tenant_context
 from core.settings import settings
 from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
+from models.ai_usage_event import AIUsageEvent
 from models.jobs import Job
 from models.memory_dream_run import MemoryDreamRun
 from services.agents.runtime.persistence import persist_new_messages
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_END, UNTRUSTED_CONTENT_START
 from services.conversation_review import render_transcript
 from services.memories.dream import advance_dream_run, schedule_dreams
+from services.memories.dream.utils import previous_read_end
 from tests.factories.conversations import build_conversation
 from tests.factories.users import build_user
 from tests.factories.workspaces import build_workspace, build_workspace_membership
@@ -50,8 +54,35 @@ def _dreaming_on(monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_embeddings(monkeypatch)
 
 
+class _DirectModel(FunctionModel):
+    """A model with no batch API, so a dream calls it directly."""
+
+    @property
+    def batch_max_requests(self) -> int | None:
+        return None
+
+
+class _UnfinishedBatchModel(FunctionModel):
+    """A batch API whose batches never end, recording what it was asked to cancel."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.cancelled: list[str] = []
+
+    async def batch_status(self, batch: Batch) -> Batch:
+        return replace(await super().batch_status(batch), status="in_progress")
+
+    async def batch_cancel(self, batch: Batch) -> Batch:
+        self.cancelled.append(batch.id)
+        return await super().batch_cancel(batch)
+
+
 class _ScriptedModel:
-    """Extracts one memory per transcript line starting "Remember:" and creates each one."""
+    """Extracts one memory per transcript line starting "Remember:" and creates each one.
+
+    `model` has Pydantic AI's in-memory batch API, which runs a batch when it is created.
+    A transcript containing "Fail:" makes its request fail.
+    """
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
@@ -65,6 +96,8 @@ class _ScriptedModel:
             if isinstance(part, UserPromptPart) and isinstance(part.content, str)
         )
         self.prompts.append(prompt)
+        if "Fail:" in prompt:
+            raise RuntimeError("provider error")
         if prompt.startswith("Known memories"):
             args = {
                 "memories": [
@@ -97,6 +130,10 @@ class _ScriptedModel:
     @property
     def model(self) -> FunctionModel:
         return FunctionModel(self.respond, model_name="dream-test")
+
+    @property
+    def direct(self) -> FunctionModel:
+        return _DirectModel(self.respond, model_name="dream-test")
 
 
 async def _finished_conversation(
@@ -147,8 +184,9 @@ async def _run_to_end(db: AsyncSession, run: MemoryDreamRun, model: FunctionMode
     return jobs
 
 
+@pytest.mark.parametrize("transport", ["batch", "direct"])
 async def test_dream_writes_each_conversation_to_the_scope_its_readers_share(
-    db_session: AsyncSession, memory_context: MemoryContext
+    db_session: AsyncSession, memory_context: MemoryContext, transport: str
 ) -> None:
     colleague = build_user(email=f"colleague-{uuid4().hex}@example.com")
     db_session.add(colleague)
@@ -188,7 +226,7 @@ async def test_dream_writes_each_conversation_to_the_scope_its_readers_share(
     await schedule_dreams(db_session, now=datetime.now(UTC))
     run = await _workspace_run(db_session, memory_context)
     scripted = _ScriptedModel()
-    await _run_to_end(db_session, run, scripted.model)
+    await _run_to_end(db_session, run, scripted.model if transport == "batch" else scripted.direct)
 
     assert run.status == "completed"
     assert {entry["id"] for entry in run.conversations} == {str(shared.id), str(private.id)}
@@ -305,6 +343,97 @@ async def test_learning_switched_off_stops_the_dream_and_starts_no_more(
 
     assert (run.status, run.error_code, scripted.prompts) == ("failed", "disabled", [])
     assert await schedule_dreams(db_session, now=datetime.now(UTC)) == 0
+
+
+async def test_failed_batch_request_changes_nothing_and_is_read_again(
+    db_session: AsyncSession, memory_context: MemoryContext
+) -> None:
+    for text in ("Remember: Billing day is the 15th.", "Fail: Remember: Report day is Monday."):
+        await _finished_conversation(
+            db_session,
+            memory_context,
+            user=memory_context.user,
+            workspace=memory_context.workspace,
+            visibility="workspace",
+            text=text,
+        )
+    await schedule_dreams(db_session, now=datetime.now(UTC))
+    run = await _workspace_run(db_session, memory_context)
+
+    await _run_to_end(db_session, run, _ScriptedModel().model)
+
+    assert run.status == "completed"
+    titles = await db_session.scalars(
+        select(AgentMemory.title).where(AgentMemory.workspace_id == memory_context.workspace.id)
+    )
+    assert list(titles) == ["Billing day"]
+    failed = next(entry for entry in run.conversations if not entry["extracted"])
+    reread_from = await previous_read_end(
+        db_session,
+        workspace_id=memory_context.workspace.id,
+        conversation_id=UUID(failed["id"]),
+    )
+    assert reread_from is None
+    # One extraction and one consolidation came back, each recorded once at the batch rate.
+    usage = await db_session.scalars(
+        select(AIUsageEvent.details).where(
+            AIUsageEvent.workspace_id == memory_context.workspace.id,
+            AIUsageEvent.purpose == "memory_dreaming",
+        )
+    )
+    assert list(usage) == [{"processing": "batch"}] * 2
+
+
+async def test_unfinished_batch_is_cancelled_at_its_deadline_and_fails_the_run(
+    db_session: AsyncSession, memory_context: MemoryContext
+) -> None:
+    await _finished_conversation(
+        db_session,
+        memory_context,
+        user=memory_context.user,
+        workspace=memory_context.workspace,
+        visibility="workspace",
+        text="Remember: Billing day is the 15th.",
+    )
+    await schedule_dreams(db_session, now=datetime.now(UTC))
+    run = await _workspace_run(db_session, memory_context)
+    model = _UnfinishedBatchModel(_ScriptedModel().respond, model_name="dream-test")
+
+    async def advance() -> Job:
+        job = await db_session.scalar(
+            select(Job).where(
+                Job.content_hash == f"memory-dream:{run.id}:{run.status}",
+                Job.status == "pending",
+            )
+        )
+        job.status = "running"  # As the worker claims it, so the next check is a new job.
+        await advance_dream_run(db_session, job, model=model)
+        return job
+
+    for _ in range(3):  # collect, submit, then one check that finds the batch running
+        await advance()
+    assert (run.status, run.batch_handles["extracting"]["checks"]) == ("extracting", 1)
+    next_check = await db_session.scalar(
+        select(Job.run_after).where(
+            Job.content_hash == f"memory-dream:{run.id}:extracting", Job.status == "pending"
+        )
+    )
+    assert next_check > datetime.now(UTC)
+
+    submitted = datetime.now(UTC) - timedelta(hours=26)
+    run.batch_handles = {
+        "extracting": {**run.batch_handles["extracting"], "submitted_at": submitted.isoformat()}
+    }
+    await advance()
+
+    assert (run.status, run.error_code) == ("failed", "batch_deadline")
+    assert model.cancelled == [run.batch_handles["extracting"]["batch"]["id"]]
+    learned = await db_session.scalar(
+        select(func.count())
+        .select_from(AgentMemory)
+        .where(AgentMemory.workspace_id == memory_context.workspace.id)
+    )
+    assert learned == 0
 
 
 def test_transcript_frames_hostile_content_and_redacts_credentials() -> None:

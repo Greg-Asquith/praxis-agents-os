@@ -85,12 +85,15 @@ async def schedule_dreams(db: AsyncSession, *, now: datetime) -> int:
 
 
 async def _fail_stalled_runs(db: AsyncSession, *, before: datetime, now: datetime) -> None:
-    """Fails runs left unfinished for a whole interval, so a lost job can't block a workspace."""
+    """Fails runs with no progress for a whole interval, so a lost job can't block a workspace.
+
+    Every batch check writes the run, so a run waiting on its batch is never stalled.
+    """
     stalled = await db.scalars(
         select(MemoryDreamRun)
         .where(
             MemoryDreamRun.status.not_in(FINAL_DREAM_STATUSES),
-            MemoryDreamRun.created_at < before,
+            MemoryDreamRun.updated_at < before,
         )
         .with_for_update(skip_locked=True)
     )

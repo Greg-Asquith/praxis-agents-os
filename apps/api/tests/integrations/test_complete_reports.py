@@ -2,6 +2,7 @@
 
 """Report retrieval retains every page before runtime previewing."""
 
+import asyncio
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -194,17 +195,34 @@ def query_page(start, stop, token=None):
 
 
 async def test_bigquery_reads_all_pages_without_reexecuting_the_query():
+    first = query_page(0, 1000, "next")
+    pending = {"jobComplete": False, "jobReference": first["jobReference"]}
     client = SimpleNamespace(
-        post=AsyncMock(side_effect=[_dry_run(), query_page(0, 1000, "next")]),
-        get=AsyncMock(return_value=query_page(1000, 1500)),
+        post=AsyncMock(side_effect=[_dry_run(), pending]),
+        get=AsyncMock(side_effect=[pending, first, query_page(1000, 1500)]),
     )
     result = await _run_operation(client)
     assert len(result["rows"]) == result["total_rows"] == 1500
     assert result["rows"][-1] == {"value": "1499"}
     assert not result["truncated"]
     assert client.post.await_count == 2
-    assert client.get.await_args.args == ("projects/analytics/queries/job",)
+    for call in client.get.await_args_list:
+        assert call.args == ("projects/analytics/queries/job",)
+        assert call.kwargs["params"]["location"] == "EU"
     assert client.get.await_args.kwargs["params"]["pageToken"] == "next"
+
+
+async def test_bigquery_deadline_stops_waiting_for_a_running_job():
+    async def wait_for_results(*args, **kwargs):
+        await asyncio.sleep(0)
+        pytest.fail("The expired deadline allowed polling to continue")
+
+    pending = {"jobComplete": False, "jobReference": {"jobId": "job"}}
+    client = SimpleNamespace(
+        post=AsyncMock(side_effect=[_dry_run(), pending]), get=wait_for_results
+    )
+    with pytest.raises(ModelRetry, match="did not complete within"):
+        await _run_operation(client, timeout_seconds=0)
 
 
 @pytest.mark.parametrize(

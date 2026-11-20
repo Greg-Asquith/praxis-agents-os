@@ -348,10 +348,18 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
     `forgotten` or `user_deleted`. A merge supersedes every source row to one
     new memory; a retired memory is archived as `consolidated`. Without an
     embedding it writes nothing, since neither check can run.
-  - **Failure.** A failed model call changes nothing for that conversation or
-    scope, and that conversation is read again by a later dream. When every
-    call in a step fails, the job retries, and a run whose job fails for good
-    is marked failed, so the next dream reads the same window.
+  - **Transport.** When Pydantic AI can batch the dream model (OpenAI,
+    Anthropic, and Gemini on their direct APIs), each step sends its requests
+    as one provider batch at half the standard price, and later jobs collect
+    the results. Vertex and Azure offer batch processing that Pydantic AI
+    doesn't drive yet, so they, and other transports, call the model directly
+    inside the job.
+  - **Failure.** A failed model call or batch request changes nothing for that
+    conversation or scope, and that conversation is read again by a later
+    dream. When every direct call in a step fails, the job retries; when
+    every request in a batch fails, the run fails. A batch still open after
+    25 hours is cancelled and its run fails. A run whose job fails for good is
+    marked failed, so the next dream reads the same window.
 
 Use memory for information learned during a conversation that must shape later
 conversations. Store reference documents in the Knowledge Base and working

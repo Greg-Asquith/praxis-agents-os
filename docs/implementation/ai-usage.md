@@ -57,8 +57,11 @@ from the catalogue keep their rates for past usage. Historical model rates
 retain their original effective dates. See
 [model providers](model-providers.md#claude-sonnet-55-and-gpt-61-sol) for
 prices and limits. Estimates use standard processing and five-minute cache
-writes. Long-context premiums, regional premiums, one-hour cache writes, and
-processing-tier adjustments are pending because the ledger aggregates requests.
+writes, except that a row with `details.processing = 'batch'` costs half its
+standard token rates, as the OpenAI, Anthropic, and Gemini batch APIs charge.
+Reads group on that key like the image price keys. Long-context premiums,
+regional premiums, one-hour cache writes, and the Flex and Priority tiers are
+pending because the ledger aggregates requests.
 
 The following contracts apply in this area:
 
@@ -99,7 +102,10 @@ The following contracts apply in this area:
 - `memory_dreaming` records learning from past conversations: one
   row per extraction call, with the conversation, and one per scope's
   consolidation call. Each run also sums its tokens in
-  `memory_dream_runs.usage_totals`. Candidate embeddings record under
+  `memory_dream_runs.usage_totals`. A request that ran in a provider batch
+  is recorded when its result is read, in the same transaction as the
+  run's step, with `details.processing = 'batch'` and an event ID derived
+  from the batch and request, so a repeated read records it once. Candidate embeddings record under
   `embedding_memory_dedup`. The usage page labels the purpose "Learning from
   conversations".
 - Video helpers record under `video_understanding`, `video_generation`, or

@@ -27,6 +27,7 @@ from services.agents.models.domain import (
     ModelConfigurationError,
     ResolvedModel,
 )
+from services.agents.models.utils import _build_retrying_http_client
 from services.agents.models.vertex_clients import (
     get_anthropic_vertex_client,
     get_google_vertex_client,
@@ -119,6 +120,23 @@ async def test_prompt_cache_marks_anthropic_instructions_tools_and_messages(monk
     assert body["cache_control"]["type"] == "ephemeral"
     assert body["system"][-1]["cache_control"]["type"] == "ephemeral"
     assert body["tools"][-1]["cache_control"]["type"] == "ephemeral"
+
+
+async def test_retrying_client_never_resends_a_batch_create(monkeypatch):
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.01)
+    paths: list[str] = []
+
+    def respond(request):
+        paths.append(request.url.path)
+        return httpx.Response(503 if paths.count(request.url.path) == 1 else 200)
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        # The provider may have created the batch before failing, so a retry could make two.
+        batch = await client.post("https://api.openai.com/v1/batches")
+        live = await client.post("https://api.openai.com/v1/responses")
+
+    assert (batch.status_code, live.status_code) == (503, 200)
+    assert paths == ["/v1/batches", "/v1/responses", "/v1/responses"]
 
 
 def test_build_openai_model_ignores_ambient_base_url_env(monkeypatch):

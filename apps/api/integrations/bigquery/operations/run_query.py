@@ -2,6 +2,7 @@
 
 """Authorize and run one GoogleSQL query through BigQuery dry-run metadata."""
 
+import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from services.integrations.table_scopes.domain import TableNamespace, TableScope
 
 MAX_AUTHORIZED_REFERENCES = 49
 MAX_EXPANDED_VIEWS = 10
+QUERY_PAGE_SIZE = 10_000
 
 
 class BigQueryQueryClient(Protocol):
@@ -145,7 +147,7 @@ async def run_query(
         "useLegacySql": False,
         "useQueryCache": True,
         "maximumBytesBilled": str(max_bytes_billed),
-        "maxResults": 10_000,
+        "maxResults": QUERY_PAGE_SIZE,
         "timeoutMs": timeout_seconds * 1000,
         "jobTimeoutMs": str(timeout_seconds * 1000),
         "location": location,
@@ -156,43 +158,44 @@ async def run_query(
         execution_query["parameterMode"] = "NAMED"
         execution_query["queryParameters"] = list(query_parameters)
     budget = ReportResultBudget("bigquery", "run_query")
-    response = await client.post(
-        f"projects/{quote(billing_project_id, safe='')}/queries",
-        operation="run_query",
-        policy=IntegrationRequestPolicy.READ,
-        json=execution_query,
-        request_timeout=timeout_seconds + 5,
-        max_response_bytes=budget.remaining,
-    )
-    _raise_query_errors(response)
-    if response.get("jobComplete") is not True:
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            response = await client.post(
+                f"projects/{quote(billing_project_id, safe='')}/queries",
+                operation="run_query",
+                policy=IntegrationRequestPolicy.READ,
+                json=execution_query,
+                request_timeout=timeout_seconds + 5,
+                max_response_bytes=budget.remaining,
+            )
+            _raise_query_errors(response)
+            if isinstance(response, dict) and response.get("jobComplete") is False:
+                response = await _wait_for_query(
+                    client, response, billing_project_id, location, budget
+                )
+    except TimeoutError as exc:
         raise ModelRetry(
             f"The BigQuery job did not complete within {timeout_seconds} seconds. "
             "Narrow the query and try again."
-        )
+        ) from exc
+    if not isinstance(response, dict) or response.get("jobComplete") is not True:
+        raise ModelRetry("BigQuery returned an incomplete query response.")
     budget.add(response)
     result = _query_result(response, row_filters_applied=bool(query_parameters))
     page_token = response.get("pageToken")
     job = response.get("jobReference", {})
     seen_tokens: set[str] = set()
     while page_token:
-        if (
-            not isinstance(page_token, str)
-            or page_token in seen_tokens
-            or not isinstance(job, dict)
-            or not job.get("jobId")
-            or job.get("projectId", billing_project_id) != billing_project_id
-            or job.get("location", location) != location
-        ):
+        if not isinstance(page_token, str) or page_token in seen_tokens:
             raise ModelRetry(
                 "BigQuery returned invalid pagination metadata. No partial report was returned."
             )
         seen_tokens.add(page_token)
         page = await client.get(
-            f"projects/{quote(billing_project_id, safe='')}/queries/{quote(str(job['jobId']), safe='')}",
+            _query_results_path(job, billing_project_id, location),
             operation="get_query_results",
             policy=IntegrationRequestPolicy.READ,
-            params={"pageToken": page_token, "location": location, "maxResults": 10_000},
+            params={"pageToken": page_token, "location": location, "maxResults": QUERY_PAGE_SIZE},
             max_response_bytes=budget.remaining,
         )
         budget.add(page)
@@ -216,6 +219,41 @@ async def run_query(
             "BigQuery returned fewer rows than its reported total. No partial report was returned."
         )
     return result
+
+
+def _query_results_path(job: Any, billing_project_id: str, location: str) -> str:
+    if (
+        not isinstance(job, dict)
+        or not isinstance(job.get("jobId"), str)
+        or not job["jobId"]
+        or job.get("projectId", billing_project_id) != billing_project_id
+        or job.get("location", location) != location
+    ):
+        raise ModelRetry("BigQuery returned an invalid query job reference.")
+    return f"projects/{quote(billing_project_id, safe='')}/queries/{quote(job['jobId'], safe='')}"
+
+
+async def _wait_for_query(
+    client: BigQueryQueryClient,
+    response: dict[str, Any],
+    billing_project_id: str,
+    location: str,
+    budget: ReportResultBudget,
+) -> dict[str, Any]:
+    job = response.get("jobReference")
+    path = _query_results_path(job, billing_project_id, location)
+    while response.get("jobComplete") is False:
+        response = await client.get(
+            path,
+            operation="get_query_results",
+            policy=IntegrationRequestPolicy.READ,
+            params={"location": location, "maxResults": QUERY_PAGE_SIZE},
+            max_response_bytes=budget.remaining,
+        )
+        _raise_query_errors(response)
+        if not isinstance(response, dict) or response.get("jobReference") != job:
+            raise ModelRetry("BigQuery returned results for a different job.")
+    return response
 
 
 def _named_tables(query: str, *, billing_project_id: str) -> set[tuple[str, str, str]]:

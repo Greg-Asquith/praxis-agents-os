@@ -85,7 +85,7 @@ and Fable 5 remain selectable.
 Standard prices are $8 input, $0.20 cache read, $10 five-minute cache write,
 and $40 output per million tokens, effective from 9 November 2026. One-hour
 cache writes cost $16. Estimates use Claude API and Vertex `global` standard
-rates. Regional premiums, one-hour cache writes, batch discounts, and fast-mode
+rates. Regional premiums, one-hour cache writes, and fast-mode
 charges remain outside the aggregated estimates. Fast mode costs $16 input
 and $80 output per million tokens on the Claude API. Vertex fast-mode requests
 remain pending because the installed SDK suppresses the speed setting there.
@@ -227,7 +227,7 @@ checked on 10 November 2026, list these standard prices in USD per million token
 Thinking tokens count as output. Implicit caching has no separate write
 charge. Usage estimates use Gemini API and Vertex `global` rates. Regional
 premiums and Vertex promotional-credit reconciliation remain pending because
-the ledger does not record transport or location. Batch, Flex, Priority, and
+the ledger does not record transport or location. Flex, Priority, and
 grounding charges remain outside standard token estimates.
 
 ### Gemini 4 Argon
@@ -279,7 +279,7 @@ with no separate cache-write charge. Vertex provides its introductory discount
 through credits against net spend. Usage estimates use Gemini API and Vertex
 `global` rates for both transports. Regional premiums and billing-credit
 reconciliation are pending because the ledger does not record transport or
-location. Batch, Flex, Priority, and grounding charges remain outside these
+location. Flex, Priority, and grounding charges remain outside these
 standard token estimates.
 
 ### Gemini Flash retirement
@@ -396,7 +396,8 @@ For both OpenAI models, prompts above 272,000 input tokens double input and
 cache rates and multiply output rates by 1.5 for the entire request. Batch
 and Flex halve standard rates; Fast doubles them. Regional processing adds
 10%, and EU data residency requires Standard processing. Praxis usage estimates
-use base rates; request-specific premiums and discounts are pending.
+use base rates, halved for batch rows; other request-specific premiums and
+discounts are pending.
 
 Opus 5.5 uses adaptive thinking with `medium` default effort. Its five-minute
 cache writes cost $5; one-hour writes cost $8. Cache reads cost 5% of base input.
@@ -612,6 +613,58 @@ The local retry wrapper remains necessary to return an exhausted response
 with its unread body intact. SDKs translate that final response into their
 provider error types. Do not replace it with SDK defaults or add a second
 retry owner. Rerun adapter request-count tests for future SDK upgrades.
+
+A batch create (`POST` to a path ending `/batches` or
+`:batchGenerateContent`) is retried only when the connection failed. After
+an error response or a timeout the provider may already have created the
+batch, so a retry could submit it twice.
+
+## Batch requests
+
+Background helpers that nobody waits for can use a provider's batch API at
+half the standard token price. Today only learning from past conversations
+does (`services/memories/dream/batch.py`). Batches go through Pydantic AI's
+model-level `batch_encode`, `batch_create`, `batch_status`, `batch_results`,
+`batch_cancel`, and `batch_decode` methods; Praxis has no batch client of its
+own. A job stores the `Batch` handle, which holds no secrets, and checks it
+from a later job, so no job waits on a provider. `model_request_batch` and
+the `BatchModelRequests` capability wait in the process, or store a run's
+message history, so they aren't used.
+
+The model's `batch_max_requests` decides, not a setting. It reports whether
+Pydantic AI can batch on that transport, which is narrower than whether the
+provider offers batch processing:
+
+| Transport | Batched through Pydantic AI 2.71 |
+| --- | --- |
+| OpenAI direct (`OpenAIResponsesModel`) | Yes: 50,000 requests or 200 MB a batch; output kept 30 days |
+| Anthropic direct | Yes: 100,000 requests or 256 MB; results kept 29 days from creation |
+| Gemini API direct | Yes: 2 GB input file; results kept 6 weeks |
+| Gemini on Vertex | No. Vertex batch prediction exists but reads from and writes to Cloud Storage or BigQuery, which Pydantic AI doesn't drive |
+| Claude on Vertex | No. Vertex offers Claude batch prediction the same way; Pydantic AI serves Message Batches only through the Claude API |
+| Azure OpenAI | No. Azure's Batch API needs a separate batch deployment; Pydantic AI turns batching off for Azure clients |
+| Vertex partner models, OpenAI and Gemini Decisions | No |
+
+On the transports marked No, the provider's batch discount is out of reach
+until Pydantic AI supports it, because Praxis doesn't add its own batch client.
+
+A request is built by running the same Pydantic AI helper agent against a
+wrapper model that stops at its first request, so a batch request matches
+the direct call, including structured output. With output mode `auto`, OpenAI
+and Gemini receive an output tool and Claude receives native JSON-schema
+output. Decoding reads only the request's settings and output parameters, so
+the caller rebuilds one request from the output type and never stores the
+prompt. Usage rows carry `details.processing = 'batch'`, which the usage
+estimate prices at half the standard rate (see
+[AI usage](ai-usage.md)).
+
+Batch content stays in the customer's provider account after the job. Pydantic
+AI deletes an OpenAI or Gemini input file only from the process that uploaded
+it, and a dream collects its batch from a later job, usually in another
+process. So the input file, which holds the framed transcripts, and the
+results stay until the provider expires them: about 30 days on OpenAI, 6 weeks
+on Gemini, and 29 days on Anthropic. Deleting a conversation in Praxis
+doesn't remove those copies.
 
 Anthropic requests without `max_tokens` ask for the model's maximum output.
 When that exceeds the SDK's non-streaming limit, Pydantic AI streams the

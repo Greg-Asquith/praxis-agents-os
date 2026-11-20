@@ -36,7 +36,11 @@ view reads. Region-level
 schema cache stores views with their descriptions and column descriptions, as
 it does tables. Row filters still reject views.
 
-The query tool executes once, then reads every result page from that same job.
+The query tool allows five minutes for execution by default. Set
+`BIGQUERY_QUERY_TIMEOUT_SECONDS` to choose a shorter limit. If BigQuery
+returns while the job is running, the tool waits for the same job and then
+reads every result page. Call the tool directly for long queries because
+Code Mode has a separate script timeout.
 Pagination keeps the billing project and location fixed, rejects repeated page
 tokens or inconsistent job metadata, and verifies the final row count.
 It adds no SQL row limit and does not cut rows or large cells to fit a model

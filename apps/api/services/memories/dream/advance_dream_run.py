@@ -1,17 +1,25 @@
 # apps/api/services/memories/dream/advance_dream_run.py
 
-"""Advance one dream run by one step: collect, extract, or consolidate and apply."""
+"""Advance one dream run by one step: collect, extract, or consolidate and apply.
+
+A model Pydantic AI can batch gets each step's requests as one batch: the step submits it,
+later jobs check on it, and the step finishes when its results are back. Other models
+get direct calls inside the job.
+"""
 
 import asyncio
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from pydantic_ai import Agent as HelperAgent
+from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import Model
+from pydantic_ai.models.batch import Batch
 from pydantic_ai.usage import RunUsage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +34,7 @@ from models.workspace import Workspace
 from services.agents.models import build_model, resolve_dream_model
 from services.agents.runtime.persistence import load_message_history_span
 from services.ai_usage.domain import PURPOSE_MEMORY_DREAMING, AIUsageEventData
+from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
 from services.ai_usage.run_metered_helper import run_metered_helper
 from services.ai_usage.utils import usage_values
 from services.audit_events.enums import AuditAction, AuditActorType, AuditResourceType
@@ -33,8 +42,19 @@ from services.audit_events.operations import safe_record_operation_audit_event
 from services.conversation_review import collect_finished_conversations, render_transcript
 from services.memories.domain import MEMORY_SCOPE_WORKSPACE, MemoryScope
 from services.memories.dream.apply_dream_operations import apply_dream_operations
+from services.memories.dream.batch import (
+    build_batch_request,
+    decode_output,
+    next_batch_check,
+    stored_batch,
+    submit_batch,
+    uses_batch,
+)
 from services.memories.dream.domain import (
+    BATCH_DEADLINE,
     DREAM_AUDIT_ACTOR,
+    DREAM_ERROR_BATCH_DEADLINE,
+    DREAM_ERROR_BATCH_FAILED,
     DREAM_ERROR_DISABLED,
     DREAM_STATUS_APPLYING,
     DREAM_STATUS_COLLECTING,
@@ -80,9 +100,12 @@ class _DreamModel:
 
 @dataclass(frozen=True)
 class _ModelCall:
+    """One request. `context` names who it is for and is stored with a batch."""
+
+    key: str
     instructions: str
     prompt: str
-    event: AIUsageEventData
+    context: dict[str, Any]
 
 
 async def advance_dream_run(db: AsyncSession, job: Job, *, model: Model | None = None) -> None:
@@ -100,19 +123,25 @@ async def advance_dream_run(db: AsyncSession, job: Job, *, model: Model | None =
     now = datetime.now(UTC)
     workspace = await db.get(Workspace, run.workspace_id)
     if not workspace.memory_learning_enabled:
+        await _cancel_open_batch(run, model)
         move_dream_run(run, DREAM_STATUS_FAILED, now=now, error_code=DREAM_ERROR_DISABLED)
         await db.flush()
         return
     if run.status == DREAM_STATUS_COLLECTING:
         await _collect(db, run, workspace=workspace, now=now)
     elif run.status == DREAM_STATUS_EXTRACTING:
-        await _extract(db, run, workspace=workspace, model=_dream_model(model))
+        await _extract(db, run, workspace=workspace, model=_dream_model(model), now=now)
     elif run.status == DREAM_STATUS_CONSOLIDATING:
-        await _consolidate_and_apply(db, run, workspace=workspace, model=_dream_model(model))
+        await _consolidate_and_apply(
+            db, run, workspace=workspace, model=_dream_model(model), now=now
+        )
     if run.status in FINAL_DREAM_STATUSES:
         await _audit_finished_run(db, run)
     else:
-        await enqueue_dream_step(db, run)
+        waiting = run.batch_handles.get(run.status)
+        await enqueue_dream_step(
+            db, run, run_after=next_batch_check(waiting, now=now) if waiting else None
+        )
     await db.flush()
 
 
@@ -157,9 +186,53 @@ async def _collect(
 
 
 async def _extract(
-    db: AsyncSession, run: MemoryDreamRun, *, workspace: Workspace, model: _DreamModel
+    db: AsyncSession,
+    run: MemoryDreamRun,
+    *,
+    workspace: Workspace,
+    model: _DreamModel,
+    now: datetime,
 ) -> None:
     """Asks the model what each conversation showed is worth remembering. Writes no memory."""
+    build_calls = partial(_extraction_calls, db, run, workspace=workspace)
+    if uses_batch(model.model):
+        outputs = await _batch_outputs(
+            db,
+            run,
+            workspace=workspace,
+            model=model,
+            output_type=DreamExtraction,
+            build_calls=build_calls,
+            now=now,
+        )
+        if outputs is None:
+            return
+    else:
+        outputs = await _call_all(run, workspace, model, DreamExtraction, await build_calls())
+        if all(output is None for output in outputs.values()):
+            raise DreamStepError("Every extraction call failed")
+    extracted = [(entry, outputs.get(entry["ref"])) for entry in run.conversations]
+    run.conversations = [
+        {
+            **entry,
+            "extracted": output is not None,
+            "candidates": (
+                [
+                    candidate.model_dump(mode="json")
+                    for candidate in output.memories[:MAX_CANDIDATES_PER_CONVERSATION]
+                ]
+                if output is not None
+                else []
+            ),
+        }
+        for entry, output in extracted
+    ]
+    move_dream_run(run, DREAM_STATUS_CONSOLIDATING, now=datetime.now(UTC))
+
+
+async def _extraction_calls(
+    db: AsyncSession, run: MemoryDreamRun, *, workspace: Workspace
+) -> list[_ModelCall]:
     known_by_scope: dict[tuple[MemoryScope, UUID | None], list[tuple[str, str]]] = {}
     calls: list[_ModelCall] = []
     for entry in run.conversations:
@@ -184,49 +257,66 @@ async def _extract(
             known=known_by_scope[(scope, user_id)],
             workspace_visible=scope == MEMORY_SCOPE_WORKSPACE,
         )
-        calls.append(
-            _ModelCall(
-                instructions=instructions,
-                prompt=prompt,
-                event=_usage_event(
-                    model,
-                    workspace=workspace,
-                    agent_id=UUID(entry["agent_id"]),
-                    user_id=UUID(entry["user_id"]),
-                    conversation_id=UUID(entry["id"]),
-                ),
-            )
-        )
-    outputs = await _call_all(run, model, DreamExtraction, calls)
-    if all(output is None for output in outputs):
-        raise DreamStepError("Every extraction call failed")
-    run.conversations = [
-        {
-            **entry,
-            "extracted": output is not None,
-            "candidates": (
-                [
-                    candidate.model_dump(mode="json")
-                    for candidate in output.memories[:MAX_CANDIDATES_PER_CONVERSATION]
-                ]
-                if output is not None
-                else []
-            ),
+        context = {
+            "agent_id": entry["agent_id"],
+            "user_id": entry["user_id"],
+            "conversation_id": entry["id"],
         }
-        for entry, output in zip(run.conversations, outputs, strict=True)
-    ]
-    move_dream_run(run, DREAM_STATUS_CONSOLIDATING, now=datetime.now(UTC))
+        calls.append(_ModelCall(entry["ref"], instructions, prompt, context))
+    return calls
 
 
 async def _consolidate_and_apply(
-    db: AsyncSession, run: MemoryDreamRun, *, workspace: Workspace, model: _DreamModel
+    db: AsyncSession,
+    run: MemoryDreamRun,
+    *,
+    workspace: Workspace,
+    model: _DreamModel,
+    now: datetime,
 ) -> None:
     """Asks for one scope's operations at a time, then applies them all in this transaction."""
+    build_calls = partial(_consolidation_calls, db, run, workspace=workspace)
+    if uses_batch(model.model):
+        outputs = await _batch_outputs(
+            db,
+            run,
+            workspace=workspace,
+            model=model,
+            output_type=DreamConsolidation,
+            build_calls=build_calls,
+            now=now,
+        )
+        if outputs is None:
+            return
+        contexts = run.batch_handles.get(DREAM_STATUS_CONSOLIDATING, {}).get("requests", {})
+    else:
+        calls = await build_calls()
+        outputs = await _call_all(run, workspace, model, DreamConsolidation, calls)
+        if calls and all(output is None for output in outputs.values()):
+            raise DreamStepError("Every consolidation call failed")
+        contexts = {call.key: call.context for call in calls}
+    applied_at = datetime.now(UTC)
+    move_dream_run(run, DREAM_STATUS_APPLYING, now=applied_at)
+    for key, context in contexts.items():
+        output = outputs.get(key)
+        if output is not None:
+            await apply_dream_operations(
+                db,
+                run=run,
+                request=await _scope_request(db, workspace=workspace, context=context),
+                operations=output.operations,
+                max_operations=settings.MEMORY_DREAM_MAX_OPERATIONS_PER_SCOPE,
+            )
+    move_dream_run(run, DREAM_STATUS_COMPLETED, now=applied_at)
+
+
+async def _consolidation_calls(
+    db: AsyncSession, run: MemoryDreamRun, *, workspace: Workspace
+) -> list[_ModelCall]:
     groups: dict[tuple[MemoryScope, UUID | None], list[Mapping[str, Any]]] = {}
     for entry in run.conversations:
         if entry["extracted"]:
             groups.setdefault(conversation_scope(workspace, entry), []).append(entry)
-    requests: list[DreamScopeRequest] = []
     calls: list[_ModelCall] = []
     for (scope, user_id), entries in groups.items():
         agent = await db.get(Agent, UUID(entries[0]["agent_id"]))
@@ -236,29 +326,36 @@ async def _consolidate_and_apply(
         if built is None:
             continue
         request, prompt = built
-        requests.append(request)
-        calls.append(
-            _ModelCall(
-                instructions=CONSOLIDATION_INSTRUCTIONS,
-                prompt=prompt,
-                event=_usage_event(model, workspace=workspace, agent_id=agent.id, user_id=user.id),
-            )
-        )
-    outputs = await _call_all(run, model, DreamConsolidation, calls)
-    if calls and all(output is None for output in outputs):
-        raise DreamStepError("Every consolidation call failed")
-    now = datetime.now(UTC)
-    move_dream_run(run, DREAM_STATUS_APPLYING, now=now)
-    for request, output in zip(requests, outputs, strict=True):
-        if output is not None:
-            await apply_dream_operations(
-                db,
-                run=run,
-                request=request,
-                operations=output.operations,
-                max_operations=settings.MEMORY_DREAM_MAX_OPERATIONS_PER_SCOPE,
-            )
-    move_dream_run(run, DREAM_STATUS_COMPLETED, now=now)
+        context = {
+            "agent_id": str(agent.id),
+            "user_id": str(user.id),
+            "scope": scope,
+            "memories": {ref: str(memory_id) for ref, memory_id in request.memories.items()},
+            "conversations": {
+                ref: str(conversation_id) for ref, conversation_id in request.conversations.items()
+            },
+        }
+        calls.append(_ModelCall(f"s{len(calls) + 1}", CONSOLIDATION_INSTRUCTIONS, prompt, context))
+    return calls
+
+
+async def _scope_request(
+    db: AsyncSession, *, workspace: Workspace, context: Mapping[str, Any]
+) -> DreamScopeRequest:
+    """Rebuilds what the server showed the model for one scope from its stored references."""
+    target = DreamScopeTarget(
+        workspace=workspace,
+        scope=context["scope"],
+        agent=await db.get(Agent, UUID(context["agent_id"])),
+        user=await db.get(User, UUID(context["user_id"])),
+    )
+    return DreamScopeRequest(
+        target=target,
+        memories={ref: UUID(memory_id) for ref, memory_id in context["memories"].items()},
+        conversations={
+            ref: UUID(conversation_id) for ref, conversation_id in context["conversations"].items()
+        },
+    )
 
 
 async def _consolidation_request(
@@ -349,10 +446,11 @@ async def _known_memories(
 
 async def _call_all[T](
     run: MemoryDreamRun,
+    workspace: Workspace,
     model: _DreamModel,
     output_type: type[T],
     calls: Sequence[_ModelCall],
-) -> list[T | None]:
+) -> dict[str, T | None]:
     """Runs the calls a few at a time; a failed call returns None and changes nothing."""
     semaphore = asyncio.Semaphore(EXTRACTION_CONCURRENCY)
     usages: list[RunUsage] = []
@@ -369,9 +467,10 @@ async def _call_all[T](
             usages.append(usage)
             return (await helper.run(call.prompt, usage=usage)).output
 
+        event = _usage_event(model, workspace=workspace, context=call.context)
         async with semaphore:
             try:
-                return await run_metered_helper(call.event, run_helper)
+                return await run_metered_helper(event, run_helper)
             except Exception:
                 logger.warning(
                     "Dream model call failed; it changes nothing",
@@ -381,12 +480,152 @@ async def _call_all[T](
                 return None
 
     outputs = await asyncio.gather(*(one(call) for call in calls))
+    _add_usage_totals(run, usages)
+    return {call.key: output for call, output in zip(calls, outputs, strict=True)}
+
+
+async def _batch_outputs[T](
+    db: AsyncSession,
+    run: MemoryDreamRun,
+    *,
+    workspace: Workspace,
+    model: _DreamModel,
+    output_type: type[T],
+    build_calls: Callable[[], Awaitable[list[_ModelCall]]],
+    now: datetime,
+) -> dict[str, T | None] | None:
+    """Submits the step's calls as one batch, or reads the batch back once it has ended.
+
+    Returns None while the batch runs, or once the run has failed on it.
+    """
+    stored = run.batch_handles.get(run.status)
+    if stored is None:
+        calls = await build_calls()
+        if not calls:
+            return {}
+        requests = [
+            await build_batch_request(
+                model.model,
+                custom_id=call.key,
+                output_type=output_type,
+                instructions=call.instructions,
+                prompt=call.prompt,
+            )
+            for call in calls
+        ]
+        handle = await submit_batch(model.model, requests, now=now)
+        handle["requests"] = {call.key: call.context for call in calls}
+        run.batch_handles = {**run.batch_handles, run.status: handle}
+        return None
+    batch = await model.model.batch_status(stored_batch(stored))
+    if batch.status == "ended":
+        return await _read_batch(
+            db,
+            run,
+            workspace=workspace,
+            model=model,
+            batch=batch,
+            contexts=stored["requests"],
+            output_type=output_type,
+        )
+    if now - datetime.fromisoformat(stored["submitted_at"]) >= BATCH_DEADLINE:
+        await model.model.batch_cancel(batch)
+        move_dream_run(run, DREAM_STATUS_FAILED, now=now, error_code=DREAM_ERROR_BATCH_DEADLINE)
+    else:
+        run.batch_handles = {
+            **run.batch_handles,
+            run.status: {**stored, "checks": stored["checks"] + 1},
+        }
+    return None
+
+
+async def _read_batch[T](
+    db: AsyncSession,
+    run: MemoryDreamRun,
+    *,
+    workspace: Workspace,
+    model: _DreamModel,
+    batch: Batch,
+    contexts: Mapping[str, Mapping[str, Any]],
+    output_type: type[T],
+) -> dict[str, T | None] | None:
+    """Decodes an ended batch. A failed or invalid result changes nothing for its request."""
+    # Decoding reads only the output parameters, so one rebuilt request serves every result.
+    decode_request = await build_batch_request(
+        model.model, custom_id="decode", output_type=output_type, instructions=None, prompt="-"
+    )
+    outputs: dict[str, T | None] = dict.fromkeys(contexts)
+    usages: list[RunUsage] = []
+    for result in await model.model.batch_results(batch):
+        if result.custom_id not in contexts:
+            continue
+        response, output = decode_output(model.model, result, decode_request, output_type)
+        outputs[result.custom_id] = output
+        if response is not None:
+            usages.append(
+                await _record_batch_usage(
+                    db,
+                    run,
+                    workspace=workspace,
+                    model=model,
+                    batch=batch,
+                    key=result.custom_id,
+                    context=contexts[result.custom_id],
+                    response=response,
+                )
+            )
+    _add_usage_totals(run, usages)
+    if all(output is None for output in outputs.values()):
+        move_dream_run(
+            run, DREAM_STATUS_FAILED, now=datetime.now(UTC), error_code=DREAM_ERROR_BATCH_FAILED
+        )
+        return None
+    return outputs
+
+
+async def _record_batch_usage(
+    db: AsyncSession,
+    run: MemoryDreamRun,
+    *,
+    workspace: Workspace,
+    model: _DreamModel,
+    batch: Batch,
+    key: str,
+    context: Mapping[str, Any],
+    response: ModelResponse,
+) -> RunUsage:
+    """Records one result's usage in the step's transaction, once per batch request."""
+    usage = RunUsage(requests=1)
+    usage.incr(response.usage)
+    event = replace(
+        _usage_event(model, workspace=workspace, context=context),
+        **usage_values(usage),
+        details={"processing": "batch"},
+        event_id=uuid5(run.id, f"{batch.id}:{key}"),
+    )
+    await record_ai_usage_in_transaction(db, event)
+    return usage
+
+
+async def _cancel_open_batch(run: MemoryDreamRun, model: Model | None) -> None:
+    """Asks the provider to stop the batch the run is waiting on, if any. Best effort."""
+    stored = run.batch_handles.get(run.status)
+    if stored is None:
+        return
+    try:
+        await _dream_model(model).model.batch_cancel(stored_batch(stored))
+    except Exception:
+        logger.warning(
+            "Could not cancel a dream batch", exc_info=True, extra={"dream_run_id": str(run.id)}
+        )
+
+
+def _add_usage_totals(run: MemoryDreamRun, usages: Sequence[RunUsage]) -> None:
     totals = dict(run.usage_totals)
     for usage in usages:
         for name, value in usage_values(usage).items():
             totals[name] = totals.get(name, 0) + value
     run.usage_totals = totals
-    return list(outputs)
 
 
 def _dream_model(model: Model | None) -> _DreamModel:
@@ -397,21 +636,17 @@ def _dream_model(model: Model | None) -> _DreamModel:
 
 
 def _usage_event(
-    model: _DreamModel,
-    *,
-    workspace: Workspace,
-    agent_id: UUID,
-    user_id: UUID,
-    conversation_id: UUID | None = None,
+    model: _DreamModel, *, workspace: Workspace, context: Mapping[str, Any]
 ) -> AIUsageEventData:
+    conversation_id = context.get("conversation_id")
     return AIUsageEventData(
         workspace_id=workspace.id,
         provider=model.provider,
         model=model.name,
         purpose=PURPOSE_MEMORY_DREAMING,
-        agent_id=agent_id,
-        user_id=user_id,
-        conversation_id=conversation_id,
+        agent_id=UUID(context["agent_id"]),
+        user_id=UUID(context["user_id"]),
+        conversation_id=UUID(conversation_id) if conversation_id else None,
     )
 
 

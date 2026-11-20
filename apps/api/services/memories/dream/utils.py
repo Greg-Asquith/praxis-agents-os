@@ -67,8 +67,13 @@ def move_dream_run(
         run.finished_at = now
 
 
-async def enqueue_dream_step(db: AsyncSession, run: MemoryDreamRun) -> Job:
-    """Queues the job that advances the run from its current status, once per status."""
+async def enqueue_dream_step(
+    db: AsyncSession, run: MemoryDreamRun, *, run_after: datetime | None = None
+) -> Job:
+    """Queues the job that advances the run from its current status, once per status.
+
+    A status that waits on a batch queues its next check the same way, at `run_after`.
+    """
     from services.jobs.enqueue_job import enqueue_job
 
     return await enqueue_job(
@@ -79,6 +84,7 @@ async def enqueue_dream_step(db: AsyncSession, run: MemoryDreamRun) -> Job:
         subject_id=run.id,
         payload={"status": run.status},
         content_hash=f"memory-dream:{run.id}:{run.status}",
+        run_after=run_after,
     )
 
 

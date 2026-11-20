@@ -83,6 +83,31 @@ async def test_summary_prices_utc_days_before_folding_and_sums_requests(
 
 
 @pytest.mark.asyncio
+async def test_summary_prices_batch_requests_at_half_the_standard_rate(
+    db_session: AsyncSession,
+) -> None:
+    occurred_at = datetime(2026, 11, 20, 12, tzinfo=UTC)
+    costs = []
+    for details in (None, {"processing": "batch"}):
+        workspace = build_workspace(slug=f"batch-{uuid4().hex}")
+        db_session.add(workspace)
+        await db_session.flush()
+        db_session.add(_event(workspace.id, occurred_at, output_tokens=200_000, details=details))
+        await db_session.flush()
+        summary = await get_usage_summary(
+            db_session,
+            workspace_id=workspace.id,
+            from_=datetime(2026, 11, 20, tzinfo=UTC),
+            to=datetime(2026, 11, 21, tzinfo=UTC),
+        )
+        costs.append(summary.totals.estimated_cost_usd)
+
+    standard, batch = costs
+    assert standard > 0
+    assert batch == standard / 2
+
+
+@pytest.mark.asyncio
 async def test_summary_zero_fills_every_utc_day_in_range(db_session: AsyncSession) -> None:
     workspace = build_workspace(slug=f"gaps-{uuid4().hex}")
     db_session.add(workspace)

@@ -67,8 +67,8 @@ settlement uses a bounded cleanup path.
 
 Startup ensures the system job
 `memory.dream_schedule`, which queues its successor after
-`MEMORY_DREAM_INTERVAL_SECONDS`. Each pass fails any run left unfinished for
-a whole interval, then creates a `memory_dream_runs` row and a
+`MEMORY_DREAM_INTERVAL_SECONDS`. Each pass fails any run that made no
+progress for a whole interval, then creates a `memory_dream_runs` row and a
 workspace-owned `memory.dream` job for each workspace that is due and has
 `memory_learning_enabled` on. That job
 runs under the workspace's tenant context and advances the run by one status
@@ -77,6 +77,16 @@ completes in the same transaction). Its hash is the run and status, and a
 job whose status no longer matches the run changes nothing, so a repeat
 writes nothing twice. A job that fails for good marks its run `failed`, and
 so does the next step after the workspace switch goes off.
+
+When the dream model has a batch API, `extracting` and `consolidating` each
+submit one provider batch, store its handle in `batch_handles`, and end the
+job. A follow-up job with the same hash checks the batch at `run_after`,
+from 2 minutes doubling to every 30 minutes, which keeps both under the
+shortest interval. Each check writes the run, so a waiting run is never
+taken for stalled. No job holds a lease while a provider works. A batch still
+open 25 hours after submission is cancelled and its run fails
+(`batch_deadline`). Turning the workspace switch off cancels the batch the
+run is waiting on.
 
 ## Mail merge sending
 

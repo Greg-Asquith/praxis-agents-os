@@ -14,7 +14,7 @@ class CodeModeSettingsMixin:
         description="Monty subprocesses maintained by each code-mode runtime process.",
     )
     AGENT_CODE_MODE_TIMEOUT_SECONDS: float = Field(
-        default=60.0,
+        default=300.0,
         gt=0,
         description="Cumulative wall-clock and interpreter duration limit for one script.",
     )

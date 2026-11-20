@@ -8,6 +8,7 @@
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -50,6 +51,8 @@ DREAM_RUN_SUBJECT_TYPE = "memory_dream_run"
 DREAM_ERROR_JOB_FAILED = "job_failed"
 DREAM_ERROR_STALLED = "stalled"
 DREAM_ERROR_DISABLED = "disabled"
+DREAM_ERROR_BATCH_DEADLINE = "batch_deadline"
+DREAM_ERROR_BATCH_FAILED = "batch_failed"
 
 MAX_CANDIDATES_PER_CONVERSATION = 10
 # The scope's most important memories, shown to extraction so it doesn't repeat them.
@@ -60,6 +63,13 @@ DUPLICATE_CLUSTER_SIMILARITY = 0.85
 DUPLICATE_CLUSTER_RECENT_MEMORIES = 300
 MAX_DUPLICATE_PAIRS = 10
 EXTRACTION_CONCURRENCY = 4
+
+# Batch checks back off from the first to the max; both stay under the shortest interval,
+# so a waiting run keeps moving and the scheduler never takes it for stalled.
+BATCH_FIRST_CHECK = timedelta(minutes=2)
+BATCH_MAX_CHECK_INTERVAL = timedelta(minutes=30)
+# OpenAI and Anthropic end a batch within 24 hours; one still open after this is cancelled.
+BATCH_DEADLINE = timedelta(hours=25)
 
 # Why a valid operation changed nothing.
 SKIP_PROTECTED = "protected"

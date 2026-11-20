@@ -204,7 +204,8 @@ DEFINITION = RuntimeToolDefinition(
         "but name only the view, not those tables. "
         "Use fully qualified backticked `project.dataset.table` names. Some tables may have "
         "operator-defined row filters, so results can contain a subset of the table's rows. "
-        "Add SQL LIMIT only for a requested top-N or limited result."
+        "Add SQL LIMIT only for a requested top-N or limited result. "
+        "Call this tool directly for queries that may exceed the Code Mode script timeout."
     )
     + REPORT_RESULT_GUIDANCE,
     provider="bigquery",
