@@ -78,6 +78,8 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
     created_by_user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # Set on every human edit, so a dream can tell a person's memory without reading audit.
+    last_edited_by_user_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("scope IN ('agent','user','workspace')", name="agent_memories_scope_check"),
@@ -105,7 +107,8 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
             name="agent_memories_archived_check",
         ),
         CheckConstraint(
-            "archive_reason IS NULL OR archive_reason IN ('expired','forgotten','user_deleted')",
+            "archive_reason IS NULL OR archive_reason IN ("
+            "'expired','forgotten','user_deleted','consolidated')",
             name="agent_memories_archive_reason_check",
         ),
         CheckConstraint("importance BETWEEN 1 AND 5", name="agent_memories_importance_check"),
@@ -120,10 +123,12 @@ class AgentMemory(Base, UUIDMixin, TimestampMixin):
             name="agent_memories_embedding_meta_check",
         ),
         CheckConstraint(
-            "source IN ('interactive','scheduled','delegated','event','user')",
+            "source IN ('interactive','scheduled','delegated','event','user','dream')",
             name="agent_memories_source_check",
         ),
-        CheckConstraint("created_by IN ('agent','user')", name="agent_memories_created_by_check"),
+        CheckConstraint(
+            "created_by IN ('agent','user','system')", name="agent_memories_created_by_check"
+        ),
         Index("ix_agent_memories_workspace_scope_status", "workspace_id", "scope", "status"),
         Index(
             "ix_agent_memories_active_core_scope",

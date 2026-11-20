@@ -10,6 +10,7 @@ type AIUsagePurpose =
   | "conversation_naming"
   | "history_summary"
   | "run_review"
+  | "memory_dreaming"
   | "kb_annotation"
   | "web_search"
   | "web_fetch"
@@ -30,6 +31,7 @@ const AI_TYPE_LABEL_BY_PURPOSE = {
   conversation_naming: "Conversation housekeeping",
   history_summary: "Conversation housekeeping",
   run_review: "Progress checks",
+  memory_dreaming: "Learning from conversations",
   kb_annotation: "Document processing",
   web_search: "Web research",
   web_fetch: "Web research",

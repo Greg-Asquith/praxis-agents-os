@@ -29,8 +29,8 @@ class MemoryResponse(BaseModel):
     agent_id: UUID | None
     agent_name: str | None
     user_id: UUID | None
-    source: Literal["interactive", "scheduled", "delegated", "event", "user"]
-    created_by: Literal["agent", "user"]
+    source: Literal["interactive", "scheduled", "delegated", "event", "user", "dream"]
+    created_by: Literal["agent", "user", "system"]
     created_by_user_id: UUID | None
     expires_at: datetime | None
     superseded_by_id: UUID | None

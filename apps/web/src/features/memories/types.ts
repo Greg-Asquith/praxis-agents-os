@@ -4,7 +4,7 @@ export type MemoryScope = "agent" | "user" | "workspace"
 export type MemoryKind = "core" | "note"
 export type MemoryType = "fact" | "preference" | "episode" | "outcome"
 export type MemoryStatus = "active" | "superseded" | "archived"
-type MemorySource = "interactive" | "scheduled" | "delegated" | "event" | "user"
+type MemorySource = "interactive" | "scheduled" | "delegated" | "event" | "user" | "dream"
 
 export type Memory = {
   id: string
@@ -21,7 +21,7 @@ export type Memory = {
   agent_name: string | null
   user_id: string | null
   source: MemorySource
-  created_by: "agent" | "user"
+  created_by: "agent" | "user" | "system"
   created_by_user_id: string | null
   expires_at: string | null
   superseded_by_id: string | null

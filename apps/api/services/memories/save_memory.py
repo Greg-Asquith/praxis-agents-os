@@ -2,6 +2,7 @@
 
 """Create a memory or explicitly resolve a near duplicate."""
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from models.agent import Agent
 from models.agent_memories import AgentMemory
 from models.user import User
 from models.workspace import Workspace
+from services.embeddings.domain import EmbeddingBatch
 from services.memories.domain import (
     MEMORY_KIND_CORE,
     MemoryKind,
@@ -51,7 +53,8 @@ async def save_memory(
     provenance: MemoryProvenance,
     duplicate_of: UUID | None = None,
     save_as_new: bool = False,
-    _replaces_memory_id: UUID | None = None,
+    _replaces_memory_ids: Collection[UUID] = (),
+    _embedded: EmbeddingBatch | None = None,
 ) -> MemorySaveResult:
     """Save a memory, requiring an explicit choice for near duplicates."""
     if duplicate_of is not None and save_as_new:
@@ -65,7 +68,7 @@ async def save_memory(
         raise AppValidationError("Memory expiry must be greater than zero", field="expires_in_days")
     validate_memory_content(kind=kind, title=title, content_md=content_md)
 
-    embedded = await try_embed_memory(
+    embedded = _embedded or await try_embed_memory(
         db,
         workspace_id=workspace.id,
         title=title,
@@ -95,7 +98,7 @@ async def save_memory(
             embedding_provider=embedded.provider,
             embedding_model=embedded.model,
             embedding_dims=embedded.dimensions,
-            exclude_id=_replaces_memory_id,
+            exclude_ids=_replaces_memory_ids,
         )
         is_near_duplicate = (
             nearest is not None
@@ -144,7 +147,7 @@ async def save_memory(
                 ),
                 AgentMemory.kind == MEMORY_KIND_CORE,
                 active_memory_filter(),
-                AgentMemory.id != _replaces_memory_id if _replaces_memory_id is not None else True,
+                AgentMemory.id.not_in(_replaces_memory_ids) if _replaces_memory_ids else True,
             )
         )
         if int(count or 0) >= settings.MEMORY_CORE_MAX_PER_SCOPE:

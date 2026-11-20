@@ -48,7 +48,7 @@ async def embed_memory(db: AsyncSession, *, memory_id: UUID) -> None:
         embedding_provider=embedded.provider,
         embedding_model=embedded.model,
         embedding_dims=embedded.dimensions,
-        exclude_id=memory.id,
+        exclude_ids=(memory.id,),
     )
     memory.embedding = vector
     memory.embedding_provider = embedded.provider

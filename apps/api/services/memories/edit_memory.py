@@ -2,6 +2,7 @@
 
 """Apply a human correction through the existing memory write service."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Request
@@ -58,6 +59,7 @@ async def edit_memory(
             created_by_user_id=actor.id,
         ),
     )
+    result.memory.last_edited_by_user_at = datetime.now(UTC)
     await db.flush()
     if result.superseded_memory_id is None:
         await record_memory_audit(

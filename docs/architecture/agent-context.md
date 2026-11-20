@@ -268,7 +268,23 @@ Durable, cross-conversation facts associated with a user, agent, or workspace.
   `forget_memory` go through the audited tool registry; core-memory writes
   always require approval, and an agent policy cannot weaken that.
 - **Management.** `/memories` routes, `services/memories/`, web UI where
-  operators review, correct, archive, and purge memories.
+  operators review, correct, archive, and purge memories. Every human edit
+  sets `last_edited_by_user_at`, including an in-place title, importance, or
+  expiry change, so automatic upkeep can tell a person's memory from the row.
+- **Learning from past conversations (pending).** Internally called
+  dreaming; the product never uses that word. The store and the apply engine
+  are in place (`services/memories/dream/`, `memory_dream_runs`); the
+  background job and model calls are pending (plan 335 slice B). The model
+  returns typed operations (`create`, `revise`, `merge`, `retire`,
+  `reinforce`) that name memories only by references the server supplied.
+  The server writes notes with `source='dream'` and `created_by='system'`,
+  sets the scope itself, and refuses a response that names an unknown
+  memory or puts private-chat content into workspace scope. It never
+  changes a core memory, a person's memory, or one a person edited, and
+  never recreates a memory archived as `forgotten` or `user_deleted`. A
+  merge supersedes every source row to one new memory; a retired memory is
+  archived as `consolidated`. Without an embedding it writes nothing, since
+  neither check can run.
 
 Use memory for information learned during a conversation that must shape later
 conversations. Store reference documents in the Knowledge Base and working

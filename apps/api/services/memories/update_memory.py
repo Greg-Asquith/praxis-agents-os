@@ -91,7 +91,7 @@ async def update_memory(
             expires_in_days=expires_in_days,
             provenance=provenance,
             save_as_new=True,
-            _replaces_memory_id=memory.id,
+            _replaces_memory_ids=(memory.id,),
         )
         successor = result.memory
         if successor is None:

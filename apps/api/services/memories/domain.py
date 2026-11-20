@@ -23,15 +23,19 @@ MEMORY_STATUS_ARCHIVED = "archived"
 ARCHIVE_REASON_EXPIRED = "expired"
 ARCHIVE_REASON_FORGOTTEN = "forgotten"
 ARCHIVE_REASON_USER_DELETED = "user_deleted"
+ARCHIVE_REASON_CONSOLIDATED = "consolidated"
 MEMORY_SOURCE_USER = "user"
+MEMORY_SOURCE_DREAM = "dream"
+MEMORY_CREATED_BY_USER = "user"
+MEMORY_CREATED_BY_SYSTEM = "system"
 MEMORY_EMBED_JOB_KIND = "memory.embed"
 MEMORY_TOOL_NAMES = frozenset({"save_memory", "search_memory", "update_memory", "forget_memory"})
 
 type MemoryScope = Literal["agent", "user", "workspace"]
 type MemoryKind = Literal["core", "note"]
 type MemoryType = Literal["fact", "preference", "episode", "outcome"]
-type MemorySource = Literal["interactive", "scheduled", "delegated", "event", "user"]
-type MemoryCreatedBy = Literal["agent", "user"]
+type MemorySource = Literal["interactive", "scheduled", "delegated", "event", "user", "dream"]
+type MemoryCreatedBy = Literal["agent", "user", "system"]
 
 
 @dataclass(frozen=True)

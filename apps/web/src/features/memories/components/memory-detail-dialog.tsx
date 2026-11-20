@@ -19,6 +19,7 @@ import { useDeleteMemoryMutation } from "@/features/memories/api/delete-memory"
 import { useMemoryDetailQuery } from "@/features/memories/api/get-memory"
 import {
   formatMemoryConfidence,
+  memoryOriginLabel,
   memoryScopeLabel,
 } from "@/features/memories/components/memory-display"
 import { MemoryEditForm } from "@/features/memories/components/memory-edit-form"
@@ -195,10 +196,7 @@ function MemoryDetail({ memory }: { memory: Memory }) {
       </div>
       <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <Detail label="Type" value={titleCaseToken(memory.memory_type, "Memory")} />
-        <Detail
-          label="Created by"
-          value={`${titleCaseToken(memory.created_by, "Unknown")} · ${titleCaseToken(memory.source, "Unknown")}`}
-        />
+        <Detail label="Created by" value={memoryOriginLabel(memory)} />
         <Detail label="Importance" value={`${String(memory.importance)} of 5`} />
         <Detail label="Stored confidence" value={formatMemoryConfidence(memory.confidence)} />
         <Detail

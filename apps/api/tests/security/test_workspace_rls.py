@@ -41,6 +41,7 @@ DIRECT_TABLES = (
     "skills",
     "classifiers",
     "media_generations",
+    "memory_dream_runs",
     "mail_merges",
     "mail_merge_recipients",
     "mail_merge_test_sends",

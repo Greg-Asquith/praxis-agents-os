@@ -4,6 +4,7 @@
 
 import asyncio
 import math
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID
@@ -290,7 +291,7 @@ async def find_near_duplicate(
     embedding_provider: str,
     embedding_model: str,
     embedding_dims: int,
-    exclude_id: UUID | None = None,
+    exclude_ids: Collection[UUID] = (),
 ) -> tuple[AgentMemory | None, float | None]:
     """Return the nearest active same-collection memory and cosine similarity."""
     distance = AgentMemory.embedding.cosine_distance(vector)
@@ -313,8 +314,8 @@ async def find_near_duplicate(
         .order_by(distance, AgentMemory.id)
         .limit(1)
     )
-    if exclude_id is not None:
-        stmt = stmt.where(AgentMemory.id != exclude_id)
+    if exclude_ids:
+        stmt = stmt.where(AgentMemory.id.not_in(exclude_ids))
     row = (await db.execute(stmt)).first()
     if row is None:
         return None, None

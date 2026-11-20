@@ -13,3 +13,11 @@ export function memoryScopeLabel(memory: Memory) {
   }
   return memory.scope === "user" ? "Personal" : titleCaseToken(memory.scope, "Scope")
 }
+
+// Background learning stays internal; the product calls it "Learned Automatically".
+export function memoryOriginLabel(memory: Memory) {
+  if (memory.source === "dream") {
+    return "Learned Automatically"
+  }
+  return `${titleCaseToken(memory.created_by, "Unknown")} · ${titleCaseToken(memory.source, "Unknown")}`
+}
