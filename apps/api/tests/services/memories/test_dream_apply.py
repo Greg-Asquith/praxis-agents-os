@@ -132,6 +132,27 @@ async def test_dream_leaves_a_memory_a_person_edited(
     assert memory.content_md == "Reports go out weekly."
 
 
+async def test_dream_leaves_a_memory_a_person_stopped_coming_up(
+    db_session: AsyncSession, memory_context: MemoryContext, monkeypatch
+) -> None:
+    install_fake_embeddings(monkeypatch)
+    memory = await _note(
+        db_session, memory_context, title="Report cadence", content="Reports go out weekly."
+    )
+    # An agent's later update keeps the switch but drops the person-edited mark.
+    memory.recall_disabled_at = datetime.now(UTC)
+    run = await _run(db_session, memory_context)
+    result = await _apply(
+        db_session,
+        run,
+        _request(memory_context, memories={"m1": memory.id}),
+        [{"op": "revise", "memory": "m1", "content_md": "Reports go out monthly."}],
+    )
+    await db_session.refresh(memory)
+    assert result.skipped["protected"] == 1
+    assert memory.status == "active"
+
+
 async def test_dream_does_not_recreate_a_forgotten_memory(
     db_session: AsyncSession, memory_context: MemoryContext, monkeypatch
 ) -> None:

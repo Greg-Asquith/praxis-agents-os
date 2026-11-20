@@ -17,7 +17,7 @@ class NotificationRead(BaseModel):
     source: str | None
     title: str
     body: str | None
-    payload: dict[str, Any]
+    payload: dict[str, Any] | None
     actions: list[dict[str, Any]]
     read_at: datetime | None
     actioned_at: datetime | None

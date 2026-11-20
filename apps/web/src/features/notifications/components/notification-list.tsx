@@ -39,7 +39,7 @@ export function NotificationList({
             <div className="min-w-0 flex-1">
               <button
                 type="button"
-                className="focus-visible:ring-ring w-full rounded-sm text-left outline-none focus-visible:ring-2 hover:cursor-pointer"
+                className="focus-visible:ring-ring w-full rounded-sm text-left outline-none hover:cursor-pointer focus-visible:ring-2"
                 onClick={() => {
                   onOpen(notification)
                 }}

@@ -150,7 +150,7 @@ async def nearest_memories(
 async def duplicate_pairs(
     db: AsyncSession, *, target_filter: ColumnElement[bool]
 ) -> list[tuple[UUID, UUID]]:
-    """Returns pairs among a scope's recent notes that are close enough to be duplicates."""
+    """Returns pairs among a scope's recent memories that are close enough to be duplicates."""
     recent = (
         select(
             AgentMemory.id,
@@ -184,8 +184,12 @@ async def duplicate_pairs(
 
 
 def is_protected_memory(memory: AgentMemory) -> bool:
-    """A person's memory and one a person edited are never changed by a dream."""
-    return memory.created_by == MEMORY_CREATED_BY_USER or memory.last_edited_by_user_at is not None
+    """A person's memory, and one a person edited or stopped coming up, is never changed."""
+    return (
+        memory.created_by == MEMORY_CREATED_BY_USER
+        or memory.last_edited_by_user_at is not None
+        or memory.recall_disabled_at is not None
+    )
 
 
 def named_memories(operation: DreamOperation) -> list[str]:

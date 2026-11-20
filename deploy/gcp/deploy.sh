@@ -210,8 +210,8 @@ require_integer_range MAIL_MERGE_DAILY_CAP_OUTLOOK_PERSONAL 1 1000
 require_integer_range MAIL_MERGE_DAILY_CAP_MICROSOFT_365 1 10000
 require_integer_range MAIL_MERGE_SEND_INTERVAL_SECONDS 2 60
 require_integer_range MAIL_MERGE_MAX_RECIPIENTS 1 500
-[[ "$MEMORY_RECALL_MIN_SIMILARITY" =~ ^0\.[0-9]+$ ]] \
-  || die "MEMORY_RECALL_MIN_SIMILARITY must be a decimal between 0 and 1"
+[[ "$MEMORY_RECALL_MIN_SIMILARITY" =~ ^0\.[0-9]*[1-9][0-9]*$ ]] \
+  || die "MEMORY_RECALL_MIN_SIMILARITY must be a decimal above 0 and below 1"
 for memory_recall_integer_variable in MEMORY_RECALL_MAX_MEMORIES MEMORY_RECALL_CHAR_BUDGET \
   MEMORY_RECALL_LINE_MAX_CHARS; do
   [[ "${!memory_recall_integer_variable}" =~ ^[0-9]+$ ]] \

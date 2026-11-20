@@ -12,6 +12,29 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Agents learn from finished conversations. About once a day, a background
+  pass reads each workspace's finished conversations and saves what is worth
+  keeping, such as preferences, decisions, and outcomes, and tidies
+  duplicates. What comes from a private conversation stays with its owner;
+  only a conversation shared with the workspace adds to shared memory. It
+  never changes a memory a person wrote, edited, or stopped coming up, and
+  never brings back one a person removed. It is on by default; owners and
+  admins turn it off with **Learn From Past Conversations** in the Memory
+  settings or **Workspace Settings**. It runs on `MEMORY_DREAM_MODEL`
+  (default `gpt-6-luna`) and uses the provider's batch API where there is
+  one, at about half the standard price.
+- Memories come up by themselves when they relate to a message. Each turn
+  adds the few most relevant memories after the message, so agents no longer
+  need a search to use them. Owners and admins can turn this off for the
+  workspace with **Use Memories Automatically**, and anyone who can edit a
+  memory can stop that one coming up while keeping it searchable.
+- A redesigned **Memory** page: **Shared** and **Private** tabs, search, a
+  source filter (**Learned Automatically**, **Saved by Agent**, **Edited by
+  People**), the conversation a memory came from when you can open it, and
+  every memory a merge replaced in its history.
+- A notification inbox: the bell in the header lists your own notifications
+  for the workspace, such as a failed background job or a connection that
+  needs signing in again, with mark as read, mark all read, and archive.
 - Send a mail merge, or bulk send, from your own Gmail or Outlook: ask an
   agent to email everyone on a spreadsheet, CSV file, or Airtable table, and
   it writes one email with each person's details filled in. The approval
@@ -579,6 +602,21 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Every memory is the same kind. The `core` kind, its always-visible list,
+  and its approval step are gone, so `save_memory`, `update_memory`, and
+  `forget_memory` run without approval unless an agent or workspace policy
+  asks for it. The memory tools and `GET /memories` no longer take or return
+  `kind`, and `GET /memories` takes `audience` (`private` or `shared`) in
+  place of `scope`. Put anything that must shape every conversation in the
+  agent's instructions.
+- `MEMORY_NOTE_MAX_CHARS` is now `MEMORY_MAX_CHARS`.
+- Production needs credentials for `MEMORY_DREAM_MODEL_PROVIDER` (default
+  `openai`), as it does for the other helper models. Set the provider and
+  `MEMORY_DREAM_MODEL` to one the deployment already uses if it has no
+  OpenAI key.
+- Code Mode scripts and BigQuery queries get five minutes by default:
+  `AGENT_CODE_MODE_TIMEOUT_SECONDS` and `BIGQUERY_QUERY_TIMEOUT_SECONDS` are
+  300, and `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS` is 305.
 - `gmail_send_message` always needs approval. An agent or workspace that
   had it set to run automatically now gets an approval card instead, so a
   loop of single sends can't stand in for a mail merge.
@@ -666,6 +704,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Removed
 
+- `MEMORY_CORE_MAX_PER_SCOPE`, `MEMORY_CORE_MAX_CHARS`,
+  `MEMORY_CORE_CHAR_BUDGET`, and `MEMORY_CORE_LINE_MAX_CHARS`, with the core
+  memory kind. Remove them from deployment env files.
 - Veo 3.1 usage prices and the per-second video pricing they used. Nothing
   calls Veo, and it's no longer a frontier model; Omni is priced by token.
 - `gemini-3.1-pro`. The Gemini API no longer serves that ID. A migration
@@ -700,6 +741,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+- Linking another sign-in provider to an account returns through the same
+  redirect address as sign-in, so each provider needs only one registered
+  redirect URI.
 - Edited videos keep their resolution: `edit_video` names the source's
   resolution, because Google returned a 1080p clip's edit at 720p. An edit
   on the Gemini API that Google refuses for the deployment's region now says

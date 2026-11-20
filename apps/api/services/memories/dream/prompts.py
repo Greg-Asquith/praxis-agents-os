@@ -17,8 +17,8 @@ rediscover: stable facts about the business and its tools, preferences, decision
 outcomes that are likely to matter again.
 
 - A large number of conversations hold nothing worth remembering. An empty list is a good answer.
-- Skip anything the agent can read again from its tools, files, or connected accounts, and
-  especially if is date sensitive like report data.
+- Skip anything the agent can read again from its tools, files, or connected accounts,
+  especially anything date-sensitive, such as report data.
 - Skip one-off details, small talk, and the steps of the task itself.
 - Write each memory as current understanding, not as a story of the session.
 - Skip anything already listed under known memories unless the conversation changed it.

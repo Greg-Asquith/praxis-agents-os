@@ -40,14 +40,12 @@ export function memoryOriginLabel(
   if (origin !== "person") {
     return MEMORY_ORIGIN_FILTER_LABELS[origin]
   }
+  // Only its owner can see or edit a private memory.
   const byViewer =
     viewer.isPersonalWorkspace ||
+    memory.scope === "user" ||
     (memory.created_by === "user" && memory.created_by_user_id === viewer.userId)
   return byViewer ? "Edited by You" : "Edited by Your Team"
-}
-
-export function memoryAudienceLabel(memory: Memory) {
-  return memory.scope === "user" ? MEMORY_AUDIENCE_LABELS.private : MEMORY_AUDIENCE_LABELS.shared
 }
 
 // A private or workspace memory reaches every agent; an agent memory only its own.

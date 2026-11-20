@@ -24,7 +24,7 @@ import { useUpdateMemoryMutation } from "@/features/memories/api/update-memory"
 import {
   MEMORY_STATUS_LABELS,
   formatMemoryConfidence,
-  memoryAudienceLabel,
+  MEMORY_AUDIENCE_LABELS,
   memoryOrigin,
   memoryUsedByLabel,
 } from "@/features/memories/components/memory-display"
@@ -33,7 +33,7 @@ import { MemoryOriginBadge } from "@/features/memories/components/memory-origin-
 import { SupersessionChain } from "@/features/memories/components/supersession-chain"
 import type { Memory } from "@/features/memories/types"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime, relativeDateTime, titleCaseToken } from "@/lib/format"
+import { formatDateTime, titleCaseToken } from "@/lib/format"
 
 export function MemoryDetailDialog({
   canEdit,
@@ -99,7 +99,9 @@ export function MemoryDetailDialog({
             <DialogTitle className="pr-8">{memory.title}</DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-2">
               <MemoryOriginBadge memory={memory} />
-              <Badge variant="outline">{memoryAudienceLabel(memory)}</Badge>
+              <Badge variant="outline">
+                {MEMORY_AUDIENCE_LABELS[memory.scope === "user" ? "private" : "shared"]}
+              </Badge>
               <Badge variant="outline">Used By {memoryUsedByLabel(memory)}</Badge>
               {memory.status === "active" ? null : (
                 <Badge variant="warning">{MEMORY_STATUS_LABELS[memory.status]}</Badge>
@@ -222,9 +224,9 @@ function WhereThisCameFrom({ memory }: { memory: Memory }) {
         {origin === "agent" ? `${agent} saved this` : null}
         {origin === "person" ? "A person wrote or corrected this" : null}
         {conversation ? <> from {conversation}</> : null}
-        {`, ${relativeDateTime(memory.created_at)}.`}
+        {`, ${formatDateTime(memory.created_at)}.`}
         {origin === "person" && memory.last_edited_by_user_at
-          ? ` Last edited ${relativeDateTime(memory.last_edited_by_user_at)}.`
+          ? ` Last edited ${formatDateTime(memory.last_edited_by_user_at)}.`
           : null}
       </p>
     </section>

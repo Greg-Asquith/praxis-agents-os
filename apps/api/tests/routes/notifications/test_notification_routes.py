@@ -60,8 +60,16 @@ async def test_recipient_reads_marks_and_archives_their_inbox(
     listed = await db_async_client.get(f"{_BASE}/", headers=recipient.headers)
     assert [item["id"] for item in listed.json()["items"]] == [str(personal.id)]
 
+    # Their own row in another workspace stays out of reach from this one.
+    for suffix in ("read", "unread", "archive", "actions/review"):
+        response = await db_async_client.post(
+            f"{_BASE}/{elsewhere.id}/{suffix}", headers=recipient.headers
+        )
+        assert response.status_code in (403, 404), (suffix, response.status_code)
+
     await db_session.refresh(elsewhere)
     assert elsewhere.read_at is None
+    assert elsewhere.archived is False
 
 
 async def test_no_one_else_can_list_read_or_act_on_a_notification(

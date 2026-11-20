@@ -24,7 +24,7 @@ class CodeModeSettingsMixin:
         description="Maximum wait for an available Monty subprocess.",
     )
     AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS: float = Field(
-        default=65.0,
+        default=305.0,
         gt=0,
         description="Monty worker-request backstop that replaces an unresponsive subprocess.",
     )

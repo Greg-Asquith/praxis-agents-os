@@ -1,12 +1,12 @@
 // apps/web/src/features/memories/components/memory-toolbar.tsx
 
 import { useId } from "react"
-import { ListFilterIcon, SearchIcon } from "lucide-react"
+import { ListFilterIcon } from "lucide-react"
 
+import { DebouncedSearchInput } from "@/components/forms/debounced-search-input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
@@ -46,37 +46,25 @@ export function MemoryToolbar({
   agents,
   filters,
   onFiltersChange,
-  onSearchChange,
-  search,
 }: {
   agents: Agent[]
   filters: MemoryFilters
   onFiltersChange: (filters: MemoryFilters) => void
-  onSearchChange: (search: string) => void
-  search: string
 }) {
   const moreFilterCount =
     (filters.memoryType ? 1 : 0) + (filters.status === DEFAULT_MEMORY_FILTERS.status ? 0 : 1)
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <div className="relative min-w-0 flex-1">
-        <SearchIcon
-          aria-hidden="true"
-          className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-        />
-        <Input
-          aria-label="Search memories"
-          autoComplete="off"
-          className="pl-9"
-          onChange={(event) => {
-            onSearchChange(event.currentTarget.value)
-          }}
-          placeholder="Search memories…"
-          type="search"
-          value={search}
-        />
-      </div>
+      <DebouncedSearchInput
+        ariaLabel="Search memories"
+        className="min-w-0 flex-1 sm:w-auto"
+        onChange={(q) => {
+          onFiltersChange({ ...filters, q })
+        }}
+        placeholder="Search memories…"
+        value={filters.q}
+      />
       <div className="flex flex-wrap gap-2">
         <FilterSelect
           allLabel="All Sources"

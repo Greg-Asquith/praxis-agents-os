@@ -123,12 +123,13 @@ default. _(enforced)_ The following rules define the defaults:
 - Learning from past conversations writes and tidies memories without
   approval, as the agent's own memory writes do. It never changes a person's
   memory or one a person edited, and its changes keep their history.
-  _(enforced; off by default)_
+  It is on by default, and owners and admins can turn it off for the
+  workspace. _(enforced)_
 - Memories that relate to a message come up in that turn without approval
   (owner, 2026-11-20). Recall reads only the scopes visible to the run, and a
   person controls it by editing or forgetting a memory, stopping one coming
   up automatically, or turning recall off for the workspace (owners and
-  admins). _(enforced; the page controls are pending)_
+  admins). _(enforced)_
 - Agent skill writes (`create_skill`, `update_skill`) always require approval.
   They are internal writes, but any agent that can see a saved skill may
   follow it, so the tools support only the `approval` policy. Agents can

@@ -25,6 +25,17 @@ export type UnreadNotificationCount = {
   unread: number
 }
 
+export type MarkAllNotificationsReadResponse = {
+  updated: number
+}
+
+export type NotificationActionResponse = {
+  status: string
+  result: unknown
+  terminal: boolean | null
+  action: string | null
+}
+
 export type NotificationAction = {
   key: string
   label: string

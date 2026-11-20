@@ -172,7 +172,7 @@ configured in `core/settings/code_mode.py` (`AGENT_CODE_MODE_*`):
 
 | Bound                                                    | Setting (default)                                                                                                                                                                 |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interpreter + cumulative wall-clock time                 | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (60s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker                                          |
+| Interpreter + cumulative wall-clock time                 | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (300s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker                                          |
 | Interpreter memory / recursion depth                     | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (256 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100)                                                                                        |
 | Nested calls per script                                  | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25)                                                                                                                                           |
 | Captured print output                                    | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000)                                                                                                                                        |

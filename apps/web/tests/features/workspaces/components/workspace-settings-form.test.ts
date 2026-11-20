@@ -76,7 +76,7 @@ it("sends the switch values in the workspace update", async () => {
       workspaceId: "team",
       payload: {
         name: "Updated team",
-        memory_learning_enabled: false,
+        memory_learning_enabled: shared,
         conversations_shared_by_default: shared,
       },
     })
@@ -87,7 +87,10 @@ async function submitForm(shared: boolean) {
   vi.unstubAllGlobals()
   const formData = new FormData()
   formData.set("name", " Updated team ")
-  if (shared) formData.set("conversations_shared_by_default", "on")
+  if (shared) {
+    formData.set("conversations_shared_by_default", "on")
+    formData.set("memory_learning_enabled", "on")
+  }
   vi.stubGlobal(
     "FormData",
     vi.fn(function () {

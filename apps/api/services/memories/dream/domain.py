@@ -96,7 +96,7 @@ class _Operation(BaseModel):
 
 
 class DreamCreate(_Operation):
-    """Save a new note. `conversation` names the conversation it was learned from."""
+    """Save a new memory. `conversation` names the conversation it was learned from."""
 
     op: Literal["create"]
     title: str

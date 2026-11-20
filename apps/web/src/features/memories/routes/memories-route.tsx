@@ -1,6 +1,6 @@
 // apps/web/src/features/memories/routes/memories-route.tsx
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import { Link } from "@tanstack/react-router"
 import { BrainIcon, SearchXIcon } from "lucide-react"
 
@@ -27,40 +27,24 @@ import { useActiveWorkspace } from "@/features/workspaces/components/use-active-
 import { canEditWorkspace, canManageWorkspace } from "@/features/workspaces/permissions"
 import { isOneOf } from "@/lib/guards"
 
-const SEARCH_DEBOUNCE_MS = 300
 const AUDIENCE_TABS = ["shared", "private"] as const
 const AUDIENCE_SET: ReadonlySet<MemoryAudience> = new Set(AUDIENCE_TABS)
 
 export function MemoriesRoute() {
   const { workspace } = useActiveWorkspace()
   const [isChangingView, startTransition] = useTransition()
-  const [baseFilters, setBaseFilters] = useState<MemoryFilters>(DEFAULT_MEMORY_FILTERS)
-  const [searchInput, setSearchInput] = useState("")
-  const [q, setQ] = useState("")
+  const [filters, setFilters] = useState<MemoryFilters>(DEFAULT_MEMORY_FILTERS)
   const [offset, setOffset] = useState(0)
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null)
-  const filters = useMemo(() => ({ ...baseFilters, q }), [baseFilters, q])
   const { data: agentsData } = useAgentsQuery({ includeInactive: true, limit: 100 })
   const { data } = useMemoriesQuery(memoryListParams(filters, offset))
   const role = workspace.current_user_role
   const narrowed = hasNarrowingFilters(filters)
 
-  // Keeps the current rows on screen while a search loads.
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      startTransition(() => {
-        setQ(searchInput.trim())
-        setOffset(0)
-      })
-    }, SEARCH_DEBOUNCE_MS)
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [searchInput])
-
+  // The transition keeps the current rows on screen while the next view loads.
   function changeFilters(nextFilters: MemoryFilters) {
     startTransition(() => {
-      setBaseFilters(nextFilters)
+      setFilters(nextFilters)
       setOffset(0)
     })
   }
@@ -86,7 +70,7 @@ export function MemoriesRoute() {
           value={filters.audience}
           onValueChange={(value: unknown) => {
             if (isOneOf(AUDIENCE_SET, value)) {
-              changeFilters({ ...baseFilters, audience: value, agentId: "" })
+              changeFilters({ ...filters, audience: value, agentId: "" })
             }
           }}
         >
@@ -106,8 +90,6 @@ export function MemoriesRoute() {
           agents={agentsData.agents}
           filters={filters}
           onFiltersChange={changeFilters}
-          onSearchChange={setSearchInput}
-          search={searchInput}
         />
       </div>
       <div aria-busy={isChangingView} className={isChangingView ? "opacity-60" : undefined}>
@@ -118,7 +100,6 @@ export function MemoriesRoute() {
                 action={
                   <Button
                     onClick={() => {
-                      setSearchInput("")
                       changeFilters({ ...DEFAULT_MEMORY_FILTERS, audience: filters.audience })
                     }}
                     type="button"

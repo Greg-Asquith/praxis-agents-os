@@ -33,8 +33,7 @@ from services.agents.models.domain import (
 )
 
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
-# OpenAI, Anthropic, and Gemini batch creates. A retry after the provider may have created
-# the batch would submit it twice, so only failures to connect are retried.
+# Batch creates retry only when the request never left, or one batch could be submitted twice.
 _BATCH_CREATE_PATH_SUFFIXES = ("/batches", ":batchGenerateContent")
 _UNSENT_REQUEST_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout)
 # The provider SDKs' own pool; a custom transport ignores client-level limits.

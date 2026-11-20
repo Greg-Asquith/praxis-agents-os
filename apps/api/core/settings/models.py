@@ -290,10 +290,10 @@ class LLMSettingsMixin:
         """Require credentials for the active providers in production.
 
         Active providers back the default agent, conversation naming, history
-        summarization, progress reviews, or learning from conversations. Local/development may run without keys; tests construct settings
-        without them. Registry membership is
-        validated at resolution time, not here, to keep settings free of service
-        imports.
+        summarization, progress reviews, or learning from conversations.
+        Local/development may run without keys; tests construct settings
+        without them. Registry membership is validated at resolution time, not
+        here, to keep settings free of service imports.
         """
         environment = getattr(self, "ENVIRONMENT", None)
         if environment != "production":

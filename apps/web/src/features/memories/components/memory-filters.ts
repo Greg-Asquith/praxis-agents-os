@@ -9,6 +9,8 @@ import type {
 } from "@/features/memories/types"
 
 export const MEMORY_PAGE_SIZE = 50
+// The API rejects longer search text.
+const MEMORY_SEARCH_MAX_CHARS = 200
 
 export type MemoryFilters = {
   audience: MemoryAudience
@@ -32,7 +34,7 @@ export function memoryListParams(filters: MemoryFilters, offset: number): ListMe
   return {
     audience: filters.audience,
     status: filters.status,
-    ...(filters.q ? { q: filters.q } : {}),
+    ...(filters.q ? { q: filters.q.slice(0, MEMORY_SEARCH_MAX_CHARS) } : {}),
     ...(filters.source ? { source: filters.source } : {}),
     ...(filters.audience === "shared" && filters.agentId ? { agentId: filters.agentId } : {}),
     ...(filters.memoryType ? { memoryType: filters.memoryType } : {}),

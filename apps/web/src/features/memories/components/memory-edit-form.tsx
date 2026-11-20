@@ -39,7 +39,12 @@ export function MemoryEditForm({
     setError(null)
     const payload = buildMemoryUpdatePayload(state)
     if (Array.isArray(payload)) {
-      setFieldErrors(buildFieldErrors(payload))
+      const errors = buildFieldErrors(payload)
+      setFieldErrors(errors)
+      // A collapsed Advanced section would hide its own errors.
+      if (errors["memory-importance"] || errors["memory-expiry"]) {
+        setAdvancedOpen(true)
+      }
       return
     }
     setFieldErrors({})

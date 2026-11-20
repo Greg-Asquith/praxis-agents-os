@@ -16,10 +16,13 @@ import { usePerformNotificationActionMutation } from "@/features/notifications/a
 import { useSetNotificationReadMutation } from "@/features/notifications/api/set-notification-read"
 import { NotificationList } from "@/features/notifications/components/notification-list"
 import { notificationTarget } from "@/features/notifications/notification-content"
-import type { AppNotification } from "@/features/notifications/types"
+import type { AppNotification, NotificationTarget } from "@/features/notifications/types"
 import { getErrorMessage } from "@/lib/api/errors"
+import { isNonEmptyString, isRecord } from "@/lib/guards"
 
 const PAGE_SIZE = 20
+// The API returns at most this many notifications in one request.
+const MAX_LIMIT = 100
 
 export function NotificationPanel({
   unread,
@@ -40,14 +43,15 @@ export function NotificationPanel({
   const error =
     query.error ?? setRead.error ?? archive.error ?? markAllRead.error ?? performAction.error
 
-  function open(notification: AppNotification) {
-    if (notification.read_at === null) {
-      setRead.mutate({ notificationId: notification.id, read: true })
-    }
-    const target = notificationTarget(notification)
-    if (target === null) {
-      return
-    }
+  // Only the newest failure shows, so an old one doesn't outlive a later success.
+  function clearErrors() {
+    setRead.reset()
+    archive.reset()
+    markAllRead.reset()
+    performAction.reset()
+  }
+
+  function go(target: NotificationTarget) {
     onNavigate()
     if (target.kind === "conversation") {
       void navigate({
@@ -62,8 +66,20 @@ export function NotificationPanel({
     })
   }
 
+  function open(notification: AppNotification) {
+    if (notification.read_at === null) {
+      clearErrors()
+      setRead.mutate({ notificationId: notification.id, read: true })
+    }
+    const target = notificationTarget(notification)
+    if (target !== null) {
+      go(target)
+    }
+  }
+
   const notifications = query.data?.items ?? []
-  const hasMore = query.data !== undefined && query.data.total > notifications.length
+  const hasMore =
+    query.data !== undefined && query.data.total > notifications.length && limit < MAX_LIMIT
 
   return (
     <>
@@ -75,6 +91,7 @@ export function NotificationPanel({
           type="button"
           variant="ghost"
           onClick={() => {
+            clearErrors()
             markAllRead.mutate()
           }}
         >
@@ -106,13 +123,29 @@ export function NotificationPanel({
             notifications={notifications}
             pending={pending}
             onAction={(notification, actionKey) => {
-              performAction.mutate({ notificationId: notification.id, actionKey })
+              clearErrors()
+              performAction.mutate(
+                { notificationId: notification.id, actionKey },
+                {
+                  onSuccess: ({ result }) => {
+                    if (
+                      isRecord(result) &&
+                      result["status"] === "navigate" &&
+                      isNonEmptyString(result["conversation_id"])
+                    ) {
+                      go({ kind: "conversation", conversationId: result["conversation_id"] })
+                    }
+                  },
+                }
+              )
             }}
             onArchive={(notification) => {
+              clearErrors()
               archive.mutate(notification.id)
             }}
             onOpen={open}
             onToggleRead={(notification) => {
+              clearErrors()
               setRead.mutate({
                 notificationId: notification.id,
                 read: notification.read_at === null,

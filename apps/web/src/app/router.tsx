@@ -89,8 +89,7 @@ const registerRoute = createRoute({
   ),
 })
 
-// Provider sign-in and account linking share one registered redirect URI, so this
-// sits outside the signed-out gate and dispatches on the state type.
+// Sign-in and account linking share one redirect URI, so this sits outside the signed-out gate.
 const oauthCallbackLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "oauth-callback",

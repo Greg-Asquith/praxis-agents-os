@@ -205,7 +205,7 @@ async def _write_content(
     operation: DreamCreate | DreamRevise | DreamMerge,
     sources: list[AgentMemory],
 ) -> str | None:
-    """Save new content as a note, superseding every source row with it."""
+    """Save new content as a memory, superseding every source row with it."""
     target = request.target
     if isinstance(operation, DreamCreate):
         title, memory_type, importance = (
