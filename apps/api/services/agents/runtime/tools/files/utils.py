@@ -11,6 +11,7 @@ from core.settings import settings
 from models.files import File, FileRevision
 from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
+from services.agents.runtime.code_mode.metadata import script_text_max_chars
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.untrusted import UntrustedNode
 from services.files.utils import (
@@ -25,16 +26,15 @@ from utils.content import ContentScope
 from utils.text_window import TextWindowError, utf8_window
 
 
-def content_limit(max_bytes: int | None) -> int:
-    """Validate and normalize a read content byte limit."""
+def content_limit(max_bytes: int | None, *, in_script: bool = False) -> int:
+    """Validate and normalize a read content byte limit; a script reads larger windows."""
+    ceiling = script_text_max_chars() if in_script else settings.READ_FILE_MAX_CONTENT_BYTES
     if max_bytes is None:
-        return settings.READ_FILE_MAX_CONTENT_BYTES
+        return ceiling
     if max_bytes < 1:
         raise ModelRetry("max_bytes must be greater than 0.")
-    if max_bytes > settings.READ_FILE_MAX_CONTENT_BYTES:
-        raise ModelRetry(
-            f"max_bytes cannot exceed {settings.READ_FILE_MAX_CONTENT_BYTES}; use offset to continue."
-        )
+    if max_bytes > ceiling:
+        raise ModelRetry(f"max_bytes cannot exceed {ceiling}; use offset to continue.")
     return max_bytes
 
 

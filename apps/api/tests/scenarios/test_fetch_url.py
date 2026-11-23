@@ -5,6 +5,7 @@
 import json
 from typing import Any
 
+import httpx2
 import pytest
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
 from sqlalchemy import select
@@ -106,6 +107,55 @@ async def test_fetch_url_reads_pages_without_a_model_and_saves_in_the_calling_wo
         )
     assert saved is not None and saved.workspace_id == context.workspace_id
     assert usage is None
+
+
+_LONG_TEXT = "line\n" * 1_000
+_READ_SCRIPT = """
+page = await fetch_url(url="https://docs.example/big.txt", save_to_files=True)
+window = await read_file(file_id=page["file"], max_bytes=4000)
+{"fetched": len(page["content"]["content"]), "cut": page["truncated"], "read": len(window["content"])}
+"""
+
+
+async def test_script_reads_whole_text_while_the_transcript_keeps_the_model_sized_cut(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    local_storage: None,
+) -> None:
+    monkeypatch.setattr(
+        fetch_url_tools,
+        "fetch_public_url",
+        fake_web(
+            {
+                "docs.example/big.txt": httpx2.Response(
+                    200, text=_LONG_TEXT, headers={"content-type": "text/plain"}
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 1_000)
+    monkeypatch.setattr(settings, "READ_FILE_MAX_CONTENT_BYTES", 1_000)
+    context = await build_scenario_agent(db_session_factory, tool_names=["fetch_url"])
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[ToolTurn((ToolCall("run_code", {"code": _READ_SCRIPT}, "read"),)), "Read."]
+        ),
+    )
+
+    [script] = result.tool_returns("run_code")
+    assert json.loads(script["content"]["content"]) == {
+        "fetched": 5_000,
+        "cut": False,
+        "read": 4_000,
+    }
+    fetched, read = (
+        call["presentation_result"] for call in script["metadata"]["code_mode_trace"]["calls"]
+    )
+    assert fetched["truncated"] and len(fetched["content"]["content"]) == 1_000
+    assert read["truncated"] and len(read["content"]) == 1_000
 
 
 async def _suspend_for_knowledge_base(

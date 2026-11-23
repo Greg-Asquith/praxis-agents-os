@@ -2,6 +2,7 @@
 
 import { artifactToolPresenter } from "@/features/conversations/components/artifact-tool-presenter"
 import { askUrlToolPresenter } from "@/features/conversations/components/ask-url-tool-presenter"
+import { checkUrlsToolPresenter } from "@/features/conversations/components/check-urls-tool-presenter"
 import { chartToolPresenter } from "@/features/conversations/components/chart-tool-presenter"
 import { classifierToolPresenter } from "@/features/conversations/components/classifier-tool-presenter"
 import { codeModeWorkflowPresenter } from "@/features/conversations/components/code-mode-presenter"
@@ -42,6 +43,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   forecastToolPresenter,
   askUrlToolPresenter,
   fetchUrlToolPresenter,
+  checkUrlsToolPresenter,
   webSearchToolPresenter,
   ...delegationToolPresenters,
   skillActivationPresenter,

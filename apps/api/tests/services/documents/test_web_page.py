@@ -1,8 +1,8 @@
 # apps/api/tests/services/documents/test_web_page.py
 
-"""Part and drop selection for fetched HTML pages."""
+"""Part and drop selection and page facts for fetched HTML pages."""
 
-from services.documents.web_page import web_page
+from services.documents.web_page import page_facts, web_page
 
 _PAGE = b"""<html><head><title>Shop</title><style>p{}</style></head>
 <body style="margin:0"><nav><a href="/about">About</a></nav>
@@ -30,3 +30,20 @@ def test_part_and_drop_select_what_a_page_returns() -> None:
     assert "data:image/png;base64,[removed]" in default_html
     assert "note" not in default_html and 'style="margin:0"' not in default_html
     assert "<!-- note -->" in served and "AAAA" in served
+
+
+def test_page_facts_read_meta_tags_case_insensitively() -> None:
+    page = b"""<html><head><title> Shop </title><meta name="Description" content="Plans">
+<meta name="robots" content="noindex"><link rel="alternate canonical" href="https://shop.example/">
+</head><body><h1>One</h1><h1>Two</h1></body></html>"""
+
+    facts, payload = page_facts("markdown", {}, page, None)
+
+    assert payload is None
+    assert facts == {
+        "title": "Shop",
+        "description": "Plans",
+        "canonical": "https://shop.example/",
+        "robots": "noindex",
+        "h1_count": 2,
+    }

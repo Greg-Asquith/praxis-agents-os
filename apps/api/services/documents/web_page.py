@@ -47,6 +47,41 @@ def web_page(_format: str, args: dict[str, Any], data: bytes, _limits: Any) -> H
     return {"title": title, "truncated": truncated}, content.encode("utf-8")
 
 
+def page_facts(_format: str, _args: dict[str, Any], data: bytes, _limits: Any) -> HandlerResult:
+    """Returns the title, meta description, canonical, meta robots, and H1 count."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(data, "html.parser")
+    canonical = next(
+        (
+            link.get("href")
+            for link in soup.find_all("link", href=True)
+            if "canonical" in [value.lower() for value in link.get("rel") or ()]
+        ),
+        None,
+    )
+    facts = {
+        "title": _title(soup),
+        "description": _meta_content(soup, "description"),
+        "canonical": _bounded_text(canonical),
+        "robots": _meta_content(soup, "robots"),
+        "h1_count": len(soup.find_all("h1")),
+    }
+    return facts, None
+
+
+def _meta_content(soup: Any, name: str) -> str | None:
+    for tag in soup.find_all("meta", attrs={"name": True}):
+        if str(tag["name"]).strip().lower() == name:
+            return _bounded_text(tag.get("content"))
+    return None
+
+
+def _bounded_text(value: Any) -> str | None:
+    text = " ".join(str(value).split()) if isinstance(value, str) else ""
+    return text[:_TITLE_MAX_CHARS] or None
+
+
 def _title(soup: Any) -> str | None:
     tag = soup.find("title")
     text = " ".join(tag.get_text().split()) if tag is not None else ""

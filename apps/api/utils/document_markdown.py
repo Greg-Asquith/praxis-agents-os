@@ -148,6 +148,16 @@ async def render_web_page(
     )
 
 
+async def read_page_facts(data: bytes) -> dict[str, Any]:
+    """Returns an HTML page's title, description, canonical, robots, and `h1_count` from a worker.
+
+    Raises:
+        DocumentConversionError: If the page can't be parsed.
+    """
+    result = await _run("page_facts", data, "text/html", "page.html", strict_utf8=False)
+    return result.value
+
+
 def document_extension(filename: str, *, content_type: str | None = None) -> str:
     """Return a safe lower-case document extension."""
     suffix = PurePosixPath(safe_filename(filename)).suffix.lower()

@@ -48,8 +48,9 @@ the description asks for provider-first queries with one broad noun
 registered provider by key, display name, or the display name's first word
 ("Outlook" names both Outlook providers). A query that names a provider only
 matches that provider's tools, and returns nothing when none are mounted; a
-provider on its own returns all of them. "platform" covers core, native,
-Knowledge Base, and workspace classifier tools. A search returns at most 30
+provider on its own returns all of them. "platform" covers every tool whose
+provider isn't a connected service, such as core, native, web, Knowledge
+Base, and workspace classifier tools. A search returns at most 30
 tools, undiscovered ones first, so repeating a full search loads the rest.
 The conversation renders the search as a **Find Tools**
 row that lists the discovered tools by label
@@ -231,6 +232,8 @@ commit outcomes do not trigger speculative object deletion.
 `read_table` accepts it with a `lists` entry name and pages the saved rows as
 records. Code Mode nested calls keep
 their complete computational inputs within the sandbox's existing limits.
+In a script, `fetch_url` and `read_file` return text past their model-sized
+cut, and return the cut copy as their public result for the transcript.
 Only its bounded final answer enters model context.
 
 The first response contains the preview. Later requests reuse that saved

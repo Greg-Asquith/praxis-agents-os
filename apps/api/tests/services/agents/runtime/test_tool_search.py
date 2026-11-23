@@ -75,16 +75,17 @@ def test_capped_search_progresses_to_undiscovered_matches() -> None:
     assert set(corpus) - set(first) <= set(second)
 
 
-def test_platform_search_finds_workspace_classifiers() -> None:
+def test_platform_search_finds_built_in_tools_outside_connected_services() -> None:
     classifier = replace(
         RUNTIME_TOOL_CATALOG["create_artifact"],
         name="classifier_lead_quality",
         label="Lead quality classifier",
         provider="classifier",
     )
-    matches = _search(
-        "platform classifier",
-        corpus=[*CORPUS, classifier.name],
-        workspace_definitions=[classifier],
-    )
-    assert matches == ["classifier_lead_quality"]
+    corpus = [*CORPUS, classifier.name, "fetch_url", "check_urls"]
+
+    def search(query: str) -> list[str]:
+        return _search(query, corpus=corpus, workspace_definitions=[classifier])
+
+    assert search("platform classifier") == ["classifier_lead_quality"]
+    assert set(search("platform fetch_url check_urls")[:2]) == {"fetch_url", "check_urls"}

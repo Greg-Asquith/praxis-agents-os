@@ -178,6 +178,10 @@ class RunFetchBudget:
             per_host=settings.WEB_FETCH_HOST_CONCURRENCY,
         )
 
+    @property
+    def remaining(self) -> int:
+        return self.max_urls - self.used
+
     def take(self, count: int = 1) -> bool:
         """Reserves `count` URLs, returning false without reserving any when too few remain."""
         if self.used + count > self.max_urls:

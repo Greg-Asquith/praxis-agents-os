@@ -15,7 +15,6 @@ from services.agents.runtime.tools.registry import resolve_runtime_tool_definiti
 from services.integrations.manifest import PROVIDER_MANIFESTS
 
 PLATFORM_PROVIDER = "platform"
-_PLATFORM_TOOL_PROVIDERS = frozenset({"core", "native", "kb", "classifier"})
 _PLATFORM_NAMES = ({"platform"}, {"internal"}, {"builtin"})
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # Enough to return every tool of the largest provider in one search.
@@ -97,8 +96,9 @@ class _IndexedTool:
     def build(
         cls, tool: ToolDefinition, definition: RuntimeToolDefinition | None
     ) -> "_IndexedTool":
+        # Any provider that isn't a connected service, such as core, web, or a classifier, is built in.
         provider = definition.provider if definition else PLATFORM_PROVIDER
-        if provider in _PLATFORM_TOOL_PROVIDERS:
+        if provider not in PROVIDER_MANIFESTS:
             provider = PLATFORM_PROVIDER
         label = definition.label if definition else ""
         return cls(

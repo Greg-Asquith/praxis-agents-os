@@ -39,16 +39,31 @@ class WebFetchSettingsMixin:
         description="Maximum decoded response bytes one web fetch reads.",
     )
     WEB_FETCH_HOST_CONCURRENCY: int = Field(
-        default=2,
+        default=5,
         ge=1,
         le=10,
         description="Requests one agent run sends to a single host at once.",
     )
     WEB_FETCH_RUN_URL_BUDGET: int = Field(
+        default=5_000,
+        ge=1,
+        le=50_000,
+        description="URLs one agent run can fetch across the web tools.",
+    )
+    WEB_FETCH_MAX_URLS_PER_CALL: int = Field(
         default=500,
         ge=1,
-        le=10_000,
-        description="URLs one agent run can fetch across the web tools.",
+        le=1_000,
+        description="URLs one check_urls call checks.",
+    )
+    WEB_FETCH_BATCH_DEADLINE_SECONDS: float = Field(
+        default=120.0,
+        gt=0,
+        le=240,
+        description=(
+            "Total time for one check_urls call; URLs it doesn't reach return not_checked. "
+            "Stays under the Code Mode script timeout."
+        ),
     )
 
     @field_validator("WEB_FETCH_BLOCKED_DOMAINS")

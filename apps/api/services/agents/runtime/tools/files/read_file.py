@@ -10,6 +10,7 @@ from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.messages import BinaryContent
 
 from core.settings import settings
+from services.agents.runtime.code_mode.metadata import called_from_script
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.contract import (
@@ -32,6 +33,9 @@ from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import DocumentConversionError
 
+# The transcript copy of a script's read: one normal window plus headroom for escaping.
+_MAX_PUBLIC_RESULT_CHARS = 6 * settings.READ_FILE_MAX_CONTENT_BYTES + 64_000
+
 
 @runtime_tool(
     name="read_file",
@@ -41,13 +45,16 @@ from utils.document_markdown import DocumentConversionError
     code_eligible=True,
     description=(
         "Inspect a workspace or published platform file by id. "
-        "Use content mode for inspection; use url mode only when the user needs a download."
+        "Use content mode for inspection; use url mode only when the user needs a download. "
+        f"Content mode reads {settings.READ_FILE_MAX_CONTENT_BYTES:,} bytes at a time; in "
+        "run_code a script reads up to the sandbox value limit per call."
     ),
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
     timeout=settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0,
     configurable=False,
     auto_mount=True,
+    max_public_result_chars=_MAX_PUBLIC_RESULT_CHARS,
     presentation=ToolPresentation(
         icon="file",
         running_label="Reading a File",
@@ -75,7 +82,8 @@ async def read_file(
     """Read file content or a signed download URL."""
     if offset < 0:
         raise ModelRetry("offset must be greater than or equal to 0.")
-    normalized_limit = content_limit(max_bytes)
+    in_script = called_from_script(ctx)
+    normalized_limit = content_limit(max_bytes, in_script=in_script)
 
     file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
     if mode == "url":
@@ -95,7 +103,7 @@ async def read_file(
 
     if file.category == FileCategory.EDITABLE_TEXT.value:
         data = await get_storage_provider().get_object(file_revision_ref(revision))
-        return slice_text(
+        return _text_window(
             data.decode("utf-8", errors="replace"),
             offset=offset,
             max_bytes=normalized_limit,
@@ -122,7 +130,7 @@ async def read_file(
                 f"{message} For a .pptx, .xlsx, or .docx file, pass this file id to "
                 "read_presentation, read_workbook, or read_word_document instead."
             ) from exc
-        return slice_text(
+        return _text_window(
             markdown,
             offset=offset,
             max_bytes=normalized_limit,
@@ -170,3 +178,19 @@ async def read_file(
         "This file type cannot be inspected as content. "
         "Use mode='url' only if the user requested a download."
     )
+
+
+def _text_window(
+    text: str, *, offset: int, max_bytes: int, metadata: dict[str, object]
+) -> dict[str, object] | ToolReturn:
+    shown = slice_text(
+        text,
+        offset=offset,
+        max_bytes=min(max_bytes, settings.READ_FILE_MAX_CONTENT_BYTES),
+        metadata=metadata,
+    )
+    if max_bytes <= settings.READ_FILE_MAX_CONTENT_BYTES or not shown["truncated"]:
+        return shown
+    # A script reads the larger window; the transcript keeps one normal window.
+    window = slice_text(text, offset=offset, max_bytes=max_bytes, metadata=metadata)
+    return ToolReturn(return_value=window, metadata={"public_result": shown})

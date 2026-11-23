@@ -12,10 +12,11 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
-from pydantic_ai import ApprovalRequired, ModelRetry, RunContext
+from pydantic_ai import ApprovalRequired, ModelRetry, RunContext, ToolReturn
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
+from services.agents.runtime.code_mode.metadata import called_from_script, script_text_max_chars
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import ENVELOPE_DENIAL_MESSAGE, ROLE_DENIAL_MESSAGE
 from services.agents.runtime.entity_references.domain import (
@@ -29,7 +30,8 @@ from services.agents.runtime.tools import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
-from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
+from services.agents.runtime.tools.web.nodes import WebRedirect, redirect_nodes, untrusted
+from services.agents.runtime.untrusted import UntrustedNode
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.integrations.files.create_copy import create_copy
@@ -45,13 +47,8 @@ from utils.document_markdown import DocumentConversionError
 
 _DEFAULT_DROP: tuple[DropKind, ...] = ("styles", "svg", "comments", "data_uris")
 _HTML_ONLY_PARTS = frozenset({"head", "full"})
-_SOURCE_KIND = "web_fetch"
-
-
-class FetchUrlRedirect(BaseModel):
-    url: UntrustedNode
-    status: int
-    location: UntrustedNode
+# The transcript copy of a script's fetch: the model-sized cut plus headroom for escaping and hops.
+_MAX_PUBLIC_RESULT_CHARS = 6 * (settings.AGENT_TOOL_RESULT_MAX_CHARS or 0) + 200_000
 
 
 class FetchUrlOutput(BaseModel):
@@ -61,7 +58,7 @@ class FetchUrlOutput(BaseModel):
     requested_url: str
     final_url: UntrustedNode
     status: int
-    redirects: list[FetchUrlRedirect]
+    redirects: list[WebRedirect]
     blocked_by_site: bool = Field(
         description="True when the site refused an automated request, not a broken page."
     )
@@ -91,7 +88,8 @@ class FetchUrlOutput(BaseModel):
         "format='html' with part='head' for meta tags, or part='full' for the whole source. "
         "Text, JSON, XML, feeds, JavaScript, and CSS return verbatim; PDF and Office files "
         f"return as markdown. Content over {settings.AGENT_TOOL_RESULT_MAX_CHARS:,} "
-        "characters is cut: set save_to_files and read the File in windows instead. "
+        "characters is cut: set save_to_files and read the File in windows instead. In "
+        "run_code the script gets the whole text, so parse long pages and sitemaps there. "
         "Set add_to_knowledge_base only when the user wants the page kept and refreshed "
         "in the Knowledge Base; that waits for approval. Use ask_url to answer a question "
         "about a page with a helper model instead."
@@ -103,6 +101,7 @@ class FetchUrlOutput(BaseModel):
     takes_ctx=True,
     timeout=None,
     output_model=FetchUrlOutput,
+    max_public_result_chars=_MAX_PUBLIC_RESULT_CHARS,
     presentation=ToolPresentation(
         icon="link",
         running_label="Fetching {url}",
@@ -172,7 +171,7 @@ async def fetch_url(
         Field(description="Also add the URL as a refreshed Knowledge Base source. Needs approval."),
     ] = False,
     provider: Annotated[Literal["http"], Field(description="Fetch backend.")] = "http",
-) -> dict[str, Any]:
+) -> dict[str, Any] | ToolReturn:
     """Fetches one URL and optionally saves it to Files or the Knowledge Base."""
     if part in _HTML_ONLY_PARTS and format != "html":
         raise ModelRetry(f"part='{part}' needs format='html'.")
@@ -193,37 +192,43 @@ async def fetch_url(
         drop=_DEFAULT_DROP if drop is None else tuple(drop),
         user_agent=user_agent,
     )
-    content, truncated = _bounded(page.content)
-    notes = [_page_note(response, page, truncated)]
-    file = None
-    if save_to_files:
-        file, file_note = await _save_to_files(ctx.deps, response)
-        notes.append(file_note)
+    file, file_note = await _save_to_files(ctx.deps, response) if save_to_files else (None, None)
     document = (
         await _add_to_knowledge_base(ctx.deps, response, page) if add_to_knowledge_base else None
     )
+    shown = _result(response, page, settings.AGENT_TOOL_RESULT_MAX_CHARS, file, file_note, document)
+    if not called_from_script(ctx) or not shown["truncated"]:
+        return shown
+    # A script reads the whole text; the transcript keeps the model-sized cut.
+    full = _result(response, page, script_text_max_chars(), file, file_note, document)
+    return ToolReturn(return_value=full, metadata={"public_result": shown})
+
+
+def _result(
+    response: FetchedResponse,
+    page: PageContent,
+    limit: int | None,
+    file: dict[str, Any] | None,
+    file_note: str | None,
+    document: dict[str, Any] | None,
+) -> dict[str, Any]:
+    content, truncated = _bounded(page.content, limit)
+    notes = (_page_note(response, page, truncated, limit), file_note)
     return {
-        "provider": provider,
+        "provider": "http",
         "requested_url": response.requested_url,
-        "final_url": _untrusted(response.requested_url, response.final_url),
+        "final_url": untrusted(response.requested_url, response.final_url),
         "status": response.status,
-        "redirects": [
-            {
-                "url": _untrusted(response.requested_url, hop.url),
-                "status": hop.status,
-                "location": _untrusted(response.requested_url, hop.location),
-            }
-            for hop in response.redirects
-        ],
+        "redirects": redirect_nodes(response.requested_url, response.redirects),
         "blocked_by_site": response.blocked_by_site,
         "user_agent": response.user_agent,
-        "content_type": _untrusted(response.requested_url, response.content_type),
+        "content_type": untrusted(response.requested_url, response.content_type),
         "format": page.format,
-        "title": _untrusted(response.requested_url, page.title) if page.title else None,
+        "title": untrusted(response.requested_url, page.title) if page.title else None,
         "fetched_at": datetime.now(UTC).isoformat(),
         "bytes": len(response.body),
         "truncated": truncated,
-        "content": _untrusted(response.requested_url, content) if content is not None else None,
+        "content": untrusted(response.requested_url, content) if content is not None else None,
         "note": " ".join(note for note in notes if note) or None,
         "file": file,
         "knowledge_base_document": document,
@@ -273,21 +278,22 @@ async def _fetch_and_read(
     return response, page
 
 
-def _bounded(content: str | None) -> tuple[str | None, bool]:
-    limit = settings.AGENT_TOOL_RESULT_MAX_CHARS
-    if content is None or len(content) <= limit:
+def _bounded(content: str | None, limit: int | None) -> tuple[str | None, bool]:
+    if content is None or limit is None or len(content) <= limit:
         return content, False
     return content[:limit], True
 
 
-def _page_note(response: FetchedResponse, page: PageContent, truncated: bool) -> str | None:
+def _page_note(
+    response: FetchedResponse, page: PageContent, truncated: bool, limit: int | None
+) -> str | None:
     if response.blocked_by_site:
         return "The site refused an automated request; the page itself may be fine."
     if page.format == "unsupported":
         return "fetch_url doesn't return this content type; content_type names it."
     if truncated:
         return (
-            f"The content was cut at {settings.AGENT_TOOL_RESULT_MAX_CHARS:,} characters. "
+            f"The content was cut at {limit or 0:,} characters. "
             "Set save_to_files and read the File in windows for the rest."
         )
     return None
@@ -362,7 +368,3 @@ async def _add_to_knowledge_base(
     # The page title stays out of the model-visible label; it is server-controlled.
     label = page_file_name(response.requested_url)
     return KnowledgeDocumentReference(entity_id=document.id, label=label).model_dump(mode="json")
-
-
-def _untrusted(source_ref: str, content: str) -> UntrustedContent:
-    return UntrustedContent(source_kind=_SOURCE_KIND, source_ref=source_ref, content=content)
