@@ -23,6 +23,7 @@ source "$ENV_FILE"
 GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}
 ANTHROPIC_VERTEX_AI=${ANTHROPIC_VERTEX_AI:-false}
 VERTEX_PARTNER_MODELS_ENABLED=${VERTEX_PARTNER_MODELS_ENABLED:-false}
+PAGESPEED_ENABLED=${PAGESPEED_ENABLED:-false}
 MEDIA_RENDERER_SERVICE_ACCOUNT=${MEDIA_RENDERER_SERVICE_ACCOUNT:-praxis-media-renderer@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
 DATA_SCIENCE_SERVICE_ACCOUNT=${DATA_SCIENCE_SERVICE_ACCOUNT:-praxis-data-science@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
 set +a
@@ -70,7 +71,7 @@ done
 [[ "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] || die "LOG_RETENTION_DAYS must be an integer"
 for boolean_variable in \
   CLOUD_SQL_DELETION_PROTECTION CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE GOOGLE_VERTEX_AI \
-  ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED; do
+  ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED PAGESPEED_ENABLED; do
   [[ "${!boolean_variable}" == "true" || "${!boolean_variable}" == "false" ]] \
     || die "$boolean_variable must be true or false"
 done
@@ -245,6 +246,12 @@ secret_key_secret_id=$(binding_secret_id SECRET_KEY)
 metrics_token_secret_id=$(binding_secret_id METRICS_TOKEN)
 [[ "$maintenance_url_secret_id" == "$DATABASE_MAINTENANCE_URL_SECRET_ID" ]] \
   || die "DATABASE_MAINTENANCE_URL_SECRET_ID must match the DATABASE_MAINTENANCE_URL binding"
+if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
+  # The binding only names the secret; this bootstrap creates the key and its first version.
+  [[ ",$RUNTIME_SECRET_BINDINGS," == *",PAGESPEED_API_KEY="* ]] \
+    || die "PAGESPEED_ENABLED=true needs PAGESPEED_API_KEY=praxis-pagespeed-api-key at the end of RUNTIME_SECRET_BINDINGS; bootstrap then creates the key"
+  pagespeed_secret_id=$(binding_secret_id PAGESPEED_API_KEY)
+fi
 
 echo "Checking required APIs"
 apis=(
@@ -266,6 +273,10 @@ if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
   if [[ "$ANTHROPIC_VERTEX_AI" == "true" || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
     apis+=(compute.googleapis.com)
   fi
+fi
+# measure_page_speed calls PageSpeed Insights with a restricted key that this bootstrap creates.
+if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
+  apis+=(pagespeedonline.googleapis.com apikeys.googleapis.com)
 fi
 for api in "${apis[@]}"; do
   state=$(gcloud services list --enabled --project="$GCP_PROJECT_ID" \
@@ -518,6 +529,47 @@ if [[ "$seed_secret_key" == "true" || "$seed_metrics_token" == "true" \
   fi
 else
   echo "-- Generated secret versions: nothing to change"
+fi
+
+pagespeed_key_name() {
+  gcloud services api-keys list --project="$GCP_PROJECT_ID" \
+    --filter='displayName=praxis-pagespeed' --format='value(name)' --limit=1 --quiet \
+    || die "could not list API keys; running the bootstrap needs the API Keys Admin role"
+}
+
+if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
+  echo "Checking PageSpeed API key"
+  pagespeed_key=$(pagespeed_key_name)
+  seed_pagespeed_key=false
+  secret_has_enabled_version "$pagespeed_secret_id" || seed_pagespeed_key=true
+  if [[ -z "$pagespeed_key" || "$seed_pagespeed_key" == "true" ]]; then
+    echo
+    echo "== PageSpeed API key will run these commands (key string redacted) =="
+    if [[ -z "$pagespeed_key" ]]; then
+      printf '  gcloud services api-keys create --display-name=praxis-pagespeed --api-target=service=pagespeedonline.googleapis.com --project=%q --format=none --quiet\n' \
+        "$GCP_PROJECT_ID"
+    fi
+    printf '  gcloud services api-keys get-key-string [praxis-pagespeed key] | gcloud secrets versions add %q --data-file=- --project=%q --quiet\n' \
+      "$pagespeed_secret_id" "$GCP_PROJECT_ID"
+    confirm_sensitive_section "PageSpeed API key"
+
+    if [[ -z "$pagespeed_key" ]]; then
+      # --format=none keeps the new key string out of the terminal.
+      run gcloud services api-keys create --display-name=praxis-pagespeed \
+        --api-target=service=pagespeedonline.googleapis.com --project="$GCP_PROJECT_ID" \
+        --format=none --quiet
+      pagespeed_key=$(pagespeed_key_name)
+      [[ -n "$pagespeed_key" ]] || die "the praxis-pagespeed API key was not found after creation"
+    fi
+    printf '+ gcloud services api-keys get-key-string %q | gcloud secrets versions add %q --data-file=- --project=%q --quiet\n' \
+      "$pagespeed_key" "$pagespeed_secret_id" "$GCP_PROJECT_ID"
+    gcloud services api-keys get-key-string "$pagespeed_key" --project="$GCP_PROJECT_ID" \
+      --format='value(keyString)' --quiet | tr -d '\n' \
+      | gcloud secrets versions add "$pagespeed_secret_id" --data-file=- \
+        --project="$GCP_PROJECT_ID" --quiet
+  else
+    echo "-- PageSpeed API key: nothing to change"
+  fi
 fi
 
 echo "Checking public-assets bucket"

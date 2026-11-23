@@ -136,6 +136,27 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/small-renderer-render" \
 fi
 grep -q 'MEDIA_RENDERER_MEMORY must cover' "$TEST_TMP/small-renderer.out"
 
+# PageSpeed needs its key bound as a secret, and the bootstrap's key stays restricted and unprinted.
+sed 's/^PAGESPEED_ENABLED=.*$/PAGESPEED_ENABLED=true/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/pagespeed-unbound.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/pagespeed-unbound-render" \
+  "$TEST_TMP/pagespeed-unbound.env" abcdef0123456789 \
+  >"$TEST_TMP/pagespeed-unbound.out" 2>&1; then
+  echo "render unexpectedly accepted PageSpeed without a PAGESPEED_API_KEY binding" >&2
+  exit 1
+fi
+grep -q 'requires a PAGESPEED_API_KEY entry' "$TEST_TMP/pagespeed-unbound.out"
+sed 's/^\(RUNTIME_SECRET_BINDINGS=.*\)$/\1,PAGESPEED_API_KEY=praxis-pagespeed-api-key/' \
+  "$TEST_TMP/pagespeed-unbound.env" > "$TEST_TMP/pagespeed.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/pagespeed-render" \
+  "$TEST_TMP/pagespeed.env" abcdef0123456789
+for manifest in services/praxis-api.yaml jobs/praxis-worker.yaml; do
+  grep -A3 'name: PAGESPEED_API_KEY' "$TEST_TMP/pagespeed-render/$manifest" \
+    | grep -q 'name: praxis-pagespeed-api-key'
+done
+grep -Fq -- '--api-target=service=pagespeedonline.googleapis.com' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- "--format=none --quiet" "$GCP_DIR/bootstrap.sh"
+
 # App-domain share links render an empty origin as a string, never YAML null.
 sed -e 's/^ARTIFACT_ORIGIN=.*$/ARTIFACT_ORIGIN=/' \
   -e 's/^ARTIFACT_ALLOW_APP_DOMAIN=.*$/ARTIFACT_ALLOW_APP_DOMAIN=true/' \

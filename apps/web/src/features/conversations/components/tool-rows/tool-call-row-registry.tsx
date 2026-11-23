@@ -12,6 +12,7 @@ import { delegationToolPresenters } from "@/features/conversations/components/to
 import { forecastToolPresenter } from "@/features/conversations/components/tools/analysis/forecast-tool-presenter"
 import { fetchUrlToolPresenter } from "@/features/conversations/components/tools/web/fetch-url-tool-presenter"
 import { inspectPageToolPresenter } from "@/features/conversations/components/tools/web/inspect-page-tool-presenter"
+import { pageSpeedToolPresenter } from "@/features/conversations/components/tools/web/page-speed-tool-presenter"
 import { fileToolPresenter } from "@/features/conversations/components/tools/files/file-tool-presenter"
 import { kbToolPresenter } from "@/features/conversations/components/tools/knowledge/kb-tool-presenter"
 import { memoryToolPresenter } from "@/features/conversations/components/tools/knowledge/memory-tool-presenter"
@@ -46,6 +47,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   fetchUrlToolPresenter,
   checkUrlsToolPresenter,
   inspectPageToolPresenter,
+  pageSpeedToolPresenter,
   webSearchToolPresenter,
   ...delegationToolPresenters,
   skillActivationPresenter,

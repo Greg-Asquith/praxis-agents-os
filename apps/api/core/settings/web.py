@@ -1,10 +1,10 @@
 # apps/api/core/settings/web.py
 
-"""Limits and the domain denylist for the agent web tools."""
+"""Limits, the domain denylist, and the PageSpeed Insights key for the agent web tools."""
 
 import re
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 
 _DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
@@ -65,6 +65,46 @@ class WebFetchSettingsMixin:
             "Stays under the Code Mode script timeout."
         ),
     )
+    PAGESPEED_API_KEY: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Google API key restricted to the PageSpeed Insights API. measure_page_speed "
+            "is available only while it's set."
+        ),
+    )
+    PAGESPEED_TIMEOUT_SECONDS: float = Field(
+        default=90.0,
+        gt=0,
+        le=120,
+        description="Time for one PageSpeed Insights test.",
+    )
+    PAGESPEED_MAX_URLS_PER_CALL: int = Field(
+        default=50,
+        ge=1,
+        le=100,
+        description="Pages one measure_page_speed call tests.",
+    )
+    PAGESPEED_BATCH_DEADLINE_SECONDS: float = Field(
+        default=240.0,
+        gt=0,
+        le=270,
+        description=(
+            "Total time for one measure_page_speed call; pages it doesn't reach return "
+            "not_checked. Stays under the Code Mode script timeout."
+        ),
+    )
+    PAGESPEED_RUN_BUDGET: int = Field(
+        default=200,
+        ge=1,
+        le=2_000,
+        description="PageSpeed Insights tests one agent run can start.",
+    )
+
+    @field_validator("PAGESPEED_API_KEY")
+    @classmethod
+    def validate_pagespeed_api_key(cls, value: SecretStr | None) -> SecretStr | None:
+        # An empty deploy value means no key, so the tool stays unavailable.
+        return value if value is not None and value.get_secret_value().strip() else None
 
     @field_validator("WEB_FETCH_BLOCKED_DOMAINS")
     @classmethod

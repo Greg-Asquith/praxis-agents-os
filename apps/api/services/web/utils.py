@@ -178,6 +178,14 @@ class RunFetchBudget:
             per_host=settings.WEB_FETCH_HOST_CONCURRENCY,
         )
 
+    @classmethod
+    def for_page_speed(cls) -> RunFetchBudget:
+        """Creates the budget of PageSpeed Insights tests; Google sends those requests."""
+        return cls(
+            max_urls=settings.PAGESPEED_RUN_BUDGET,
+            per_host=settings.WEB_FETCH_HOST_CONCURRENCY,
+        )
+
     @property
     def remaining(self) -> int:
         return self.max_urls - self.used

@@ -2,8 +2,8 @@
 
 # Web tools
 
-Read this before changing `fetch_url`, `check_urls`, `inspect_page`, `ask_url`, the
-shared web transport, or saving fetched pages. Backend paths are relative to `apps/api/`.
+Read this before changing `fetch_url`, `check_urls`, `inspect_page`,
+`measure_page_speed`, `ask_url`, the shared web transport, or saving fetched pages. Backend paths are relative to `apps/api/`.
 
 The web tools split by job:
 
@@ -13,9 +13,11 @@ The web tools split by job:
 | `fetch_url` | Return one URL's content | Praxis HTTP | None | Yes |
 | `check_urls` | Status, redirects, and headers for many URLs | Praxis HTTP | None | Yes |
 | `inspect_page` | Structured facts about a page, sitemap, or `robots.txt` | Praxis HTTP | None | Yes |
+| `measure_page_speed` | Speed scores and Core Web Vitals for up to 50 pages | Google PageSpeed Insights | None (the deploy's own key) | Yes |
 
 `fetch_url`, `check_urls`, and `inspect_page` need no model provider, so
-they work on a deploy with any single provider.
+they work on a deploy with any single provider. `measure_page_speed` is
+available only while `PAGESPEED_API_KEY` is set.
 
 ## Shared transport
 
@@ -50,9 +52,15 @@ The web tools read these settings from `core/settings/web.py`:
 | `WEB_FETCH_RUN_URL_BUDGET` | `5000` | URLs one run fetches or checks across the HTTP web tools, including in scripts that fail. |
 | `WEB_FETCH_MAX_URLS_PER_CALL` | `500` | URLs one `check_urls` call checks. |
 | `WEB_FETCH_BATCH_DEADLINE_SECONDS` | `120` | One deadline per `check_urls` call, under the Code Mode script timeout. |
+| `PAGESPEED_API_KEY` | unset | Google API key restricted to the PageSpeed Insights API. Without it, `measure_page_speed` is unavailable. Separate from `GOOGLE_API_KEY`. |
+| `PAGESPEED_TIMEOUT_SECONDS` | `90` | Time for one page's test. |
+| `PAGESPEED_MAX_URLS_PER_CALL` | `50` | Pages one `measure_page_speed` call tests. |
+| `PAGESPEED_BATCH_DEADLINE_SECONDS` | `240` | One deadline per `measure_page_speed` call, under the Code Mode script timeout. |
+| `PAGESPEED_RUN_BUDGET` | `200` | Tests one run starts, including in scripts that fail. |
 
 The run budget and per-host limiter live on `RuntimeDeps.web_fetch_budget`,
-so a run resumed after an approval starts a fresh count. Each setting is
+and the test budget on `RuntimeDeps.page_speed_budget`, so a run resumed
+after an approval starts a fresh count. Each setting is
 wired through `apps/api/.env.example` and the GCP deploy files.
 
 ## `fetch_url`
@@ -237,6 +245,82 @@ JSON-LD block opens to its formatted source as text. Empty tabs are hidden.
 A sitemap shows its entries, and `robots.txt` shows its rules with Disallow
 and Allow filters.
 
+## `measure_page_speed`
+
+`tools/web/measure_page_speed.py` registers `measure_page_speed(urls,
+strategy, categories)`, Code Mode eligible, provider `web`, with `urls`
+editable as a `list` field in approvals. `strategy` is `mobile` (default) or
+`desktop`; `categories` is any of `performance` (default), `accessibility`,
+`best_practices`, and `seo`. Duplicates are tested once.
+
+Google fetches the page, so the shared transport isn't used.
+`services/web/page_speed.py::run_page_speed_test` first validates the URL
+(HTTP or HTTPS on ports 80 and 443), checks the denylist, and resolves the
+host to public addresses, so an internal host name never reaches Google.
+It then sends one `GET` to the PageSpeed Insights v5 API with the key in the
+`X-Goog-Api-Key` header, never in the URL. Ten tests run at once (a module
+constant, well inside Google's per-minute quota), each within
+`PAGESPEED_TIMEOUT_SECONDS`, and the call stops at
+`PAGESPEED_BATCH_DEADLINE_SECONDS`. Pages the deadline or the run budget
+doesn't reach return `error_class: "not_checked"`, as in `check_urls`. Other
+error classes are the URL refusals (`invalid_url`, `unsupported_port`,
+`non_public_address`, `blocked_domain`, `dns_failure`), `page_unreachable`
+and `page_error` from Lighthouse, `key_rejected`, `quota_exceeded`,
+`timeout`, and `service_error`. The tool records no usage events.
+
+Google's response is 300 KB to 1 MB a page, so the tool never returns it.
+`reduce_page_speed` keeps three levels of detail:
+
+1. **A summary row per page** in model context: requested URL, `final_url`
+   (a node, null when unchanged), category scores (0 to 100), lab metrics
+   (`lcp_ms`, `cls`, `tbt_ms`, `fcp_ms`, `speed_index_ms`), real-visit
+   `field` data for the page (LCP, INP, CLS, and TTFB at the 75th
+   percentile, each rated, plus `core_web_vitals` passed or failed), the
+   three failed performance audits with the largest estimated saving (audit
+   ID and saving only), `report`, and `error_class`. Field data for each
+   requested origin is in the result's `origins`, keyed like
+   `https://example.com`, so 50 pages of one site carry it once. The result
+   also has `tested`, `not_checked`, `budget_remaining`, and `report_file`.
+   Fifty rows stay under 40,000 characters.
+2. **A saved report File**: one internal tool-result File per call, written
+   through `save_tool_result`, holding a JSON array with one page per line.
+   Each page's report is ASCII JSON of at most 40,000 bytes: failed audits by
+   category with title, description, display value, estimated saving, and up
+   to 20 detail items (resource address, sizes, wasted time, element
+   selector, and a snippet cut to 300 characters), the LCP element, up to 20
+   third parties, passed audit IDs, run warnings, the Lighthouse version, and
+   the test time. Screenshots, the filmstrip, the treemap, the network
+   request list, and translation strings are dropped. Detail items are cut
+   first, then audits, and `truncated` is set.
+3. **One page in full, on request**: each row's `report` is a byte `offset`
+   and `length` into `report_file`. `read_file` with those values returns the
+   page's report in one window, with no second test.
+
+An audit fails when its score is under 0.9 in a scored display mode
+(`numeric`, `binary`, or `metricSavings`); metric audits and hidden audits
+aren't issues. An estimated saving is the larger of `overallSavingsMs` and
+the audit's LCP, FCP, TBT, or INP metric saving. Core Web Vitals pass when
+LCP and CLS, and INP when Google has it, are all rated good; without LCP or
+CLS data the assessment is null. Google reports page data from the origin
+when the page has too few visits (`origin_fallback`); the row's `field` is
+then null.
+
+The **Measure Page Speed** row shows Pages Tested, Median Performance, and
+Passing Core Web Vitals tiles, a device badge, and one table row per page,
+lowest score first, with Good, Needs Improvement, Poor, and Not Tested
+filters. A page's URL opens its detail in a popover: category scores, lab
+and visitor metrics side by side against Google's thresholds, and the
+report's Opportunities, Diagnostics, and other categories' issues, each
+opening a popover with its description and affected resources. The card
+loads that page's range of the report File through the Files revision APIs
+only when the popover opens. A one-page call shows the detail in place of
+the table. Report text renders as text only; Markdown links keep their words
+and drop their addresses, and the one external link is PageSpeed Insights
+for the agent's requested URL.
+
+For the GCP key setup, see "Optional: Turn on page speed testing" in
+`deploy/gcp/README.md`.
+
 ## `ask_url`
 
 `tools/native/ask_url.py` registers `ask_url(url, question, provider,
@@ -257,7 +341,11 @@ provenance node: `fetch_url` content, title, final URL, content type, and
 redirect hops; `check_urls` final URLs, content types, headers, redirect
 hops, and page facts; `inspect_page` meta text, headings, links, images,
 JSON-LD, headers, sitemap locations, and `robots.txt` values; and the
-`ask_url` answer. `inspect_page` tag vendors are Praxis names, and tag IDs and
+`ask_url` answer. `measure_page_speed` returns only its final URL as a node:
+scores, timings, ratings, and audit IDs (matched against a fixed pattern) are
+plain values. Its report File holds Google's other strings, and `read_file`
+returns tool-result Files as `file` nodes, so reading a report taints a
+script too. `inspect_page` tag vendors are Praxis names, and tag IDs and
 sitemap `lastmod` values must match fixed patterns, so they arrive as plain
 strings. The model sees the nodes inside the shared untrusted frame, and a
 result from any HTTP web tool taints a Code Mode interpreter. The web app shows fetched HTML as source text and links only
@@ -288,6 +376,16 @@ These suites cover the web tools:
 - `tests/scenarios/test_inspect_page.py`: a page's canonical, Tag Manager
   ID, and missing-alt count, a hostile title and header stored as nodes and
   framed only in the model request, and a gzipped sitemap's entries.
+- `tests/services/web/test_page_speed.py`: the request's key header and
+  parameters, the reducer on a recorded response (scores, lab and field
+  metrics, Core Web Vitals, ranked issues, report items), the 40,000-byte
+  report bound, private and denylisted URLs refused before any request to
+  Google, and the error classes for Lighthouse, key, and quota errors.
+- `tests/scenarios/test_measure_page_speed.py`: a script testing 50 pages in
+  one nested call and returning the five slowest within 40,000 characters,
+  `read_file` at one row's range returning that page's failed audits and a
+  hostile snippet inside a node, the run budget refusing the next call, and
+  `not_checked` rows past a shortened deadline.
 - `tests/scenarios/test_ask_url.py`: approval editing of the URL and
   question, and the denylist retry.
 - `tests/routes/web/test_save_fetched_page.py`: the person's save and the

@@ -277,6 +277,49 @@ named in the response and request an increase if needed. An unenabled Sonnet 5
 model returned a quota-exceeded 429 during deployment verification; that status
 alone does not establish that an enabled model has exhausted its allowance.
 
+#### Optional: Turn on page speed testing
+
+The `measure_page_speed` agent tool scores pages with Google PageSpeed
+Insights on a key in your own project. The API is free; Google sets the
+quota. The tool is available only while the deploy has the key. To turn it
+on, do the following:
+
+1. In the environment file, set `PAGESPEED_ENABLED=true` and append
+   `PAGESPEED_API_KEY=praxis-pagespeed-api-key` to `RUNTIME_SECRET_BINDINGS`.
+2. Run bootstrap. It enables the PageSpeed Insights and API Keys APIs. In its
+   **PageSpeed API key** section, it creates a key named `praxis-pagespeed`
+   restricted to the PageSpeed Insights API, then adds the key string to the
+   `praxis-pagespeed-api-key` secret without printing it. A second run changes
+   nothing. Running this section needs the API Keys Admin role
+   (`roles/serviceusage.apiKeysAdmin`).
+3. Deploy again.
+
+If your project manages API keys by hand, set `PAGESPEED_ENABLED=false`, keep
+the binding, and create the key and its secret version yourself. The first
+command creates a key restricted to the PageSpeed Insights API, and the second
+stores its key string in the secret:
+
+```bash
+gcloud services api-keys create --display-name=praxis-pagespeed \
+  --api-target=service=pagespeedonline.googleapis.com \
+  --project=PROJECT_ID --format=none
+gcloud services api-keys get-key-string KEY_NAME --project=PROJECT_ID \
+  --format='value(keyString)' | tr -d '\n' \
+  | gcloud secrets versions add praxis-pagespeed-api-key --data-file=- \
+    --project=PROJECT_ID
+```
+
+Replace the following:
+
+- `PROJECT_ID`: the value of `GCP_PROJECT_ID`.
+- `KEY_NAME`: the key's resource name, which
+  `gcloud services api-keys list --filter=displayName=praxis-pagespeed`
+  returns.
+
+Bootstrap still creates the secret from the binding, but with
+`PAGESPEED_ENABLED=false` it doesn't enable the APIs, so enable
+`pagespeedonline.googleapis.com` and `apikeys.googleapis.com` first.
+
 ### 5. Create the first super admin
 
 With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft

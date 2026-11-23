@@ -48,3 +48,4 @@ class RuntimeDeps:
     workspace_tool_policies: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     # Lives as long as these deps, so a resumed run starts a fresh count.
     web_fetch_budget: RunFetchBudget = field(default_factory=RunFetchBudget.from_settings)
+    page_speed_budget: RunFetchBudget = field(default_factory=RunFetchBudget.for_page_speed)

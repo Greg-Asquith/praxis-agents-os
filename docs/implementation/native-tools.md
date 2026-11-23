@@ -21,7 +21,8 @@ a hard limit on repeated searches.
 web fetch. `fetch_url` returns a page's content, `check_urls` checks many
 URLs' status and redirects, and `inspect_page` returns structured facts about
 a page, sitemap, or `robots.txt`, all on Praxis infrastructure with no helper
-model. For these tools, the shared settings, and saving fetched pages, see
+model. Where the deploy has a PageSpeed key, `measure_page_speed` scores page
+speed with Google PageSpeed Insights. For these tools, the shared settings, and saving fetched pages, see
 [Web tools](web-tools.md).
 
 ## Code and Office files

@@ -63,7 +63,8 @@ Write the script like this:
   `check_urls` checks the status and redirects of many URLs per call, and `inspect_page`
   returns a page's facts or a sitemap's entries. Each URL these tools open counts against the
   run's URL budget, even in a script that fails, so fetch each page once, wrap each call in
-  `try`, and return what finished.
+  `try`, and return what finished. `measure_page_speed` tests up to 50 key pages per call
+  against its own run budget; read one page's full report from `report_file` only when needed.
   Send `not_checked` rows again while `budget_remaining` is above 0.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,

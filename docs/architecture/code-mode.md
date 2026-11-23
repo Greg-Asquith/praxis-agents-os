@@ -313,7 +313,10 @@ data-shaped.
 `fetch_url`, `check_urls`, and `inspect_page` are eligible because they call
 no model and return JSON-safe data. Their server strings arrive as
 `web_fetch` nodes, so any script that reads, checks, or inspects a URL is
-tainted. `ask_url` stays direct.
+tainted. `measure_page_speed` is eligible on the same terms: it calls Google
+PageSpeed Insights, not a model, returns its final URLs as `web_fetch` nodes,
+and keeps Google's other strings in a report File that `read_file` returns as
+a node. `ask_url` stays direct.
 
 Helper-native tools also stay direct unless they return text-only JSON-safe
 data and send content only to a configured model provider. Native `classify`
