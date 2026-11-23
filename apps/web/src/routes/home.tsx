@@ -10,11 +10,11 @@ import {
   useConversationsQuery,
 } from "@/features/conversations/api/list-conversations"
 import { pendingApprovalsQueryOptions } from "@/features/conversations/api/list-pending-approvals"
-import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
+import { ConversationComposer } from "@/features/conversations/components/conversation/conversation-composer"
 import {
   ConversationStartingNotice,
   NoActiveAgentsAlert,
-} from "@/features/conversations/components/conversation-starting-notice"
+} from "@/features/conversations/components/conversation/conversation-starting-notice"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { sortConversations } from "@/features/conversations/sort"
 import { AttentionQueue } from "@/features/home/components/attention-queue"

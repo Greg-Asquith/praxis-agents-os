@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { JsonBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { JsonBlock } from "@/features/conversations/components/tool-rows/tool-call-content-blocks"
 import { useAuditEventQuery } from "@/features/audit/api/get-audit-event"
 import { IntegrationOperationDetail } from "@/features/audit/components/integration-operation-detail"
 import { parseIntegrationOperationDetail } from "@/features/audit/operation-detail"

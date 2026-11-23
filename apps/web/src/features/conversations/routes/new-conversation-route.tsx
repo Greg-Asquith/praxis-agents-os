@@ -14,11 +14,11 @@ import { attachmentFromWorkspaceFile } from "@/features/conversations/attachment
 
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
-import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
+import { ConversationComposer } from "@/features/conversations/components/conversation/conversation-composer"
 import {
   ConversationStartingNotice,
   NoActiveAgentsAlert,
-} from "@/features/conversations/components/conversation-starting-notice"
+} from "@/features/conversations/components/conversation/conversation-starting-notice"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"

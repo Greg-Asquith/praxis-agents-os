@@ -1,0 +1,21 @@
+// apps/web/src/features/conversations/components/conversation/run-status-badge.tsx
+
+import { Badge } from "@/components/ui/badge"
+import { runStatusLabel } from "@/features/conversations/format"
+import type { AgentRunStatus } from "@/features/conversations/types"
+
+export function RunStatusBadge({ status }: { status: AgentRunStatus }) {
+  if (status === "failed" || status === "cancelled") {
+    return <Badge variant="destructive">{runStatusLabel(status)}</Badge>
+  }
+
+  if (status === "awaiting_approval") {
+    return <Badge variant="warning">{runStatusLabel(status)}</Badge>
+  }
+
+  if (status === "completed") {
+    return <Badge variant="success">{runStatusLabel(status)}</Badge>
+  }
+
+  return <Badge variant="secondary">{runStatusLabel(status)}</Badge>
+}

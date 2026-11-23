@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog"
 import { useSecurityEventQuery } from "@/features/audit/api/get-security-event"
 import type { SecurityEvent } from "@/features/audit/types"
-import { JsonBlock } from "@/features/conversations/components/tool-call-content-blocks"
+import { JsonBlock } from "@/features/conversations/components/tool-rows/tool-call-content-blocks"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime, titleCaseToken } from "@/lib/format"
 

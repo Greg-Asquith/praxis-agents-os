@@ -15,9 +15,9 @@ import {
   clearSharedChat,
   sharedChatQueryOptions,
 } from "@/features/conversations/api/get-shared-chat"
-import { ConversationSharingDialog } from "@/features/conversations/components/conversation-sharing-dialog"
-import { RunStatusBadge } from "@/features/conversations/components/run-status-badge"
-import { MessageList } from "@/features/conversations/components/message-list"
+import { ConversationSharingDialog } from "@/features/conversations/components/conversation/conversation-sharing-dialog"
+import { RunStatusBadge } from "@/features/conversations/components/conversation/run-status-badge"
+import { MessageList } from "@/features/conversations/components/messages/message-list"
 import { projectConversationTimeline } from "@/features/conversations/message-parts/timeline"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { formatCompactDate } from "@/lib/format"

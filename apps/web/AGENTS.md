@@ -17,6 +17,12 @@ Follow the existing layout and dependency boundaries:
 - Feature code lives in `src/features/<feature>/` with `api/`, `components/`,
   `routes/`, and a feature-local `types.ts`. Follow this layout for new
   features.
+- `src/features/conversations/components/` is grouped by role. `conversation/`
+  holds the page chrome (list, header, composer, sharing), `messages/` holds
+  the transcript, `tool-rows/` holds the shared tool row shell and registry,
+  and `tools/<family>/` holds each tool family's presenters, rows, and result
+  parsers. Put a new tool's files in its family directory, and mirror the same
+  path under `tests/`.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { workspaceFilePreviewQueryOptions } from "@/components/tool-ui/workspace-file-preview"
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
 const FILE_ID = "019927a2-1891-7123-8123-0123456789ab"

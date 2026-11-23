@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { ToolUiField } from "@/features/tools/types"
 import type { ToolRowPresenterProps } from "@/integrations/contract"

@@ -5,13 +5,13 @@ import { Link } from "@tanstack/react-router"
 import { MessageSquarePlusIcon, MessageSquareTextIcon } from "lucide-react"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SharedConversationList } from "@/features/conversations/components/shared-conversation-list"
+import { SharedConversationList } from "@/features/conversations/components/conversation/shared-conversation-list"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useConversationsQuery } from "@/features/conversations/api/list-conversations"
-import { ConversationList } from "@/features/conversations/components/conversation-list"
+import { ConversationList } from "@/features/conversations/components/conversation/conversation-list"
 import { sortConversations } from "@/features/conversations/sort"
 
 export function ConversationsRoute() {

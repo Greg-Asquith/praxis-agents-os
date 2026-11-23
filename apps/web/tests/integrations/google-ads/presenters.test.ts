@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"

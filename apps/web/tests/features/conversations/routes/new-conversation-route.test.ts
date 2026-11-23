@@ -75,7 +75,7 @@ vi.mock("@/features/conversations/conversation-workspace-context", () => ({
 vi.mock("@/features/agents/components/agent-identity-icon", () => ({
   AgentIdentityIcon: () => null,
 }))
-vi.mock("@/features/conversations/components/conversation-composer", () => ({
+vi.mock("@/features/conversations/components/conversation/conversation-composer", () => ({
   ConversationComposer: (props: Record<string, unknown>) => {
     state.composerProps = props
     return "Conversation composer"

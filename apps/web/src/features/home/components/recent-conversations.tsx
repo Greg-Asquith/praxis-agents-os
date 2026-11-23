@@ -3,7 +3,7 @@
 import { Link } from "@tanstack/react-router"
 
 import { Button } from "@/components/ui/button"
-import { ConversationList } from "@/features/conversations/components/conversation-list"
+import { ConversationList } from "@/features/conversations/components/conversation/conversation-list"
 import type { Conversation } from "@/features/conversations/types"
 import { HomeSection } from "@/features/home/components/home-section"
 

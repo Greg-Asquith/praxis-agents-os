@@ -2,7 +2,7 @@
 
 import { createContext } from "react"
 
-import type { ToolApprovalDecisionControls } from "@/features/conversations/components/approval-decision-block"
+import type { ToolApprovalDecisionControls } from "@/features/conversations/components/tool-rows/approval-decision-block"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 
 export type ApprovalDecisionResolver = (

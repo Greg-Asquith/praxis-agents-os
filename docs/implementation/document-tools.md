@@ -342,7 +342,7 @@ against the tool's schema, directly or inside `run_code`.
 ## Conversation rows
 
 Every document tool renders one row family,
-`apps/web/src/features/conversations/components/document-tool-row.tsx`, with
+`apps/web/src/features/conversations/components/tools/files/document-tool-row.tsx`, with
 parsers in `native-tools/document-tools.ts`. Completed calls render as result
 cards with the File, a Details popover, and an outcome badge, as the other
 file tools do, including inside `run_code` scripts. A result shape the

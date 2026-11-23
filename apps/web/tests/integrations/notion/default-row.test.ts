@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeAll, describe, expect, it } from "vitest"
 
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { notionQueryDataSourcePresenter } from "@/integrations/notion/presenters/query-data-source"
 import { notionSearchPagesPresenter } from "@/integrations/notion/presenters/search-pages"

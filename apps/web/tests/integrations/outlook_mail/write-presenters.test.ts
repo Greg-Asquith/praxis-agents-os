@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { outlookMailDraftPresenter } from "@/integrations/outlook_mail/presenters/create-draft"

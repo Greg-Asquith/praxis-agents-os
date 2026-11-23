@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { beforeAll, describe, expect, it } from "vitest"
 
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
 function render(node: ReactNode) {

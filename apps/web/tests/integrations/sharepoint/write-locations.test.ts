@@ -4,7 +4,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeAll, describe, expect, it } from "vitest"
 
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-rows/tool-call-row-registry"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 import { SharePointWriteOutcome } from "@/integrations/sharepoint/components/write-outcome"
 import { sharePointWriteLocation } from "@/integrations/sharepoint/lib/write-location"
