@@ -36,7 +36,7 @@ class KBSettingsMixin:
         default=30.0,
         gt=0,
         le=120,
-        description="Total timeout for one knowledge-base URL fetch hop.",
+        description="Total time for one knowledge-base URL fetch, including redirects.",
     )
     KB_URL_MAX_BYTES: int = Field(
         default=5_000_000,

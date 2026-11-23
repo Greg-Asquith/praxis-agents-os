@@ -58,6 +58,7 @@ from services.agents.runtime.tools.native.run_native_helper import run_native_he
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.ai_usage.domain import PURPOSE_WEB_FETCH
+from services.web.utils import blocked_domain_for_host
 from utils.validation import normalize_optional_text
 
 NativeWebFetchProvider = Literal["anthropic", "google"]
@@ -446,11 +447,7 @@ def _blocked_domain_for_url(url: str) -> str | None:
     hostname = urlsplit(url).hostname
     if hostname is None:
         return None
-    normalized_host = hostname.lower().rstrip(".")
-    for domain in configured_web_fetch_blocked_domains():
-        if normalized_host == domain or normalized_host.endswith(f".{domain}"):
-            return domain
-    return None
+    return blocked_domain_for_host(hostname, configured_web_fetch_blocked_domains())
 
 
 def _truncate_fetched_content(content: str) -> str:

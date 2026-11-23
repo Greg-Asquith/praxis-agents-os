@@ -20,6 +20,7 @@ from services.kb import create_kb_document
 from services.kb.domain import FetchedUrl, KBSourceUnavailableError
 from services.kb.ingest_document import ingest_kb_document
 from services.storage.factory import get_storage_provider
+from services.web.domain import WebFetchError
 from tests.factories import build_file, build_file_revision
 from tests.services.kb.conftest import KBActors
 
@@ -390,14 +391,24 @@ async def test_url_ingest_stores_validators_and_not_modified_preserves_chunks(
 
 
 @pytest.mark.parametrize(
-    ("status_code", "error_code"),
-    [(429, "rate_limited")],
+    ("failure", "error_code"),
+    [
+        (
+            AppValidationError(
+                "Knowledge-base URL returned an unsuccessful response",
+                field="url",
+                details={"status_code": 429},
+            ),
+            "rate_limited",
+        ),
+        (WebFetchError("URL did not respond in time", error_class="timeout"), "timeout"),
+    ],
 )
 async def test_transient_url_failure_retains_last_ready_content(
     db_session: AsyncSession,
     kb_actors: KBActors,
     monkeypatch: pytest.MonkeyPatch,
-    status_code: int,
+    failure: AppValidationError,
     error_code: str,
 ) -> None:
     response: FetchedUrl | Exception = FetchedUrl(
@@ -432,11 +443,7 @@ async def test_transient_url_failure_retains_last_ready_content(
     original_chunk_ids = set(
         await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document.id))
     )
-    response = AppValidationError(
-        "Knowledge-base URL returned an unsuccessful response",
-        field="url",
-        details={"status_code": status_code},
-    )
+    response = failure
 
     with pytest.raises(AppValidationError):
         await _ingest(db_session, kb_actors, document)

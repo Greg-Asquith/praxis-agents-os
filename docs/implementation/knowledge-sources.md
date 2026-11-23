@@ -181,9 +181,17 @@ becomes a single follow-up.
 Successful and failed refresh attempts advance the source synchronisation
 timestamp so persistently unavailable sources cannot monopolise later scans.
 `KB_SOURCE_REFRESH_INTERVAL_SECONDS` controls the scan interval, and
-`KB_SOURCE_SCAN_BATCH_SIZE` bounds each pass. URL refreshes retain the guarded
-public-address fetch path, send stored validators only on the first hop, and
-map `401`, `403`, `404`, and `410` to definitive access loss.
+`KB_SOURCE_SCAN_BATCH_SIZE` bounds each pass. URL refreshes use the shared
+web fetch transport in `services/web/`, send stored validators only on the
+first hop, and map `401`, `403`, `404`, and `410` to definitive access loss.
+The transport rejects credentials and non-public addresses, pins each
+connection to a vetted address while keeping the original Host and TLS server
+name, revalidates every redirect, turns off environment proxies, and stops at
+`KB_URL_MAX_BYTES`. `KB_URL_FETCH_TIMEOUT_SECONDS` bounds the whole fetch,
+redirects included. The transport returns any HTTP status as a result; the
+Knowledge Base adapter in `services/kb/utils.py` maps statuses to its own
+errors. Other callers that check an address of their own use
+`validate_public_url` and `pin_public_request` from `services/web/utils.py`.
 For HTML pages, `convert_html_to_markdown` in `services/kb/utils.py` calls
 `convert_document_to_markdown` with `web_page=True`. Inside the document
 worker, `services/documents/markdown.py` prunes page chrome, converts the

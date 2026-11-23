@@ -54,6 +54,7 @@ from services.kb.write_policy import (
     enforce_kb_write_policy,
     lock_and_find_kb_duplicate,
 )
+from services.web.domain import WebFetchError
 
 
 async def ingest_kb_document(
@@ -323,6 +324,8 @@ def _transient_source_error_code(exc: Exception) -> str:
     ):
         return "rate_limited"
     if isinstance(exc, (IntegrationTimeoutError, TimeoutError, httpx2.TimeoutException)):
+        return "timeout"
+    if isinstance(exc, WebFetchError) and exc.error_class == "timeout":
         return "timeout"
     return "refresh_failed"
 
