@@ -157,7 +157,7 @@ def _assemble_runtime_catalogs() -> None:
         generate_video,
         transcribe_video,
     )
-    from services.agents.runtime.tools.web import check_urls, fetch_url
+    from services.agents.runtime.tools.web import check_urls, fetch_url, inspect_page
 
     _ = (
         artifacts,
@@ -182,6 +182,7 @@ def _assemble_runtime_catalogs() -> None:
         generate_video,
         image_editing,
         image_generation,
+        inspect_page,
         kb,
         list_files,
         memory,

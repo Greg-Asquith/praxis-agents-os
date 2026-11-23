@@ -158,6 +158,29 @@ async def read_page_facts(data: bytes) -> dict[str, Any]:
     return result.value
 
 
+_WEB_INSPECTIONS = {
+    "inspect_web_page": ("text/html", "page.html"),
+    "read_sitemap": ("application/xml", "sitemap.xml"),
+    "read_robots": ("text/plain", "robots.txt"),
+    "find_bundle_tags": ("text/plain", "bundles.js"),
+}
+
+
+async def inspect_web_document(
+    operation: Literal["inspect_web_page", "read_sitemap", "read_robots", "find_bundle_tags"],
+    data: bytes,
+    **args: Any,
+) -> dict[str, Any]:
+    """Returns typed facts about a page, sitemap, robots.txt, or script bundles from a worker.
+
+    Raises:
+        DocumentConversionError: If the body can't be parsed.
+    """
+    content_type, filename = _WEB_INSPECTIONS[operation]
+    result = await _run(operation, data, content_type, filename, strict_utf8=False, **args)
+    return result.value
+
+
 def document_extension(filename: str, *, content_type: str | None = None) -> str:
     """Return a safe lower-case document extension."""
     suffix = PurePosixPath(safe_filename(filename)).suffix.lower()

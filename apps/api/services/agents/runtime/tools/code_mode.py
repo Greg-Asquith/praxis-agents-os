@@ -60,9 +60,10 @@ Write the script like this:
   document tools change and create them. Total rows in the script, and check each edit's
   `readback` against what you wrote. In a script, `read_file` reads large windows and
   `fetch_url` returns a page's whole text, so parse long pages and sitemaps in the script.
-  `check_urls` checks the status and redirects of many URLs per call. Each URL that
-  `fetch_url` or `check_urls` opens counts against the run's URL budget, even in a script
-  that fails, so fetch each page once, wrap each call in `try`, and return what finished.
+  `check_urls` checks the status and redirects of many URLs per call, and `inspect_page`
+  returns a page's facts or a sitemap's entries. Each URL these tools open counts against the
+  run's URL budget, even in a script that fails, so fetch each page once, wrap each call in
+  `try`, and return what finished.
   Send `not_checked` rows again while `budget_remaining` is above 0.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,

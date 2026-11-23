@@ -2,6 +2,7 @@
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { type WebRedirect, webRedirects } from "@/features/conversations/components/web-redirects"
 import { isNonNegativeInteger, isOneOf, isRecord } from "@/lib/guards"
 
 export const FETCH_URL_TOOL_NAME = "fetch_url"
@@ -9,8 +10,6 @@ export const FETCH_URL_TOOL_NAME = "fetch_url"
 type FetchUrlFormat = "markdown" | "text" | "html" | "unsupported"
 
 const FORMATS: ReadonlySet<FetchUrlFormat> = new Set(["markdown", "text", "html", "unsupported"])
-
-type FetchUrlRedirect = { location: string; status: number }
 
 type SavedReference = { id: string; label: string }
 
@@ -24,7 +23,7 @@ export type FetchUrlResult = {
   format: FetchUrlFormat
   knowledgeBaseDocument: SavedReference | null
   note: string | null
-  redirects: FetchUrlRedirect[]
+  redirects: WebRedirect[]
   requestedUrl: string
   status: number
   title: string | null
@@ -55,12 +54,8 @@ export function fetchUrlResult(value: unknown): FetchUrlResult | null {
   ) {
     return null
   }
-  const redirects: FetchUrlRedirect[] = []
-  for (const hop of value["redirects"]) {
-    const location = isRecord(hop) ? nodeText(hop["location"]) : null
-    if (!isRecord(hop) || location === null || !isNonNegativeInteger(hop["status"])) return null
-    redirects.push({ location, status: hop["status"] })
-  }
+  const redirects = webRedirects(value["redirects"])
+  if (redirects === null) return null
   return {
     blockedBySite: value["blocked_by_site"] === true,
     content: nodeText(value["content"]),

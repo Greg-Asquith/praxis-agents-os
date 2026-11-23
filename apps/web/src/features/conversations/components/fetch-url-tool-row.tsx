@@ -16,6 +16,7 @@ import {
   fetchUrlArgsUrl,
   fetchUrlResult,
 } from "@/features/conversations/components/fetch-url-result"
+import { RedirectList } from "@/features/conversations/components/redirect-list"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { useCreateDocumentFromUrlMutation } from "@/features/knowledge/api/create-document-from-url"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
@@ -65,15 +66,7 @@ export function FetchUrlToolRow({
     >
       <div className="grid min-w-0 gap-3">
         {result.note ? <p className="text-muted-foreground text-xs">{result.note}</p> : null}
-        {result.redirects.length > 0 ? (
-          <ol aria-label="Redirects" className="text-muted-foreground grid gap-0.5 text-xs">
-            {result.redirects.map((hop, index) => (
-              <li className="break-all" key={`${String(index)}-${hop.location}`}>
-                {hop.status} → {hop.location}
-              </li>
-            ))}
-          </ol>
-        ) : null}
+        <RedirectList redirects={result.redirects} />
         {result.content ? <FetchedContent result={result} content={result.content} /> : null}
         <FetchUrlActions result={result} />
       </div>

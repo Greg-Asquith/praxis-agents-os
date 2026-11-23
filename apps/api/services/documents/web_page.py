@@ -14,8 +14,8 @@ from services.documents.reading import DocumentRequestError
 
 type HandlerResult = tuple[dict[str, Any], bytes | None]
 
-# Never page content, so Markdown and text always leave them out.
-_NON_CONTENT_TAGS = ["script", "style", "noscript", "template", "svg"]
+# Never page content, so Markdown, text, and word counts always leave them out.
+NON_CONTENT_TAGS = ["script", "style", "noscript", "template", "svg"]
 _TITLE_MAX_CHARS = 500
 
 
@@ -24,7 +24,7 @@ def web_page(_format: str, args: dict[str, Any], data: bytes, _limits: Any) -> H
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(data, "html.parser")
-    title = _title(soup)
+    title = page_title(soup)
     output_format, part = args["format"], args["part"]
     if output_format == "html":
         root = _html_part(soup, part)
@@ -34,7 +34,7 @@ def web_page(_format: str, args: dict[str, Any], data: bytes, _limits: Any) -> H
         raise DocumentRequestError(f"part={part!r} needs format='html'.")
     else:
         root = main_page_root(soup) if part == "main" else (soup.body or soup)
-        for tag in root.find_all(_NON_CONTENT_TAGS):
+        for tag in root.find_all(NON_CONTENT_TAGS):
             if not tag.decomposed:
                 tag.decompose()
         if output_format == "text":
@@ -52,40 +52,46 @@ def page_facts(_format: str, _args: dict[str, Any], data: bytes, _limits: Any) -
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(data, "html.parser")
-    canonical = next(
-        (
-            link.get("href")
-            for link in soup.find_all("link", href=True)
-            if "canonical" in [value.lower() for value in link.get("rel") or ()]
-        ),
-        None,
-    )
     facts = {
-        "title": _title(soup),
-        "description": _meta_content(soup, "description"),
-        "canonical": _bounded_text(canonical),
-        "robots": _meta_content(soup, "robots"),
+        "title": page_title(soup),
+        "description": meta_content(soup, "description"),
+        "canonical": bounded_text(link_href(soup, "canonical")),
+        "robots": meta_content(soup, "robots"),
         "h1_count": len(soup.find_all("h1")),
     }
     return facts, None
 
 
-def _meta_content(soup: Any, name: str) -> str | None:
+def meta_content(soup: Any, name: str) -> str | None:
+    """Returns the bounded content of the first `<meta name>` tag, matched case-insensitively."""
     for tag in soup.find_all("meta", attrs={"name": True}):
         if str(tag["name"]).strip().lower() == name:
-            return _bounded_text(tag.get("content"))
+            return bounded_text(tag.get("content"))
     return None
 
 
-def _bounded_text(value: Any) -> str | None:
-    text = " ".join(str(value).split()) if isinstance(value, str) else ""
-    return text[:_TITLE_MAX_CHARS] or None
+def link_href(soup: Any, rel: str) -> str | None:
+    """Returns the `href` of the first `<link>` whose `rel` list includes `rel`."""
+    return next(
+        (
+            link.get("href")
+            for link in soup.find_all("link", href=True)
+            if rel in [value.lower() for value in link.get("rel") or ()]
+        ),
+        None,
+    )
 
 
-def _title(soup: Any) -> str | None:
+def bounded_text(value: Any, max_chars: int = _TITLE_MAX_CHARS) -> str | None:
+    """Returns a string with whitespace collapsed and cut at `max_chars`, or None when empty."""
+    text = " ".join(value.split()) if isinstance(value, str) else ""
+    return text[:max_chars] or None
+
+
+def page_title(soup: Any) -> str | None:
+    """Returns the bounded `<title>` text."""
     tag = soup.find("title")
-    text = " ".join(tag.get_text().split()) if tag is not None else ""
-    return text[:_TITLE_MAX_CHARS] or None
+    return bounded_text(tag.get_text()) if tag is not None else None
 
 
 def _html_part(soup: Any, part: str) -> Any:

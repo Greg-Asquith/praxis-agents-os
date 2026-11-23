@@ -3,6 +3,7 @@
 import type { DataTableTab } from "@/components/ui/data-table"
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { type WebRedirect, webRedirects } from "@/features/conversations/components/web-redirects"
 import { isNonNegativeInteger, isRecord } from "@/lib/guards"
 
 export const CHECK_URLS_TOOL_NAME = "check_urls"
@@ -30,15 +31,13 @@ export const CHECKED_URL_TABS: DataTableTab[] = [
   })),
 ]
 
-type Redirect = { location: string; status: number }
-
 type CheckedUrl = {
   contentType: string | null
   errorClass: string | null
   finalUrl: string | null
   h1Count: number | null
   outcome: CheckedUrlOutcome
-  redirects: Redirect[]
+  redirects: WebRedirect[]
   requestedUrl: string
   status: number | null
   timeToFirstByteMs: number | null
@@ -92,12 +91,8 @@ function checkedUrl(value: unknown): CheckedUrl | null {
   ) {
     return null
   }
-  const redirects: Redirect[] = []
-  for (const hop of value["redirects"]) {
-    const location = isRecord(hop) ? nodeText(hop["location"]) : null
-    if (!isRecord(hop) || location === null || !isNonNegativeInteger(hop["status"])) return null
-    redirects.push({ location, status: hop["status"] })
-  }
+  const redirects = webRedirects(value["redirects"])
+  if (redirects === null) return null
   const page = isRecord(value["page"]) ? value["page"] : null
   const ttfb = value["time_to_first_byte_ms"]
   return {

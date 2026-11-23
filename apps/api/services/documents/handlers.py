@@ -22,6 +22,12 @@ from services.documents.pptx_model import read_presentation
 from services.documents.precheck import PackageLimits
 from services.documents.reading import MAX_IMAGE_BYTES, DocumentRequestError, name
 from services.documents.tables import read_delimited_table, read_saved_list
+from services.documents.web_inspect import (
+    find_bundle_tags,
+    inspect_web_page,
+    read_robots,
+    read_sitemap,
+)
 from services.documents.web_page import page_facts, web_page
 from services.documents.xlsx_edit import edit_workbook
 from services.documents.xlsx_model import read_sheet_table, read_workbook
@@ -127,4 +133,8 @@ HANDLERS: dict[str, Handler] = {
     "find_markdown": find_markdown,
     "web_page": web_page,
     "page_facts": page_facts,
+    "inspect_web_page": inspect_web_page,
+    "read_sitemap": read_sitemap,
+    "read_robots": read_robots,
+    "find_bundle_tags": find_bundle_tags,
 }

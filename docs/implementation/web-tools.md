@@ -2,8 +2,8 @@
 
 # Web tools
 
-Read this before changing `fetch_url`, `check_urls`, `ask_url`, the shared web transport,
-or saving fetched pages. Backend paths are relative to `apps/api/`.
+Read this before changing `fetch_url`, `check_urls`, `inspect_page`, `ask_url`, the
+shared web transport, or saving fetched pages. Backend paths are relative to `apps/api/`.
 
 The web tools split by job:
 
@@ -12,10 +12,10 @@ The web tools split by job:
 | `ask_url` | Answer a question about one page | Anthropic or Google helper model | Helper tokens | No |
 | `fetch_url` | Return one URL's content | Praxis HTTP | None | Yes |
 | `check_urls` | Status, redirects, and headers for many URLs | Praxis HTTP | None | Yes |
-| `inspect_page` | Structured facts about a page, sitemap, or `robots.txt` | Praxis HTTP | None | Pending |
+| `inspect_page` | Structured facts about a page, sitemap, or `robots.txt` | Praxis HTTP | None | Yes |
 
-`inspect_page` is pending. `fetch_url` and `check_urls` need no model
-provider, so they work on a deploy with any single provider.
+`fetch_url`, `check_urls`, and `inspect_page` need no model provider, so
+they work on a deploy with any single provider.
 
 ## Shared transport
 
@@ -164,6 +164,79 @@ The **Check URLs** row is a `DataTable` with filters for OK, Redirected,
 Broken, Blocked, and Not Checked. Title and H1 columns appear when the call
 read page facts.
 
+## `inspect_page`
+
+`tools/web/inspect_page.py` registers `inspect_page(url, include,
+user_agent)` with `default_policy=auto`, egress `arbitrary_url`, and
+`code_eligible=True`. When approval is required, the URL is editable. Each
+call takes one URL from the run budget, plus one per script bundle scanned
+for tags, and reads only a `2xx` body, gunzipping a `.gz` file. Any other status returns with `kind` null and nothing
+inspected.
+
+The response decides `kind`:
+
+- `page`: an HTML body. `include` selects any of `meta`, `headings`, `links`,
+  `images`, `structured_data`, `tags`, and `headers`; the default is `meta`,
+  `headings`, and `tags`. Every page also returns `word_count` and
+  `looks_client_rendered`, which is true when an app mount element such as
+  `#root` is empty or the page has little text and several scripts.
+- `robots`: a text body at a `/robots.txt` path. It returns groups (user
+  agents, `allow`, `disallow`, crawl delay), with consecutive `User-agent`
+  lines in one group, and the `Sitemap` lines.
+- `sitemap`: an XML or gunzipped text body whose root is `urlset` or
+  `sitemapindex`. It returns `entries` with `loc` and `lastmod`, and the
+  `total`. The first 10,000 entries are returned, and `note` says when there
+  are more.
+- `unsupported`: any other body.
+
+The worker handlers live in `services/documents/web_inspect.py`:
+`inspect_web_page`, `read_sitemap`, and `read_robots`. Page facts cover:
+
+- `meta`: title, description, meta robots, canonical, `html` language,
+  viewport, meta refresh, `hreflang` alternates, and Open Graph properties.
+  The canonical and `hreflang` URLs resolve against the page or its `<base>`.
+- `headings`: the total, the H1 count, and up to 300 headings with level
+  and text.
+- `links`: totals for internal (same host, ignoring `www.`), external, and
+  `nofollow` links, and up to 1,000 absolute `http` and `https` links.
+  Fragment-only links and other schemes are left out.
+- `images`: the total, the count with no `alt` attribute, and up to 500
+  images. An empty `alt` marks a decorative image, and a `data:` URI keeps
+  only its media type.
+- `structured_data`: up to ten JSON-LD blocks, each with its `@type` values
+  (including those in `@graph`), whether it parses, and its first 5,000
+  characters.
+- `tags`: matches from the pattern registry in
+  `services/documents/web_tags.py`, with vendor, category, ID, and where it
+  was found (`script_src`, `inline_script`, or `noscript`). It covers Google
+  Tag Manager, Google Analytics 4, Universal Analytics, Google Ads, Meta
+  Pixel, LinkedIn Insight, TikTok Pixel, Hotjar, Microsoft Clarity, and ten
+  consent banners. A vendor found with an ID isn't listed again without one.
+  Frameworks such as Next.js set analytics up inside the site's own script
+  bundles, so the tool also fetches up to 20 same-site scripts (2 MiB each)
+  and scans them with the `find_bundle_tags` handler (`found_in` is
+  `script_bundle`). Each bundle counts against the run budget, fetches share
+  the per-host limit, and one deadline bounds them; a bundle that fails is
+  skipped, and `note` says how many weren't scanned. Third-party scripts
+  aren't fetched. Tags that a tag manager loads still don't appear, so `note`
+  names the Google Tag Manager container to fetch.
+- `headers`: the allowlisted response headers.
+
+Sitemaps parse with `defusedxml`, which refuses DTDs and entities. Every list
+is capped in the worker and reports its full count. Without
+`preview_list_path`, an oversized result previews each list and keeps every
+item in the retained File snapshot.
+
+The **Inspect Page** row starts with plain-language checks, problems first
+(`inspect-page-checks.ts`): title and description length against what
+search results show, canonical, `noindex`, language, viewport, H1 count,
+missing alt text, and JSON-LD that doesn't parse. A client-rendered page gets
+a **Needs a Browser** badge. Below are the meta fields and tabs with counts
+for tags, links, images, a heading outline, and structured data, where each
+JSON-LD block opens to its formatted source as text. Empty tabs are hidden.
+A sitemap shows its entries, and `robots.txt` shows its rules with Disallow
+and Allow filters.
+
 ## `ask_url`
 
 `tools/native/ask_url.py` registers `ask_url(url, question, provider,
@@ -182,9 +255,12 @@ URL and question stay editable.
 Every string from the remote server crosses dispatch as a `web_fetch`
 provenance node: `fetch_url` content, title, final URL, content type, and
 redirect hops; `check_urls` final URLs, content types, headers, redirect
-hops, and page facts; and the `ask_url` answer. The model sees them inside
-the shared untrusted frame, and a `fetch_url` or `check_urls` result taints
-a Code Mode interpreter. The web app shows fetched HTML as source text and links only
+hops, and page facts; `inspect_page` meta text, headings, links, images,
+JSON-LD, headers, sitemap locations, and `robots.txt` values; and the
+`ask_url` answer. `inspect_page` tag vendors are Praxis names, and tag IDs and
+sitemap `lastmod` values must match fixed patterns, so they arrive as plain
+strings. The model sees the nodes inside the shared untrusted frame, and a
+result from any HTTP web tool taints a Code Mode interpreter. The web app shows fetched HTML as source text and links only
 `http` and `https` URLs. For the threat analysis, see row (f) of the
 [threat model](../architecture/threat-model.md).
 
@@ -197,6 +273,9 @@ These suites cover the web tools:
   challenge marker, and byte and gzip limits.
 - `tests/services/documents/test_web_page.py`: `part` and `drop` selection,
   and page facts.
+- `tests/services/documents/test_web_inspect.py`: link, image, and JSON-LD
+  extraction, the client-rendered hint, tag detection, a sitemap index, a
+  refused DTD, and `robots.txt` groups.
 - `tests/scenarios/test_fetch_url.py`: a page read with every helper set to
   fail and no `web_fetch` usage, a hostile title framed only in the model
   request, the run budget, the saved File's workspace,
@@ -206,6 +285,9 @@ These suites cover the web tools:
   nested call and returning the broken ones with their hops, the tainted
   script, a batch larger than the run budget returning its checked rows,
   and `not_checked` rows past a shortened deadline.
+- `tests/scenarios/test_inspect_page.py`: a page's canonical, Tag Manager
+  ID, and missing-alt count, a hostile title and header stored as nodes and
+  framed only in the model request, and a gzipped sitemap's entries.
 - `tests/scenarios/test_ask_url.py`: approval editing of the URL and
   question, and the denylist retry.
 - `tests/routes/web/test_save_fetched_page.py`: the person's save and the

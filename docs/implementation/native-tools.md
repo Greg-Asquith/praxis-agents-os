@@ -18,8 +18,9 @@ a hard limit on repeated searches.
 ## Page questions
 
 `ask_url` answers a question about one page through a helper model's native
-web fetch. `fetch_url` returns a page's content and `check_urls` checks many
-URLs' status and redirects, both on Praxis infrastructure with no helper
+web fetch. `fetch_url` returns a page's content, `check_urls` checks many
+URLs' status and redirects, and `inspect_page` returns structured facts about
+a page, sitemap, or `robots.txt`, all on Praxis infrastructure with no helper
 model. For these tools, the shared settings, and saving fetched pages, see
 [Web tools](web-tools.md).
 
