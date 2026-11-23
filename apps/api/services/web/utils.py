@@ -112,6 +112,11 @@ async def resolve_public_addresses(host: str, port: int) -> tuple[str, ...]:
     return tuple(require_public_address(address) for address in addresses)
 
 
+def ascii_host(url: httpx2.URL) -> str:
+    """Returns the host as sent on the wire, with an internationalised name in its `xn--` form."""
+    return url.raw_host.decode("ascii")
+
+
 async def pin_public_request(
     url: httpx2.URL,
     *,
@@ -119,19 +124,23 @@ async def pin_public_request(
 ) -> PinnedRequest:
     """Resolves and vets a validated URL's host, then pins the request to its first address."""
     port = url.port or (443 if url.scheme == "https" else 80)
-    addresses = await resolver(url.host, port)
+    addresses = await resolver(ascii_host(url), port)
     if not addresses:
         raise WebFetchError("URL hostname returned no addresses", error_class="dns_failure")
     vetted = tuple(require_public_address(address) for address in addresses)
     return PinnedRequest(
         url=url.copy_with(host=vetted[0]),
         headers={"Host": _host_header(url)},
-        extensions={"sni_hostname": url.host},
+        extensions={"sni_hostname": ascii_host(url)},
     )
 
 
 def blocked_domain_for_host(host: str, blocked_domains: Iterable[str]) -> str | None:
-    """Returns the denylisted domain that matches a host or one of its parents."""
+    """Returns the denylisted domain that matches a host or one of its parents.
+
+    Pass `ascii_host`: denylist entries are ASCII, so an internationalised name matches
+    only in its `xn--` form.
+    """
     normalized = host.lower().rstrip(".")
     for domain in blocked_domains:
         if normalized == domain or normalized.endswith(f".{domain}"):
@@ -266,7 +275,7 @@ def gunzip_bounded(body: bytes, *, max_bytes: int) -> bytes:
 
 
 def _host_header(url: httpx2.URL) -> str:
-    host = url.host
+    host = ascii_host(url)
     try:
         is_ipv6_literal = ipaddress.ip_address(host).version == 6
     except ValueError:

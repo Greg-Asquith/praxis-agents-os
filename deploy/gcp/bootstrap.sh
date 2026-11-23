@@ -534,7 +534,7 @@ fi
 pagespeed_key_name() {
   gcloud services api-keys list --project="$GCP_PROJECT_ID" \
     --filter='displayName=praxis-pagespeed' --format='value(name)' --limit=1 --quiet \
-    || die "could not list API keys; running the bootstrap needs the API Keys Admin role"
+    || die "could not list API keys; check the API Keys Admin role, or run again if the API Keys API was only just enabled"
 }
 
 if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
@@ -546,7 +546,7 @@ if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
     echo
     echo "== PageSpeed API key will run these commands (key string redacted) =="
     if [[ -z "$pagespeed_key" ]]; then
-      printf '  gcloud services api-keys create --display-name=praxis-pagespeed --api-target=service=pagespeedonline.googleapis.com --project=%q --format=none --quiet\n' \
+      printf '  gcloud services api-keys create --display-name=praxis-pagespeed --api-target=service=pagespeedonline.googleapis.com --project=%q --async --no-user-output-enabled --quiet\n' \
         "$GCP_PROJECT_ID"
     fi
     printf '  gcloud services api-keys get-key-string [praxis-pagespeed key] | gcloud secrets versions add %q --data-file=- --project=%q --quiet\n' \
@@ -554,19 +554,25 @@ if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
     confirm_sensitive_section "PageSpeed API key"
 
     if [[ -z "$pagespeed_key" ]]; then
-      # --format=none keeps the new key string out of the terminal.
+      # The create result holds the key string, so gcloud must neither wait for it nor print it.
       run gcloud services api-keys create --display-name=praxis-pagespeed \
         --api-target=service=pagespeedonline.googleapis.com --project="$GCP_PROJECT_ID" \
-        --format=none --quiet
-      pagespeed_key=$(pagespeed_key_name)
+        --async --no-user-output-enabled --quiet
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pagespeed_key=$(pagespeed_key_name)
+        [[ -z "$pagespeed_key" ]] || break
+        sleep 3
+      done
       [[ -n "$pagespeed_key" ]] || die "the praxis-pagespeed API key was not found after creation"
     fi
-    printf '+ gcloud services api-keys get-key-string %q | gcloud secrets versions add %q --data-file=- --project=%q --quiet\n' \
-      "$pagespeed_key" "$pagespeed_secret_id" "$GCP_PROJECT_ID"
-    gcloud services api-keys get-key-string "$pagespeed_key" --project="$GCP_PROJECT_ID" \
-      --format='value(keyString)' --quiet | tr -d '\n' \
-      | gcloud secrets versions add "$pagespeed_secret_id" --data-file=- \
-        --project="$GCP_PROJECT_ID" --quiet
+    printf '+ gcloud services api-keys get-key-string %q\n' "$pagespeed_key"
+    pagespeed_key_string=$(gcloud services api-keys get-key-string "$pagespeed_key" \
+      --project="$GCP_PROJECT_ID" --format='value(keyString)' --quiet) \
+      || die "could not read the praxis-pagespeed key string"
+    # An empty version would count as seeded on the next run and leave the tool unavailable.
+    [[ -n "$pagespeed_key_string" ]] || die "the praxis-pagespeed key string is empty"
+    add_secret_version "$pagespeed_secret_id" "$pagespeed_key_string"
+    unset pagespeed_key_string
   else
     echo "-- PageSpeed API key: nothing to change"
   fi

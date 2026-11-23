@@ -35,6 +35,7 @@ PageFact = Literal["meta", "headings", "links", "images", "structured_data", "ta
 InspectedKind = Literal["page", "sitemap", "robots", "unsupported"]
 
 _DEFAULT_INCLUDE: tuple[PageFact, ...] = ("meta", "headings", "tags")
+_META_TEXT = ("title", "description", "robots", "canonical", "language", "viewport", "meta_refresh")
 _XML_PREFIX_STRIP = b"\xef\xbb\xbf \t\r\n"
 _MAX_BUNDLE_BYTES = 2 * 1024 * 1024
 
@@ -387,9 +388,6 @@ async def _scan_script_bundles(
     except DocumentConversionError:
         return
     facts["tags"] = result["tags"]
-
-
-_META_TEXT = ("title", "description", "robots", "canonical", "language", "viewport", "meta_refresh")
 
 
 def _page_nodes(source: str, facts: dict[str, Any]) -> dict[str, Any]:

@@ -23,10 +23,10 @@ export function pageChecks(page: InspectedPage, finalUrl: string): PageCheck[] {
     checks.push(lengthCheck("Title", meta.title, TITLE_MAX_CHARS))
     checks.push(lengthCheck("Description", meta.description, DESCRIPTION_MAX_CHARS))
     if (meta.canonical === null) checks.push(warning("No canonical URL"))
-    else if (withoutTrailingSlash(meta.canonical) === withoutTrailingSlash(finalUrl)) {
+    else if (comparableUrl(meta.canonical) === comparableUrl(finalUrl)) {
       checks.push(pass("Canonical points to this page"))
     } else checks.push(info("Canonical points to another URL"))
-    if (meta.robots?.toLowerCase().includes("noindex")) {
+    if (/\b(noindex|none)\b/i.test(meta.robots ?? "")) {
       checks.push(warning("Marked noindex, so search engines won't list it"))
     } else {
       checks.push(pass("Search engines can index it"))
@@ -79,8 +79,15 @@ function lengthCheck(label: string, value: string | null, max: number): PageChec
     : pass(`${label} is ${length}`)
 }
 
-function withoutTrailingSlash(url: string): string {
-  return url.replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase()
+// Paths are case-sensitive; the URL parser lower-cases the scheme and host only.
+function comparableUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    url.hash = ""
+    return url.href.replace(/\/+$/, "")
+  } catch {
+    return value
+  }
 }
 
 function countOf(count: number, noun: string): string {

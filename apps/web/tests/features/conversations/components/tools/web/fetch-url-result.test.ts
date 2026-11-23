@@ -24,7 +24,6 @@ function result(finalUrl: string) {
     bytes: 120,
     truncated: false,
     content: node("<h1>Not Found</h1>"),
-    note: null,
     file: null,
     knowledge_base_document: null,
   }

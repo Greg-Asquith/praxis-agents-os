@@ -22,7 +22,6 @@ function result(fields: Record<string, unknown>) {
     page: null,
     sitemap: null,
     robots: null,
-    note: null,
     ...fields,
   }
 }

@@ -26,7 +26,10 @@ each hop with `validate_public_url`, checks the denylist with
 `blocked_domain_for_host`, resolves and vets every address, and pins the
 request to the first address while keeping the original `Host` header and
 TLS name. It never sends cookies, credentials, or caller headers, and it
-ignores environment proxies.
+ignores environment proxies. A cookie one hop sets is dropped before the
+next hop. An internationalised host name is resolved, sent, and matched
+against the denylist in its ASCII (`xn--`) form, so list such a domain in
+that form.
 
 The transport returns a `FetchedResponse` for any status and raises
 `WebFetchError` only for transport failures. Each error has an
@@ -121,6 +124,9 @@ argument whatever the tool's policy is, so the call waits for approval under
 `auto`, including inside a script. Both arguments need a workspace role that
 can edit and a run whose side-effect policy isn't `deny`.
 
+`note` is guidance for the agent. The **Fetch URL** and **Inspect Page** rows
+show their own wording for a blocked, unsupported, or cut result.
+
 The **Fetch URL** row has **Save to Files** and **Add to Knowledge Base**
 buttons that act without an agent turn. They're hidden on shared transcripts
 and for members who can't edit:
@@ -129,8 +135,10 @@ and for members who can't edit:
   ID and requested URL. The route fetches the page again as the person, so
   the File can differ from what the agent read. It accepts only the person's
   own conversation in the active workspace and records a File audit event.
+  The route allows 30 saves a minute for each client.
 - **Add to Knowledge Base** calls the existing
-  `POST /api/v1/kb/documents/from-url` route.
+  `POST /api/v1/kb/documents/from-url` route. It shows only for a page
+  that loaded.
 
 ## `check_urls`
 
@@ -187,7 +195,8 @@ The response decides `kind`:
   `images`, `structured_data`, `tags`, and `headers`; the default is `meta`,
   `headings`, and `tags`. Every page also returns `word_count` and
   `looks_client_rendered`, which is true when an app mount element such as
-  `#root` is empty or the page has little text and several scripts.
+  `#root` is empty and the page has under 300 words, or the page has under
+  50 words and two or more scripts.
 - `robots`: a text body at a `/robots.txt` path. It returns groups (user
   agents, `allow`, `disallow`, crawl delay), with consecutive `User-agent`
   lines in one group, and the `Sitemap` lines.
@@ -198,7 +207,9 @@ The response decides `kind`:
 - `unsupported`: any other body.
 
 The worker handlers live in `services/documents/web_inspect.py`:
-`inspect_web_page`, `read_sitemap`, and `read_robots`. Page facts cover:
+`inspect_web_page`, `read_sitemap`, and `read_robots`. A `<base>` tag
+resolves a page's addresses, but only the fetched page's own host, ignoring
+`www.`, counts as internal or same-site. Page facts cover the following:
 
 - `meta`: title, description, meta robots, canonical, `html` language,
   viewport, meta refresh, `hreflang` alternates, and Open Graph properties.
@@ -291,7 +302,8 @@ Google's response is 300 KB to 1 MB a page, so the tool never returns it.
    third parties, passed audit IDs, run warnings, the Lighthouse version, and
    the test time. Screenshots, the filmstrip, the treemap, the network
    request list, and translation strings are dropped. Detail items are cut
-   first, then audits, and `truncated` is set.
+   first. If the report is still too large, passed audits, third parties,
+   and then failed audits are dropped and `truncated` is set.
 3. **One page in full, on request**: each row's `report` is a byte `offset`
    and `length` into `report_file`. `read_file` with those values returns the
    page's report in one window, with no second test.
@@ -305,10 +317,11 @@ CLS data the assessment is null. Google reports page data from the origin
 when the page has too few visits (`origin_fallback`); the row's `field` is
 then null.
 
-The **Measure Page Speed** row shows Pages Tested, Median Performance, and
-Passing Core Web Vitals tiles, a device badge, and one table row per page,
-lowest score first, with Good, Needs Improvement, Poor, and Not Tested
-filters. A page's URL opens its detail in a popover: category scores, lab
+The **Measure Page Speed** row shows Pages, Device, and Tested detail lines,
+the median score, and one table row per page, lowest score first, with
+Good, Needs Improvement, Poor, and Not Tested filters. A row is rated by its
+performance score, or by the first category tested when performance wasn't
+asked for. A page's URL opens its detail in a popover: category scores, lab
 and visitor metrics side by side against Google's thresholds, and the
 report's Opportunities, Diagnostics, and other categories' issues, each
 opening a popover with its description and affected resources. The card

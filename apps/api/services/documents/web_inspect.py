@@ -54,16 +54,18 @@ def inspect_web_page(
     soup = BeautifulSoup(data, "html.parser")
     include = frozenset(args["include"])
     base_url = _base_url(soup, args["base_url"])
+    # A `<base>` tag resolves addresses, but the page's own host decides what is same-site.
+    host = _site_host(args["base_url"])
     # Scripts are read before word counting removes them.
     facts: dict[str, Any] = {
         "meta": _meta(soup, base_url) if "meta" in include else None,
         "headings": _headings(soup) if "headings" in include else None,
-        "links": _links(soup, base_url) if "links" in include else None,
+        "links": _links(soup, base_url, host) if "links" in include else None,
         "images": _images(soup, base_url) if "images" in include else None,
         "structured_data": _structured_data(soup) if "structured_data" in include else None,
         "tags": find_tags(soup) if "tags" in include else None,
         # Frameworks often set tags up inside the site's own bundles, so the tool scans them too.
-        "script_urls": _same_site_scripts(soup, base_url) if "tags" in include else [],
+        "script_urls": _same_site_scripts(soup, base_url, host) if "tags" in include else [],
     }
     script_count = len(soup.find_all("script"))
     empty_mount = any(not tag.get_text(strip=True) for tag in soup.find_all(id=_APP_MOUNT_IDS))
@@ -210,8 +212,7 @@ def _headings(soup: Any) -> dict[str, Any]:
     }
 
 
-def _links(soup: Any, base_url: str) -> dict[str, Any]:
-    host = _site_host(base_url)
+def _links(soup: Any, base_url: str, host: str) -> dict[str, Any]:
     items = []
     for tag in soup.find_all("a", href=True):
         url = _absolute(base_url, tag["href"])
@@ -301,8 +302,7 @@ def _collect_types(value: Any, types: list[str]) -> None:
             _collect_types(item, types)
 
 
-def _same_site_scripts(soup: Any, base_url: str) -> list[str]:
-    host = _site_host(base_url)
+def _same_site_scripts(soup: Any, base_url: str, host: str) -> list[str]:
     urls = (_absolute(base_url, tag.get("src")) for tag in soup.find_all("script", src=True))
     same_site = [url for url in urls if url and _site_host(url) == host]
     return list(dict.fromkeys(same_site))[:_MAX_SCRIPT_BUNDLES]

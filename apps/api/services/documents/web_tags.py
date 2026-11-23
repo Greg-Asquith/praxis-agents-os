@@ -45,7 +45,7 @@ _PATTERNS: tuple[_TagPattern, ...] = (
         "advertising",
         r"fbq\(\s*['\"]init['\"]\s*,\s*['\"](\d{8,20})['\"]",
         r"facebook\.com/tr/?\?id=(\d{8,20})",
-        r"connect\.facebook\.net/[^'\"\s]*fbevents\.js",
+        r"connect\.facebook\.net/[^'\"\s]{0,200}fbevents\.js",
     ),
     *_tags(
         "LinkedIn Insight",

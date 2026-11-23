@@ -10,10 +10,17 @@ from core.dependencies import (
     CurrentWorkspaceDep,
     require_editor,
 )
+from core.rate_limiting import require_rate_limit
 from services.web.save_fetched_page import save_fetched_page as save_fetched_page_service
 from services.web.schemas import FetchedPageSaveCreate, FetchedPageSaveRead
 
-router = APIRouter(dependencies=[Depends(require_editor)])
+# Each call sends a request to a public site, so the limit bounds what one client can send.
+router = APIRouter(
+    dependencies=[
+        Depends(require_editor),
+        Depends(require_rate_limit(custom_limit=30, custom_window=60)),
+    ]
+)
 
 
 @router.post("/page-saves")

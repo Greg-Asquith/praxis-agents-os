@@ -45,8 +45,15 @@ export function FetchUrlToolRow({
     ) : null
   }
   const result = activity.status === "completed" ? fetchUrlResult(activity.result) : null
-  if (!result) return null
+  return result ? <FetchUrlCard defaultOpen={defaultOpen} result={result} /> : null
+}
 
+function FetchUrlCard({ defaultOpen, result }: { defaultOpen: boolean; result: FetchUrlResult }) {
+  // The card unmounts its body when closed, so the saves live here to keep their outcome.
+  const save = useSaveFetchedPage()
+  const addToKnowledgeBase = useCreateDocumentFromUrlMutation()
+  const conversationId = useActionableConversation()
+  const { workspace } = useActiveWorkspace()
   const details = [
     { label: "URL", value: result.finalUrl },
     { label: "Status", value: String(result.status) },
@@ -65,10 +72,17 @@ export function FetchUrlToolRow({
       trailing={<StatusBadge result={result} />}
     >
       <div className="grid min-w-0 gap-3">
-        {result.note ? <p className="text-muted-foreground text-xs">{result.note}</p> : null}
+        <FetchNote result={result} />
         <RedirectList redirects={result.redirects} />
         {result.content ? <FetchedContent result={result} content={result.content} /> : null}
-        <FetchUrlActions result={result} />
+        {conversationId !== null && canEditWorkspace(workspace.current_user_role) ? (
+          <FetchUrlActions
+            addToKnowledgeBase={addToKnowledgeBase}
+            conversationId={conversationId}
+            result={result}
+            save={save}
+          />
+        ) : null}
       </div>
     </ToolResultCard>
   )
@@ -80,7 +94,18 @@ function StatusBadge({ result }: { result: FetchUrlResult }) {
   return <Badge variant="destructive">Status {result.status}</Badge>
 }
 
-// Fetched HTML shows as source text; the UI never renders it.
+function FetchNote({ result }: { result: FetchUrlResult }) {
+  const note = result.blockedBySite
+    ? "The site refused an automated request, so the page itself may be fine."
+    : result.format === "unsupported"
+      ? "This kind of file can't be shown here."
+      : result.truncated
+        ? "Only the start of the page is shown. Save it to Files to keep all of it."
+        : null
+  return note ? <p className="text-muted-foreground text-xs">{note}</p> : null
+}
+
+// Fetched HTML shows as source text, never rendered; Markdown goes through the sanitising renderer.
 function FetchedContent({ content, result }: { content: string; result: FetchUrlResult }) {
   return (
     <div
@@ -96,28 +121,21 @@ function FetchedContent({ content, result }: { content: string; result: FetchUrl
   )
 }
 
-function FetchUrlActions({ result }: { result: FetchUrlResult }) {
-  const conversationId = useActionableConversation()
-  return conversationId === null ? null : (
-    <FetchUrlActionButtons conversationId={conversationId} result={result} />
-  )
-}
-
-function FetchUrlActionButtons({
+function FetchUrlActions({
+  addToKnowledgeBase,
   conversationId,
   result,
+  save,
 }: {
+  addToKnowledgeBase: ReturnType<typeof useCreateDocumentFromUrlMutation>
   conversationId: string
   result: FetchUrlResult
+  save: ReturnType<typeof useSaveFetchedPage>
 }) {
-  const { workspace } = useActiveWorkspace()
-  const save = useSaveFetchedPage()
-  const addToKnowledgeBase = useCreateDocumentFromUrlMutation()
-  if (!canEditWorkspace(workspace.current_user_role)) return null
-
   const savedFileId = result.file?.id ?? save.data?.fileId
   const documentId = result.knowledgeBaseDocument?.id ?? addToKnowledgeBase.data?.id
-  const savable = result.status >= 200 && result.status < 300 && result.format !== "unsupported"
+  const loaded = result.status >= 200 && result.status < 300
+  const savable = loaded && result.format !== "unsupported"
   const error = save.error ?? addToKnowledgeBase.error
   return (
     <div className="grid justify-items-end gap-1">
@@ -136,7 +154,7 @@ function FetchUrlActionButtons({
         ) : null}
         {documentId ? (
           <Done href={`/knowledge/${documentId}`} label="Added to Knowledge Base" />
-        ) : (
+        ) : loaded ? (
           <ActionButton
             icon={<BookPlusIcon />}
             label="Add to Knowledge Base"
@@ -149,7 +167,7 @@ function FetchUrlActionButtons({
             }}
             pending={addToKnowledgeBase.isPending}
           />
-        )}
+        ) : null}
       </div>
       {error ? (
         <p className="text-destructive text-right text-xs" role="alert">

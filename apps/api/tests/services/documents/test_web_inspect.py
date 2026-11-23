@@ -62,6 +62,20 @@ def test_an_empty_app_mount_looks_client_rendered() -> None:
     assert not served["looks_client_rendered"] and served["word_count"] == 5
 
 
+def test_a_base_tag_resolves_addresses_but_never_makes_another_host_same_site() -> None:
+    facts = _inspect(
+        """<html><head><base href="https://other.example/"></head>
+<body><a href="offers">Offers</a><script src="app.js"></script>
+<script src="https://www.shop.example/own.js"></script></body></html>""",
+        ["links", "tags"],
+    )
+
+    assert [(item["url"], item["internal"]) for item in facts["links"]["items"]] == [
+        ("https://other.example/offers", False)
+    ]
+    assert facts["script_urls"] == ["https://www.shop.example/own.js"]
+
+
 def test_tags_report_ids_from_scripts_and_noscript_and_presence_without_one() -> None:
     facts = _inspect(
         """<html><head>

@@ -12,6 +12,22 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Agents read the web on any deployment, with no second AI provider and no
+  model cost. `fetch_url` returns a page as Markdown, text, or HTML, and
+  reads PDF and Office files; `check_urls` checks the status, redirects, and
+  key headers of up to 500 URLs in one call; and `inspect_page` returns a
+  page's titles, headings, links, images, structured data, and tracking
+  tags, or the entries of a sitemap or `robots.txt` file. Every request goes
+  to a public address that is checked on each redirect, and limits per site
+  and per run keep an audit polite. The **Fetch URL** card has **Save to
+  Files** and **Add to Knowledge Base** buttons. Limits are the
+  `WEB_FETCH_*` settings.
+- `measure_page_speed` scores up to 50 pages with Google PageSpeed Insights:
+  performance and other category scores, Core Web Vitals from real visits,
+  and the biggest issues, with each page's full report one click away on the
+  card. It's available when `PAGESPEED_API_KEY` is set. On GCP, set
+  `PAGESPEED_ENABLED=true` and the bootstrap creates a restricted key in
+  your own project.
 - Agents learn from finished conversations. About once a day, a background
   pass reads each workspace's finished conversations and saves what is worth
   keeping, such as preferences, decisions, and outcomes, and tidies
@@ -602,6 +618,18 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- The helper-model page reader is renamed to `ask_url(url, question,
+  provider, model)`. It answers a question about one page and returns
+  `answer` in place of `content`; `model_provider` is renamed to `provider`.
+  `fetch_url` is the HTTP tool described under Added, so an agent that had
+  `fetch_url` selected keeps a page reader. Select `ask_url` for agents that
+  need the helper.
+- `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is renamed to
+  `WEB_FETCH_BLOCKED_DOMAINS` and applies to every web tool, including
+  redirects. The old name is ignored, so rename it in your environment.
+- `KB_URL_FETCH_TIMEOUT_SECONDS` bounds a whole Knowledge Base URL fetch,
+  including redirects, where it used to bound each step. URL sources are
+  requested as `Praxis-Agents-Fetch/1.0`.
 - Every memory is the same kind. The `core` kind, its always-visible list,
   and its approval step are gone, so `save_memory`, `update_memory`, and
   `forget_memory` run without approval unless an agent or workspace policy
@@ -741,6 +769,7 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Fixed
 
+
 - Linking another sign-in provider to an account returns through the same
   redirect address as sign-in, so each provider needs only one registered
   redirect URI.
@@ -799,6 +828,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   under the sidebar.
 
 ### Security
+
+- `WEB_FETCH_BLOCKED_DOMAINS` also blocks an internationalised domain name.
+  The web tools match, resolve, and request such a name in its ASCII
+  (`xn--`) form; list it in that form.
+- A web fetch drops any cookie a site sets before it follows a redirect, so
+  a cookie can't reach a second site at the same address.
 
 - Hono, used only by development tooling, is on 4.13.16, which fixes five
   advisories in its CSRF, validator, router, and CSS helpers

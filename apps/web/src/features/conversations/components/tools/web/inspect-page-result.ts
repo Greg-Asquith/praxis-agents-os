@@ -70,7 +70,6 @@ export type InspectPageResult = {
   fetchedAt: string
   finalUrl: string
   kind: InspectedKind | null
-  note: string | null
   page: InspectedPage | null
   redirects: WebRedirect[]
   robots: InspectedRobots | null
@@ -103,7 +102,6 @@ export function inspectPageResult(value: unknown): InspectPageResult | null {
     fetchedAt,
     finalUrl,
     kind,
-    note: typeof value["note"] === "string" ? value["note"] : null,
     page: kind === "page" ? inspectedPage(value["page"]) : null,
     redirects,
     robots: kind === "robots" ? inspectedRobots(value["robots"]) : null,

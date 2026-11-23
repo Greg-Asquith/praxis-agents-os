@@ -25,7 +25,6 @@ export type FetchUrlResult = {
   finalUrl: string
   format: FetchUrlFormat
   knowledgeBaseDocument: SavedReference | null
-  note: string | null
   redirects: WebRedirect[]
   requestedUrl: string
   status: number
@@ -68,7 +67,6 @@ export function fetchUrlResult(value: unknown): FetchUrlResult | null {
     finalUrl,
     format,
     knowledgeBaseDocument: savedReference(value["knowledge_base_document"]),
-    note: typeof value["note"] === "string" ? value["note"] : null,
     redirects,
     requestedUrl,
     status,

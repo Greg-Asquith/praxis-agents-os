@@ -26,6 +26,7 @@ from services.web.domain import (
 from services.web.utils import (
     HostLimiter,
     Resolver,
+    ascii_host,
     blocked_domain_for_host,
     gunzip_bounded,
     is_gzip_body,
@@ -135,11 +136,14 @@ async def _follow(
     started = time.perf_counter()
     current_url = request.url
     while True:
+        # Requests are pinned to addresses, so a kept cookie would follow a redirect to another host.
+        client.cookies.clear()
         target = validate_public_url(
             current_url,
             standard_ports_only=request.standard_ports_only,
         )
-        blocked = blocked_domain_for_host(target.host, request.blocked_domains)
+        host = ascii_host(target)
+        blocked = blocked_domain_for_host(host, request.blocked_domains)
         if blocked is not None:
             raise WebFetchError(f"URL domain '{blocked}' is blocked", error_class="blocked_domain")
         pinned = await pin_public_request(target, resolver=request.resolver)
@@ -153,7 +157,7 @@ async def _follow(
 
         async with AsyncExitStack() as stack:
             if request.limiter is not None:
-                await stack.enter_async_context(request.limiter.hold(target.host))
+                await stack.enter_async_context(request.limiter.hold(host))
             hop_started = time.perf_counter()
             response = await stack.enter_async_context(
                 client.stream(

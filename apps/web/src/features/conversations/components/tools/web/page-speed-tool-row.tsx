@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRightIcon, ExternalLinkIcon, GaugeIcon } from "lucide-react"
-import { useMemo, type ReactNode } from "react"
+import { useCallback, useMemo, type ReactNode } from "react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { parseResultPreview } from "@/components/tool-ui/result-preview"
@@ -56,6 +56,7 @@ import {
   pageSpeedResult,
   scoreRating,
 } from "@/features/conversations/components/tools/web/page-speed-result"
+import { webErrorText } from "@/features/conversations/components/tools/web/web-error-text"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { formatBytes, formatDateTime, pluralize, titleCaseToken } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -65,7 +66,7 @@ const HEADING = <ToolHeading icon={GaugeIcon}>Measure Page Speed</ToolHeading>
 // Timings start hidden; the Columns menu and each page's detail show them.
 const COLUMNS: DataColumn[] = [
   { key: "url", kind: "text", label: "Page", width: "auto" },
-  { key: "performance", kind: "number", label: "Score", width: 150 },
+  { key: "score", kind: "number", label: "Score", width: 150 },
   { key: "cwv", kind: "text", label: "Core Web Vitals", width: 150 },
   { key: "issue", kind: "text", label: "Biggest Issue", width: 220 },
   { key: "lcp", kind: "number", label: "LCP", hidden: true },
@@ -89,21 +90,6 @@ const RATING_TEXT: Record<Rating, string> = {
   poor: "text-destructive",
 }
 
-const ERROR_TEXT: Record<string, string> = {
-  blocked_domain: "On the blocked domain list",
-  dns_failure: "The address doesn't exist",
-  invalid_url: "Not a page address",
-  key_rejected: "Google rejected the PageSpeed key",
-  non_public_address: "Not a public page",
-  not_checked: "Not reached in time",
-  page_error: "The page failed during the test",
-  page_unreachable: "Google couldn't load the page",
-  quota_exceeded: "Google's test limit was reached",
-  service_error: "PageSpeed Insights didn't respond",
-  timeout: "The test took too long",
-  unsupported_port: "Not a public page",
-}
-
 export function PageSpeedToolRow({
   activity,
   defaultOpen = false,
@@ -113,30 +99,32 @@ export function PageSpeedToolRow({
 }) {
   if (activity.status === "running") {
     const count = pageSpeedArgsCount(activity.args)
-    const label = `Testing ${String(count)} ${pluralize(count ?? 0, "page")}…`
-    return count ? <FanOutSkeleton running heading={HEADING} label={label} /> : null
+    return count ? (
+      <FanOutSkeleton
+        running
+        heading={HEADING}
+        label={`Testing ${String(count)} ${pluralize(count, "page")}…`}
+      />
+    ) : null
   }
   if (activity.status !== "completed") return null
   const envelope = parseResultPreview(activity.result)
   const data = envelope?.data ?? activity.result
   if (pageSpeedResult(data) === null) return null
-  const render = (visible: unknown, _incomplete: boolean, control?: ReactNode) => {
-    const result = pageSpeedResult(visible)
-    return result ? (
-      <PageSpeedCard
-        defaultOpen={defaultOpen}
-        notice={
-          envelope ? (
-            <>
-              {control}
-              <ResultPreviewNotice data={visible} preview={envelope} />
-            </>
-          ) : null
-        }
-        result={result}
-      />
-    ) : null
-  }
+  const render = (visible: unknown, _incomplete: boolean, control?: ReactNode) => (
+    <PageSpeedCard
+      data={visible}
+      defaultOpen={defaultOpen}
+      notice={
+        envelope ? (
+          <>
+            {control}
+            <ResultPreviewNotice data={visible} preview={envelope} />
+          </>
+        ) : null
+      }
+    />
+  )
   return envelope ? (
     <RetainedResult
       key={envelope.fileId}
@@ -151,14 +139,17 @@ export function PageSpeedToolRow({
 }
 
 function PageSpeedCard({
+  data,
   defaultOpen,
   notice,
-  result,
 }: {
+  data: unknown
   defaultOpen: boolean
   notice: ReactNode
-  result: PageSpeedResult
 }) {
+  // One parse per result keeps the table's cells, and any open popover, mounted between renders.
+  const result = useMemo(() => pageSpeedResult(data), [data])
+  if (result === null) return null
   const counts = outcomeCounts(result.rows)
   const details = [
     { label: "Pages", value: result.rows.length.toLocaleString("en-GB") },
@@ -190,9 +181,12 @@ function PageSpeedCard({
 }
 
 function PageTable({ result }: { result: PageSpeedResult }) {
+  const category = result.categories.includes("performance") ? "performance" : result.categories[0]
   const median = medianOf(
     result.rows.flatMap((row) =>
-      row.outcome === "not_tested" ? [] : (row.scores.performance ?? [])
+      row.outcome !== "not_tested" && row.lead !== null && row.lead.category === category
+        ? row.lead.score
+        : []
     )
   )
   const byUrl = useMemo(
@@ -210,34 +204,38 @@ function PageTable({ result }: { result: PageSpeedResult }) {
             cwv: row.field?.coreWebVitals ?? null,
             inp: row.field?.metrics.inp_ms?.p75 ?? null,
             issue: row.errorClass
-              ? (ERROR_TEXT[row.errorClass] ?? "Not tested")
+              ? (webErrorText(row.errorClass) ?? "Not Tested")
               : issue
                 ? titleCaseToken(issue.audit, "")
                 : null,
             lcp: row.lab?.lcp_ms ?? null,
             outcome: row.outcome,
-            performance: row.scores.performance ?? null,
+            score: row.lead?.score ?? null,
             url: row.requestedUrl,
           }
         }),
     [result.rows]
   )
+  const renderCell = useCallback(
+    (column: DataColumn, row: Record<string, unknown>) => {
+      const page = byUrl.get(String(row["url"]))
+      return page ? <PageCell column={column} page={page} result={result} /> : null
+    },
+    [byUrl, result]
+  )
   return (
     <>
-      {median === null ? null : (
+      {median === null || category === undefined ? null : (
         <div className="flex items-center gap-2">
-          <ScoreGauge label="Median performance" score={median} />
-          <span className="text-sm">Median Performance</span>
+          <ScoreGauge label={`Median ${CATEGORY_LABELS[category]}`} score={median} />
+          <span className="text-sm">Median {CATEGORY_LABELS[category]}</span>
         </div>
       )}
       <DataTable
         columns={COLUMNS}
         exportFilename="page-speed.csv"
         pageSize={10}
-        renderCell={(column, row) => {
-          const page = byUrl.get(String(row["url"]))
-          return page ? <PageCell column={column} page={page} result={result} /> : null
-        }}
+        renderCell={renderCell}
         rowDetails={false}
         rowNoun={["page", "pages"]}
         rows={rows}
@@ -288,7 +286,7 @@ function PageCell({
           </PopoverHeader>
           {page.outcome === "not_tested" ? (
             <p className="text-muted-foreground text-xs">
-              {ERROR_TEXT[page.errorClass ?? ""] ?? "This page wasn't tested."}
+              {webErrorText(page.errorClass) ?? "This page wasn't tested."}
             </p>
           ) : (
             <PageDetail result={result} row={page} />
@@ -297,7 +295,7 @@ function PageCell({
       </Popover>
     )
   }
-  if (column.key === "performance") return <ScoreText page={page} />
+  if (column.key === "score") return <ScoreText page={page} />
   if (column.key === "cwv")
     return page.outcome === "not_tested" ? null : <VitalsBadge field={page.field} />
   if (column.key === "lcp" && page.lab?.lcp_ms !== undefined) {
@@ -585,14 +583,13 @@ function IssueItems({ audit }: { audit: FailedAudit }) {
 }
 
 function ScoreText({ page }: { page: PageSpeedRow }) {
-  const score = page.scores.performance
-  if (page.outcome === "not_tested") {
-    return <span className="text-muted-foreground">Not tested</span>
+  if (page.outcome === "not_tested" || page.lead === null) {
+    return <span className="text-muted-foreground">Not Tested</span>
   }
-  if (score == null) return null
+  const { category, score } = page.lead
   return (
     <span className="flex items-center gap-2">
-      <ScoreGauge label="Performance" score={score} size="sm" />
+      <ScoreGauge label={CATEGORY_LABELS[category]} score={score} size="sm" />
       <span className="text-muted-foreground">{OUTCOMES[scoreRating(score)].label}</span>
     </span>
   )
@@ -703,8 +700,7 @@ function savingText(audit: FailedAudit): string | null {
 
 function sortScore(row: PageSpeedRow): number {
   // Lowest score first; pages that weren't tested go last.
-  if (row.outcome === "not_tested") return 101
-  return row.scores.performance ?? Object.values(row.scores).find((score) => score != null) ?? 100
+  return row.outcome === "not_tested" ? 101 : (row.lead?.score ?? 100)
 }
 
 function outcomeCounts(rows: PageSpeedRow[]): Record<PageOutcome, number> {

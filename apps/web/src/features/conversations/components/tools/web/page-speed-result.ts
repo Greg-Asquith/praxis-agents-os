@@ -69,6 +69,8 @@ export type PageSpeedRow = {
   field: FieldData | null
   finalUrl: string | null
   lab: LabMetrics | null
+  // The score the row is rated by: performance, or the first category tested without it.
+  lead: { category: PageSpeedCategory; score: number } | null
   outcome: PageOutcome
   report: { length: number; offset: number } | null
   requestedUrl: string
@@ -166,13 +168,17 @@ function pageSpeedRow(value: unknown): PageSpeedRow | null {
     }
   }
   const report = value["report"]
-  const lead = scores.performance ?? Object.values(scores).find((score) => score != null) ?? null
+  const leadCategory = PAGE_SPEED_CATEGORIES.find((category) => scores[category] != null)
+  const leadScore = leadCategory ? scores[leadCategory] : null
+  const lead =
+    leadCategory && leadScore != null ? { category: leadCategory, score: leadScore } : null
   return {
     errorClass,
     field: fieldData(value["field"]),
     finalUrl: safeHttpUrl(nodeText(value["final_url"])),
     lab: labMetrics(value["lab"]),
-    outcome: errorClass !== null || lead == null ? "not_tested" : scoreRating(lead),
+    lead,
+    outcome: errorClass !== null || lead === null ? "not_tested" : scoreRating(lead.score),
     report:
       isRecord(report) &&
       isNonNegativeInteger(report["offset"]) &&

@@ -296,13 +296,13 @@ on, do the following:
 
 If your project manages API keys by hand, set `PAGESPEED_ENABLED=false`, keep
 the binding, and create the key and its secret version yourself. The first
-command creates a key restricted to the PageSpeed Insights API, and the second
-stores its key string in the secret:
+command creates a key restricted to the PageSpeed Insights API without
+printing its key string, and the second stores the key string in the secret:
 
 ```bash
 gcloud services api-keys create --display-name=praxis-pagespeed \
   --api-target=service=pagespeedonline.googleapis.com \
-  --project=PROJECT_ID --format=none
+  --project=PROJECT_ID --async --no-user-output-enabled
 gcloud services api-keys get-key-string KEY_NAME --project=PROJECT_ID \
   --format='value(keyString)' | tr -d '\n' \
   | gcloud secrets versions add praxis-pagespeed-api-key --data-file=- \
@@ -318,7 +318,8 @@ Replace the following:
 
 Bootstrap still creates the secret from the binding, but with
 `PAGESPEED_ENABLED=false` it doesn't enable the APIs, so enable
-`pagespeedonline.googleapis.com` and `apikeys.googleapis.com` first.
+`pagespeedonline.googleapis.com` and `apikeys.googleapis.com` first. With the
+binding present, the API doesn't start until the secret has a version.
 
 ### 5. Create the first super admin
 

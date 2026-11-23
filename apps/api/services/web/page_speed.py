@@ -21,6 +21,7 @@ from core.exceptions.general import AppValidationError
 from services.web.domain import WebFetchError
 from services.web.utils import (
     Resolver,
+    ascii_host,
     blocked_domain_for_host,
     resolve_public_addresses,
     validate_public_url,
@@ -246,7 +247,7 @@ def report_json(report: dict[str, Any]) -> str:
 def url_origin(url: str) -> str:
     """Returns a URL's origin as a browser writes it, such as `https://example.com`."""
     parsed = httpx2.URL(url)
-    host = parsed.raw_host.decode("ascii").lower()
+    host = ascii_host(parsed)
     port = f":{parsed.port}" if parsed.port is not None else ""
     return f"{parsed.scheme}://{host}{port}"
 
@@ -256,9 +257,10 @@ async def _check_page_url(
 ) -> None:
     try:
         parsed = validate_public_url(url, standard_ports_only=True)
-        if blocked_domain_for_host(parsed.host, blocked_domains) is not None:
+        host = ascii_host(parsed)
+        if blocked_domain_for_host(host, blocked_domains) is not None:
             raise PageSpeedError("URL is on the blocked domain list", error_class="blocked_domain")
-        await resolver(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        await resolver(host, parsed.port or (443 if parsed.scheme == "https" else 80))
     except WebFetchError as exc:
         raise PageSpeedError(exc.message, error_class=exc.error_class) from exc
 

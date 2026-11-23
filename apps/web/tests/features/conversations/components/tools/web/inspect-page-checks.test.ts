@@ -35,4 +35,22 @@ describe("pageChecks", () => {
     expect(tones.slice(4)).not.toContain("warning")
     expect(checks.find((check) => check.label.startsWith("Canonical"))?.tone).toBe("pass")
   })
+
+  it("treats robots none as noindex and a path's letter case as another page", () => {
+    const page: InspectedPage = {
+      headings: null,
+      images: null,
+      links: null,
+      looksClientRendered: false,
+      meta: { ...META, canonical: "https://A.example/Pricing", robots: "NONE" },
+      structuredData: null,
+      tags: null,
+      wordCount: 120,
+    }
+
+    const labels = pageChecks(page, "https://a.example/pricing").map((check) => check.label)
+
+    expect(labels).toContain("Canonical points to another URL")
+    expect(labels).not.toContain("Search engines can index it")
+  })
 })

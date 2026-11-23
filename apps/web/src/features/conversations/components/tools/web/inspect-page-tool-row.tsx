@@ -128,7 +128,13 @@ function InspectPageCard({
     >
       <div className="grid min-w-0 gap-4">
         {notice}
-        {result.note ? <p className="text-muted-foreground text-xs">{result.note}</p> : null}
+        {result.blockedBySite ? (
+          <p className="text-muted-foreground text-xs">
+            The site refused an automated request, so the page itself may be fine.
+          </p>
+        ) : result.kind === "unsupported" ? (
+          <p className="text-muted-foreground text-xs">This kind of file can't be inspected.</p>
+        ) : null}
         <RedirectList redirects={result.redirects} />
         {result.page ? <PageFacts finalUrl={result.finalUrl} page={result.page} /> : null}
         {result.sitemap ? <SitemapEntries sitemap={result.sitemap} /> : null}

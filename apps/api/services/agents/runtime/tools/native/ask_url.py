@@ -24,6 +24,7 @@ from dataclasses import replace
 from typing import Annotated, Literal, cast
 from urllib.parse import urlsplit
 
+import httpx2
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import WebFetch
@@ -58,7 +59,7 @@ from services.agents.runtime.tools.native.run_native_helper import run_native_he
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.ai_usage.domain import PURPOSE_WEB_FETCH
-from services.web.utils import blocked_domain_for_host, configured_blocked_domains
+from services.web.utils import ascii_host, blocked_domain_for_host, configured_blocked_domains
 from utils.validation import normalize_optional_text
 
 AskUrlProvider = Literal["anthropic", "google"]
@@ -456,10 +457,11 @@ def _safe_http_url(value: object) -> str | None:
 
 
 def _blocked_domain_for_url(url: str) -> str | None:
-    hostname = urlsplit(url).hostname
-    if hostname is None:
+    try:
+        host = ascii_host(httpx2.URL(url))
+    except httpx2.InvalidURL:
         return None
-    return blocked_domain_for_host(hostname, configured_blocked_domains())
+    return blocked_domain_for_host(host, configured_blocked_domains())
 
 
 def _truncate_answer(answer: str) -> str:

@@ -155,7 +155,7 @@ for manifest in services/praxis-api.yaml jobs/praxis-worker.yaml; do
     | grep -q 'name: praxis-pagespeed-api-key'
 done
 grep -Fq -- '--api-target=service=pagespeedonline.googleapis.com' "$GCP_DIR/bootstrap.sh"
-grep -Fq -- "--format=none --quiet" "$GCP_DIR/bootstrap.sh"
+grep -Fq -- "--async --no-user-output-enabled --quiet" "$GCP_DIR/bootstrap.sh"
 
 # App-domain share links render an empty origin as a string, never YAML null.
 sed -e 's/^ARTIFACT_ORIGIN=.*$/ARTIFACT_ORIGIN=/' \

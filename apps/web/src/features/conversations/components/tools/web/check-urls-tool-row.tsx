@@ -19,8 +19,9 @@ import {
   checkUrlsArgsCount,
   checkUrlsResult,
 } from "@/features/conversations/components/tools/web/check-urls-result"
+import { webErrorText } from "@/features/conversations/components/tools/web/web-error-text"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import { pluralize, titleCaseToken } from "@/lib/format"
+import { pluralize } from "@/lib/format"
 
 const HEADING = <ToolHeading icon={ListChecksIcon}>Check URLs</ToolHeading>
 
@@ -48,8 +49,13 @@ export function CheckUrlsToolRow({
 }) {
   if (activity.status === "running") {
     const count = checkUrlsArgsCount(activity.args)
-    const label = `Checking ${String(count)} ${pluralize(count ?? 0, "URL")}…`
-    return count ? <FanOutSkeleton running heading={HEADING} label={label} /> : null
+    return count ? (
+      <FanOutSkeleton
+        running
+        heading={HEADING}
+        label={`Checking ${String(count)} ${pluralize(count, "URL")}…`}
+      />
+    ) : null
   }
   if (activity.status !== "completed") return null
   const envelope = parseResultPreview(activity.result)
@@ -97,13 +103,14 @@ function CheckUrlsCard({
   const counts = outcomeCounts(result)
   const rows = useMemo(
     () =>
-      result.rows.map((row) => ({
+      // Problems first; the sort is stable, so each group keeps the order the agent asked in.
+      [...result.rows].sort(byOutcome).map((row) => ({
         content_type: row.contentType,
         final_url: row.finalUrl,
         h1_count: row.h1Count,
         outcome: row.outcome,
         redirects: row.redirects.map((hop) => String(hop.status)).join(" → "),
-        status: row.status ?? titleCaseToken(row.errorClass ?? "", "Failed"),
+        status: row.status ?? webErrorText(row.errorClass) ?? "Couldn't be checked",
         title: row.title,
         ttfb: row.timeToFirstByteMs,
         url: row.requestedUrl,
@@ -148,9 +155,22 @@ function CheckUrlsCard({
 
 function SummaryBadge({ counts }: { counts: Record<CheckedUrlOutcome, number> }) {
   if (counts.broken > 0) return <Badge variant="destructive">{counts.broken} Broken</Badge>
+  if (counts.blocked > 0) return <Badge variant="warning">{counts.blocked} Blocked</Badge>
   if (counts.not_checked > 0)
     return <Badge variant="warning">{counts.not_checked} Not Checked</Badge>
   return <Badge variant="success">Done</Badge>
+}
+
+const OUTCOME_ORDER: Record<CheckedUrlOutcome, number> = {
+  broken: 0,
+  blocked: 1,
+  not_checked: 2,
+  redirected: 3,
+  ok: 4,
+}
+
+function byOutcome(left: { outcome: CheckedUrlOutcome }, right: { outcome: CheckedUrlOutcome }) {
+  return OUTCOME_ORDER[left.outcome] - OUTCOME_ORDER[right.outcome]
 }
 
 function outcomeCounts(result: CheckUrlsResult): Record<CheckedUrlOutcome, number> {

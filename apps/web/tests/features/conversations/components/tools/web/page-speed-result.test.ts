@@ -20,7 +20,7 @@ function row(url: string, fields: Record<string, unknown> = {}) {
 }
 
 describe("pageSpeedResult", () => {
-  it("bands pages by score and keeps a row whose final URL isn't http(s)", () => {
+  it("bands pages by their lead score and keeps a row whose final URL isn't http(s)", () => {
     const redirected = {
       node: "praxis_untrusted",
       source_kind: "web_fetch",
@@ -41,6 +41,7 @@ describe("pageSpeedResult", () => {
         row("https://a.example/old", { scores: { performance: 50 }, final_url: redirected }),
         row("https://a.example/slow", { scores: { performance: 49 } }),
         row("https://a.example/late", { scores: {}, lab: null, error_class: "not_checked" }),
+        row("https://a.example/seo", { scores: { seo: 40 } }),
       ],
     })
 
@@ -49,7 +50,9 @@ describe("pageSpeedResult", () => {
       "needs_improvement",
       "poor",
       "not_tested",
+      "poor",
     ])
+    expect(result?.rows[4]?.lead).toEqual({ category: "seo", score: 40 })
     expect(result?.rows[1]?.finalUrl).toBeNull()
   })
 })

@@ -118,7 +118,7 @@ When `model` is omitted, the tool uses `DEFAULT_IMAGE_GENERATION_MODEL`
 (`nano-banana-2.1` by default) if it's available, otherwise the first available
 model in catalogue order. `generate_video` and `edit_video` do the same with
 `DEFAULT_VIDEO_GENERATION_MODEL` (`omni-1.2-flash`, which also edits); see
-[video tools](video-tools.md#generation). Routing between models (plan 352 B) is pending.
+[video tools](video-tools.md#generation). Routing between models is pending.
 
 The approval card shows **Image Model** with the model that will run, filled
 in by the tool's approval display arguments when the agent named none. Each

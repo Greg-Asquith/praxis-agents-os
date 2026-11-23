@@ -122,6 +122,27 @@ async def test_brackets_ipv6_literal_host_header() -> None:
     assert requests[0].headers["host"] == "[2606:4700:4700::1111]:8443"
 
 
+async def test_cookie_set_by_one_hop_is_never_sent_to_the_next() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(
+                302,
+                headers={"location": "https://redirect.example/final", "set-cookie": "sid=secret"},
+            )
+        return httpx2.Response(200, content=b"safe")
+
+    await fetch(
+        "https://source.example/document",
+        handler,
+        hosts={"source.example": (_PUBLIC,), "redirect.example": (_PUBLIC,)},
+    )
+
+    assert "cookie" not in requests[1].headers
+
+
 async def test_revalidates_redirect_before_connecting() -> None:
     connected_hosts: list[str] = []
 
@@ -157,6 +178,28 @@ async def test_refuses_redirect_to_blocked_domain_before_connecting() -> None:
 
     assert exc_info.value.error_class == "blocked_domain"
     assert connected_hosts == [_PUBLIC]
+
+
+async def test_internationalised_host_is_sent_and_denylisted_in_its_ascii_form() -> None:
+    requests: list[httpx2.Request] = []
+    hosts = {"xn--mnchen-3ya.example": (_PUBLIC,)}
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, content=b"safe")
+
+    await fetch("https://münchen.example/page", handler, hosts=hosts)
+
+    assert requests[0].headers["host"] == "xn--mnchen-3ya.example"
+    assert requests[0].extensions["sni_hostname"] == "xn--mnchen-3ya.example"
+    with pytest.raises(WebFetchError) as exc_info:
+        await fetch(
+            "https://münchen.example/page",
+            never_connect,
+            hosts=hosts,
+            blocked_domains=("xn--mnchen-3ya.example",),
+        )
+    assert exc_info.value.error_class == "blocked_domain"
 
 
 async def test_refuses_redirect_to_non_standard_port_when_required() -> None:
