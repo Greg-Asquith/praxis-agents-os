@@ -1,7 +1,7 @@
 // apps/web/src/integrations/sharepoint/lib/copy-result.ts
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
-import { parseSavedFile } from "@/integrations/saved-file"
+import { parseSavedFile } from "@/components/tool-ui/saved-file"
 import { sharePointItem } from "@/integrations/sharepoint/lib/items"
 import { isRecord } from "@/lib/guards"
 

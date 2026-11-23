@@ -1,46 +1,48 @@
-// apps/web/src/features/conversations/components/web-fetch-result.ts
+// apps/web/src/features/conversations/components/ask-url-result.ts
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { urlDomain } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
-export const WEB_FETCH_TOOL_NAME = "fetch_url"
+export const ASK_URL_TOOL_NAME = "ask_url"
 
-type WebFetchSource = {
+type AskUrlSource = {
   domain: string
   title: string
   url: string
 }
 
-export type WebFetchResult = {
-  content: string
+export type AskUrlResult = {
+  answer: string
   model: string
   provider: string
-  sources: WebFetchSource[]
+  question: string
+  sources: AskUrlSource[]
   url: string
 }
 
-export function webFetchUrl(value: unknown): string | null {
+export function askUrlUrl(value: unknown): string | null {
   if (!isRecord(value)) {
     return null
   }
   return safeHttpUrl(nodeText(value["url"]))
 }
 
-export function webFetchResult(value: unknown): WebFetchResult | null {
+export function askUrlResult(value: unknown): AskUrlResult | null {
   if (!isRecord(value) || !Array.isArray(value["sources"])) {
     return null
   }
   const url = safeHttpUrl(nodeText(value["url"]))
-  const content = nonEmptyText(nodeText(value["content"]))
+  const answer = nonEmptyText(nodeText(value["answer"]))
+  const question = nonEmptyText(nodeText(value["question"]))
   const model = nonEmptyText(nodeText(value["model"]))
-  const provider = nonEmptyText(nodeText(value["model_provider"]))
-  if (url === null || content === null || model === null || provider === null) {
+  const provider = nonEmptyText(nodeText(value["provider"]))
+  if (url === null || answer === null || question === null || model === null || provider === null) {
     return null
   }
 
-  const sources: WebFetchSource[] = []
+  const sources: AskUrlSource[] = []
   for (const item of value["sources"]) {
     if (!isRecord(item)) {
       return null
@@ -61,7 +63,7 @@ export function webFetchResult(value: unknown): WebFetchResult | null {
     sources.push({ domain, title: nonEmptyText(title) ?? domain, url: sourceUrl })
   }
 
-  return { content, model, provider, sources, url }
+  return { answer, model, provider, question, sources, url }
 }
 
 function nonEmptyText(value: string | null): string | null {

@@ -32,6 +32,7 @@ from routes.storage import router as storage_router
 from routes.tools import router as tools_router
 from routes.usage import router as usage_router
 from routes.users import router as users_router
+from routes.web import router as web_router
 from routes.workspaces import router as workspaces_router
 
 api_router = APIRouter(prefix=settings.API_V1_PREFIX)
@@ -60,6 +61,7 @@ api_router.include_router(storage_router)
 api_router.include_router(tools_router)
 api_router.include_router(usage_router)
 api_router.include_router(users_router)
+api_router.include_router(web_router)
 api_router.include_router(workspaces_router)
 
 __all__ = ["api_router", "artifact_serving_router", "health_router"]

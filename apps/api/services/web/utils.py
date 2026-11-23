@@ -11,16 +11,34 @@ import zlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Literal
 
 import httpx2
 
-from services.web.domain import WebFetchError
+from core.settings import settings
+from services.web.domain import FetchedResponse, WebFetchError
+from utils.document_markdown import document_content_type
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
 _STANDARD_PORTS = frozenset({80, 443})
 _GZIP_CONTENT_TYPES = frozenset({"application/gzip", "application/x-gzip"})
 _GZIP_MAGIC = b"\x1f\x8b"
+_HTML_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+_TEXT_TYPES = frozenset(
+    {
+        "application/ecmascript",
+        "application/javascript",
+        "application/json",
+        "application/x-javascript",
+        "application/xml",
+    }
+)
+_HTML_SNIFF_PREFIXES = (b"<!doctype html", b"<html")
+_FILE_NAME_MAX_CHARS = 120
+
+# How a fetched body is returned: an HTML page, verbatim text, a converted document, or not at all.
+ContentKind = Literal["html", "text", "document", "unsupported"]
 
 
 @dataclass(frozen=True)
@@ -121,6 +139,11 @@ def blocked_domain_for_host(host: str, blocked_domains: Iterable[str]) -> str | 
     return None
 
 
+def configured_blocked_domains() -> tuple[str, ...]:
+    """Returns the domains in `WEB_FETCH_BLOCKED_DOMAINS`, which settings validation normalises."""
+    return tuple(domain for domain in settings.WEB_FETCH_BLOCKED_DOMAINS.split(",") if domain)
+
+
 class HostLimiter:
     """Bounds concurrent requests to each host for one owner, such as an agent run.
 
@@ -138,6 +161,70 @@ class HostLimiter:
         semaphore = self._semaphores.setdefault(key, asyncio.Semaphore(self._per_host))
         async with semaphore:
             yield
+
+
+class RunFetchBudget:
+    """Counts the URLs one agent run fetches and bounds its requests to each host."""
+
+    def __init__(self, *, max_urls: int, per_host: int) -> None:
+        self.max_urls = max_urls
+        self.used = 0
+        self.limiter = HostLimiter(per_host)
+
+    @classmethod
+    def from_settings(cls) -> RunFetchBudget:
+        return cls(
+            max_urls=settings.WEB_FETCH_RUN_URL_BUDGET,
+            per_host=settings.WEB_FETCH_HOST_CONCURRENCY,
+        )
+
+    def take(self, count: int = 1) -> bool:
+        """Reserves `count` URLs, returning false without reserving any when too few remain."""
+        if self.used + count > self.max_urls:
+            return False
+        self.used += count
+        return True
+
+
+def content_kind(response: FetchedResponse) -> ContentKind:
+    """Classifies a fetched body by its media type, sniffing HTML when the type is missing."""
+    media_type = response.content_type.partition(";")[0].strip().lower()
+    if media_type in _HTML_TYPES:
+        return "html"
+    if response.gunzipped or media_type.startswith("text/") or media_type in _TEXT_TYPES:
+        return "text"
+    if media_type.endswith(("+json", "+xml")):
+        return "text"
+    if document_content_type(media_type) is not None:
+        return "document"
+    if media_type == "application/octet-stream" and response.body.lstrip()[:15].lower().startswith(
+        _HTML_SNIFF_PREFIXES
+    ):
+        return "html"
+    return "unsupported"
+
+
+def file_content_type(response: FetchedResponse) -> str | None:
+    """Returns the Files type a successful body saves as, or None when it can't be saved."""
+    if not 200 <= response.status < 300:
+        return None
+    kind = content_kind(response)
+    if kind == "html":
+        return "text/html"
+    if kind == "text":
+        media_type = response.content_type.partition(";")[0].strip().lower()
+        editable = None if response.gunzipped else document_content_type(media_type)
+        return editable or "text/plain"
+    if kind == "document":
+        return document_content_type(response.content_type)
+    return None
+
+
+def page_file_name(url: str) -> str:
+    """Returns a readable File name from a URL's host and path, such as `example.com - pricing`."""
+    parsed = httpx2.URL(url)
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    return " - ".join([parsed.host, *segments])[:_FILE_NAME_MAX_CHARS]
 
 
 def is_gzip_body(body: bytes, *, content_type: str, path: str) -> bool:

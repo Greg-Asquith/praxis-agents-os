@@ -70,7 +70,8 @@ architecture decisions. Paths in this table are relative to this file:
 | Third-party connections, discovery, or integration tools | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
 | Microsoft Graph tools, File sources and copies, upload sessions, retained approval reviews, or previews | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md) |
 | Model catalogue, Vertex, or model HTTP clients | [Model providers](../../docs/implementation/model-providers.md) |
-| Native fetch, code, classifiers, or image tools | [Native helper tools](../../docs/implementation/native-tools.md) |
+| Native search, code, classifiers, or image tools | [Native helper tools](../../docs/implementation/native-tools.md) |
+| Web fetch tools, the web transport, or saving fetched pages | [Web tools](../../docs/implementation/web-tools.md) |
 | Worker admission, leases, or shutdown | [Workers](../../docs/implementation/workers.md) |
 | Usage ledger, pricing, or usage routes | [AI usage](../../docs/implementation/ai-usage.md) |
 | Storage, uploads, file revisions, or attachments | [Storage and files](../../docs/implementation/storage-and-files.md) |

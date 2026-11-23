@@ -3,5 +3,6 @@
 """Public-web fetch operations."""
 
 from services.web.fetch import fetch_url
+from services.web.read_page import read_page
 
-__all__ = ["fetch_url"]
+__all__ = ["fetch_url", "read_page"]

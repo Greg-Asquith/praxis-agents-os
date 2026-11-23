@@ -18,6 +18,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import EventSink
+from services.web.utils import RunFetchBudget
 
 if TYPE_CHECKING:
     from services.agents.runtime.execution_control import ExecutionControl
@@ -45,3 +46,5 @@ class RuntimeDeps:
     active_context: ResolvedActiveContext | None = None
     workspace_tool_definitions: tuple[RuntimeToolDefinition, ...] = ()
     workspace_tool_policies: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    # Lives as long as these deps, so a resumed run starts a fresh count.
+    web_fetch_budget: RunFetchBudget = field(default_factory=RunFetchBudget.from_settings)

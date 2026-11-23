@@ -58,11 +58,13 @@ Write the script like this:
   `pathlib`. `read_table` pages rows from sheets, CSV files, and saved results; `read_workbook`,
   `read_presentation`, and `read_word_document` read Office files; the `edit_*` and `create_*`
   document tools change and create them. Total rows in the script, and check each edit's
-  `readback` against what you wrote.
+  `readback` against what you wrote. `fetch_url` reads public web pages; set its
+  `save_to_files` for a long page and read the saved File in windows.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
   math, pathlib (path strings only), random, re, sys, time, typing, and unicodedata. There is no
-  network, environment, or filesystem access, and no other packages. `datetime.now()` reads UTC
+  network access except through tools, no environment or filesystem access, and no other
+  packages. `datetime.now()` reads UTC
   time; sleeps return immediately. Booleans are not integers: count matches with
   `sum(1 for x in rows if cond)`, not `sum(cond for x in rows)`.
 - Each script allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value

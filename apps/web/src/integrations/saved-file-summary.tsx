@@ -2,7 +2,7 @@
 
 import { WorkspaceFileMedia } from "@/components/tool-ui/workspace-file-media"
 import { workspaceMediaKind } from "@/components/tool-ui/workspace-file-preview"
-import type { SavedFile } from "@/integrations/saved-file"
+import type { SavedFile } from "@/components/tool-ui/saved-file"
 import { formatBytes } from "@/lib/format"
 
 export function SavedFileSummary({ file }: { file: SavedFile }) {

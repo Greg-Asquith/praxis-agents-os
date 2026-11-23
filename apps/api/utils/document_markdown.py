@@ -107,6 +107,47 @@ async def convert_document_to_markdown_result(
     )
 
 
+@dataclass(frozen=True)
+class WebPageResult:
+    """One part of an HTML page in the requested format, with its title."""
+
+    content: str
+    title: str | None
+    truncated: bool
+
+
+async def render_web_page(
+    data: bytes,
+    *,
+    output_format: Literal["markdown", "text", "html"],
+    part: Literal["main", "body", "head", "full"],
+    drop: tuple[str, ...],
+    max_bytes: int,
+) -> WebPageResult:
+    """Renders one part of an HTML page in a worker; `drop` applies to the HTML format only.
+
+    Raises:
+        TextWindowError: If `part` is `head` or `full` and the format isn't HTML.
+        DocumentConversionError: If the page can't be parsed.
+    """
+    result = await _run(
+        "web_page",
+        data,
+        "text/html",
+        "page.html",
+        strict_utf8=False,
+        format=output_format,
+        part=part,
+        drop=list(drop),
+        max_bytes=max_bytes,
+    )
+    return WebPageResult(
+        content=(result.data or b"").decode("utf-8"),
+        title=result.value["title"],
+        truncated=result.value["truncated"],
+    )
+
+
 def document_extension(filename: str, *, content_type: str | None = None) -> str:
     """Return a safe lower-case document extension."""
     suffix = PurePosixPath(safe_filename(filename)).suffix.lower()

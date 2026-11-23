@@ -90,6 +90,7 @@ table are relative to this file:
 | Approval fields, entity editors, tool results, or artifacts                        | [Tool dispatch](../../docs/implementation/tool-dispatch.md)                                   |
 | Workflow rows and nested approval replay                                           | [Code Mode](../../docs/implementation/code-mode.md)                                           |
 | Native tool results, generated files, or classifier settings                       | [Native helper tools](../../docs/implementation/native-tools.md)                              |
+| Fetch URL rows and saving fetched pages                                            | [Web tools](../../docs/implementation/web-tools.md)                                           |
 | File links and uploads                                                             | [Storage and files](../../docs/implementation/storage-and-files.md)                           |
 | Video rows, players, and video attachments                                         | [Video tools](../../docs/implementation/video-tools.md)                                       |
 | Authentication redirects or audit presentation                                     | [Security](../../docs/implementation/security.md)                                             |

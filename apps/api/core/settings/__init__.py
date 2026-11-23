@@ -43,6 +43,7 @@ from core.settings.retention import EventRetentionSettingsMixin
 from core.settings.scratch import ScratchSettingsMixin
 from core.settings.security import SecuritySettingsMixin
 from core.settings.urls import UrlSettingsMixin
+from core.settings.web import WebFetchSettingsMixin
 from core.storage_buckets import (
     LOCAL_WORKSPACE_BUCKET_PREFIX,
     S3_ACCOUNT_REGIONAL_UNSUPPORTED_REGIONS,
@@ -85,6 +86,7 @@ class Settings(
     SecuritySettingsMixin,
     ScratchSettingsMixin,
     UrlSettingsMixin,
+    WebFetchSettingsMixin,
 ):
     """
     Combined global settings

@@ -310,6 +310,10 @@ conversational acts, memory, planning, skill loading, delegation, and
 completion reporting are direct-only: they are conversation-shaped, not
 data-shaped.
 
+`fetch_url` is eligible because it calls no model and returns JSON-safe data.
+Its server strings arrive as `web_fetch` nodes, so any script that reads a
+page is tainted. `ask_url` stays direct.
+
 Helper-native tools also stay direct unless they return text-only JSON-safe
 data and send content only to a configured model provider. Native `classify`
 and active workspace-defined `classifier_{name}` tools meet that exception:

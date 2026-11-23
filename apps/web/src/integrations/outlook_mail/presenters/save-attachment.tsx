@@ -2,7 +2,7 @@
 
 import { outlookMailProvider } from "@/integrations/outlook_mail/provider"
 import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
-import { parseSavedFile } from "@/integrations/saved-file"
+import { parseSavedFile } from "@/components/tool-ui/saved-file"
 import { SavedFileSummary } from "@/integrations/saved-file-summary"
 
 export const outlookMailSaveAttachmentPresenter = defineIntegrationReadPresenter(

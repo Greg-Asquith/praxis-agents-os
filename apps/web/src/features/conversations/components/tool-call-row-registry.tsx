@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/tool-call-row-registry.tsx
 
 import { artifactToolPresenter } from "@/features/conversations/components/artifact-tool-presenter"
+import { askUrlToolPresenter } from "@/features/conversations/components/ask-url-tool-presenter"
 import { chartToolPresenter } from "@/features/conversations/components/chart-tool-presenter"
 import { classifierToolPresenter } from "@/features/conversations/components/classifier-tool-presenter"
 import { codeModeWorkflowPresenter } from "@/features/conversations/components/code-mode-presenter"
@@ -8,6 +9,7 @@ import { completionReportPresenter } from "@/features/conversations/components/c
 import { documentToolPresenter } from "@/features/conversations/components/document-tool-presenter"
 import { delegationToolPresenters } from "@/features/conversations/components/delegation-tool-presenter"
 import { forecastToolPresenter } from "@/features/conversations/components/forecast-tool-presenter"
+import { fetchUrlToolPresenter } from "@/features/conversations/components/fetch-url-tool-presenter"
 import { fileToolPresenter } from "@/features/conversations/components/file-tool-presenter"
 import { kbToolPresenter } from "@/features/conversations/components/kb-tool-presenter"
 import { memoryToolPresenter } from "@/features/conversations/components/memory-tool-presenter"
@@ -20,7 +22,6 @@ import {
   videoResultPresenter,
   videoToolPresenters,
 } from "@/features/conversations/components/video-tool-presenter"
-import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
 import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { integrationToolRowPresenters } from "@/integrations/registry"
@@ -39,7 +40,8 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   classifierToolPresenter,
   chartToolPresenter,
   forecastToolPresenter,
-  webFetchToolPresenter,
+  askUrlToolPresenter,
+  fetchUrlToolPresenter,
   webSearchToolPresenter,
   ...delegationToolPresenters,
   skillActivationPresenter,

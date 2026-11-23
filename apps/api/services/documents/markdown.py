@@ -126,8 +126,8 @@ def _convert(data: bytes, args: dict[str, Any], limits: PackageLimits) -> tuple[
     if content_type not in HTML_CONTENT_TYPES:
         return _convert_document(data, args["extension"], limits), "converted"
     if not args["web_page"]:
-        return _html_to_markdown(data.decode("utf-8", errors=errors)), "converted"
-    markdown = _html_to_markdown(_main_page_content(data).decode("utf-8", errors=errors))
+        return html_to_markdown(data.decode("utf-8", errors=errors)), "converted"
+    markdown = html_to_markdown(_main_page_content(data).decode("utf-8", errors=errors))
     return strip_markdown_noise(markdown), "converted"
 
 
@@ -148,7 +148,7 @@ def _convert_document(data: bytes, extension: str, limits: PackageLimits) -> str
     return text
 
 
-def _html_to_markdown(html: str) -> str:
+def html_to_markdown(html: str) -> str:
     from markdownify import ATX, markdownify
 
     # Markitdown's HTML converter selects ATX headings over markdownify's default.
@@ -156,10 +156,13 @@ def _html_to_markdown(html: str) -> str:
 
 
 def _main_page_content(data: bytes) -> bytes:
-    """Keeps the main page content and drops chrome, hidden, and scripted elements."""
     from bs4 import BeautifulSoup
 
-    soup = BeautifulSoup(data, "html.parser")
+    return str(main_page_root(BeautifulSoup(data, "html.parser"))).encode("utf-8")
+
+
+def main_page_root(soup: Any) -> Any:
+    """Returns the page's main element with chrome, hidden, and scripted elements removed."""
     root = soup.find("main") or soup.body or soup
     removable = root.find_all(_PAGE_BOILERPLATE_TAGS)
     removable += root.find_all(
@@ -169,4 +172,4 @@ def _main_page_content(data: bytes) -> bytes:
     for tag in removable:
         if not tag.decomposed:
             tag.decompose()
-    return str(root).encode("utf-8")
+    return root

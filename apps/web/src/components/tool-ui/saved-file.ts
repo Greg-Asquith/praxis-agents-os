@@ -1,4 +1,4 @@
-// apps/web/src/integrations/saved-file.ts
+// apps/web/src/components/tool-ui/saved-file.ts
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isNonNegativeInteger, isRecord } from "@/lib/guards"

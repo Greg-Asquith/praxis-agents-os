@@ -1,7 +1,7 @@
 # Provider-native helper tools
 
-Read this before changing native web search, URL fetching, classification, or
-image generation. Backend paths are relative to
+Read this before changing native web search, page questions, classification,
+or image generation. Backend paths are relative to
 `apps/api/services/agents/runtime/tools/`.
 
 ## Web search
@@ -15,17 +15,12 @@ guidance tells the agent to resolve relative dates against the conversation
 date and answer once the evidence is sufficient. This guidance does not enforce
 a hard limit on repeated searches.
 
-## URL fetching
+## Page questions
 
-Native URL fetching uses the governed `fetch_url` helper-tool path for
-direct Anthropic and Google (direct or Vertex). Anthropic's Vertex transport does not
-support native web fetch. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
-requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
-and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
-dispatch as well as passed natively. Google is unavailable while that
-denylist is configured because URL Context cannot enforce domain filtering.
-The tool defaults to `auto`. When a workspace or agent requires approval, keep
-the full URL editable and visible. Never enable the local fetch fallback.
+`ask_url` answers a question about one page through a helper model's native
+web fetch. `fetch_url` returns a page's content on Praxis infrastructure with
+no helper model. For both, the shared settings, and saving fetched pages, see
+[Web tools](web-tools.md).
 
 ## Code and Office files
 

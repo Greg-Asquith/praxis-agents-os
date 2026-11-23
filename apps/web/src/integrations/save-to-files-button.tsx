@@ -3,11 +3,8 @@
 import { CheckIcon, FolderDownIcon, Loader2Icon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import {
-  type ProviderFileSource,
-  type SaveToFilesMutation,
-  useActionableConversation,
-} from "@/integrations/file-sources"
+import { useActionableConversation } from "@/components/tool-ui/tool-conversation-context"
+import type { ProviderFileSource, SaveToFilesMutation } from "@/integrations/file-sources"
 import { getErrorMessage } from "@/lib/api/errors"
 
 /** Saves one provider file on click, then links it in Files; hidden on read-only views. */

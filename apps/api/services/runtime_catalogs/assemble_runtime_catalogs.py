@@ -142,11 +142,11 @@ def _assemble_runtime_catalogs() -> None:
     )
     from services.agents.runtime.tools.files import list_files, read_file, write_file
     from services.agents.runtime.tools.native import (
+        ask_url,
         classifier,
         image_editing,
         image_generation,
         video_to_image,
-        web_fetch,
         web_search,
     )
     from services.agents.runtime.tools.video import (
@@ -157,9 +157,11 @@ def _assemble_runtime_catalogs() -> None:
         generate_video,
         transcribe_video,
     )
+    from services.agents.runtime.tools.web import fetch_url
 
     _ = (
         artifacts,
+        ask_url,
         ask_video,
         charting,
         classifier,
@@ -173,6 +175,7 @@ def _assemble_runtime_catalogs() -> None:
         edit_video,
         edit_word_document,
         edit_workbook,
+        fetch_url,
         find_video_moments,
         forecasting,
         generate_video,
@@ -191,7 +194,6 @@ def _assemble_runtime_catalogs() -> None:
         transcribe_video,
         video_to_image,
         view_document_image,
-        web_fetch,
         web_search,
         write_file,
     )

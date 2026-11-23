@@ -270,7 +270,7 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
 def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch):
     from pydantic_ai import ModelRetry
 
-    from services.agents.runtime.tools.native import web_fetch
+    from services.agents.runtime.tools.native import ask_url
 
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "helper-probe")
@@ -279,4 +279,4 @@ def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     with pytest.raises(ModelRetry, match="providers are configured"):
-        web_fetch.resolve_web_fetch_model(None, workspace=None, model_provider="anthropic")
+        ask_url.resolve_ask_url_model(None, workspace=None, provider="anthropic")

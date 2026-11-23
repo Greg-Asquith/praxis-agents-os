@@ -175,7 +175,11 @@ async def _save_pdf(
         # A File that can't be saved rolls back alone, and the other invoices still save.
         async with ctx.deps.db.begin_nested():
             file = await create_copy(
-                ctx.deps,
+                ctx.deps.db,
+                workspace=ctx.deps.workspace,
+                user=ctx.deps.user,
+                conversation_id=ctx.deps.conversation.id,
+                agent=ctx.deps.agent,
                 name=f"Google Ads {kind} {invoice_id}.pdf",
                 content=content,
                 content_type="application/pdf",

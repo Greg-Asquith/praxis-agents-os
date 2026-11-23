@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, create_autospec
 from uuid import uuid4
 
 import httpx2
@@ -120,7 +120,9 @@ def _ctx(*entries):
         deps=SimpleNamespace(
             active_context=ResolvedActiveContext(entries=entries),
             workspace=SimpleNamespace(id=uuid4()),
+            user=SimpleNamespace(id=uuid4()),
             agent=SimpleNamespace(id=uuid4()),
+            conversation=SimpleNamespace(id=uuid4()),
             run=SimpleNamespace(id=uuid4()),
             db=SimpleNamespace(begin_nested=_transaction),
         ),
@@ -138,11 +140,13 @@ def use(monkeypatch):
 
     def install(client: _InvoicesClient) -> AsyncMock:
         monkeypatch.setattr(tool_module, "google_ads_client", AsyncMock(return_value=client))
-        saved = AsyncMock(
-            side_effect=lambda _deps, **kwargs: SimpleNamespace(
+        # Autospec keeps the call honest to create_copy's real signature.
+        saved = create_autospec(
+            tool_module.create_copy,
+            side_effect=lambda _db, **kwargs: SimpleNamespace(
                 file=SimpleNamespace(id=uuid4(), name=kwargs["name"]),
                 bytes_written=len(kwargs["content"]),
-            )
+            ),
         )
         monkeypatch.setattr(tool_module, "create_copy", saved)
         return saved
@@ -208,7 +212,13 @@ async def test_save_pdf_saves_each_invoice_once_and_keeps_googles_address_from_t
     # Both selected entries list the one invoice asked for; the manager asks Google nothing.
     assert client.downloads == [_PDF_URL]
     saved.assert_awaited_once()
+    deps = ctx.deps
+    assert saved.await_args.args == (deps.db,)
     assert saved.await_args.kwargs == {
+        "workspace": deps.workspace,
+        "user": deps.user,
+        "conversation_id": deps.conversation.id,
+        "agent": deps.agent,
         "name": "Google Ads Invoice 5391-0042.pdf",
         "content": _PDF,
         "content_type": "application/pdf",

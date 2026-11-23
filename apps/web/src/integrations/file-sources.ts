@@ -1,14 +1,11 @@
 // apps/web/src/integrations/file-sources.ts
 
-import { use, useState } from "react"
+import { useState } from "react"
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query"
 
-import {
-  SharedTranscriptContext,
-  ToolConversationContext,
-} from "@/components/tool-ui/tool-conversation-context"
+import { useActionableConversation } from "@/components/tool-ui/tool-conversation-context"
 import { workspaceMediaKind } from "@/components/tool-ui/workspace-file-preview"
-import { parseSavedFile } from "@/integrations/saved-file"
+import { parseSavedFile } from "@/components/tool-ui/saved-file"
 import { apiFetch, apiRequest } from "@/lib/api/client"
 import { getErrorMessage, parseApiError } from "@/lib/api/errors"
 import { baseFilesQueryKeys } from "@/lib/file-query-keys"
@@ -64,13 +61,6 @@ export function providerFileViewQueryOptions(conversationId: string, source: Pro
     gcTime: 0,
     retry: false,
   })
-}
-
-/** The conversation a card can act in, or null on shared transcripts and outside chats. */
-export function useActionableConversation(): string | null {
-  const conversationId = use(ToolConversationContext)
-  const shared = use(SharedTranscriptContext)
-  return shared ? null : conversationId
 }
 
 /** Opens media in a dialog and PDFs in a new tab; `view` is null when the file can't be shown. */
