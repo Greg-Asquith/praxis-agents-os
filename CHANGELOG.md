@@ -28,6 +28,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   card. It's available when `PAGESPEED_API_KEY` is set. On GCP, set
   `PAGESPEED_ENABLED=true` and the bootstrap creates a restricted key in
   your own project.
+- Agents follow a built-in **Site Audit** guide when asked to audit or
+  health-check a website. They read `robots.txt` and the sitemap, check every
+  page from one script, look at key pages' titles, tags, and speed, compare
+  with Search Console when it's connected, and say what a plain fetch can't
+  show, such as pages built in the browser.
 - Agents learn from finished conversations. About once a day, a background
   pass reads each workspace's finished conversations and saves what is worth
   keeping, such as preferences, decisions, and outcomes, and tidies

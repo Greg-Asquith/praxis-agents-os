@@ -347,6 +347,29 @@ unavailable while it's set because URL Context can't enforce domain
 filtering. Usage is metered as `web_fetch`. When approval is required, the
 URL and question stay editable.
 
+## Site audit skill
+
+The internal skill `runtime/internal_skills/site-audit.md` (**Site Audit**)
+holds the working rules for auditing a site with these tools. It covers:
+
+- One `run_code` script that reads `robots.txt`, the sitemap index and its
+  children, checks every URL with `check_urls` in batches of 500, and
+  returns only problems and counts. Its example script is the one
+  `tests/scenarios/test_site_audit.py` runs.
+- Code Mode and run budget limits, and resending `not_checked` rows.
+- Reading broken pages, server errors, redirect chains, blocked responses,
+  and conflicting indexing signals.
+- Key pages: `page_facts` across the site, `inspect_page` on 10 to 20 pages,
+  and `measure_page_speed` on 20 to 50, mobile first, where it's available.
+- Search Console's sitemaps and index status, where it's connected.
+- What a plain fetch can't show: client-rendered pages, tags inside a tag
+  manager, sites that refuse automated requests, and Googlebot checks by
+  address.
+
+The `site_audit_*` cases in `apps/api/evals/datasets/agent_behavior.yaml`
+check that the agent starts with one script and reports a broken page, a
+redirect chain, and a blocked page from its result.
+
 ## Untrusted content
 
 Every string from the remote server crosses dispatch as a `web_fetch`
@@ -399,6 +422,9 @@ These suites cover the web tools:
   `read_file` at one row's range returning that page's failed audits and a
   hostile snippet inside a node, the run budget refusing the next call, and
   `not_checked` rows past a shortened deadline.
+- `tests/scenarios/test_site_audit.py`: the site audit skill's example
+  script, run against a fake site, reporting its 404 page and two-hop
+  redirect chain.
 - `tests/scenarios/test_ask_url.py`: approval editing of the URL and
   question, and the denylist retry.
 - `tests/routes/web/test_save_fetched_page.py`: the person's save and the

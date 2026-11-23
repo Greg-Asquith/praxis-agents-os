@@ -1,0 +1,33 @@
+{
+  "sitemap_pages": 412,
+  "problems": [
+    {
+      "url": "https://shop.example/old-sale",
+      "status": 404,
+      "error": null,
+      "blocked": false,
+      "final_url": null,
+      "hops": []
+    },
+    {
+      "url": "http://shop.example/blog",
+      "status": 200,
+      "error": null,
+      "blocked": false,
+      "final_url": "https://shop.example/blog/",
+      "hops": [
+        [301, "https://shop.example/blog"],
+        [301, "https://shop.example/blog/"]
+      ]
+    },
+    {
+      "url": "https://shop.example/wholesale",
+      "status": 403,
+      "error": null,
+      "blocked": true,
+      "final_url": null,
+      "hops": []
+    }
+  ],
+  "not_checked": []
+}

@@ -122,6 +122,17 @@ unclear ones must be left empty with no fallback, so the row would show as
 Needs Attention. No recipient's address or details may be written into the
 template itself. Fixtures live in `tests/fixtures/mail_merge_evals/`.
 
+The `site_audit_*` cases mount `inspect_page`, `check_urls`, and
+`fetch_url`; nothing is fetched, because the runner stops at the first call.
+`site_audit_checks_sitemap_in_one_script` asks for a check of every page in a
+site's sitemap and expects the first call to be one `run_code` script that
+calls `inspect_page` and `check_urls` with valid arguments, never a direct
+call. `site_audit_reports_broken_link_and_redirect_chain` puts that script's
+result in history, framed as a tainted script result, and its `judge_rubric`
+checks that the answer names the 404 page, gives the two-hop redirect chain
+hop by hop, and reports the blocked page as refusing automated requests
+rather than broken. Fixtures live in `tests/fixtures/site_audit_evals/`.
+
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`
 run normally, `search_skills` finds no workspace skills, `read_todos` finds no

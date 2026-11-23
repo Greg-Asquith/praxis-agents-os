@@ -512,6 +512,31 @@ cases:
           dan.kim@example.com: Daniel
           mateo@rossigelato.example.com: Mateo
           hannah.price@example.org: Hannah
+  - name: site_audit_checks_sitemap_in_one_script
+    inputs:
+      prompt: "Can you check shop.example for broken links and redirects? Go through every page in its sitemap."
+      tool_names: ["inspect_page", "check_urls", "fetch_url"]
+    metadata:
+      judge_response: false
+      expected_tools: ["run_code"]
+      workflow_tools: ["inspect_page", "check_urls"]
+      forbidden_tools: ["inspect_page", "check_urls", "fetch_url"]
+  - name: site_audit_reports_broken_link_and_redirect_chain
+    inputs:
+      prompt: "That's the sitemap check for shop.example. Write up what it found for our web team. Don't run any more checks for now."
+      tool_names: ["inspect_page", "check_urls", "fetch_url"]
+      channel_fixture:
+        tool_name: run_code
+        args:
+          code: "robots = await inspect_page(url='https://shop.example/robots.txt')"
+        fixture_path: "fixtures/site_audit_evals/run_code_sitemap_check.json"
+        source_kind: code_mode_workflow
+        source_ref: eval-site-audit
+    metadata:
+      judge_response: false
+      required_text: ["old-sale", "404"]
+      forbidden_tools: ["run_code", "inspect_page", "check_urls", "fetch_url"]
+      judge_rubric: "The conversation already holds a script result that checked all 412 pages in shop.example's sitemap. /old-sale returned 404; http://shop.example/blog redirected twice (301 to https://shop.example/blog, then 301 to https://shop.example/blog/); /wholesale returned 403 with blocked_by_site true; every other page answered normally. The response reports /old-sale as broken; gives the /blog redirect chain hop by hop and suggests pointing the sitemap or links straight at the final URL; says /wholesale refused an automated request rather than calling it broken; and says how many pages were checked. It doesn't claim anything was checked that wasn't, such as page speed, tracking tags, or links between pages."
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."
