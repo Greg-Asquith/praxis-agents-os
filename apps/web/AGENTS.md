@@ -23,6 +23,10 @@ Follow the existing layout and dependency boundaries:
   and `tools/<family>/` holds each tool family's presenters, rows, and result
   parsers. Put a new tool's files in its family directory, and mirror the same
   path under `tests/`.
+- Deployment-specific code lives in `src/custom/`, with tests in
+  `tests/custom/`. Core imports only its `index.ts` file, from the four files
+  that `.dependency-cruiser.cjs` names. The Tools page in `src/routes/tools.tsx`
+  lists what the custom module contributes and stays empty in this repository.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;
@@ -92,6 +96,7 @@ table are relative to this file:
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Integration connections, recovery, or provider presenters                          | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
 | Microsoft Graph approvals, retained File reviews, copies, or shared email previews | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md)                  |
+| Deployment-specific pages, routes, or tool cards                                   | [Custom code](../../docs/architecture/custom-code.md)                                         |
 | Conversation streaming, recovery, context, or schedules                            | [Agent runs](../../docs/implementation/agent-runs.md)                                         |
 | Approval fields, entity editors, tool results, or artifacts                        | [Tool dispatch](../../docs/implementation/tool-dispatch.md)                                   |
 | Workflow rows and nested approval replay                                           | [Code Mode](../../docs/implementation/code-mode.md)                                           |

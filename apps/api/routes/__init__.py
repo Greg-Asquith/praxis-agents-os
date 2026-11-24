@@ -5,6 +5,7 @@
 from fastapi import APIRouter
 
 from core.settings import settings
+from custom.routes import router as custom_router
 from routes.agent_runs import router as agent_runs_router
 from routes.agents import router as agents_router
 from routes.artifact_serving import router as artifact_serving_router
@@ -63,5 +64,7 @@ api_router.include_router(usage_router)
 api_router.include_router(users_router)
 api_router.include_router(web_router)
 api_router.include_router(workspaces_router)
+# Deployment routes share one prefix so they can't shadow a core route.
+api_router.include_router(custom_router, prefix="/custom")
 
 __all__ = ["api_router", "artifact_serving_router", "health_router"]

@@ -57,3 +57,6 @@ from models.skills import Skill  # noqa: F401
 from models.user import User, UserAuth  # noqa: F401
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership  # noqa: F401
 from models.workspace_tool_settings import WorkspaceToolSetting  # noqa: F401
+
+# Last, so deployment models can import any core model.
+import custom.models  # noqa: F401  # isort: skip

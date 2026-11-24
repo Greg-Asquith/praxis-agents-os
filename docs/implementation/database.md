@@ -171,7 +171,8 @@ follows:
 ## Create a migration
 
 Alembic has separate `core` and `app` branch heads. Platform infrastructure
-tables go on the `core` branch; the `app` branch is reserved for verticals.
+tables go on the `core` branch. The `app` branch belongs to each deployment's
+[custom code](../architecture/custom-code.md); core adds nothing to it after `app_0001`.
 Before creating a migration, complete the
 [local database setup](local-development.md#backend-commands) so the database
 is running and migrated. From the repository root, enter `apps/api/` and
@@ -196,7 +197,7 @@ uv run alembic revision --autogenerate \
   -m "describe core schema change"
 ```
 
-For a vertical change, use the `app` branch instead:
+For a deployment's custom code, use the `app` branch instead:
 
 ```bash
 uv run alembic revision --autogenerate \

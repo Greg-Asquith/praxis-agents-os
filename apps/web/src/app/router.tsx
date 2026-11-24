@@ -12,6 +12,7 @@ import {
   redirect,
 } from "@tanstack/react-router"
 
+import { customAppRoutes, customPublicRoutes } from "@/custom"
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
 import { validateArtifactDetailSearch, validateArtifactsSearch } from "@/features/artifacts/search"
@@ -147,6 +148,12 @@ const contextRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/context",
   component: lazyRouteComponent(() => import("@/routes/context"), "ContextRoute"),
+})
+
+const toolsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/tools",
+  component: lazyRouteComponent(() => import("@/routes/tools"), "ToolsRoute"),
 })
 
 const workspacesRoute = createRoute({
@@ -501,8 +508,11 @@ const integrationOauthCallbackRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute]),
   oauthCallbackLayoutRoute.addChildren([oauthCallbackRoute]),
+  ...customPublicRoutes(rootRoute),
   appRoute.addChildren([
     contextRoute,
+    toolsRoute,
+    ...customAppRoutes(appRoute),
     conversationsRoute,
     sharedChatRoute,
     conversationRuntimeRoute.addChildren([homeRoute, newConversationRoute, conversationRoute]),

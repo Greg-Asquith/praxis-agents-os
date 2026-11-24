@@ -3,6 +3,7 @@
 import { Link } from "@tanstack/react-router"
 
 import { navigationItemsForRole, type NavigationItem } from "@/config/navigation"
+import { useCustomTools } from "@/custom"
 import { cn } from "@/lib/utils"
 
 export function PrimaryNavigation({
@@ -14,7 +15,7 @@ export function PrimaryNavigation({
   pathname: string
   workspaceRole: string | null
 }) {
-  const navigationItems = navigationItemsForRole(workspaceRole)
+  const navigationItems = navigationItemsForRole(workspaceRole, useCustomTools().length > 0)
   const activeLabel = activeNavigationLabel(pathname, navigationItems)
 
   return (

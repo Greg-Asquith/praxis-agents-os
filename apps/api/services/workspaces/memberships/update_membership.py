@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from custom.hooks import before_membership_change
 from models.user import User
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -51,6 +52,7 @@ async def update_membership(
 
     new_role = payload.role.value
     if new_role != membership.role:
+        await before_membership_change(db, actor=actor, membership=membership, new_role=new_role)
         # Lock entity rows first, then the workspace serialization point.
         await lock_workspace_membership_writes(db, workspace_id=workspace_id)
         await ensure_not_last_owner(db, membership=membership)

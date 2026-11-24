@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from core.exceptions.auth import AuthenticationError
 from core.rate_limiting import record_login_failure
+from custom.hooks import after_sign_in
 from models.user import User
 from services.auth.schemas import AuthResponse, AuthSession, TotpVerifyRequest
 from services.auth.utils import (
@@ -121,6 +122,7 @@ async def verify_totp(
     )
     # Password/OAuth full sessions accept invites in issue_auth_response; TOTP upgrades here.
     await accept_pending_invitations_for_user(db, user=user, request=request)
+    await after_sign_in(db, user=user, request=request)
     return AuthResponse(
         user=await build_auth_user(db, user),
         session=AuthSession(expires_at=upgraded["expires_at"], twofa_verified=True),

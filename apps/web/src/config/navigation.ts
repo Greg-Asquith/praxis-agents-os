@@ -6,6 +6,7 @@ import {
   LayoutDashboardIcon,
   LibraryBigIcon,
   PlugIcon,
+  WrenchIcon,
   type LucideIcon,
 } from "lucide-react"
 
@@ -17,6 +18,7 @@ export type NavigationItem =
       disabled: false
       activeWhen?: readonly string[]
       managerOnly?: boolean
+      customToolsOnly?: boolean
     }
   | {
       label: string
@@ -65,10 +67,21 @@ const mainNavigation: NavigationItem[] = [
     icon: PlugIcon,
     disabled: false,
   },
+  {
+    label: "Tools",
+    to: "/tools",
+    icon: WrenchIcon,
+    disabled: false,
+    customToolsOnly: true,
+  },
 ] as const
 
-export function navigationItemsForRole(role: string | null | undefined) {
-  return mainNavigation.filter((item) => !item.managerOnly || isWorkspaceManagerRole(role))
+export function navigationItemsForRole(role: string | null | undefined, hasCustomTools: boolean) {
+  return mainNavigation.filter(
+    (item) =>
+      (!item.managerOnly || isWorkspaceManagerRole(role)) &&
+      (item.disabled || !item.customToolsOnly || hasCustomTools)
+  )
 }
 
 function isWorkspaceManagerRole(role: string | null | undefined) {

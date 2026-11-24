@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
 from core.exceptions.general import ConflictError
+from custom.hooks import after_workspace_created
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
@@ -73,6 +74,7 @@ async def create_workspace(
     from services.agents.builtin import create_builtin_agent
 
     await create_builtin_agent(db, workspace=workspace, owner=actor)
+    await after_workspace_created(db, workspace=workspace, actor=actor, request=request)
 
     await record_workspace_audit_event(
         db,

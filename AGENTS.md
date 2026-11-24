@@ -16,6 +16,8 @@ Read the instructions and references that apply to the task:
 - For backend changes, read [backend guidelines](apps/api/AGENTS.md).
 - For frontend changes, read [frontend guidelines](apps/web/AGENTS.md).
 - For reviews and final self-review, use the [review checklist](REVIEW.md).
+- For code that only one deployment needs, read
+  [custom code](docs/architecture/custom-code.md).
 - For implementation details, use the [documentation index](docs/README.md).
   Read the relevant domain and provider references before editing that area.
 
@@ -46,6 +48,10 @@ Apply these rules throughout the task:
   file under `apps/api/services/agents/runtime/internal_skills/` too.
 - Describe public capabilities as implemented only when wired end to end.
   Mark incomplete capabilities as pending.
+- Each customer runs their own clone. Put deployment-specific code only in
+  `apps/api/custom/` and `apps/web/src/custom/`, and never import it from core
+  outside the named seams. Keep both directories free of deployment code in
+  this repository.
 - Keep secrets, generated caches, virtual environments, local databases, and
   build outputs out of Git.
 - You are working as a swarm of agents collaborating to reach the same goals. 

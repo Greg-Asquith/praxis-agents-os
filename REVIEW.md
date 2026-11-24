@@ -51,6 +51,16 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   integration-fetched data, file text) is registered in the threat model and
   exercised by adversarial fixtures before it ships.
 
+## Custom Code Boundary
+
+- Deployment-specific code lives only in `apps/api/custom/`,
+  `apps/web/src/custom/`, their test directories, and the Alembic `app`
+  branch. Core never imports it outside the named seams in
+  [custom code](docs/architecture/custom-code.md), and no seam list was widened
+  to make a core feature depend on custom code.
+- Custom routes, tools, jobs, and tables meet the same tenancy, role, audit,
+  and row-level security rules as core code.
+
 ## Agent Runtime Invariants
 
 - All agent-callable tools go through the registry and the dispatch choke
@@ -69,7 +79,7 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 - Errors raise the typed exceptions in `core/exceptions`, not ad-hoc
   `HTTPException`.
 - Schema changes are Alembic migrations on the correct branch (`core` for
-  platform infrastructure, `app` for verticals); nothing mutates schema at
+  platform infrastructure, `app` for a deployment's custom code); nothing mutates schema at
   startup.
 - Request paths stay async with no blocking calls; runtime HTTP uses
   `httpx2`, with plain `httpx` confined to dev and tests.

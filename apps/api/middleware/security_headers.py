@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from core.request_paths import is_custom_public_path
 from core.settings import settings
 from middleware.utils import _is_app_frame_path, _is_artifact_serving_path
 
@@ -74,6 +75,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "Content-Security-Policy",
                 "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
             )
+        if is_custom_public_path(request.url.path):
+            # Set here, not in the route, so 404 and 429 responses carry them too.
+            response.headers.setdefault("Cache-Control", "private, no-store")
+            response.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
         # HSTS (only when not in debug)
         if not settings.DEBUG:
             response.headers.setdefault(

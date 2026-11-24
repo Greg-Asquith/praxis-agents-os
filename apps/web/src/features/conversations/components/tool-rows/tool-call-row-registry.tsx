@@ -26,6 +26,7 @@ import {
   videoToolPresenters,
 } from "@/features/conversations/components/tools/video/video-tool-presenter"
 import { webSearchToolPresenter } from "@/features/conversations/components/tools/web/web-search-tool-presenter"
+import { customToolRowPresenters } from "@/custom"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { integrationToolRowPresenters } from "@/integrations/registry"
 
@@ -67,6 +68,7 @@ export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
   for (const presenter of [
     ...TOOL_ROW_PRESENTERS,
     ...integrationToolRowPresenters(props.providerKey),
+    ...customToolRowPresenters,
     videoResultPresenter,
   ]) {
     try {

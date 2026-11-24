@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import is_super_admin_email
 from core.exceptions.auth import AuthorizationError
+from custom.hooks import before_membership_change
 from models.user import User
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
@@ -53,6 +54,7 @@ async def delete_membership(
         and not is_super_admin_email(actor.email)
     ):
         raise AuthorizationError("Requires higher level role")
+    await before_membership_change(db, actor=actor, membership=membership, new_role=None)
 
     # Lock entity rows first, then the workspace serialization point.
     await lock_workspace_membership_writes(db, workspace_id=workspace_id)

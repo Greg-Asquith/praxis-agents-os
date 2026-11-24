@@ -207,3 +207,7 @@ def _assemble_runtime_catalogs() -> None:
     )
 
     load_enabled_providers()
+
+    from custom.runtime import register_custom_runtime
+
+    register_custom_runtime()

@@ -23,6 +23,7 @@ from core.rate_limiting import (
     record_login_failure,
 )
 from core.settings import settings
+from custom.hooks import after_sign_in
 from models.user import User
 from services.auth.schemas import AuthResponse, AuthSession, AuthUser
 from services.security import (
@@ -126,6 +127,7 @@ async def issue_auth_response(
     # TOTP completion has its own full-auth hook in verify_totp.
     if not require_twofa:
         await accept_pending_invitations_for_user(db, user=user, request=request)
+        await after_sign_in(db, user=user, request=request)
     auth_user = None if require_twofa else await build_auth_user(db, user)
     return AuthResponse(
         user=auth_user,

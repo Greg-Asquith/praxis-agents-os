@@ -24,6 +24,9 @@ Follow these backend conventions:
   `__init__.py` files may only compose routers from those operation modules.
 - Each service operation must live in its own service file. Service package
   `__init__.py` files may only re-export operation functions.
+- Deployment-specific code lives in the `custom/` package, with tests in
+  `tests/custom/` and migrations on the Alembic `app` branch. Core imports it
+  only in the files that `tests/contract/test_custom_import_laws.py` names. Don't add a seam or a core import to reach custom code.
 - Service-specific helpers belong in `utils.py` inside that service directory.
   Helpers that are not service-specific belong in the top-level
   `apps/api/utils/` package.
@@ -69,6 +72,7 @@ architecture decisions. Paths in this table are relative to this file:
 | Code Mode or nested approvals | [Code Mode](../../docs/implementation/code-mode.md) |
 | Third-party connections, discovery, or integration tools | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
 | Microsoft Graph tools, File sources and copies, upload sessions, retained approval reviews, or previews | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md) |
+| Deployment-specific routes, tools, jobs, or models | [Custom code](../../docs/architecture/custom-code.md) |
 | Model catalogue, Vertex, or model HTTP clients | [Model providers](../../docs/implementation/model-providers.md) |
 | Native search, code, classifiers, or image tools | [Native helper tools](../../docs/implementation/native-tools.md) |
 | Web fetch tools, the web transport, or saving fetched pages | [Web tools](../../docs/implementation/web-tools.md) |

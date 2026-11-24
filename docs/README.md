@@ -25,6 +25,7 @@ Use these references before changing the corresponding behaviour:
 | Registration, tool results, and approvals | [Tool dispatch](implementation/tool-dispatch.md) | Governance |
 | Nested execution and transcript replay | [Code Mode](implementation/code-mode.md) | [Code Mode design](architecture/code-mode.md) |
 | Third-party connections and tools | [Integrations and provider references](implementation/integrations/README.md) | [Provider packaging](architecture/integration-packaging.md) |
+| Deployment-specific tools, routes, and pages | [Backend custom code](../apps/api/custom/README.md), [web custom code](../apps/web/src/custom/README.md) | [Custom code](architecture/custom-code.md) |
 | Model routing, provider clients, and model lifecycle | [Model providers](implementation/model-providers.md) | Runtime |
 | Native search, code, classification, and images | [Native tools](implementation/native-tools.md) | Governance |
 | Web fetch, page questions, and saving fetched pages | [Web tools](implementation/web-tools.md) | [Threat model](architecture/threat-model.md) |

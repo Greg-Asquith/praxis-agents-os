@@ -129,3 +129,4 @@ docs/*
 !docs/architecture/
 !docs/guides/
 !docs/implementation/
+!docs/custom/

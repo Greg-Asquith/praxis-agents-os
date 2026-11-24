@@ -87,7 +87,7 @@ module.exports = {
       name: "integration-modules-enter-through-registry",
       severity: "error",
       comment: "Application code reaches provider UI only through its public registry or contract.",
-      from: { path: "^src/(components|features|routes|app)/" },
+      from: { path: "^src/(components|features|routes|app|custom)/" },
       to: {
         path: "^src/integrations/",
         pathNot: "^src/integrations/(registry|contract)\\.ts$",
@@ -114,6 +114,38 @@ module.exports = {
       comment: "Provider UI packages depend on the contract, never the shared loader registry.",
       from: { path: "^src/integrations/[^/]+/" },
       to: { path: "^src/integrations/registry\\.ts$" },
+    },
+    {
+      name: "custom-code-enters-through-named-seams",
+      severity: "error",
+      comment:
+        "Core reaches deployment code in src/custom only from these four files. Never add to this list to make a core feature depend on custom code.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/custom/",
+          "^src/app/router\\.tsx$",
+          "^src/routes/tools\\.tsx$",
+          "^src/components/shell/primary-navigation\\.tsx$",
+          "^src/features/conversations/components/tool-rows/tool-call-row-registry\\.tsx$",
+        ],
+      },
+      to: { path: "^src/custom/" },
+    },
+    {
+      name: "custom-code-exposes-only-its-index",
+      severity: "error",
+      comment: "Core imports the custom module's index file, never a file below it.",
+      from: { path: "^src/", pathNot: "^src/custom/" },
+      to: { path: "^src/custom/", pathNot: "^src/custom/index\\.ts$" },
+    },
+    {
+      name: "custom-code-does-not-import-app-bootstrap",
+      severity: "error",
+      comment:
+        "Deployment code receives its parent routes from the router instead of importing it.",
+      from: { path: "^src/custom/" },
+      to: { path: "^src/app/" },
     },
   ],
   options: {

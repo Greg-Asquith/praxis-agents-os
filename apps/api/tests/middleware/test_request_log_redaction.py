@@ -6,13 +6,16 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi import Response
+from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from core.exceptions.exception_handlers import app_exception_handler
 from core.exceptions.general import NotFoundError
 from core.rate_limiting import normalize_endpoint
 from middleware.request_logging import RequestLoggingMiddleware
+from middleware.security_headers import SecurityHeadersMiddleware
 
 
 async def _endpoint() -> Response:
@@ -75,3 +78,22 @@ def test_shared_artifact_rate_limit_keys_redact_and_collapse_tokens() -> None:
     second = "b" * 43
     assert normalize_endpoint(f"/artifacts/shared/{first}") == "/artifacts/shared/{token}"
     assert normalize_endpoint(f"/artifacts/shared/{second}") == "/artifacts/shared/{token}"
+
+
+def test_custom_public_link_paths_redact_to_one_rate_limit_key() -> None:
+    token, asset = "a" * 43, "b" * 64
+    base = "/api/v1/custom/public"
+    keys = {
+        normalize_endpoint(f"{base}/{token}"),
+        normalize_endpoint(f"{base}/{token}/assets/{asset}"),
+    }
+    assert keys == {f"{base}/{{token}}"}
+
+
+def test_custom_public_link_errors_are_never_cached_or_indexed() -> None:
+    app = Starlette()
+    app.add_middleware(SecurityHeadersMiddleware)
+    response = TestClient(app).get("/api/v1/custom/public/" + "a" * 43)
+    assert response.status_code == 404
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert response.headers["X-Robots-Tag"] == "noindex, nofollow"

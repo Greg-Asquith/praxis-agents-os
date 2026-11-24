@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from core.database import get_async_db_session_factory
 from core.exceptions.auth import AuthorizationError
 from core.rate_limiting import get_client_ip
+from core.request_paths import redact_capability_path
 from core.settings import settings
 from middleware.utils import _is_artifact_serving_path
 from services.security import SecurityEventType, safe_record_security_event
@@ -138,7 +139,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                     db,
                     event_type=SecurityEventType.CSRF_VALIDATION_FAILED,
                     ip_address=get_client_ip(request),
-                    endpoint=request.url.path,
+                    endpoint=redact_capability_path(request.url.path),
                     user_agent=request.headers.get("user-agent"),
                     request_id=request.scope.get("request_id"),
                     details={"reason": reason, "method": request.method},
@@ -182,7 +183,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                     exc.message,
                     extra={
                         "method": request.method,
-                        "path": request.url.path,
+                        "path": redact_capability_path(request.url.path),
                         "session_cookie_count": _cookie_name_count(request, "session"),
                         "csrf_cookie_count": _cookie_name_count(request, "csrf"),
                     },
@@ -195,7 +196,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                         "status": 403,
                         "detail": exc.message,
                         "method": request.method,
-                        "path": request.url.path,
+                        "path": redact_capability_path(request.url.path),
                         "has_csrf_header": bool(request.headers.get("x-csrf-token")),
                         **exc.details,
                     },

@@ -10,12 +10,13 @@ const webRoot = fileURLToPath(new URL("../../", import.meta.url))
 const nginxConfig = readFileSync(`${webRoot}nginx.conf`, "utf8")
 
 describe("production nginx security headers", () => {
-  it("includes the generated policy for the shell, assets, and SPA fallback", () => {
+  it("includes the generated policy for the shell, assets, shared links, and SPA fallback", () => {
     const include = "include /etc/nginx/snippets/praxis-security-headers.conf;"
 
-    expect(nginxConfig.match(new RegExp(include.replaceAll(".", "\\."), "g"))).toHaveLength(3)
+    expect(nginxConfig.match(new RegExp(include.replaceAll(".", "\\."), "g"))).toHaveLength(4)
     expect(nginxConfig).toContain("location /assets/")
     expect(nginxConfig).toContain("location = /index.html")
+    expect(nginxConfig).toContain("location /share/")
     expect(nginxConfig).toContain("location /")
   })
 
