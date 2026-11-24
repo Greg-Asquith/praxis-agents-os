@@ -206,6 +206,18 @@ row that is part of one. `replace_image` removes any crop and warns when
 the new image's shape differs from its frame. Charts are native category charts; `set_chart_data`
 refuses scatter and bubble charts.
 
+A run's `link` makes its text a link, in decks and Word documents. Deck and
+Word table operations take plain cell text, so a full `http` or `https`
+address in a cell becomes a link, with sentence punctuation after it left
+out. Links accept only `http`, `https`, and `mailto` addresses: the schema
+refuses others, such as `file` or `javascript`, and cells leave them as
+plain text, because Office apps open a link's target when it's clicked.
+Word links take the document's `Hyperlink` character style when it has one,
+and Word's default blue underline otherwise. A Word paragraph or cell that
+holds a link can't be rewritten later without removing it, so
+`set_paragraph` and cell writes refuse it as they refuse any link; change
+its words with `replace_text`.
+
 Workbooks target sheets by name and cells in A1 notation. A string starting
 with `=` is a formula. After all operations, every formula the call wrote,
 every name it defined, and every conditional format rule and chart it added is

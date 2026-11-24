@@ -13,12 +13,16 @@ from bisect import bisect_right
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from services.documents.operations.common import link_or_none
 from services.documents.reading import DocumentRequestError, ReadPage
 
 type OperationHandler = Callable[[dict[str, Any], "EditLog"], None]
 
 R_NAMESPACE = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+# Web addresses in cell text. Trailing punctuation usually ends the sentence, not the address.
+_CELL_ADDRESS = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
+_TRAILING_PUNCTUATION = ".,;:!?'"
 _MAX_WARNINGS = 50
 # Warnings and changes share at most this part of the page; the read-back gets the rest.
 _LOG_SHARE = 0.5
@@ -160,6 +164,38 @@ def split_attachments(data: bytes, args: dict[str, Any]) -> tuple[bytes, list[by
         attachments.append(data[position : position + size])
         position += size
     return data[:end], attachments
+
+
+def linked_runs(text: str) -> list[dict[str, Any]]:
+    """Splits cell text into run specs, with each full http or https address as a link.
+
+    Table operations take plain strings, so this is how a cell gets a link.
+    """
+    runs: list[dict[str, Any]] = []
+    position = 0
+    for match in _CELL_ADDRESS.finditer(text):
+        address = _trim_address(match.group())
+        link = link_or_none(address)
+        if link is None:
+            continue
+        start = match.start()
+        if start > position:
+            runs.append({"text": text[position:start]})
+        runs.append({"text": address, "link": link})
+        position = start + len(address)
+    if position < len(text) or not runs:
+        runs.append({"text": text[position:]})
+    return runs
+
+
+def _trim_address(address: str) -> str:
+    """Drops punctuation that ends a sentence, and a closing bracket the address didn't open."""
+    while address and (
+        address[-1] in _TRAILING_PUNCTUATION
+        or (address[-1] == ")" and address.count("(") < address.count(")"))
+    ):
+        address = address[:-1]
+    return address
 
 
 def format_font(font: Any, spec: dict[str, Any], *, points: Any, rgb: Any, themes: Any) -> None:

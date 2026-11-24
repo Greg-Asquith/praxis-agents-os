@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
 from models.ai_usage_event import AIUsageEvent
+from models.ai_usage_purpose import AIUsagePurpose
 from models.user import User
 from services.ai_usage.schemas import (
     UsageBreakdownResponse,
@@ -124,7 +125,11 @@ def _dimension_expressions(dimension: UsageDimension):
         )
         return key, label, ((User, User.id == AIUsageEvent.user_id),)
     if dimension is UsageDimension.PURPOSE:
-        return AIUsageEvent.purpose, AIUsageEvent.purpose, ()
+        return (
+            AIUsageEvent.purpose,
+            AIUsagePurpose.label,
+            ((AIUsagePurpose, AIUsagePurpose.key == AIUsageEvent.purpose),),
+        )
     return (
         func.concat(AIUsageEvent.provider, ":", AIUsageEvent.model),
         AIUsageEvent.model,

@@ -11,7 +11,7 @@ from core.database import SESSION_MAINTENANCE_KEY
 from core.exceptions.auth import AuthorizationError
 from core.settings import settings
 from services.ai_usage.admit_platform_ingestion import admit_platform_ingestion
-from services.ai_usage.domain import AIUsageEventData, AIUsagePurpose
+from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.record_durable import record_ai_usage_durable
 from services.embeddings.domain import (
     EmbeddingBatch,
@@ -32,7 +32,7 @@ async def embed_texts(
     *,
     workspace_id: UUID | None,
     scope: ContentScope = ContentScope.WORKSPACE,
-    purpose: AIUsagePurpose,
+    purpose: str,
     agent_id: UUID | None = None,
     user_id: UUID | None = None,
     run_id: UUID | None = None,

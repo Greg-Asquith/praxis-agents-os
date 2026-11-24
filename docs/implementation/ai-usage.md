@@ -79,6 +79,15 @@ The following contracts apply in this area:
   shutdown-only usage use the separate bounded runtime-role AI usage pool.
   Usage details must remain bounded, and the ledger must not become a budget
   or admission-enforcement mechanism.
+- Purposes live in the `ai_usage_purposes` table, and `ai_usage_events.purpose`
+  is a foreign key to it, so an event with an unknown purpose is refused.
+  Each row's `label` is what the usage page shows. Purposes that share a
+  label show as one row. Core migrations seed the core purposes, which
+  `services/ai_usage/domain.py` names. A deployment adds its own purpose
+  with an `app` branch migration that inserts a row, such as
+  `INSERT INTO ai_usage_purposes (key, label) VALUES ('report_commentary',
+  'Report commentary')`. Core migrations only add rows, so they never remove
+  a deployment's purposes. `praxis_app` can read the table but not change it.
 - Workspace usage reads use the ordinary tenant runtime session, retain an
   explicit workspace predicate, and price UTC-day buckets before wider folds.
   The `/usage` router is owner/admin-only. Costs are read-time estimates from

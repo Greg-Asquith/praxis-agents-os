@@ -18,12 +18,15 @@ from services.documents.editing import (
     EditLog,
     OperationError,
     format_font,
+    linked_runs,
     relink,
     replace_in_runs,
     run_operations,
 )
 
 _WORD = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+# Word's default hyperlink colour, for documents without a Hyperlink style.
+_DEFAULT_LINK_COLOUR = "0563C1"
 _SIMPLE_RUN_PARTS = frozenset(
     f"{_WORD}{tag}"
     for tag in ("rPr", "t", "tab", "cr", "noBreakHyphen", "softHyphen", "lastRenderedPageBreak")
@@ -201,7 +204,10 @@ class _DocumentEditor:
             table.style = table_style
         for row_index, values in enumerate(rows):
             for column, text in enumerate(values):
-                table.cell(row_index, column).text = text
+                if text:
+                    _write_runs(
+                        table.cell(row_index, column).paragraphs[0], linked_runs(text), base=None
+                    )
         self.body.remove(table._tbl)
         self._insert([table._tbl], operation)
         log.change(f"Inserted a {len(rows)}-row table.")
@@ -563,6 +569,45 @@ def _write_runs(paragraph: Any, runs: list[Any], *, base: Any) -> None:
             run._r.insert(0, deepcopy(base))
         run.text = spec["text"]
         _format_run(run, spec)
+        if spec.get("link"):
+            _link_run(paragraph, run, spec)
+
+
+def _link_run(paragraph: Any, run: Any, spec: dict[str, Any]) -> None:
+    """Wraps a run in an external hyperlink and gives it the document's link look.
+
+    Uses the document's Hyperlink character style when it has one. Otherwise the
+    run is underlined in Word's default link blue, unless the spec sets either.
+    """
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import RGBColor
+
+    part = paragraph.part
+    relationship_id = part.relate_to(spec["link"], RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), relationship_id)
+    link.set(qn("w:history"), "1")
+    run._r.addprevious(link)
+    link.append(run._r)
+    styles = part.package.main_document_part.styles
+    style = next(
+        (
+            item
+            for item in styles
+            if item.type == WD_STYLE_TYPE.CHARACTER and item.name == "Hyperlink"
+        ),
+        None,
+    )
+    if style is not None:
+        run.style = style
+        return
+    if spec.get("underline") is None:
+        run.font.underline = True
+    if not spec.get("color"):
+        run.font.color.rgb = RGBColor.from_string(_DEFAULT_LINK_COLOUR)
 
 
 def _format_run(run: Any, spec: dict[str, Any]) -> None:
@@ -655,7 +700,7 @@ def _set_cell_text(cell: Any, text: str) -> None:
         raise OperationError("A cell has a bookmark that setting its text would remove.")
     for extra in paragraphs[1:]:
         element.remove(extra)
-    _rewrite_runs(Paragraph(first, cell), [text] if text else [])
+    _rewrite_runs(Paragraph(first, cell), linked_runs(text) if text else [])
 
 
 def _rewrite_runs(paragraph: Any, runs: list[Any]) -> None:

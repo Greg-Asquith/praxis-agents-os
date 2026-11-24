@@ -14,10 +14,10 @@ describe("usage presentation", () => {
 
   it("groups purposes, sums only priced cost, and leaves fully unpriced groups unknown", () => {
     const grouped = groupPurposeBreakdownRows([
-      usageRow("web_search", "1.25", 20),
-      usageRow("web_fetch", null, 30),
-      usageRow("agent_run", "3.75", 50),
-      usageRow("classification", null, 100),
+      usageRow("web_search", "Web research", "1.25", 20),
+      usageRow("web_fetch", "Web research", null, 30),
+      usageRow("agent_run", "Agent conversations", "3.75", 50),
+      usageRow("classification", "Classification", null, 100),
     ])
 
     expect(grouped).toEqual([
@@ -49,11 +49,16 @@ describe("usage presentation", () => {
   })
 })
 
-function usageRow(key: string, cost: string | null, input: number): UsageBreakdownRow {
+function usageRow(
+  key: string,
+  label: string,
+  cost: string | null,
+  input: number
+): UsageBreakdownRow {
   const priced = cost !== null
   return {
     key,
-    label: key,
+    label,
     estimated_cost_usd: cost,
     tokens_by_class: { input, cache_read: 0, cache_write: 0, output: 0 },
     requests: 1,

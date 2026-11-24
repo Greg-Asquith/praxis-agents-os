@@ -163,6 +163,9 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
             **usage_range,
         )
     assert sum(row.requests for row in purposes.rows) == summary.totals.requests
+    assert next(row for row in purposes.rows if row.key == "agent_run").label == (
+        "Agent conversations"
+    )
     assert {row.key for row in models.rows} == {
         "anthropic:claude-sonnet-5",
         "azure:customer-deployment",

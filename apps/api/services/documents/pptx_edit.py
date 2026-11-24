@@ -12,6 +12,7 @@ from services.documents.editing import (
     EditLog,
     OperationError,
     format_font,
+    linked_runs,
     relink,
     replace_in_runs,
     run_operations,
@@ -507,6 +508,8 @@ def _write_paragraphs(text_frame: Any, paragraphs: list[Any]) -> None:
                         run._r.insert(0, deepcopy(base_run))
                     run.text = part
                     _format_run(run.font, run_spec)
+                    if run_spec.get("link"):
+                        run.hyperlink.address = run_spec["link"]
 
 
 def _base_run_properties(body: Any) -> Any:
@@ -598,7 +601,8 @@ def _set_cell_text(cell: Any, text: str, row: int) -> None:
         if text:
             raise OperationError(f"Row {row} has text for a cell covered by a merged cell.")
         return
-    _write_paragraphs(cell.text_frame, text.split("\n"))
+    paragraphs = [{"runs": linked_runs(line)} for line in text.split("\n")]
+    _write_paragraphs(cell.text_frame, paragraphs)
 
 
 def _run_segments(shape: Any) -> Iterator[list[Any]]:

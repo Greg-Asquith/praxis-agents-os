@@ -1,10 +1,10 @@
 # apps/api/services/ai_usage/domain.py
 
-"""Closed AI usage purpose domain and validated event values."""
+"""Core AI usage purposes and validated event values."""
 
 import json
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 from utils.content import ContentScope
@@ -29,6 +29,7 @@ PURPOSE_EMBEDDING_MEMORY_WRITE = "embedding_memory_write"
 PURPOSE_EMBEDDING_MEMORY_SEARCH = "embedding_memory_search"
 PURPOSE_EMBEDDING_MEMORY_DEDUP = "embedding_memory_dedup"
 
+# Core purposes, seeded into ai_usage_purposes by core migrations. Deployments add their own rows.
 AI_USAGE_PURPOSES = (
     PURPOSE_AGENT_RUN,
     PURPOSE_CONVERSATION_NAMING,
@@ -53,28 +54,6 @@ AI_USAGE_PURPOSES = (
 
 AI_USAGE_DETAILS_MAX_BYTES = 4096
 
-type AIUsagePurpose = Literal[
-    "agent_run",
-    "conversation_naming",
-    "history_summary",
-    "run_review",
-    "memory_dreaming",
-    "kb_annotation",
-    "classification",
-    "web_search",
-    "web_fetch",
-    "image_generation",
-    "code_execution",
-    "video_understanding",
-    "video_generation",
-    "video_transcription",
-    "embedding_kb_ingest",
-    "embedding_kb_search",
-    "embedding_memory_write",
-    "embedding_memory_search",
-    "embedding_memory_dedup",
-]
-
 
 @dataclass(frozen=True, slots=True)
 class AIUsageEventData:
@@ -83,7 +62,8 @@ class AIUsageEventData:
     workspace_id: UUID | None
     provider: str
     model: str
-    purpose: AIUsagePurpose
+    # A key in ai_usage_purposes; its foreign key rejects any other.
+    purpose: str
     scope: ContentScope = ContentScope.WORKSPACE
     input_tokens: int = 0
     cache_read_tokens: int = 0
@@ -108,8 +88,8 @@ class AIUsageEventData:
                 value is not None for value in (self.agent_id, self.run_id, self.conversation_id)
             ):
                 raise ValueError("Platform usage cannot carry workspace provenance")
-        if self.purpose not in AI_USAGE_PURPOSES:
-            raise ValueError(f"Unknown AI usage purpose: {self.purpose!r}")
+        if not self.purpose.strip():
+            raise ValueError("AI usage purpose must not be empty")
         if not self.provider.strip():
             raise ValueError("AI usage provider must not be empty")
         if not self.model.strip():

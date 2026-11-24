@@ -8,6 +8,7 @@ from sqlalchemy import Date, String, case, cast, func, literal, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.ai_usage_event import AIUsageEvent
+from models.ai_usage_purpose import AIUsagePurpose
 from models.user import User
 from models.workspace import Workspace
 from services.ai_usage.schemas import (
@@ -174,7 +175,11 @@ def _dimension_expressions(dimension: PlatformUsageDimension):
         )
         return key, label, ((User, User.id == AIUsageEvent.user_id),)
     if dimension is PlatformUsageDimension.PURPOSE:
-        return AIUsageEvent.purpose, AIUsageEvent.purpose, ()
+        return (
+            AIUsageEvent.purpose,
+            AIUsagePurpose.label,
+            ((AIUsagePurpose, AIUsagePurpose.key == AIUsageEvent.purpose),),
+        )
     return (
         func.concat(AIUsageEvent.provider, ":", AIUsageEvent.model),
         AIUsageEvent.model,

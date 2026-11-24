@@ -1,14 +1,19 @@
 # apps/api/tests/services/ai_usage/test_domain.py
 
-"""Closed AI usage domain and model alignment tests."""
+"""AI usage event validation and purpose table tests."""
 
-import re
 from uuid import uuid4
 
 import pytest
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.database import get_maintenance_async_db_session_factory
 from models.ai_usage_event import AIUsageEvent
+from models.ai_usage_purpose import AIUsagePurpose
 from services.ai_usage.domain import AI_USAGE_PURPOSES, AIUsageEventData
+from tests.factories import build_workspace
 
 
 def _event(**overrides) -> AIUsageEventData:
@@ -25,7 +30,7 @@ def _event(**overrides) -> AIUsageEventData:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"purpose": "unknown"},
+        {"purpose": " "},
         {"input_tokens": -1},
     ],
 )
@@ -42,10 +47,23 @@ def test_details_must_be_json_serializable_and_bounded() -> None:
         _event(details={"value": "x" * 4097})
 
 
-def test_model_purpose_check_matches_canonical_domain() -> None:
-    constraint = next(
-        item
-        for item in AIUsageEvent.__table__.constraints
-        if item.name == "ai_usage_events_purpose_check"
-    )
-    assert set(re.findall(r"'([^']+)'", str(constraint.sqltext))) == set(AI_USAGE_PURPOSES)
+async def test_core_purposes_are_seeded_and_unknown_purposes_are_refused(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with get_maintenance_async_db_session_factory()() as db:
+        seeded = set(await db.scalars(sa.select(AIUsagePurpose.key)))
+        assert set(AI_USAGE_PURPOSES) <= seeded
+
+        workspace = build_workspace(slug=f"purposes-{uuid4().hex[:8]}")
+        db.add(workspace)
+        await db.flush()
+        db.add(
+            AIUsageEvent(
+                workspace_id=workspace.id,
+                provider="openai",
+                model="gpt-5.6-luna",
+                purpose="not_a_purpose",
+            )
+        )
+        with pytest.raises(IntegrityError, match="ai_usage_events_purpose_fkey"):
+            await db.flush()

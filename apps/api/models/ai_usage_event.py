@@ -32,7 +32,11 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
     occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     provider = Column(String(50), nullable=False)
     model = Column(String(128), nullable=False)
-    purpose = Column(String(64), nullable=False)
+    purpose = Column(
+        String(64),
+        ForeignKey("ai_usage_purposes.key", name="ai_usage_events_purpose_fkey"),
+        nullable=False,
+    )
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"))
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     run_id = Column(UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL"))
@@ -57,20 +61,6 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
             "scope = 'workspace' OR (purpose IN ('kb_annotation', 'embedding_kb_ingest') "
             "AND agent_id IS NULL AND run_id IS NULL AND conversation_id IS NULL)",
             name="ai_usage_events_platform_context_check",
-        ),
-        CheckConstraint(
-            "purpose IN ("
-            "'agent_run', 'conversation_naming', 'history_summary', 'run_review', "
-            "'memory_dreaming', "
-            "'kb_annotation', "
-            "'classification', 'web_search', 'web_fetch', 'image_generation', "
-            "'code_execution', "
-            "'video_understanding', 'video_generation', 'video_transcription', "
-            "'embedding_kb_ingest', "
-            "'embedding_kb_search', 'embedding_memory_write', "
-            "'embedding_memory_search', 'embedding_memory_dedup'"
-            ")",
-            name="ai_usage_events_purpose_check",
         ),
         CheckConstraint("input_tokens >= 0", name="ai_usage_events_input_tokens_check"),
         CheckConstraint(

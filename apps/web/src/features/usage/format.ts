@@ -2,50 +2,6 @@
 
 import type { PricingCoverage, TokenCounts, UsageBreakdownRow } from "@/features/usage/types"
 
-// Mirrors AIUsagePurpose in apps/api/services/ai_usage/domain.py.
-type AIUsagePurpose =
-  | "agent_run"
-  | "classification"
-  | "code_execution"
-  | "conversation_naming"
-  | "history_summary"
-  | "run_review"
-  | "memory_dreaming"
-  | "kb_annotation"
-  | "web_search"
-  | "web_fetch"
-  | "image_generation"
-  | "video_understanding"
-  | "video_generation"
-  | "video_transcription"
-  | "embedding_kb_ingest"
-  | "embedding_kb_search"
-  | "embedding_memory_write"
-  | "embedding_memory_search"
-  | "embedding_memory_dedup"
-
-const AI_TYPE_LABEL_BY_PURPOSE = {
-  agent_run: "Agent conversations",
-  classification: "Classification",
-  code_execution: "Code execution",
-  conversation_naming: "Conversation housekeeping",
-  history_summary: "Conversation housekeeping",
-  run_review: "Progress checks",
-  memory_dreaming: "Learning from conversations",
-  kb_annotation: "Document processing",
-  web_search: "Web research",
-  web_fetch: "Web research",
-  image_generation: "Image creation",
-  video_understanding: "Video understanding",
-  video_generation: "Video creation",
-  video_transcription: "Transcription",
-  embedding_kb_ingest: "Search & document indexing",
-  embedding_kb_search: "Search & document indexing",
-  embedding_memory_write: "Search & document indexing",
-  embedding_memory_search: "Search & document indexing",
-  embedding_memory_dedup: "Search & document indexing",
-} as const satisfies Record<AIUsagePurpose, string>
-
 const INTEGER_FORMATTER = new Intl.NumberFormat(undefined, { notation: "compact" })
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {
   currency: "USD",
@@ -81,9 +37,8 @@ export function groupPurposeBreakdownRows(rows: UsageBreakdownRow[]): UsageBreak
   >()
 
   for (const row of rows) {
-    const label = isAIUsagePurpose(row.key)
-      ? AI_TYPE_LABEL_BY_PURPOSE[row.key]
-      : row.label || "Other AI usage"
+    // Purposes that share a label, such as web search and web fetch, show as one row.
+    const label = row.label
     const current = groups.get(label) ?? emptyGroup(row.key, label)
     current.tokens_by_class.input += row.tokens_by_class.input
     current.tokens_by_class.cache_read += row.tokens_by_class.cache_read
@@ -135,10 +90,6 @@ export function groupPurposeBreakdownRows(rows: UsageBreakdownRow[]): UsageBreak
       },
     }
   })
-}
-
-function isAIUsagePurpose(value: string): value is AIUsagePurpose {
-  return value in AI_TYPE_LABEL_BY_PURPOSE
 }
 
 function emptyGroup(key: string, label: string) {

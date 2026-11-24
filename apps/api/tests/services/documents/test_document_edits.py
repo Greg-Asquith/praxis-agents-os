@@ -5,12 +5,14 @@
 import io
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
 from pydantic import TypeAdapter
 
+from services import documents
 from services.documents.operations.presentation import PresentationOperation
 from services.documents.operations.word import WordOperation
 from services.documents.operations.workbook import WorkbookOperation
@@ -30,6 +32,7 @@ _ADAPTERS = {
     "xlsx": TypeAdapter(list[WorkbookOperation]),
     "docx": TypeAdapter(list[WordOperation]),
 }
+_DEFAULT_DECK = Path(documents.__file__).parent / "templates" / "default.pptx"
 
 
 async def _edit(
@@ -945,3 +948,113 @@ def test_a_failed_allocation_during_an_edit_reaches_the_worker_loop() -> None:
     # The worker exits on MemoryError, so the edit loop mustn't turn it into a request error.
     with pytest.raises(MemoryError):
         run_operations([{"op": "allocate"}], {"allocate": allocate}, log)
+
+
+async def test_deck_runs_and_table_addresses_become_links(pool: DocumentWorkerPool) -> None:
+    from pptx import Presentation
+
+    created, data = await _edit(
+        pool, "pptx", _DEFAULT_DECK.read_bytes(), [{"op": "add_slide", "layout": "Title Only"}]
+    )
+    slide_id = created["changes"][0]["slide_id"]
+    reference = "https://www.tiktok.com/@venue/video/7573512548981411094"
+
+    _, output = await _edit(
+        pool,
+        "pptx",
+        data,
+        [
+            {
+                "op": "add_text_box",
+                "slide_id": slide_id,
+                "left": 37,
+                "top": 104,
+                "width": 300,
+                "height": 40,
+                "paragraphs": [{"runs": ["Reference: ", {"text": "HERE", "link": reference}]}],
+            },
+            {
+                "op": "add_table",
+                "slide_id": slide_id,
+                "rows": [["Idea", "Reference"], ["Snooze", f"Pace: {reference}."]],
+                "left": 37,
+                "top": 160,
+                "width": 645,
+                "height": 44,
+            },
+        ],
+    )
+
+    shapes = Presentation(io.BytesIO(output)).slides.get(slide_id).shapes
+    [box] = [shape for shape in shapes if shape.has_text_frame and shape.text_frame.text]
+    plain, linked = box.text_frame.paragraphs[0].runs
+    assert plain.hyperlink.address is None
+    assert (linked.text, linked.hyperlink.address) == ("HERE", reference)
+    [table] = [shape.table for shape in shapes if shape.has_table]
+    runs = table.cell(1, 1).text_frame.paragraphs[0].runs
+    assert [(run.text, run.hyperlink.address) for run in runs] == [
+        ("Pace: ", None),
+        (reference, reference),
+        (".", None),
+    ]
+
+
+async def test_word_runs_and_table_addresses_become_links(pool: DocumentWorkerPool) -> None:
+    from docx import Document
+
+    reference = "https://www.instagram.com/reel/DaXe78chSU5/"
+    _, output = await _edit(
+        pool,
+        "docx",
+        memo_document(),
+        [
+            {
+                "op": "insert_paragraphs",
+                "index": 1,
+                "expect_text": "Plain",
+                "paragraphs": [{"runs": ["See ", {"text": "the reel", "link": reference}]}],
+            },
+            {"op": "insert_table", "rows": [["Idea", "Reference"], ["Snooze", reference]]},
+            {"op": "set_table_cells", "table_index": 0, "values": [[f"Was {reference}"]]},
+        ],
+    )
+
+    document = Document(io.BytesIO(output))
+    [paragraph] = [item for item in document.paragraphs if item.text == "See the reel"]
+    [link] = paragraph.hyperlinks
+    assert (link.text, link.address) == ("the reel", reference)
+    assert link.runs[0].font.underline is True
+    cells = [
+        table.cell(row, column).paragraphs[0]
+        for table, row, column in ((document.tables[1], 1, 1), (document.tables[0], 0, 0))
+    ]
+    assert [[item.address for item in cell.hyperlinks] for cell in cells] == [
+        [reference],
+        [reference],
+    ]
+    assert [cell.text for cell in cells] == [reference, f"Was {reference}"]
+
+
+@pytest.mark.parametrize(
+    "link",
+    ["javascript:alert(1)", "file:///etc/passwd", "www.example.com", "https://", "mailto:nobody"],
+)
+def test_links_other_than_web_and_email_addresses_are_refused(link: str) -> None:
+    from pydantic import ValidationError
+
+    operation = {
+        "op": "insert_paragraphs",
+        "paragraphs": [{"runs": [{"text": "Click", "link": link}]}],
+    }
+    with pytest.raises(ValidationError, match="http, https, or mailto"):
+        _ADAPTERS["docx"].validate_python([operation])
+
+
+def test_cell_addresses_end_before_sentence_punctuation() -> None:
+    from services.documents.editing import linked_runs
+
+    assert linked_runs("See (https://a.example/b), then javascript://c") == [
+        {"text": "See ("},
+        {"text": "https://a.example/b", "link": "https://a.example/b"},
+        {"text": "), then javascript://c"},
+    ]

@@ -113,6 +113,15 @@ call is enough.
 - Edits that would remove images, fields, links, or comments fail instead of
   dropping them. Use `replace_text` for text inside them.
 
+## Links
+
+- To link words in a deck or Word document, give the run a `link` with a
+  full `https`, `http`, or `mailto` address. Link short, meaningful text,
+  such as "the reference reel", rather than "here".
+- In a table, write the full address in the cell. It becomes a link.
+- Only use addresses the person gave you or that you found in a source.
+  Never make one up.
+
 ## Check every number
 
 After each edit the result lists what changed and reads back what it
