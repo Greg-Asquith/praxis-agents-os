@@ -545,6 +545,7 @@ cases:
 evaluators:
   - AcceptedToolCall: {}
   - ExpectedClips: {}
+  - ExpectedFinishing: {}
   - ExpectedForecast: {}
   - ExpectedMerge: {}
   - ExpectedTools: {}

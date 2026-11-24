@@ -71,19 +71,28 @@ for sitemap_url in sitemaps:
 problems = []
 not_checked = []
 for start in range(0, len(pages), 500):
-    result = await check_urls(urls=pages[start:start + 500])
+    result = await check_urls(urls=pages[start : start + 500])
     for row in result["rows"]:
         if row["error_class"] == "not_checked":
             not_checked.append(row["requested_url"])
-        elif row["status"] is None or row["status"] >= 300 or row["redirects"] or row["blocked_by_site"]:
-            problems.append({
-                "url": row["requested_url"],
-                "status": row["status"],
-                "error": row["error_class"],
-                "blocked": row["blocked_by_site"],
-                "final_url": row["final_url"]["content"] if row["final_url"] else None,
-                "hops": [[hop["status"], hop["location"]["content"]] for hop in row["redirects"]],
-            })
+        elif (
+            row["status"] is None
+            or row["status"] >= 300
+            or row["redirects"]
+            or row["blocked_by_site"]
+        ):
+            problems.append(
+                {
+                    "url": row["requested_url"],
+                    "status": row["status"],
+                    "error": row["error_class"],
+                    "blocked": row["blocked_by_site"],
+                    "final_url": row["final_url"]["content"] if row["final_url"] else None,
+                    "hops": [
+                        [hop["status"], hop["location"]["content"]] for hop in row["redirects"]
+                    ],
+                }
+            )
 {"sitemap_pages": len(pages), "problems": problems, "not_checked": not_checked}
 ```
 

@@ -839,6 +839,10 @@ minor release. Patch releases contain backward-compatible fixes only.
   (`xn--`) form; list it in that form.
 - A web fetch drops any cookie a site sets before it follows a redirect, so
   a cookie can't reach a second site at the same address.
+- pytest, used only by the test images of the data science service, the
+  media renderer, and the isolation driver, is on 9.1.1, which fixes its
+  temporary directory handling (CVE-2025-71176). No production image
+  installs it.
 
 - Hono, used only by development tooling, is on 4.13.16, which fixes five
   advisories in its CSRF, validator, router, and CSS helpers

@@ -57,6 +57,12 @@ Keep the pinned `pip-audit` version in step with `PIP_AUDIT_VERSION` in
 `.github/scripts/dependency_audit.py`. Write temporary files to the session
 scratchpad or `$TMPDIR`, never to the repository.
 
+Neither command reads the data science service's development group or the
+`pip install <package>==<version>` lines in `apps/*/Dockerfile` test stages.
+List those pins with `git grep -n "pip install" -- 'apps/*/Dockerfile'` and
+the `dev` group in `apps/data-science/pyproject.toml`, and look each one up
+at OSV.
+
 Classify each finding by:
 
 - Production or development only.

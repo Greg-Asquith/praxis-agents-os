@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     RENDERER_TEST_CONTAINER=1
 
 RUN useradd --create-home --uid 1001 renderer \
-    && pip install --no-cache-dir pytest==8.4.2
+    && pip install --no-cache-dir pytest==9.1.1
 WORKDIR /app
 COPY driver ./driver
 COPY driver_testing ./driver_testing

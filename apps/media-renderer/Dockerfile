@@ -84,7 +84,7 @@ EXPOSE 8080
 FROM runtime AS test
 
 USER root
-RUN pip install --no-cache-dir pytest==8.4.2
+RUN pip install --no-cache-dir pytest==9.1.1
 COPY --from=driver driver_testing ./driver_testing
 COPY tests ./tests
 USER 1001:1001
