@@ -290,7 +290,9 @@ on, do the following:
    **PageSpeed API key** section, it creates a key named `praxis-pagespeed`
    restricted to the PageSpeed Insights API, then adds the key string to the
    `praxis-pagespeed-api-key` secret without printing it. A second run changes
-   nothing. Running this section needs the API Keys Admin role
+   nothing. When a key named `praxis-pagespeed` already exists, the bootstrap
+   stops unless that key is restricted to the PageSpeed Insights API alone.
+   Running this section needs the API Keys Admin role
    (`roles/serviceusage.apiKeysAdmin`).
 3. Deploy again.
 

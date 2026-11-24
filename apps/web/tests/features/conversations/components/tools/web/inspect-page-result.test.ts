@@ -54,4 +54,48 @@ describe("inspectPageResult", () => {
     expect(parsed?.page?.links?.items.map((link) => link.url)).toEqual(["https://a.example/b"])
     expect(inspectPageResult(result({ kind: "page", final_url: node("javascript:x") }))).toBeNull()
   })
+
+  it("reads a sitemap index and drops entries without an address", () => {
+    const sitemap = {
+      type: "sitemapindex",
+      total: 3,
+      entries: [
+        { loc: node("https://a.example/posts.xml"), lastmod: "2026-11-01" },
+        { loc: null, lastmod: "2026-11-02" },
+        { loc: node("https://a.example/pages.xml"), lastmod: 7 },
+      ],
+    }
+
+    const parsed = inspectPageResult(result({ kind: "sitemap", sitemap }))
+
+    expect(parsed?.sitemap).toEqual({
+      entries: [
+        { lastmod: "2026-11-01", loc: "https://a.example/posts.xml" },
+        { lastmod: null, loc: "https://a.example/pages.xml" },
+      ],
+      index: true,
+      total: 3,
+    })
+  })
+
+  it("reads robots.txt groups and sitemaps as plain text", () => {
+    const robots = {
+      groups: [
+        {
+          user_agents: [node("*")],
+          allow: [node("/public")],
+          disallow: [node("/admin"), 42],
+          crawl_delay: "10",
+        },
+      ],
+      sitemaps: [node("https://a.example/sitemap.xml")],
+    }
+
+    const parsed = inspectPageResult(result({ kind: "robots", robots }))
+
+    expect(parsed?.robots).toEqual({
+      groups: [{ allow: ["/public"], crawlDelay: null, disallow: ["/admin"], userAgents: ["*"] }],
+      sitemaps: ["https://a.example/sitemap.xml"],
+    })
+  })
 })

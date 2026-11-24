@@ -49,7 +49,6 @@ type CheckedUrl = {
 
 export type CheckUrlsResult = {
   checked: number
-  checkedAt: string
   notChecked: number
   pageFacts: boolean
   rows: CheckedUrl[]
@@ -63,14 +62,8 @@ export function checkUrlsArgsCount(value: unknown): number | null {
 // Server strings arrive as untrusted nodes; a final URL that isn't http(s) shows as none.
 export function checkUrlsResult(value: unknown): CheckUrlsResult | null {
   if (!isRecord(value) || !Array.isArray(value["rows"])) return null
-  const { checked, checked_at: checkedAt, not_checked: notChecked } = value
-  if (
-    !isNonNegativeInteger(checked) ||
-    !isNonNegativeInteger(notChecked) ||
-    typeof checkedAt !== "string"
-  ) {
-    return null
-  }
+  const { checked, not_checked: notChecked } = value
+  if (!isNonNegativeInteger(checked) || !isNonNegativeInteger(notChecked)) return null
   const rows: CheckedUrl[] = []
   for (const row of value["rows"]) {
     const parsed = checkedUrl(row)
@@ -78,7 +71,7 @@ export function checkUrlsResult(value: unknown): CheckUrlsResult | null {
     rows.push(parsed)
   }
   const pageFacts = value["rows"].some((row) => isRecord(row) && isRecord(row["page"]))
-  return { checked, checkedAt, notChecked, pageFacts, rows }
+  return { checked, notChecked, pageFacts, rows }
 }
 
 function checkedUrl(value: unknown): CheckedUrl | null {

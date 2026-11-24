@@ -1,8 +1,8 @@
 // apps/web/src/features/conversations/components/tools/web/page-speed-tool-row.tsx
 
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRightIcon, ExternalLinkIcon, GaugeIcon } from "lucide-react"
-import { useCallback, useMemo, type ReactNode } from "react"
+import { ChevronRightIcon, ExternalLinkIcon, GaugeIcon, TriangleAlertIcon } from "lucide-react"
+import { useMemo, type ReactNode } from "react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { parseResultPreview } from "@/components/tool-ui/result-preview"
@@ -46,9 +46,11 @@ import {
   type LabMetrics,
   type MetricKey,
   type PageOutcome,
+  type PageSpeedCategory,
   type PageSpeedResult,
   type PageSpeedRow,
   type Rating,
+  type Strategy,
   formatMetric,
   metricRating,
   originOf,
@@ -147,7 +149,7 @@ function PageSpeedCard({
   defaultOpen: boolean
   notice: ReactNode
 }) {
-  // One parse per result keeps the table's cells, and any open popover, mounted between renders.
+  // One parse per result keeps each row's page, and any open popover, the same between renders.
   const result = useMemo(() => pageSpeedResult(data), [data])
   if (result === null) return null
   const counts = outcomeCounts(result.rows)
@@ -158,6 +160,13 @@ function PageSpeedCard({
   ]
   if (counts.not_tested > 0) {
     details.push({ label: "Not Tested", value: counts.not_tested.toLocaleString("en-GB") })
+  }
+  const median = result.rows.length > 1 ? medianScore(result) : null
+  if (median) {
+    details.push({
+      label: `Median ${CATEGORY_LABELS[median.category]}`,
+      value: `${String(median.score)}, ${OUTCOMES[scoreRating(median.score)].label}`,
+    })
   }
   const [single] = result.rows
   return (
@@ -181,14 +190,6 @@ function PageSpeedCard({
 }
 
 function PageTable({ result }: { result: PageSpeedResult }) {
-  const category = result.categories.includes("performance") ? "performance" : result.categories[0]
-  const median = medianOf(
-    result.rows.flatMap((row) =>
-      row.outcome !== "not_tested" && row.lead !== null && row.lead.category === category
-        ? row.lead.score
-        : []
-    )
-  )
   const byUrl = useMemo(
     () => new Map(result.rows.map((row) => [row.requestedUrl, row])),
     [result.rows]
@@ -216,33 +217,21 @@ function PageTable({ result }: { result: PageSpeedResult }) {
         }),
     [result.rows]
   )
-  const renderCell = useCallback(
-    (column: DataColumn, row: Record<string, unknown>) => {
-      const page = byUrl.get(String(row["url"]))
-      return page ? <PageCell column={column} page={page} result={result} /> : null
-    },
-    [byUrl, result]
-  )
   return (
-    <>
-      {median === null || category === undefined ? null : (
-        <div className="flex items-center gap-2">
-          <ScoreGauge label={`Median ${CATEGORY_LABELS[category]}`} score={median} />
-          <span className="text-sm">Median {CATEGORY_LABELS[category]}</span>
-        </div>
-      )}
-      <DataTable
-        columns={COLUMNS}
-        exportFilename="page-speed.csv"
-        pageSize={10}
-        renderCell={renderCell}
-        rowDetails={false}
-        rowNoun={["page", "pages"]}
-        rows={rows}
-        searchable
-        tabs={PAGE_SPEED_TABS}
-      />
-    </>
+    <DataTable
+      columns={COLUMNS}
+      exportFilename="page-speed.csv"
+      pageSize={10}
+      renderCell={(column, row) => {
+        const page = byUrl.get(String(row["url"]))
+        return page ? <PageCell column={column} page={page} result={result} /> : null
+      }}
+      rowDetails={false}
+      rowNoun={["page", "pages"]}
+      rows={rows}
+      searchable
+      tabs={PAGE_SPEED_TABS}
+    />
   )
 }
 
@@ -302,14 +291,18 @@ function PageCell({
     return (
       <MetricValue
         metric="lcp_ms"
-        rating={metricRating("lcp_ms", page.lab.lcp_ms)}
+        rating={metricRating("lcp_ms", page.lab.lcp_ms, result.strategy)}
         value={page.lab.lcp_ms}
       />
     )
   }
   if (column.key === "cls" && page.lab?.cls !== undefined) {
     return (
-      <MetricValue metric="cls" rating={metricRating("cls", page.lab.cls)} value={page.lab.cls} />
+      <MetricValue
+        metric="cls"
+        rating={metricRating("cls", page.lab.cls, result.strategy)}
+        value={page.lab.cls}
+      />
     )
   }
   if (column.key === "inp" && page.field?.metrics.inp_ms) {
@@ -326,11 +319,11 @@ function PageDetail({ result, row }: { result: PageSpeedResult; row: PageSpeedRo
   return (
     <div className="grid min-w-0 gap-3">
       {categories.length ? (
-        <ul aria-label="Scores" className="flex min-w-0 flex-wrap gap-x-5 gap-y-2">
+        <ul aria-label="Scores" className="flex min-w-0 flex-wrap gap-x-5 gap-y-2 text-sm">
           {categories.map((category) => (
             <li className="flex items-center gap-2" key={category}>
-              <ScoreGauge label={CATEGORY_LABELS[category]} score={row.scores[category] ?? 0} />
-              <span className="text-sm">{CATEGORY_LABELS[category]}</span>
+              {CATEGORY_LABELS[category]}
+              <ScoreBadge score={row.scores[category] ?? 0} />
             </li>
           ))}
         </ul>
@@ -345,7 +338,7 @@ function PageDetail({ result, row }: { result: PageSpeedResult; row: PageSpeedRo
           </TabsTrigger>
         </TabsList>
         <TabsContent className="pt-3" value="metrics">
-          <MetricsTable lab={row.lab} page={row.field} site={site} />
+          <MetricsTable lab={row.lab} page={row.field} site={site} strategy={result.strategy} />
         </TabsContent>
         <TabsContent className="pt-3" value="issues">
           {row.report && result.reportFileId ? (
@@ -379,10 +372,12 @@ function MetricsTable({
   lab,
   page,
   site,
+  strategy,
 }: {
   lab: LabMetrics | null
   page: FieldData | null
   site: FieldData | null
+  strategy: Strategy
 }) {
   return (
     <div className="grid min-w-0 gap-2">
@@ -410,7 +405,7 @@ function MetricsTable({
                   ) : (
                     <MetricValue
                       metric={key}
-                      rating={metricRating(key, labValue)}
+                      rating={metricRating(key, labValue, strategy)}
                       value={labValue}
                     />
                   )}
@@ -479,6 +474,19 @@ function IssueList({ report }: { report: PageSpeedReport }) {
   ]
   return (
     <div className="grid min-w-0 gap-2">
+      {report.runWarnings.length ? (
+        <ul aria-label="Test Warnings" className="grid min-w-0 gap-1 text-xs">
+          {report.runWarnings.map((warning, index) => (
+            <li className="flex min-w-0 items-start gap-1.5" key={`${String(index)}-${warning}`}>
+              <TriangleAlertIcon
+                aria-hidden="true"
+                className="text-warning mt-0.5 size-3.5 shrink-0"
+              />
+              <span className="wrap-anywhere">{warning}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {audits.length ? (
         <ul className="divide-border grid min-w-0 divide-y rounded-md border">
           {audits.map((audit) => (
@@ -586,75 +594,45 @@ function ScoreText({ page }: { page: PageSpeedRow }) {
   if (page.outcome === "not_tested" || page.lead === null) {
     return <span className="text-muted-foreground">Not Tested</span>
   }
-  const { category, score } = page.lead
+  const { score } = page.lead
   return (
     <span className="flex items-center gap-2">
-      <ScoreGauge label={CATEGORY_LABELS[category]} score={score} size="sm" />
-      <span className="text-muted-foreground">{OUTCOMES[scoreRating(score)].label}</span>
-    </span>
-  )
-}
-
-const GAUGE_SIZES = {
-  sm: { box: 22, stroke: 2.5, text: "text-[9px]" },
-  md: { box: 36, stroke: 3, text: "text-xs" },
-}
-
-/** Draws a score out of 100 as a ring in its Lighthouse band colour, with the number inside. */
-function ScoreGauge({
-  label,
-  score,
-  size = "md",
-}: {
-  label: string
-  score: number
-  size?: keyof typeof GAUGE_SIZES
-}) {
-  const { box, stroke, text } = GAUGE_SIZES[size]
-  const radius = (box - stroke) / 2
-  const circumference = 2 * Math.PI * radius
-  const rating = scoreRating(score)
-  return (
-    <span
-      aria-label={`${label} score ${String(score)} out of 100, ${OUTCOMES[rating].label}`}
-      className={cn("relative inline-grid shrink-0 place-items-center", RATING_TEXT[rating])}
-      role="img"
-      style={{ height: box, width: box }}
-    >
-      <svg aria-hidden="true" className="absolute inset-0 -rotate-90" height={box} width={box}>
-        <circle
-          className="stroke-current opacity-15"
-          cx={box / 2}
-          cy={box / 2}
-          fill="none"
-          r={radius}
-          strokeWidth={stroke}
-        />
-        <circle
-          className="stroke-current"
-          cx={box / 2}
-          cy={box / 2}
-          fill="none"
-          r={radius}
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - Math.min(Math.max(score, 0), 100) / 100)}
-          strokeLinecap="round"
-          strokeWidth={stroke}
-        />
-      </svg>
-      <span aria-hidden="true" className={cn("font-medium tabular-nums", text)}>
-        {score}
+      <ScoreBadge score={score} />
+      <span aria-hidden="true" className="text-muted-foreground">
+        {OUTCOMES[scoreRating(score)].label}
       </span>
     </span>
   )
 }
 
-function medianOf(values: number[]): number | null {
-  if (!values.length) return null
-  const sorted = [...values].sort((left, right) => left - right)
-  const middle = Math.floor(sorted.length / 2)
-  if (sorted.length % 2) return sorted[middle] ?? null
-  return Math.round(((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2)
+function ScoreBadge({ score }: { score: number }) {
+  const { badge, label } = OUTCOMES[scoreRating(score)]
+  return (
+    <Badge className="tabular-nums" variant={badge}>
+      {score}
+      <span className="sr-only"> out of 100, {label}</span>
+    </Badge>
+  )
+}
+
+// The median of the lead scores, over pages tested for the call's lead category.
+function medianScore(
+  result: PageSpeedResult
+): { category: PageSpeedCategory; score: number } | null {
+  const category = result.categories.includes("performance") ? "performance" : result.categories[0]
+  if (category === undefined) return null
+  const scores = result.rows
+    .flatMap((row) =>
+      row.outcome !== "not_tested" && row.lead?.category === category ? row.lead.score : []
+    )
+    .sort((left, right) => left - right)
+  if (!scores.length) return null
+  const middle = Math.floor(scores.length / 2)
+  const score =
+    scores.length % 2
+      ? (scores[middle] ?? 0)
+      : Math.round(((scores[middle - 1] ?? 0) + (scores[middle] ?? 0)) / 2)
+  return { category, score }
 }
 
 function MetricValue({

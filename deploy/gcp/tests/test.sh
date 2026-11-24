@@ -156,6 +156,25 @@ for manifest in services/praxis-api.yaml jobs/praxis-worker.yaml; do
 done
 grep -Fq -- '--api-target=service=pagespeedonline.googleapis.com' "$GCP_DIR/bootstrap.sh"
 grep -Fq -- "--async --no-user-output-enabled --quiet" "$GCP_DIR/bootstrap.sh"
+grep -Fq -- '[[ -z "$pagespeed_key" ]] || check_pagespeed_key_restriction "$pagespeed_key"' \
+  "$GCP_DIR/bootstrap.sh"
+pagespeed_check=$(sed -n '/^check_pagespeed_key_restriction() {/,/^}/p' "$GCP_DIR/bootstrap.sh")
+run_pagespeed_check() {
+  # shellcheck disable=SC2016 # The fakes expand inside the child shell.
+  KEY_JSON="$1" SCRIPT_DIR="$GCP_DIR" GCP_PROJECT_ID=test-project bash -c \
+    'die() { echo "$*" >&2; exit 1; }; gcloud() { printf "%s" "$KEY_JSON"; }; '"$pagespeed_check"'
+    check_pagespeed_key_restriction projects/test-project/locations/global/keys/existing'
+}
+run_pagespeed_check \
+  '{"restrictions":{"apiTargets":[{"service":"pagespeedonline.googleapis.com"}]}}'
+for key_json in '{"displayName":"praxis-pagespeed"}' \
+  '{"restrictions":{"apiTargets":[{"service":"pagespeedonline.googleapis.com"},{"service":"translate.googleapis.com"}]}}'; do
+  if run_pagespeed_check "$key_json" 2>"$TEST_TMP/pagespeed-key.err"; then
+    echo "bootstrap accepted a praxis-pagespeed key that isn't limited to PageSpeed Insights" >&2
+    exit 1
+  fi
+  grep -q "isn't limited to PageSpeed Insights" "$TEST_TMP/pagespeed-key.err"
+done
 
 # App-domain share links render an empty origin as a string, never YAML null.
 sed -e 's/^ARTIFACT_ORIGIN=.*$/ARTIFACT_ORIGIN=/' \

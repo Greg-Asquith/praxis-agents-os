@@ -3,7 +3,11 @@
 import { describe, expect, it } from "vitest"
 
 import { pageSpeedReport } from "@/features/conversations/components/tools/web/page-speed-report"
-import { pageSpeedResult } from "@/features/conversations/components/tools/web/page-speed-result"
+import {
+  metricRating,
+  pageSpeedResult,
+  scoreRating,
+} from "@/features/conversations/components/tools/web/page-speed-result"
 
 function row(url: string, fields: Record<string, unknown> = {}) {
   return {
@@ -54,6 +58,30 @@ describe("pageSpeedResult", () => {
     ])
     expect(result?.rows[4]?.lead).toEqual({ category: "seo", score: 40 })
     expect(result?.rows[1]?.finalUrl).toBeNull()
+  })
+})
+
+describe("scoreRating", () => {
+  it("starts the good band at 90", () => {
+    expect(scoreRating(89)).toBe("needs_improvement")
+    expect(scoreRating(90)).toBe("good")
+  })
+})
+
+describe("metricRating", () => {
+  it("rates a lab value against the bands for the device tested", () => {
+    expect(metricRating("tbt_ms", 200, "mobile")).toBe("good")
+    expect(metricRating("tbt_ms", 201, "mobile")).toBe("needs_improvement")
+    expect(metricRating("tbt_ms", 600, "mobile")).toBe("needs_improvement")
+    expect(metricRating("tbt_ms", 601, "mobile")).toBe("poor")
+    expect(metricRating("tbt_ms", 150, "desktop")).toBe("good")
+    expect(metricRating("tbt_ms", 151, "desktop")).toBe("needs_improvement")
+    expect(metricRating("tbt_ms", 350, "desktop")).toBe("needs_improvement")
+    expect(metricRating("tbt_ms", 400, "desktop")).toBe("poor")
+  })
+
+  it("keeps the shared band for a metric Lighthouse scores the same on both devices", () => {
+    expect(metricRating("cls", 0.2, "desktop")).toBe("needs_improvement")
   })
 })
 

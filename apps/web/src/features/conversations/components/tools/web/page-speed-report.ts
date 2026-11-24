@@ -29,11 +29,9 @@ export type FailedAudit = {
 export type PageSpeedReport = {
   failedAudits: FailedAudit[]
   lcpElement: { label: string | null; selector: string | null; snippet: string | null } | null
-  lighthouseVersion: string | null
   passedAudits: number
   requestedUrl: string
   runWarnings: string[]
-  thirdParties: { blockingMs: number | null; entity: string; transferBytes: number | null }[]
   truncated: boolean
 }
 
@@ -73,23 +71,10 @@ export function pageSpeedReport(
           snippet: text(lcp["snippet"]),
         }
       : null,
-    lighthouseVersion: text(value["lighthouse_version"]),
     passedAudits: Array.isArray(value["passed_audits"]) ? value["passed_audits"].length : 0,
     requestedUrl,
     runWarnings: Array.isArray(value["run_warnings"])
       ? value["run_warnings"].flatMap((warning) => text(warning) ?? [])
-      : [],
-    thirdParties: Array.isArray(value["third_parties"])
-      ? value["third_parties"].flatMap((party) => {
-          if (!isRecord(party) || typeof party["entity"] !== "string") return []
-          return [
-            {
-              blockingMs: whole(party["blocking_ms"]),
-              entity: party["entity"],
-              transferBytes: whole(party["transfer_bytes"]),
-            },
-          ]
-        })
       : [],
     truncated: value["truncated"] === true,
   }

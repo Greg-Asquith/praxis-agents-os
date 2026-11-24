@@ -19,15 +19,19 @@ minor release. Patch releases contain backward-compatible fixes only.
   page's titles, headings, links, images, structured data, and tracking
   tags, or the entries of a sitemap or `robots.txt` file. Every request goes
   to a public address that is checked on each redirect, and limits per site
-  and per run keep an audit polite. The **Fetch URL** card has **Save to
+  and per run keep an audit polite. Cards describe statuses and redirects in
+  words, such as "Moved permanently, then moved temporarily", with the codes
+  in their details. The **Fetch URL** card has **Save to
   Files** and **Add to Knowledge Base** buttons. Limits are the
   `WEB_FETCH_*` settings.
 - `measure_page_speed` scores up to 50 pages with Google PageSpeed Insights:
   performance and other category scores, Core Web Vitals from real visits,
   and the biggest issues, with each page's full report one click away on the
-  card. It's available when `PAGESPEED_API_KEY` is set. On GCP, set
+  card. Desktop runs are rated against Lighthouse's desktop bands. It's
+  available when `PAGESPEED_API_KEY` is set. On GCP, set
   `PAGESPEED_ENABLED=true` and the bootstrap creates a restricted key in
-  your own project.
+  your own project, or stops if an existing `praxis-pagespeed` key isn't
+  restricted to PageSpeed Insights.
 - Agents follow a built-in **Site Audit** guide when asked to audit or
   health-check a website. They read `robots.txt` and the sitemap, check every
   page from one script, look at key pages' titles, tags, and speed, compare

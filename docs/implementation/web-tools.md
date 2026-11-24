@@ -127,6 +127,13 @@ can edit and a run whose side-effect policy isn't `deny`.
 `note` is guidance for the agent. The **Fetch URL** and **Inspect Page** rows
 show their own wording for a blocked, unsupported, or cut result.
 
+The **Fetch URL**, **Inspect Page**, and **Check URLs** rows describe statuses
+and redirect hops in words, such as "Not Found" or "Moved permanently, then
+moved temporarily", from `web-error-text.ts`. The codes stay in the card's
+details, or in the row's details for **Check URLs**. The **Fetch URL** row
+renders Markdown through the sanitising renderer under a caption naming the
+site, so its text and links read as the page's own.
+
 The **Fetch URL** row has **Save to Files** and **Add to Knowledge Base**
 buttons that act without an agent turn. They're hidden on shared transcripts
 and for members who can't edit:
@@ -317,16 +324,19 @@ CLS data the assessment is null. Google reports page data from the origin
 when the page has too few visits (`origin_fallback`); the row's `field` is
 then null.
 
-The **Measure Page Speed** row shows Pages, Device, and Tested detail lines,
-the median score, and one table row per page, lowest score first, with
+The **Measure Page Speed** row shows Pages, Device, Tested, and median score
+detail lines, and one table row per page, lowest score first, with
 Good, Needs Improvement, Poor, and Not Tested filters. A row is rated by its
 performance score, or by the first category tested when performance wasn't
-asked for. A page's URL opens its detail in a popover: category scores, lab
-and visitor metrics side by side against Google's thresholds, and the
-report's Opportunities, Diagnostics, and other categories' issues, each
+asked for. Scores are badges in Lighthouse's three bands, not rings. A page's
+URL opens its detail in a popover: category scores, lab and visitor metrics
+side by side, and the report's run warnings, Opportunities, Diagnostics, and other categories' issues, each
 opening a popover with its description and affected resources. The card
 loads that page's range of the report File through the Files revision APIs
-only when the popover opens. A one-page call shows the detail in place of
+only when the popover opens. Lab metrics are rated against Lighthouse's
+bands for the device tested, so a desktop run uses the tighter desktop bands
+for LCP, FCP, TBT, and Speed Index; visitor metrics carry Google's own
+rating. A one-page call shows the detail in place of
 the table. Report text renders as text only; Markdown links keep their words
 and drop their addresses, and the one external link is PageSpeed Insights
 for the agent's requested URL.

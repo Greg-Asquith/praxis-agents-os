@@ -52,6 +52,15 @@ export const METRICS = {
   ttfb_ms: { label: "TTFB", name: "Time to First Byte", good: 800, poor: 1800 },
 } as const
 export type MetricKey = keyof typeof METRICS
+export type Strategy = "mobile" | "desktop"
+
+// Lighthouse scores desktop lab runs on tighter curves; CLS and the visitor metrics are the same.
+const DESKTOP_BANDS: Partial<Record<MetricKey, { good: number; poor: number }>> = {
+  fcp_ms: { good: 934, poor: 1600 },
+  lcp_ms: { good: 1200, poor: 2400 },
+  speed_index_ms: { good: 1311, poor: 2300 },
+  tbt_ms: { good: 150, poor: 350 },
+}
 
 const LAB_KEYS = ["lcp_ms", "cls", "tbt_ms", "fcp_ms", "speed_index_ms"] as const
 const FIELD_KEYS = ["lcp_ms", "inp_ms", "cls", "ttfb_ms"] as const
@@ -84,7 +93,7 @@ export type PageSpeedResult = {
   origins: Map<string, FieldData>
   reportFileId: string | null
   rows: PageSpeedRow[]
-  strategy: "mobile" | "desktop"
+  strategy: Strategy
   tested: number
   testedAt: string
 }
@@ -100,9 +109,9 @@ export function scoreRating(score: number): Rating {
   return score >= 50 ? "needs_improvement" : "poor"
 }
 
-/** Rates a lab value against Google's published thresholds for the metric. */
-export function metricRating(key: MetricKey, value: number): Rating {
-  const { good, poor } = METRICS[key]
+/** Rates a lab value against Lighthouse's bands for the metric on the device tested. */
+export function metricRating(key: MetricKey, value: number, strategy: Strategy): Rating {
+  const { good, poor } = (strategy === "desktop" ? DESKTOP_BANDS[key] : undefined) ?? METRICS[key]
   if (value <= good) return "good"
   return value <= poor ? "needs_improvement" : "poor"
 }

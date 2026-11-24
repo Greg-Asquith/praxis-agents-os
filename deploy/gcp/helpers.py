@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -172,6 +173,12 @@ def microsoft_graph_env_yaml(values: dict[str, str], indent: str) -> str:
     return "\n".join(lines) or f"{indent}# Microsoft Graph settings use runtime secret bindings."
 
 
+def api_key_limited_to(key: dict[str, Any], service: str) -> bool:
+    """Whether the API key's only API target is the given service."""
+    targets = (key.get("restrictions") or {}).get("apiTargets") or []
+    return [target.get("service") for target in targets if isinstance(target, dict)] == [service]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -205,6 +212,8 @@ def _build_parser() -> argparse.ArgumentParser:
     vertex_models_parser.add_argument("switch_variable")
     microsoft_env_parser = subparsers.add_parser("microsoft-graph-env")
     microsoft_env_parser.add_argument("indent")
+    key_parser = subparsers.add_parser("api-key-limited-to", help="reads the key's JSON on stdin")
+    key_parser.add_argument("service")
     return parser
 
 
@@ -259,6 +268,11 @@ def main() -> None:
             print(vertex_models_yaml(args.list_variable, args.switch_variable))
         except ValueError as exc:
             raise SystemExit(f"error: {exc}") from exc
+        return
+
+    if args.command == "api-key-limited-to":
+        if not api_key_limited_to(json.load(sys.stdin), args.service):
+            raise SystemExit(1)
         return
 
     if args.command == "secret-id":

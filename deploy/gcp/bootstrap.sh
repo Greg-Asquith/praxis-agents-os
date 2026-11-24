@@ -537,9 +537,20 @@ pagespeed_key_name() {
     || die "could not list API keys; check the API Keys Admin role, or run again if the API Keys API was only just enabled"
 }
 
+check_pagespeed_key_restriction() {
+  local key_json
+  key_json=$(gcloud services api-keys describe "$1" --project="$GCP_PROJECT_ID" \
+    --format=json --quiet) || die "could not read the praxis-pagespeed API key's restrictions"
+  printf '%s' "$key_json" \
+    | python3 "$SCRIPT_DIR/helpers.py" api-key-limited-to pagespeedonline.googleapis.com \
+    || die "the existing praxis-pagespeed API key isn't limited to PageSpeed Insights; restrict it to pagespeedonline.googleapis.com, or delete it so this run creates a restricted one"
+}
+
 if [[ "$PAGESPEED_ENABLED" == "true" ]]; then
   echo "Checking PageSpeed API key"
   pagespeed_key=$(pagespeed_key_name)
+  # The bootstrap only restricts keys it creates, so a key made by hand is checked first.
+  [[ -z "$pagespeed_key" ]] || check_pagespeed_key_restriction "$pagespeed_key"
   seed_pagespeed_key=false
   secret_has_enabled_version "$pagespeed_secret_id" || seed_pagespeed_key=true
   if [[ -z "$pagespeed_key" || "$seed_pagespeed_key" == "true" ]]; then

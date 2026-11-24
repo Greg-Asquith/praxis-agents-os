@@ -19,7 +19,12 @@ import {
   checkUrlsArgsCount,
   checkUrlsResult,
 } from "@/features/conversations/components/tools/web/check-urls-result"
-import { webErrorText } from "@/features/conversations/components/tools/web/web-error-text"
+import {
+  httpStatusText,
+  redirectChainText,
+  redirectCodes,
+  webErrorText,
+} from "@/features/conversations/components/tools/web/web-error-text"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { pluralize } from "@/lib/format"
 
@@ -28,8 +33,10 @@ const HEADING = <ToolHeading icon={ListChecksIcon}>Check URLs</ToolHeading>
 const COLUMNS: DataColumn[] = [
   { key: "url", kind: "link", label: "URL", width: "auto" },
   { key: "outcome", kind: "text", label: "Result", width: 120 },
-  { key: "status", kind: "text", label: "Status", width: 110 },
-  { key: "redirects", kind: "text", label: "Redirects", width: 140 },
+  { key: "status", kind: "text", label: "Status", width: 160 },
+  { key: "redirects", kind: "text", label: "Redirects", width: 220 },
+  { key: "status_code", kind: "text", label: "Status Code", hidden: true },
+  { key: "redirect_codes", kind: "text", label: "Redirect Codes", hidden: true },
   { key: "final_url", kind: "link", label: "Final URL", hidden: true },
   { key: "content_type", kind: "text", label: "Content Type", hidden: true },
   { key: "ttfb", kind: "number", label: "First Byte", unit: "milliseconds", isMetric: true },
@@ -109,8 +116,13 @@ function CheckUrlsCard({
         final_url: row.finalUrl,
         h1_count: row.h1Count,
         outcome: row.outcome,
-        redirects: row.redirects.map((hop) => String(hop.status)).join(" → "),
-        status: row.status ?? webErrorText(row.errorClass) ?? "Couldn't be checked",
+        redirect_codes: redirectCodes(row.redirects),
+        redirects: row.redirects.length ? redirectChainText(row.redirects) : null,
+        status:
+          row.status === null
+            ? (webErrorText(row.errorClass) ?? "Couldn't be checked")
+            : httpStatusText(row.status),
+        status_code: row.status === null ? null : String(row.status),
         title: row.title,
         ttfb: row.timeToFirstByteMs,
         url: row.requestedUrl,

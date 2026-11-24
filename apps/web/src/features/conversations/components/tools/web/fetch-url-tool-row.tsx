@@ -17,12 +17,16 @@ import {
   fetchUrlResult,
 } from "@/features/conversations/components/tools/web/fetch-url-result"
 import { RedirectList } from "@/features/conversations/components/tools/web/redirect-list"
+import {
+  httpStatusText,
+  redirectCodes,
+} from "@/features/conversations/components/tools/web/web-error-text"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { useCreateDocumentFromUrlMutation } from "@/features/knowledge/api/create-document-from-url"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { canEditWorkspace } from "@/features/workspaces/permissions"
 import { getErrorMessage } from "@/lib/api/errors"
-import { formatDateTime, pluralize, urlDomain } from "@/lib/format"
+import { formatDateTime, urlDomain } from "@/lib/format"
 
 const HEADING = <ToolHeading icon={LinkIcon}>Fetch URL</ToolHeading>
 
@@ -56,12 +60,11 @@ function FetchUrlCard({ defaultOpen, result }: { defaultOpen: boolean; result: F
   const { workspace } = useActiveWorkspace()
   const details = [
     { label: "URL", value: result.finalUrl },
-    { label: "Status", value: String(result.status) },
+    { label: "Status", value: `${httpStatusText(result.status)} (${String(result.status)})` },
     { label: "Fetched", value: formatDateTime(result.fetchedAt) },
   ]
   if (result.redirects.length > 0) {
-    const count = result.redirects.length
-    details.push({ label: "Redirects", value: `${String(count)} ${pluralize(count, "Redirect")}` })
+    details.push({ label: "Redirects", value: redirectCodes(result.redirects) })
   }
   return (
     <ToolResultCard
@@ -91,7 +94,7 @@ function FetchUrlCard({ defaultOpen, result }: { defaultOpen: boolean; result: F
 function StatusBadge({ result }: { result: FetchUrlResult }) {
   if (result.blockedBySite) return <Badge variant="warning">Blocked by Site</Badge>
   if (result.status >= 200 && result.status < 300) return <Badge variant="success">Done</Badge>
-  return <Badge variant="destructive">Status {result.status}</Badge>
+  return <Badge variant="destructive">{httpStatusText(result.status)}</Badge>
 }
 
 function FetchNote({ result }: { result: FetchUrlResult }) {
@@ -107,17 +110,23 @@ function FetchNote({ result }: { result: FetchUrlResult }) {
 
 // Fetched HTML shows as source text, never rendered; Markdown goes through the sanitising renderer.
 function FetchedContent({ content, result }: { content: string; result: FetchUrlResult }) {
+  const site = urlDomain(result.finalUrl) ?? "the page"
   return (
-    <div
-      aria-label="Fetched content"
-      className="border-input bg-muted/40 max-h-[min(32rem,60vh)] min-w-0 overflow-y-auto overscroll-contain rounded-md border px-3 py-2.5"
-    >
-      {result.format === "markdown" ? (
-        <MarkdownContent content={content} />
-      ) : (
-        <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">{content}</pre>
-      )}
-    </div>
+    <figure className="grid min-w-0 gap-1">
+      <figcaption className="text-muted-foreground text-xs">
+        From {site}. The text and links below are the page's own.
+      </figcaption>
+      <div
+        aria-label="Fetched content"
+        className="border-input bg-muted/40 max-h-[min(32rem,60vh)] min-w-0 overflow-y-auto overscroll-contain rounded-md border px-3 py-2.5"
+      >
+        {result.format === "markdown" ? (
+          <MarkdownContent content={content} />
+        ) : (
+          <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">{content}</pre>
+        )}
+      </div>
+    </figure>
   )
 }
 

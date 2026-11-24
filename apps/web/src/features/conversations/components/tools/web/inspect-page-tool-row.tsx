@@ -31,6 +31,10 @@ import {
 } from "@/features/conversations/components/tools/web/inspect-page-result"
 import { pageChecks } from "@/features/conversations/components/tools/web/inspect-page-checks"
 import { RedirectList } from "@/features/conversations/components/tools/web/redirect-list"
+import {
+  httpStatusText,
+  redirectCodes,
+} from "@/features/conversations/components/tools/web/web-error-text"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { formatDateTime, titleCaseToken } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -107,10 +111,13 @@ function InspectPageCard({
 }) {
   const details = [
     { label: "URL", value: result.finalUrl },
-    { label: "Status", value: String(result.status) },
+    { label: "Status", value: `${httpStatusText(result.status)} (${String(result.status)})` },
     { label: "Fetched", value: formatDateTime(result.fetchedAt) },
   ]
   if (result.kind) details.splice(2, 0, { label: "Type", value: KIND_LABELS[result.kind] })
+  if (result.redirects.length > 0) {
+    details.push({ label: "Redirects", value: redirectCodes(result.redirects) })
+  }
   if (result.sitemap) {
     const label = result.sitemap.index ? "Child Sitemaps" : "Pages"
     details.push({ label, value: result.sitemap.total.toLocaleString("en-GB") })
@@ -147,7 +154,7 @@ function InspectPageCard({
 function StatusBadge({ result }: { result: InspectPageResult }) {
   if (result.blockedBySite) return <Badge variant="warning">Blocked by Site</Badge>
   if (result.status < 200 || result.status >= 300) {
-    return <Badge variant="destructive">Status {result.status}</Badge>
+    return <Badge variant="destructive">{httpStatusText(result.status)}</Badge>
   }
   if (result.page?.looksClientRendered) return <Badge variant="warning">Needs a Browser</Badge>
   if (result.kind === "unsupported") return <Badge variant="secondary">Not Inspected</Badge>
