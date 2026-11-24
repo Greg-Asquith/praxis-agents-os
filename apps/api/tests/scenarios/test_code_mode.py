@@ -358,7 +358,7 @@ async def test_repeated_script_failures_reach_the_model_without_failing_the_run(
         model=scripted_model(
             turns=[
                 ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "{}['missing']"}, "first"),)),
-                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "1 + True"}, "second"),)),
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "1 + 'a'"}, "second"),)),
                 ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "1 + 1"}, "third"),)),
                 "The total is 2.",
             ],
