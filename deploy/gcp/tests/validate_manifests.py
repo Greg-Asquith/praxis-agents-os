@@ -98,6 +98,10 @@ def main() -> None:
         raise ValueError("data science service must not allow transfer URLs")
     if "SUPER_ADMIN_EMAILS" not in _service_env_names(manifests["api"]):
         raise ValueError("API manifest does not configure the super-admin allowlist")
+    # Worker jobs such as platform file extraction re-check that the actor is a super admin.
+    worker_env = _job_task_spec(manifests["worker"])["containers"][0].get("env") or []
+    if "SUPER_ADMIN_EMAILS" not in {entry["name"] for entry in worker_env}:
+        raise ValueError("worker manifest does not configure the super-admin allowlist")
     if "EMAIL_AUTH_ENABLED" not in _service_env_names(manifests["api"]):
         raise ValueError("API manifest does not configure email authentication")
 
