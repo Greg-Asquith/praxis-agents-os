@@ -104,10 +104,12 @@ external functions are that run's mounted eligible tools.
 Environment and filesystem access fail; network modules are not importable.
 Scripts can read the worker's UTC clock and draw random values. Sleeps return
 immediately, so a script cannot hold a pool worker idle. The import allowlist
-is a small stdlib subset (`asyncio`, `base64`, `binascii`, `collections`,
-`copy`, `dataclasses`, `datetime`, `functools`, `itertools`, `json`, `math`,
-`os`, `pathlib`, `random`, `re`, `sys`, `time`, `typing`, `unicodedata`). The sandbox does support
-classes, decorators, async code, and type-checked signatures.
+is a small stdlib subset (`asyncio`, `base64`, `binascii`, `bisect`,
+`collections`, `copy`, `csv`, `dataclasses`, `datetime`, `decimal`, `fnmatch`,
+`functools`, `hashlib`, `itertools`, `json`, `math`, `os`, `pathlib`, `random`,
+`re`, `sys`, `time`, `typing`, `unicodedata`). The sandbox does support
+classes, decorators, async code, `match` statements, and type-checked
+signatures.
 
 Wrapped tool implementations keep their ordinary host/network authority — the
 sandbox limits model-authored control flow, not the host implementation of a

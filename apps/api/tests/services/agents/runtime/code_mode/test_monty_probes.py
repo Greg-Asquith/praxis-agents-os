@@ -46,9 +46,9 @@ def _assert_runtime_error(error: MontyRuntimeError, expected_type: type[BaseExce
 
 
 def test_exact_monty_packages_are_installed() -> None:
-    assert version("pydantic-monty") == "1.0.0"
-    assert version("pydantic-monty-client") == "1.0.0"
-    assert version("pydantic-monty-runtime") == "1.0.0"
+    assert version("pydantic-monty") == "1.6.0"
+    assert version("pydantic-monty-client") == "1.6.0"
+    assert version("pydantic-monty-runtime") == "1.6.0"
 
 
 async def test_feed_run_calls_sync_and_async_external_functions() -> None:
@@ -191,11 +191,16 @@ async def test_language_surface_and_stdlib_allowlist() -> None:
         "asyncio",
         "base64",
         "binascii",
+        "bisect",
         "collections",
         "copy",
+        "csv",
         "dataclasses",
         "datetime",
+        "decimal",
+        "fnmatch",
         "functools",
+        "hashlib",
         "itertools",
         "json",
         "math",
@@ -367,6 +372,7 @@ async def test_integrated_manual_driver_retains_pre_call_snapshot() -> None:
         (b"binary", b"binary"),
         ((1, 2), (1, 2)),
         ({1, 2}, {1, 2}),
+        (complex(1, 2), complex(1, 2)),
     ],
 )
 async def test_supported_boundary_values(value: object, expected: object) -> None:
@@ -386,7 +392,7 @@ async def test_wrapped_class_instances_return_the_host_object() -> None:
     assert attribute == 42
 
 
-@pytest.mark.parametrize("value", [bytearray(b"binary"), complex(1, 2), ProbeRecord(value=42)])
+@pytest.mark.parametrize("value", [bytearray(b"binary"), ProbeRecord(value=42)])
 async def test_unsupported_boundary_values(value: object) -> None:
     async with AsyncMonty() as pool, pool.checkout() as session:
         with pytest.raises(MontyConversionError):

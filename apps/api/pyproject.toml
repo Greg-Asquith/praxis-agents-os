@@ -27,7 +27,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3.0",
     "pydantic-ai[retries]>=2.71.0",
     "pydantic-evals>=2.67.0",
-    "pydantic-monty==1.0.0",
+    "pydantic-monty==1.6.0",
     "pydantic-settings>=2.15.0",
     "pyjwt>=2.14.0",
     "pyotp>=2.10.0",

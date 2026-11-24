@@ -173,7 +173,7 @@ class MontyExecutor:
         pool = await self._get_pool()
         output = _BoundedOutput(max(0, self._output_max_chars - len(prior_output)))
         output.truncated = prior_output_truncated
-        # Restored snapshots keep their saved limits, so the host timeout bounds remaining time.
+        # Monty caps a restored snapshot's limits at these; the host timeout bounds the whole resume.
         async with asyncio.timeout(timeout_seconds):
             async with pool.checkout(
                 limits=self._limits,

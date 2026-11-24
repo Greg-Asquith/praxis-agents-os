@@ -600,7 +600,7 @@ Tenacity because the transport imports their retry APIs. The `retries` extra
 still depends on legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
 have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
-required. Monty is pinned to 1.0.0.
+required. Monty is pinned to 1.6.0.
 
 The [2.67 release](https://github.com/pydantic/pydantic-ai/releases/tag/v2.67.0)
 adds native Fable 5.2 and Gemini 4 Carbon profiles. Native web and image

@@ -66,13 +66,13 @@ Write the script like this:
   `try`, and return what finished. `measure_page_speed` tests up to 50 key pages per call
   against its own run budget; read one page's full report from `report_file` only when needed.
   Send `not_checked` rows again while `budget_remaining` is above 0.
-- The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
-  asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
-  math, pathlib (path strings only), random, re, sys, time, typing, and unicodedata. There is no
-  network access except through tools, no environment or filesystem access, and no other
-  packages. `datetime.now()` reads UTC
-  time; sleeps return immediately. Booleans are not integers: count matches with
-  `sum(1 for x in rows if cond)`, not `sum(cond for x in rows)`.
+- The sandbox supports classes, dataclasses, async code, f-strings, and `match` statements.
+  Allowed imports are asyncio, base64, binascii, bisect, collections, copy, csv, dataclasses,
+  datetime, decimal, fnmatch, functools, hashlib, itertools, json, math, pathlib (path strings
+  only), random, re, sys, time, typing, and unicodedata. Use `decimal.Decimal` for money. There
+  is no `io` module, so pass `csv.reader` a list of lines, such as `text.splitlines()`. There is
+  no network access except through tools, no environment or filesystem access, and no other
+  packages. `datetime.now()` reads UTC time; sleeps return immediately.
 - Each script allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value
   under {result_kb} KB of JSON; printed output is capped at {output_chars} characters.
 
