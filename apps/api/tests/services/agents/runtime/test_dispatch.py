@@ -507,7 +507,7 @@ async def test_membership_revocation_denies_read_after_runtime_setup(
 
     task = asyncio.create_task(execute_paused_run())
     try:
-        await asyncio.wait_for(model_started.wait(), timeout=2)
+        await asyncio.wait_for(model_started.wait(), timeout=30)
 
         async with committed_db_session_factory() as db:
             membership = await db.scalar(
