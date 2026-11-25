@@ -6,14 +6,14 @@ version = "0.1.0"
 description = "Isolated CPU data science service for Praxis Agents OS"
 requires-python = "==3.12.*"
 dependencies = [
-    "holidays==0.108",
-    "numpy==2.5.4",
+    "holidays==0.109",
+    "numpy==2.5.5",
     "timestral",
     "torch==2.15.0",
 ]
 
 [dependency-groups]
-dev = ["pytest==9.1.1"]
+dev = ["pytest==9.2.0"]
 
 [tool.uv]
 package = false
