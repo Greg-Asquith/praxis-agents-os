@@ -466,10 +466,24 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   untrusted data, folds the prior watermark summary when advancing, and stores
   one bounded automatic summary for the next turn. The closure injects at most
   that exact stored summary, so the prefix stays byte-stable between watermark
-  advances. Catalog `context_window` and calibrated `chars_per_token` values can
-  advance trimming one additional chunk under token pressure; Azure deployments
-  use explicit context-window and estimator settings because their deployment
-  names are customer-defined. Turn-count trimming remains the floor.
+  advances. The closure also keeps each request inside a token budget:
+  `AGENT_HISTORY_CONTEXT_FRACTION` of the catalog `context_window`. It
+  estimates the model-visible content of each message from the catalog
+  `chars_per_token`, counting tool arguments and results at twice that density
+  and ignoring card metadata. When the estimate exceeds the budget, it drops
+  the oldest turns in steps of a quarter of the budget, so a few very large
+  turns trim as reliably as many small ones and the prefix stays cacheable
+  between steps. It can drop every earlier turn when the run opens with a
+  fresh prompt. It never edits or removes messages inside a kept turn, which
+  keeps tool pairs valid; Pydantic AI asks Anthropic to drop thinking blocks
+  that a trim has unbound. The check runs before every model request, so
+  results gathered during a run count. Azure deployments use explicit
+  context-window and estimator settings because their deployment names are
+  customer-defined. Turn-count trimming still applies.
+  If a provider still rejects a request as too long, a runtime hook halves the
+  budget, up to three times, and retries the request with the shorter history.
+  The run fails with `model_context_window_exceeded` only when no earlier turn
+  is left to drop.
   `load_message_history` retains its byte-identical persisted-history contract,
   and summary watermark ids travel beside the provider-visible messages rather
   than inside them. Before either the runtime model or history-summary model

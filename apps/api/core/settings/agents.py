@@ -217,10 +217,10 @@ class AgentRunSettingsMixin:
         description="Max persisted messages loaded per turn before trimming.",
     )
     AGENT_HISTORY_CONTEXT_FRACTION: float = Field(
-        default=0.6,
+        default=0.75,
         gt=0,
         le=1,
-        description="Fraction of the model context window available before history tightens.",
+        description="Fraction of the model context window that instructions and history may fill.",
     )
     AGENT_HISTORY_SUMMARY_MAX_CHARS: int = Field(
         default=2000,

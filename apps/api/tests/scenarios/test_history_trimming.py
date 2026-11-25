@@ -308,7 +308,8 @@ async def test_azure_history_uses_deployment_context_budget(
         assert result.run.status == "completed"
         seen_requests.append(seen[0][0])
 
-    assert _boundary_texts(seen_requests[-1])[0] == "turn 2"
+    # A one-token window leaves room for nothing but the current prompt.
+    assert _boundary_texts(seen_requests[-1])[0] == "turn 3"
 
 
 def _summary_model(summary: str) -> FunctionModel:

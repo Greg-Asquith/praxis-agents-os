@@ -5,6 +5,7 @@
 from dataclasses import replace
 
 from pydantic_ai.capabilities import AgentCapability, Hooks, ProcessHistory
+from pydantic_ai.exceptions import ModelContextWindowExceededError, RetryModelRequest
 
 from models.agent import Agent
 from services.agents.runtime.context import RuntimeDeps
@@ -27,6 +28,14 @@ def build_runtime_capabilities(
     ``RunContext`` and read live state from ``ctx.deps``.
     """
     hooks = Hooks(id="praxis-runtime-hooks")
+    compaction = history_compaction or HistoryCompaction()
+    trimmer = history_trimmer(
+        summary=compaction.summary,
+        budget=compaction.budget,
+        boundary_keys=compaction.boundary_keys,
+    )
+    if trimmer_out is not None:
+        trimmer_out.append(trimmer)
 
     @hooks.on.tool_execute
     async def dispatch_tool(ctx, *, call, tool_def, args, handler):
@@ -48,14 +57,23 @@ def build_runtime_capabilities(
         )
         return await handler(model_request)
 
-    compaction = history_compaction or HistoryCompaction()
-    trimmer = history_trimmer(
-        summary=compaction.summary,
-        token_pressure=compaction.token_pressure,
-        boundary_keys=compaction.boundary_keys,
-    )
-    if trimmer_out is not None:
-        trimmer_out.append(trimmer)
+    @hooks.on.model_request_error
+    async def tighten_history_on_overflow(ctx, *, request_context, error):
+        if isinstance(error, ModelContextWindowExceededError) and trimmer.tighten_after_overflow(
+            ctx.messages
+        ):
+            raise RetryModelRequest from error
+        raise error
+
+    @hooks.on.prepare_model_request
+    async def send_tightened_history(ctx, request_context):
+        # Only an overflow retry makes a second attempt. The next request records the same trim.
+        if request_context.attempt == 1:
+            return request_context
+        return replace(
+            request_context,
+            messages=render_untrusted_frames(trimmer.preview(list(ctx.messages))),
+        )
 
     return [
         hooks,

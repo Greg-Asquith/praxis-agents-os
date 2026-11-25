@@ -44,7 +44,7 @@ from services.agents.runtime.envelope import build_run_envelope
 from services.agents.runtime.execution_control import ExecutionControl
 from services.agents.runtime.history import (
     HistoryCompaction,
-    history_exceeds_context_budget,
+    history_token_budget,
     trim_boundary_count,
     trim_watermark_key,
 )
@@ -487,8 +487,7 @@ async def _prepare_history_compaction(
         active_context=active_context,
         chars_per_token=model_context.chars_per_token,
     )
-    token_pressure = history_exceeds_context_budget(
-        history,
+    budget = history_token_budget(
         system_prompt=system_prompt,
         context_window=model_context.context_window,
         chars_per_token=model_context.chars_per_token,
@@ -505,7 +504,7 @@ async def _prepare_history_compaction(
         history,
         max_turns=max_turns,
         keep_turns=settings.AGENT_HISTORY_KEEP_TURNS,
-        token_pressure=token_pressure,
+        budget=budget,
         boundary_keys=boundary_keys,
     )
     summary = await load_history_summary(
@@ -515,7 +514,7 @@ async def _prepare_history_compaction(
     )
     return HistoryCompaction(
         summary=summary,
-        token_pressure=token_pressure,
+        budget=budget,
         boundary_keys=boundary_keys,
     )
 
