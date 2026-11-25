@@ -15,6 +15,7 @@ from services.kb.schemas import (
 from services.kb.visibility import visible_document_filter
 from utils.content import ContentScope
 from utils.pagination import paginate
+from utils.search import contains_pattern
 
 
 async def list_documents(
@@ -28,6 +29,7 @@ async def list_documents(
     status: str | None,
     is_private: bool | None,
     scope: ContentScope | None = None,
+    search: str | None = None,
 ) -> KBDocumentsListResponse:
     filters = [
         visible_document_filter(
@@ -45,6 +47,8 @@ async def list_documents(
         filters.append(KBDocument.status == status)
     if is_private is not None:
         filters.append(KBDocument.is_private == is_private)
+    if search:
+        filters.append(KBDocument.title.ilike(contains_pattern(search), escape="\\"))
 
     documents, total = await paginate(
         db,

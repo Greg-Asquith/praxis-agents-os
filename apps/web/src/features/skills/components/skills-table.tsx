@@ -2,7 +2,7 @@
 
 import { Link } from "@tanstack/react-router"
 import type { OnChangeFn, PaginationState } from "@tanstack/react-table"
-import { EyeIcon, PencilIcon, PlusIcon, SparklesIcon } from "lucide-react"
+import { EyeIcon, PencilIcon, PlusIcon, SearchXIcon, SparklesIcon } from "lucide-react"
 import { useMemo } from "react"
 
 import {
@@ -118,12 +118,14 @@ export function SkillsTable({
   limit,
   offset,
   onPageChange,
+  query,
   skills,
   total,
 }: {
   limit: number
   offset: number
   onPageChange: (offset: number) => void
+  query: string
   skills: Skill[]
   total: number
 }) {
@@ -140,6 +142,17 @@ export function SkillsTable({
     rowCount: total,
     state: { pagination },
   })
+
+  if (total === 0 && query) {
+    return (
+      <EmptyState
+        description="Try a different word, or clear the search to see every skill."
+        icon={<SearchXIcon className="size-5" />}
+        size="compact"
+        title="No matching skills"
+      />
+    )
+  }
 
   if (total === 0) {
     return (

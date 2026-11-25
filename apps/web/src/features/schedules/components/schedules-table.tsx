@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { CalendarClockIcon, CircleAlertIcon, PencilIcon, PlusIcon } from "lucide-react"
+import { CalendarClockIcon, CircleAlertIcon, PencilIcon, PlusIcon, SearchXIcon } from "lucide-react"
 
 import {
   createAppColumnHelper,
@@ -96,9 +96,11 @@ const columns = columnHelper.columns([
 
 export function SchedulesTable({
   agents,
+  query,
   schedules,
 }: {
   agents: Agent[]
+  query: string
   schedules: AgentSchedule[]
 }) {
   const enableScheduleMutation = useEnableScheduleMutation()
@@ -135,6 +137,17 @@ export function SchedulesTable({
       pendingScheduleIdsRef.current.delete(schedule.id)
       setPendingScheduleIds(new Set(pendingScheduleIdsRef.current))
     }
+  }
+
+  if (schedules.length === 0 && query) {
+    return (
+      <EmptyState
+        description="Try a different word, or clear the search to see every schedule."
+        icon={<SearchXIcon className="size-5" />}
+        size="compact"
+        title="No matching schedules"
+      />
+    )
   }
 
   if (schedules.length === 0) {

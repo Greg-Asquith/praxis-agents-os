@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
-import { BookOpenIcon, LockIcon, RefreshCwIcon } from "lucide-react"
+import { BookOpenIcon, LockIcon, RefreshCwIcon, SearchXIcon } from "lucide-react"
 
 import {
   createAppColumnHelper,
@@ -44,11 +44,13 @@ export function DocumentsTable({
   documents,
   emptyAction,
   platform = false,
+  query,
 }: {
   canWrite: boolean
   documents: KbDocument[]
   emptyAction?: ReactNode
   platform?: boolean
+  query: string
 }) {
   const mutation = useReprocessDocumentMutation()
   const [error, setError] = useState<string | null>(null)
@@ -129,6 +131,17 @@ export function DocumentsTable({
     [canWrite, mutation.isPending, reprocess]
   )
   const table = useAppTable({ columns, data: documents })
+
+  if (documents.length === 0 && query) {
+    return (
+      <EmptyState
+        description="Try a different word, or clear the filter to see every document."
+        icon={<SearchXIcon className="size-5" />}
+        size="compact"
+        title="No matching documents"
+      />
+    )
+  }
 
   if (documents.length === 0) {
     return (

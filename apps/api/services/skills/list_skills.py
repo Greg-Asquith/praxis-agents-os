@@ -2,7 +2,7 @@
 
 """List skills visible in a workspace."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.skills import Skill
@@ -11,6 +11,7 @@ from models.workspace import Workspace
 from services.skills.schemas import SkillRead, SkillsListResponse
 from services.skills.utils import visible_skill_filter
 from utils.pagination import paginate
+from utils.search import contains_pattern
 
 
 async def list_skills(
@@ -21,6 +22,7 @@ async def list_skills(
     offset: int,
     include_inactive: bool,
     actor: User | None = None,
+    search: str | None = None,
 ) -> SkillsListResponse:
     filters = [
         visible_skill_filter(workspace),
@@ -28,6 +30,15 @@ async def list_skills(
     ]
     if not include_inactive:
         filters.append(Skill.is_active.is_(True))
+    if search:
+        pattern = contains_pattern(search)
+        filters.append(
+            or_(
+                Skill.name.ilike(pattern, escape="\\"),
+                Skill.human_name.ilike(pattern, escape="\\"),
+                Skill.description.ilike(pattern, escape="\\"),
+            )
+        )
 
     skills, total = await paginate(
         db,

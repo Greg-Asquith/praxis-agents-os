@@ -31,6 +31,7 @@ async def list_documents(
     status: Literal["pending", "processing", "ready", "error"] | None = None,
     is_private: bool | None = None,
     scope: ContentScope | None = None,
+    search: Annotated[str | None, Query(max_length=255)] = None,
 ) -> KBDocumentsListResponse:
     workspace, _membership = workspace_context
     return await list_documents_service(
@@ -43,4 +44,5 @@ async def list_documents(
         status=status,
         is_private=is_private,
         scope=scope,
+        search=search,
     )

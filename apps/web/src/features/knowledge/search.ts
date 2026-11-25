@@ -1,16 +1,12 @@
 // apps/web/src/features/knowledge/search.ts
 
-export type KnowledgeSearch = {
-  scope?: "workspace" | "platform"
-  page?: number
-}
+import { validateListSearch, type ListSearch } from "@/lib/list-search"
+
+export type KnowledgeSearch = Pick<ListSearch<never>, "page" | "q" | "scope">
+
+const NO_SORT_FIELDS = new Set<never>()
 
 export function validateKnowledgeSearch(search: Record<string, unknown>): KnowledgeSearch {
-  const page = Number(search["page"])
-  return {
-    ...(search["scope"] === "workspace" || search["scope"] === "platform"
-      ? { scope: search["scope"] }
-      : {}),
-    ...(Number.isSafeInteger(page) && page > 1 ? { page } : {}),
-  }
+  const { page, q, scope } = validateListSearch(search, NO_SORT_FIELDS)
+  return { ...(page ? { page } : {}), ...(q ? { q } : {}), ...(scope ? { scope } : {}) }
 }

@@ -2,7 +2,7 @@
 
 """List agents visible in a workspace."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
@@ -13,6 +13,7 @@ from services.agents.runtime.tools.workspace_tools import (
 )
 from services.agents.schemas import AgentRead, AgentsListResponse
 from utils.pagination import paginate
+from utils.search import contains_pattern
 
 
 async def list_agents(
@@ -22,6 +23,7 @@ async def list_agents(
     limit: int,
     offset: int,
     include_inactive: bool,
+    search: str | None = None,
 ) -> AgentsListResponse:
     filters = [
         Agent.workspace_id == workspace.id,
@@ -29,6 +31,14 @@ async def list_agents(
     ]
     if not include_inactive:
         filters.append(Agent.is_active.is_(True))
+    if search:
+        pattern = contains_pattern(search)
+        filters.append(
+            or_(
+                Agent.name.ilike(pattern, escape="\\"),
+                Agent.description.ilike(pattern, escape="\\"),
+            )
+        )
 
     agents, total = await paginate(
         db,

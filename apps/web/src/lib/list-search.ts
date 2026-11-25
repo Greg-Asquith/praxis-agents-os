@@ -42,3 +42,21 @@ export function validateListSearch<SortField extends string>(
   }
   return result
 }
+
+// URL state for list pages that only search and page.
+export type PagedSearch = Pick<ListSearch<never>, "page" | "q">
+
+const NO_SORT_FIELDS = new Set<never>()
+
+export function validatePagedSearch(search: Record<string, unknown>): PagedSearch {
+  const { page, q } = validateListSearch(search, NO_SORT_FIELDS)
+  return { ...(page ? { page } : {}), ...(q ? { q } : {}) }
+}
+
+// Drops defaults so the URL only carries state that differs from a fresh visit.
+export function normalisePagedSearch(next: SearchPatch<PagedSearch>): PagedSearch {
+  return {
+    ...(next.page && next.page > 1 ? { page: next.page } : {}),
+    ...(next.q ? { q: next.q } : {}),
+  }
+}

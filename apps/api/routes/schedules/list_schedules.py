@@ -22,6 +22,7 @@ async def list_schedules(
     offset: Annotated[int, Query(ge=0)] = 0,
     include_inactive: bool = False,
     agent_id: Annotated[UUID | None, Query()] = None,
+    search: Annotated[str | None, Query(max_length=255)] = None,
 ) -> AgentSchedulesListResponse:
     workspace, _membership = workspace_context
     return await list_schedules_service(
@@ -31,4 +32,5 @@ async def list_schedules(
         offset=offset,
         include_inactive=include_inactive,
         agent_id=agent_id,
+        search=search,
     )

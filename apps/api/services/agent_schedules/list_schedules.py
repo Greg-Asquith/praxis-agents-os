@@ -4,14 +4,15 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.agent import AgentSchedule
+from models.agent import Agent, AgentSchedule
 from models.workspace import Workspace
 from services.agent_schedules.runs import get_latest_runs_by_schedule_ids
 from services.agent_schedules.schemas import AgentScheduleRead, AgentSchedulesListResponse
 from utils.pagination import paginate
+from utils.search import contains_pattern
 
 
 async def list_schedules(
@@ -22,6 +23,7 @@ async def list_schedules(
     offset: int,
     include_inactive: bool,
     agent_id: UUID | None = None,
+    search: str | None = None,
 ) -> AgentSchedulesListResponse:
     filters = [
         AgentSchedule.workspace_id == workspace.id,
@@ -31,6 +33,17 @@ async def list_schedules(
         filters.append(AgentSchedule.is_active.is_(True))
     if agent_id is not None:
         filters.append(AgentSchedule.agent_id == agent_id)
+    if search:
+        pattern = contains_pattern(search)
+        matching_agents = select(Agent.id).where(
+            Agent.workspace_id == workspace.id, Agent.name.ilike(pattern, escape="\\")
+        )
+        filters.append(
+            or_(
+                AgentSchedule.name.ilike(pattern, escape="\\"),
+                AgentSchedule.agent_id.in_(matching_agents),
+            )
+        )
 
     schedules, total = await paginate(
         db,

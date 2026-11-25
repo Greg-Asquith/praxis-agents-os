@@ -2,6 +2,7 @@
 
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
+import { filterFn_includesString } from "@tanstack/react-table"
 import { BriefcaseBusinessIcon } from "lucide-react"
 
 import {
@@ -43,8 +44,7 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
   const columns = useMemo(
     () =>
       columnHelper.columns([
-        columnHelper.display({
-          id: "name",
+        columnHelper.accessor("name", {
           header: ({ header }) => <header.ColumnHeader />,
           cell: ({ row }) => (
             <div className="flex min-w-0 items-center gap-3">
@@ -97,7 +97,13 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
       ]),
     [activeWorkspace.id, setWorkspaceBySlug]
   )
-  const table = useAppTable({ columns, data: workspaces })
+  const table = useAppTable({
+    columns,
+    data: workspaces,
+    globalFilterFn: filterFn_includesString,
+    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    manualPagination: false,
+  })
 
   if (workspaces.length === 0) {
     return (
@@ -112,24 +118,34 @@ export function WorkspacesTable({ workspaces }: { workspaces: Workspace[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <ResponsiveList>
-        {workspaces.map((workspace) => (
-          <WorkspaceMobileRow
-            key={workspace.id}
-            activeWorkspaceId={activeWorkspace.id}
-            onManage={() => {
-              setWorkspaceBySlug(workspace.slug)
-            }}
-            workspace={workspace}
-          />
-        ))}
-      </ResponsiveList>
-
-      <table.AppTable>
+    <table.AppTable>
+      <div className="flex flex-col gap-3">
+        <table.Search
+          ariaLabel="Search workspaces"
+          className="w-full sm:max-w-sm"
+          placeholder="Search workspaces…"
+        />
+        <ResponsiveList>
+          {table.getRowModel().rows.map(({ original: workspace }) => (
+            <WorkspaceMobileRow
+              key={workspace.id}
+              activeWorkspaceId={activeWorkspace.id}
+              onManage={() => {
+                setWorkspaceBySlug(workspace.slug)
+              }}
+              workspace={workspace}
+            />
+          ))}
+        </ResponsiveList>
         <WorkspacesDesktopTable />
-      </table.AppTable>
-    </div>
+        {table.getRowModel().rows.length === 0 ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            No workspaces match your search.
+          </p>
+        ) : null}
+        <table.Pagination ariaLabel="Workspaces pagination" />
+      </div>
+    </table.AppTable>
   )
 }
 

@@ -76,7 +76,12 @@ export function ScheduleRunHistory({
 }) {
   const runsQuery = useScheduleRunsQuery(scheduleId, { limit: 100 }, enabled)
   const runs = runsQuery.data?.items ?? EMPTY_RUNS
-  const table = useAppTable({ columns, data: runs })
+  const table = useAppTable({
+    columns,
+    data: runs,
+    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    manualPagination: false,
+  })
 
   if (runsQuery.isPending) {
     return (
@@ -107,17 +112,17 @@ export function ScheduleRunHistory({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <ResponsiveList>
-        {runs.map((run) => (
-          <ScheduleRunMobileRow key={run.id} run={run} />
-        ))}
-      </ResponsiveList>
-
-      <table.AppTable>
+    <table.AppTable>
+      <div className="flex flex-col gap-3">
+        <ResponsiveList>
+          {table.getRowModel().rows.map(({ original: run }) => (
+            <ScheduleRunMobileRow key={run.id} run={run} />
+          ))}
+        </ResponsiveList>
         <ScheduleRunsDesktopTable />
-      </table.AppTable>
-    </div>
+        <table.Pagination ariaLabel="Run history pagination" />
+      </div>
+    </table.AppTable>
   )
 }
 

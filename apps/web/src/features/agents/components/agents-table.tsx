@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { BotIcon, MessageSquarePlusIcon, PencilIcon, PlusIcon } from "lucide-react"
+import { BotIcon, MessageSquarePlusIcon, PencilIcon, PlusIcon, SearchXIcon } from "lucide-react"
 
 import {
   createAppColumnHelper,
@@ -42,9 +42,11 @@ const columnHelper = createAppColumnHelper<Agent>()
 export function AgentsTable({
   agents,
   modelCatalog,
+  query,
 }: {
   agents: Agent[]
   modelCatalog: ModelCatalogResponse
+  query: string
 }) {
   const columns = useMemo(
     () =>
@@ -138,6 +140,17 @@ export function AgentsTable({
     [modelCatalog]
   )
   const table = useAppTable({ columns, data: agents })
+
+  if (agents.length === 0 && query) {
+    return (
+      <EmptyState
+        description="Try a different word, or clear the search to see every agent."
+        icon={<SearchXIcon className="size-5" />}
+        size="compact"
+        title="No matching agents"
+      />
+    )
+  }
 
   if (agents.length === 0) {
     return (

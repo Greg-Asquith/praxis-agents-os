@@ -157,6 +157,7 @@ export function MembersTableContent({
     enableMultiSort: false,
     globalFilterFn: filterFn_includesString,
     initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    manualPagination: false,
   })
 
   return (

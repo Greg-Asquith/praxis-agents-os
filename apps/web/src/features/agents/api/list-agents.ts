@@ -10,6 +10,7 @@ type ListAgentsParams = {
   includeInactive?: boolean
   limit?: number
   offset?: number
+  search?: string
 }
 
 export const agentsQueryKeys = createWorkspaceScopedQueryKeys("agents")
@@ -18,12 +19,14 @@ async function listAgents({
   includeInactive = false,
   limit = 100,
   offset = 0,
+  search,
 }: ListAgentsParams = {}) {
   return apiRequest<AgentsListResponse>("/agents/", {
     query: {
       include_inactive: includeInactive,
       limit,
       offset,
+      ...(search ? { search } : {}),
     },
   })
 }

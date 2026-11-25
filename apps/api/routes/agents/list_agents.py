@@ -20,6 +20,7 @@ async def list_agents(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     include_inactive: bool = False,
+    search: Annotated[str | None, Query(max_length=255)] = None,
 ) -> AgentsListResponse:
     workspace, _membership = workspace_context
     return await list_agents_service(
@@ -28,4 +29,5 @@ async def list_agents(
         limit=limit,
         offset=offset,
         include_inactive=include_inactive,
+        search=search,
     )

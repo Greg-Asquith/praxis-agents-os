@@ -4,6 +4,7 @@ import { useTransition } from "react"
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query"
 
+import { DebouncedSearchInput } from "@/components/forms/debounced-search-input"
 import { PageHeader } from "@/components/shell/page-header"
 import { PaginationControls } from "@/components/ui/pagination-controls"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -28,13 +29,18 @@ export function KnowledgeRoute() {
   const platformManagement = scope === "platform" && user.is_super_admin
   const canWrite = canEditWorkspace(workspace.current_user_role)
   const canAdd = scope === "platform" ? platformManagement : canWrite
+  const query = search.q ?? ""
   const offset = ((search.page ?? 1) - 1) * PAGE_SIZE
   const params = { limit: PAGE_SIZE, offset }
   const [{ data }] = useSuspenseQueries({
     queries: [
       platformManagement
         ? platformDocumentsQueryOptions(params)
-        : documentsQueryOptions({ ...params, ...(scope !== "all" ? { scope } : {}) }),
+        : documentsQueryOptions({
+            ...params,
+            ...(scope !== "all" ? { scope } : {}),
+            ...(query ? { search: query } : {}),
+          }),
     ],
   })
   const addAction = canAdd ? <AddDocumentMenu platform={platformManagement} /> : undefined
@@ -47,23 +53,50 @@ export function KnowledgeRoute() {
         title="Knowledge Base"
       />
       <KnowledgeSearchPanel />
-      <Tabs
-        value={scope}
-        onValueChange={(value: unknown) => {
-          if (value !== "all" && value !== "workspace" && value !== "platform") return
-          startTransition(() => {
-            void navigate({ to: "/knowledge", search: value === "all" ? {} : { scope: value } })
-          })
-        }}
-      >
-        <TabsList aria-label="Which knowledge to show">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger className="max-w-48" value="workspace">
-            <span className="truncate">{workspace.name}</span>
-          </TabsTrigger>
-          <TabsTrigger value="platform">Shared</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap items-center gap-3">
+        {platformManagement ? null : (
+          <DebouncedSearchInput
+            ariaLabel="Filter documents by title"
+            disabled={isChangingView}
+            onChange={(nextQuery) => {
+              startTransition(() => {
+                void navigate({
+                  to: "/knowledge",
+                  search: {
+                    ...(search.scope ? { scope: search.scope } : {}),
+                    ...(nextQuery ? { q: nextQuery } : {}),
+                  },
+                })
+              })
+            }}
+            placeholder="Filter by title"
+            value={query}
+          />
+        )}
+        <Tabs
+          value={scope}
+          onValueChange={(value: unknown) => {
+            if (value !== "all" && value !== "workspace" && value !== "platform") return
+            startTransition(() => {
+              void navigate({
+                to: "/knowledge",
+                search: {
+                  ...(value === "all" ? {} : { scope: value }),
+                  ...(query ? { q: query } : {}),
+                },
+              })
+            })
+          }}
+        >
+          <TabsList aria-label="Which knowledge to show">
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger className="max-w-48" value="workspace">
+              <span className="truncate">{workspace.name}</span>
+            </TabsTrigger>
+            <TabsTrigger value="platform">Shared</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
       {scope === "platform" ? (
         <p className="text-muted-foreground max-w-xl text-sm">
           {platformManagement
@@ -77,8 +110,10 @@ export function KnowledgeRoute() {
           documents={data.documents}
           emptyAction={addAction}
           platform={scope === "platform"}
+          query={platformManagement ? "" : query}
         />
         <PaginationControls
+          ariaLabel="Documents pagination"
           disabled={isChangingView}
           limit={PAGE_SIZE}
           offset={offset}

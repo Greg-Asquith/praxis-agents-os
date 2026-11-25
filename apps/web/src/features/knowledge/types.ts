@@ -75,6 +75,7 @@ export type ListKbDocumentsParams = {
   sourceType?: KbSourceType
   status?: KbProcessingStatus
   isPrivate?: boolean
+  search?: string
 }
 
 export type KbManualDocumentCreateRequest = {

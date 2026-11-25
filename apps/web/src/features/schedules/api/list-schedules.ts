@@ -11,6 +11,7 @@ type ListSchedulesParams = {
   includeInactive?: boolean
   limit?: number
   offset?: number
+  search?: string
 }
 
 const baseSchedulesQueryKeys = createWorkspaceScopedQueryKeys("schedules")
@@ -27,6 +28,7 @@ async function listSchedules({
   includeInactive = false,
   limit = 100,
   offset = 0,
+  search,
 }: ListSchedulesParams = {}) {
   return apiRequest<SchedulesListResponse>("/schedules/", {
     query: {
@@ -34,6 +36,7 @@ async function listSchedules({
       include_inactive: includeInactive,
       limit,
       offset,
+      ...(search ? { search } : {}),
     },
   })
 }

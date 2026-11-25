@@ -44,6 +44,7 @@ import { PendingRoute } from "@/routes/pending"
 import { RoutePendingFallback } from "@/routes/route-pending"
 import { safeRedirectPath, validateAuthRedirectSearch } from "@/lib/safe-redirect"
 import { isRecord } from "@/lib/guards"
+import { validatePagedSearch } from "@/lib/list-search"
 import { setActiveUserId } from "@/lib/workspace"
 
 type RouterContext = {
@@ -258,6 +259,7 @@ const sharedChatRoute = createRoute({
 const agentsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/agents",
+  validateSearch: validatePagedSearch,
   component: lazyRouteComponent(
     () => import("@/features/agents/routes/agents-route"),
     "AgentsRoute"
@@ -285,6 +287,7 @@ const agentDetailRoute = createRoute({
 const skillsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/skills",
+  validateSearch: validatePagedSearch,
   component: lazyRouteComponent(
     () => import("@/features/skills/routes/skills-route"),
     "SkillsRoute"
@@ -380,6 +383,7 @@ const knowledgeDocumentRoute = createRoute({
 const schedulesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/schedules",
+  validateSearch: validatePagedSearch,
   component: lazyRouteComponent(
     () => import("@/features/schedules/routes/schedules-route"),
     "SchedulesRoute"

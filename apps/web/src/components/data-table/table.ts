@@ -20,6 +20,8 @@ const appTable = createTableHook({
     enableSorting: false,
   },
   getRowId: (row: { id: string }) => row.id,
+  // Tables show every row they are given unless they opt into client pagination.
+  manualPagination: true,
   headerComponents: { ColumnHeader: DataTableColumnHeader },
   tableComponents: {
     Pagination: DataTablePagination,

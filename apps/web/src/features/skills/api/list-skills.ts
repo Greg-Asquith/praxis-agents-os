@@ -10,6 +10,7 @@ type ListSkillsParams = {
   includeInactive?: boolean
   limit?: number
   offset?: number
+  search?: string
 }
 
 const baseSkillsQueryKeys = createWorkspaceScopedQueryKeys("skills")
@@ -29,12 +30,14 @@ async function listSkills({
   includeInactive = false,
   limit = 100,
   offset = 0,
+  search,
 }: ListSkillsParams = {}) {
   return apiRequest<SkillsListResponse>("/skills/", {
     query: {
       include_inactive: includeInactive,
       limit,
       offset,
+      ...(search ? { search } : {}),
     },
   })
 }

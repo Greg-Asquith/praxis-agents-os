@@ -29,6 +29,7 @@ async function listDocuments({
   sourceType,
   status,
   scope,
+  search,
 }: ListKbDocumentsParams = {}) {
   return apiRequest<KbDocumentsListResponse>("/kb/documents", {
     query: {
@@ -38,6 +39,7 @@ async function listDocuments({
       source_type: sourceType,
       status,
       scope,
+      ...(search ? { search } : {}),
     },
   })
 }

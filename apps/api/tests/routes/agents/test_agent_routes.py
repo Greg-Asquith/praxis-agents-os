@@ -332,3 +332,37 @@ async def test_members_can_only_favorite_the_builtin_agent(
     assert favorited.status_code == 200
     await db_session.refresh(agent)
     assert (agent.instructions, agent.is_favorite) == ("", True)
+
+
+async def test_agent_search_matches_names_and_descriptions_literally(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session)
+    for name, description in (
+        ("Invoice Chaser", None),
+        ("Helper", "Chases 100% of late invoices."),
+        ("Writer", "Drafts 100 posts."),
+    ):
+        db_session.add(
+            Agent(
+                name=name,
+                slug=f"agent-{uuid4().hex[:8]}",
+                description=description,
+                instructions="Help.",
+                workspace_id=workspace.id,
+                created_by=user.id,
+            )
+        )
+    await db_session.commit()
+
+    invoices = await db_async_client.get(
+        "/api/v1/agents/", headers=headers, params={"search": "invoice"}
+    )
+    percent = await db_async_client.get(
+        "/api/v1/agents/", headers=headers, params={"search": "100%"}
+    )
+
+    assert {agent["name"] for agent in invoices.json()["agents"]} == {"Invoice Chaser", "Helper"}
+    assert invoices.json()["total"] == 2
+    assert [agent["name"] for agent in percent.json()["agents"]] == ["Helper"]

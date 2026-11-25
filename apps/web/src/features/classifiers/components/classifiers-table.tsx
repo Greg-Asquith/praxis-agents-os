@@ -1,6 +1,7 @@
 // apps/web/src/features/classifiers/components/classifiers-table.tsx
 
 import { useMemo } from "react"
+import { filterFn_includesString } from "@tanstack/react-table"
 import { PencilIcon, PlusIcon, SparklesIcon, Trash2Icon } from "lucide-react"
 
 import {
@@ -51,8 +52,7 @@ export function ClassifiersTable({
   const columns = useMemo(
     () =>
       columnHelper.columns([
-        columnHelper.display({
-          id: "name",
+        columnHelper.accessor("display_name", {
           header: ({ header }) => <header.ColumnHeader />,
           cell: ({ row }) => (
             <div className="flex min-w-44 flex-col gap-1">
@@ -122,7 +122,13 @@ export function ClassifiersTable({
       ]),
     [modelCatalog, onDelete, onEdit]
   )
-  const table = useAppTable({ columns, data: classifiers })
+  const table = useAppTable({
+    columns,
+    data: classifiers,
+    globalFilterFn: filterFn_includesString,
+    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+    manualPagination: false,
+  })
 
   if (classifiers.length === 0) {
     return (
@@ -142,23 +148,33 @@ export function ClassifiersTable({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <ResponsiveList>
-        {classifiers.map((classifier) => (
-          <ClassifierMobileRow
-            classifier={classifier}
-            key={classifier.id}
-            modelCatalog={modelCatalog}
-            onDelete={onDelete}
-            onEdit={onEdit}
-          />
-        ))}
-      </ResponsiveList>
-
-      <table.AppTable>
+    <table.AppTable>
+      <div className="flex flex-col gap-3">
+        <table.Search
+          ariaLabel="Search classifiers"
+          className="w-full sm:max-w-sm"
+          placeholder="Search classifiers…"
+        />
+        <ResponsiveList>
+          {table.getRowModel().rows.map(({ original: classifier }) => (
+            <ClassifierMobileRow
+              classifier={classifier}
+              key={classifier.id}
+              modelCatalog={modelCatalog}
+              onDelete={onDelete}
+              onEdit={onEdit}
+            />
+          ))}
+        </ResponsiveList>
         <ClassifiersDesktopTable />
-      </table.AppTable>
-    </div>
+        {table.getRowModel().rows.length === 0 ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            No classifiers match your search.
+          </p>
+        ) : null}
+        <table.Pagination ariaLabel="Classifiers pagination" />
+      </div>
+    </table.AppTable>
   )
 }
 
